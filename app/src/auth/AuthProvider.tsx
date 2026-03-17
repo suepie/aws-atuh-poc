@@ -23,6 +23,7 @@ interface AuthContextType {
   isLoading: boolean;
   error: string | null;
   logs: AuthLogEntry[];
+  userManager: UserManager | null;
   login: () => Promise<void>;
   logout: () => Promise<void>;
   silentRenew: () => Promise<void>;
@@ -153,7 +154,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <AuthContext.Provider
-      value={{ user, isLoading, error, logs, login, logout, silentRenew }}
+      value={{ user, isLoading, error, logs, userManager: userManagerRef.current, login, logout, silentRenew }}
     >
       {children}
     </AuthContext.Provider>

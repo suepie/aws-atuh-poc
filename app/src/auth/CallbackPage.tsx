@@ -1,23 +1,23 @@
 import { useEffect, useRef, useState } from 'react';
-import { UserManager } from 'oidc-client-ts';
 import { useNavigate } from 'react-router-dom';
-import { oidcConfig } from './config';
+import { useAuth } from './AuthProvider';
 
 /**
  * OAuth コールバックページ
  * Cognito Hosted UI からリダイレクトされた後、authorization code を処理する
+ * AuthProviderの共有UserManagerを使用することで、認証状態が即座に反映される
  */
 export function CallbackPage() {
   const navigate = useNavigate();
+  const { userManager } = useAuth();
   const [error, setError] = useState<string | null>(null);
   const processed = useRef(false);
 
   useEffect(() => {
-    if (processed.current) return;
+    if (processed.current || !userManager) return;
     processed.current = true;
 
-    const mgr = new UserManager(oidcConfig);
-    mgr
+    userManager
       .signinRedirectCallback()
       .then(() => {
         navigate('/', { replace: true });
@@ -26,7 +26,7 @@ export function CallbackPage() {
         console.error('Callback error:', err);
         setError((err as Error).message);
       });
-  }, [navigate]);
+  }, [navigate, userManager]);
 
   if (error) {
     return (
