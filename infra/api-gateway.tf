@@ -50,6 +50,9 @@ resource "aws_lambda_function" "authorizer" {
       COGNITO_USER_POOL_ID = aws_cognito_user_pool.central.id
       COGNITO_REGION       = var.aws_region
       COGNITO_CLIENT_ID    = aws_cognito_user_pool_client.spa.id
+      # Phase 4: ローカル Cognito
+      LOCAL_COGNITO_USER_POOL_ID = aws_cognito_user_pool.local.id
+      LOCAL_COGNITO_CLIENT_ID    = aws_cognito_user_pool_client.local_spa.id
     }
   }
 

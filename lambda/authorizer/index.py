@@ -24,19 +24,33 @@ logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 # 環境変数から許可する issuer を構築
-COGNITO_USER_POOL_ID = os.environ["COGNITO_USER_POOL_ID"]
 COGNITO_REGION = os.environ.get("COGNITO_REGION", "ap-northeast-1")
-COGNITO_CLIENT_ID = os.environ["COGNITO_CLIENT_ID"]
 
-COGNITO_ISSUER = f"https://cognito-idp.{COGNITO_REGION}.amazonaws.com/{COGNITO_USER_POOL_ID}"
+# 集約 Cognito（共通認証基盤）
+CENTRAL_POOL_ID = os.environ["COGNITO_USER_POOL_ID"]
+CENTRAL_CLIENT_ID = os.environ["COGNITO_CLIENT_ID"]
+CENTRAL_ISSUER = f"https://cognito-idp.{COGNITO_REGION}.amazonaws.com/{CENTRAL_POOL_ID}"
 
-# 許可する issuer のリスト（Phase 4 でローカルCognito追加時に拡張）
-ALLOWED_ISSUERS = {
-    COGNITO_ISSUER: {
-        "client_id": COGNITO_CLIENT_ID,
+# ローカル Cognito（各サービスアカウント相当）
+LOCAL_POOL_ID = os.environ.get("LOCAL_COGNITO_USER_POOL_ID", "")
+LOCAL_CLIENT_ID = os.environ.get("LOCAL_COGNITO_CLIENT_ID", "")
+LOCAL_ISSUER = f"https://cognito-idp.{COGNITO_REGION}.amazonaws.com/{LOCAL_POOL_ID}" if LOCAL_POOL_ID else ""
+
+# 許可する issuer のリスト（マルチissuer対応）
+ALLOWED_ISSUERS: dict[str, dict[str, str]] = {
+    CENTRAL_ISSUER: {
+        "client_id": CENTRAL_CLIENT_ID,
         "type": "central",
     }
 }
+
+if LOCAL_ISSUER and LOCAL_POOL_ID:
+    ALLOWED_ISSUERS[LOCAL_ISSUER] = {
+        "client_id": LOCAL_CLIENT_ID,
+        "type": "local",
+    }
+
+logger.info(f"Allowed issuers: {list(ALLOWED_ISSUERS.keys())}")
 
 # JWKS キャッシュ
 _jwks_cache: dict[str, Any] = {}

@@ -42,6 +42,27 @@ output "spa_env_config" {
   }
 }
 
+# Phase 4: ローカル Cognito
+output "local_cognito_user_pool_id" {
+  description = "Local Cognito User Pool ID"
+  value       = aws_cognito_user_pool.local.id
+}
+
+output "local_cognito_client_id" {
+  description = "Local SPA App Client ID"
+  value       = aws_cognito_user_pool_client.local_spa.id
+}
+
+output "local_cognito_domain" {
+  description = "Local Cognito Hosted UI domain"
+  value       = "https://${aws_cognito_user_pool_domain.local.domain}.auth.${var.aws_region}.amazoncognito.com"
+}
+
+output "local_cognito_issuer" {
+  description = "Local OIDC Issuer URL"
+  value       = "https://cognito-idp.${var.aws_region}.amazonaws.com/${aws_cognito_user_pool.local.id}"
+}
+
 output "api_gateway_url" {
   description = "API Gateway endpoint URL"
   value       = aws_api_gateway_stage.prod.invoke_url

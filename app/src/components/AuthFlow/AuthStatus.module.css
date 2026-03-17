@@ -99,6 +99,21 @@
   background: #e03131;
 }
 
+.localBtn {
+  background: #20c997;
+  color: #fff;
+  border: none;
+  padding: 0.6rem 1.5rem;
+  border-radius: 6px;
+  font-weight: bold;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+
+.localBtn:hover {
+  background: #12b886;
+}
+
 .federationBtn {
   background: #ff922b;
   color: #fff;

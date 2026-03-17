@@ -3,7 +3,7 @@ import { externalIdpName } from '../../auth/config';
 import styles from './AuthStatus.module.css';
 
 export function AuthStatus() {
-  const { user, isLoading, error, login, loginWithIdp, logout, logoutFull, silentRenew } = useAuth();
+  const { user, isLoading, error, login, loginWithIdp, loginLocal, logout, logoutFull, silentRenew, localEnabled } = useAuth();
 
   if (isLoading) {
     return (
@@ -75,6 +75,11 @@ export function AuthStatus() {
                 onClick={() => loginWithIdp(externalIdpName)}
               >
                 ログイン（{externalIdpName}）
+              </button>
+            )}
+            {localEnabled && (
+              <button className={styles.localBtn} onClick={loginLocal}>
+                ログイン（ローカルCognito）
               </button>
             )}
           </>

@@ -175,3 +175,91 @@ resource "aws_cognito_user_group" "admins" {
   user_pool_id = aws_cognito_user_pool.central.id
   description  = "管理者"
 }
+
+# ==============================================================================
+# Phase 4: ローカル Cognito User Pool（各サービスアカウント相当）
+# パートナーユーザー等のローカル認証用
+# ==============================================================================
+
+resource "aws_cognito_user_pool" "local" {
+  name = "${var.project_name}-local"
+
+  password_policy {
+    minimum_length    = 8
+    require_lowercase = true
+    require_numbers   = true
+    require_symbols   = false
+    require_uppercase = true
+  }
+
+  username_attributes      = ["email"]
+  auto_verified_attributes = ["email"]
+
+  schema {
+    name                = "tenant_id"
+    attribute_data_type = "String"
+    mutable             = true
+    string_attribute_constraints {
+      min_length = 1
+      max_length = 64
+    }
+  }
+
+  account_recovery_setting {
+    recovery_mechanism {
+      name     = "verified_email"
+      priority = 1
+    }
+  }
+
+  tags = {
+    Project = var.project_name
+    Role    = "local-cognito"
+  }
+}
+
+resource "aws_cognito_user_pool_domain" "local" {
+  domain       = "${var.project_name}-local"
+  user_pool_id = aws_cognito_user_pool.local.id
+}
+
+resource "aws_cognito_user_pool_client" "local_spa" {
+  name         = "${var.project_name}-local-spa"
+  user_pool_id = aws_cognito_user_pool.local.id
+
+  generate_secret = false
+
+  allowed_oauth_flows                  = ["code"]
+  allowed_oauth_flows_user_pool_client = true
+  allowed_oauth_scopes                 = ["openid", "profile", "email"]
+  supported_identity_providers         = ["COGNITO"]
+
+  callback_urls = var.callback_urls
+  logout_urls   = var.logout_urls
+
+  id_token_validity      = 1
+  access_token_validity  = 1
+  refresh_token_validity = 30
+
+  token_validity_units {
+    id_token      = "hours"
+    access_token  = "hours"
+    refresh_token = "days"
+  }
+
+  read_attributes  = ["email", "email_verified", "name", "custom:tenant_id"]
+  write_attributes = ["email", "name", "custom:tenant_id"]
+
+  enable_token_revocation = true
+
+  explicit_auth_flows = [
+    "ALLOW_REFRESH_TOKEN_AUTH",
+    "ALLOW_USER_SRP_AUTH",
+  ]
+}
+
+resource "aws_cognito_user_group" "local_partner_users" {
+  name         = "partner-users"
+  user_pool_id = aws_cognito_user_pool.local.id
+  description  = "パートナー企業ユーザー"
+}
