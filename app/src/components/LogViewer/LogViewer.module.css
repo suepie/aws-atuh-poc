@@ -1,13 +1,14 @@
 .container {
-  background: #1e1e2e;
+  background: #ffffff;
+  border: 1px solid #dee2e6;
   border-radius: 8px;
   padding: 1.5rem;
-  color: #cdd6f4;
+  color: #1a1a2e;
 }
 
 .container h2 {
   margin-top: 0;
-  color: #89b4fa;
+  color: #6c63ff;
 }
 
 .logList {
@@ -19,16 +20,16 @@
 
 .logEntry {
   padding: 0.3rem 0;
-  border-bottom: 1px solid #1e1e2e;
+  border-bottom: 1px solid #f1f3f5;
   line-height: 1.5;
 }
 
 .logEntry:hover {
-  background: #181825;
+  background: #f8f9fa;
 }
 
 .time {
-  color: #6c7086;
+  color: #adb5bd;
   margin-right: 0.75rem;
 }
 
@@ -40,19 +41,20 @@
 }
 
 .detail {
-  color: #cdd6f4;
+  color: #495057;
 }
 
 .data {
   margin: 0.25rem 0 0 2rem;
   padding: 0.4rem;
-  background: #11111b;
+  background: #f8f9fa;
+  border: 1px solid #e9ecef;
   border-radius: 4px;
-  color: #a6adc8;
+  color: #495057;
   font-size: 0.75rem;
 }
 
 .empty {
-  color: #6c7086;
+  color: #adb5bd;
   font-style: italic;
 }
