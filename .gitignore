@@ -45,6 +45,7 @@ next-env.d.ts
 *.tfvars
 !*.tfvars.example
 crash.log
+.terraform.lock.hcl
 
 # app
 app/node_modules/
