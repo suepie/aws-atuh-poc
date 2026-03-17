@@ -28,6 +28,9 @@ yarn-error.log*
 .env*.local
 .env
 
+# local only files
+/doc/old
+
 # vercel
 .vercel
 
