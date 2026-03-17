@@ -21,3 +21,32 @@ variable "logout_urls" {
   type        = list(string)
   default     = ["http://localhost:5173/"]
 }
+
+# ==============================================================================
+# Phase 2: Auth0 外部IdP設定
+# ==============================================================================
+
+variable "auth0_enabled" {
+  description = "Auth0 IdP連携を有効にするか"
+  type        = bool
+  default     = false
+}
+
+variable "auth0_domain" {
+  description = "Auth0 tenant domain (例: auth-poc.auth0.com)"
+  type        = string
+  default     = ""
+}
+
+variable "auth0_client_id" {
+  description = "Auth0 Application の Client ID"
+  type        = string
+  default     = ""
+}
+
+variable "auth0_client_secret" {
+  description = "Auth0 Application の Client Secret"
+  type        = string
+  default     = ""
+  sensitive   = true
+}

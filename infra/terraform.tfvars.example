@@ -1,0 +1,8 @@
+# Phase 2: Auth0 外部IdP設定
+# Auth0 の無料アカウントを作成し、以下を設定する
+# 手順: doc/reference/auth0-free-as-idp.md を参照
+
+auth0_enabled       = true
+auth0_domain        = "your-tenant.auth0.com"
+auth0_client_id     = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+auth0_client_secret = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"

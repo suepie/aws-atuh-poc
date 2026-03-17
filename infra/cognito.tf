@@ -81,7 +81,7 @@ resource "aws_cognito_user_pool_client" "spa" {
   allowed_oauth_flows                  = ["code"]
   allowed_oauth_flows_user_pool_client = true
   allowed_oauth_scopes                 = ["openid", "profile", "email"]
-  supported_identity_providers         = ["COGNITO"]
+  supported_identity_providers         = var.auth0_enabled ? ["COGNITO", aws_cognito_identity_provider.auth0[0].provider_name] : ["COGNITO"]
 
   # コールバック URL
   callback_urls = var.callback_urls
@@ -124,6 +124,34 @@ resource "aws_cognito_user_pool_client" "spa" {
     "ALLOW_REFRESH_TOKEN_AUTH",
     "ALLOW_USER_SRP_AUTH",
   ]
+}
+
+# ==============================================================================
+# Phase 2: Auth0 外部IdP（Entra ID 代替）
+# ==============================================================================
+
+resource "aws_cognito_identity_provider" "auth0" {
+  count = var.auth0_enabled ? 1 : 0
+
+  user_pool_id  = aws_cognito_user_pool.central.id
+  provider_name = "Auth0"
+  provider_type = "OIDC"
+
+  provider_details = {
+    client_id                = var.auth0_client_id
+    client_secret            = var.auth0_client_secret
+    oidc_issuer              = "https://${var.auth0_domain}/"
+    attributes_request_method = "GET"
+    authorize_scopes         = "openid email profile"
+  }
+
+  # クレームマッピング（Auth0 → Cognito カスタム属性）
+  # 本番では Entra ID のクレーム名に合わせてマッピングする
+  attribute_mapping = {
+    email    = "email"
+    name     = "name"
+    username = "sub"
+  }
 }
 
 # ==============================================================================

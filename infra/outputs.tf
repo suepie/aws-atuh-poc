@@ -37,5 +37,17 @@ output "spa_env_config" {
     VITE_COGNITO_DOMAIN    = "https://${aws_cognito_user_pool_domain.central.domain}.auth.${var.aws_region}.amazoncognito.com"
     VITE_REDIRECT_URI      = "http://localhost:5173/callback"
     VITE_POST_LOGOUT_URI   = "http://localhost:5173/"
+    VITE_AUTH0_IDP_NAME    = var.auth0_enabled ? "Auth0" : ""
+    VITE_API_ENDPOINT      = aws_api_gateway_stage.prod.invoke_url
   }
+}
+
+output "api_gateway_url" {
+  description = "API Gateway endpoint URL"
+  value       = aws_api_gateway_stage.prod.invoke_url
+}
+
+output "auth0_callback_url" {
+  description = "Auth0 に設定する Allowed Callback URL"
+  value       = var.auth0_enabled ? "https://${aws_cognito_user_pool_domain.central.domain}.auth.${var.aws_region}.amazoncognito.com/oauth2/idpresponse" : "N/A (Auth0 disabled)"
 }
