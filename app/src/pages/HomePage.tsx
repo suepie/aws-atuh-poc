@@ -1,5 +1,6 @@
 import { useAuth } from '../auth/AuthProvider';
 import { AuthStatus } from '../components/AuthFlow/AuthStatus';
+import { FlowDiagram } from '../components/AuthFlow/FlowDiagram';
 import { TokenViewer } from '../components/TokenViewer/TokenViewer';
 import { LogViewer } from '../components/LogViewer/LogViewer';
 import styles from './HomePage.module.css';
@@ -13,6 +14,8 @@ export function HomePage() {
         <h1>AWS Auth PoC</h1>
         <span className={styles.phase}>Phase 1: Cognito + Hosted UI</span>
       </header>
+
+      <FlowDiagram user={user} logs={logs} />
 
       <div className={styles.grid}>
         <div className={styles.left}>

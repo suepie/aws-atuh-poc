@@ -6,21 +6,21 @@ interface Props {
 }
 
 const eventColors: Record<string, string> = {
-  Init: '#89b4fa',
-  LoginStart: '#f9e2af',
-  UserLoaded: '#a6e3a1',
-  SessionRestored: '#a6e3a1',
-  NoSession: '#a6adc8',
-  LogoutStart: '#fab387',
-  UserUnloaded: '#fab387',
-  AccessTokenExpiring: '#f9e2af',
-  AccessTokenExpired: '#f38ba8',
-  SilentRenewStart: '#89b4fa',
-  SilentRenewSuccess: '#a6e3a1',
-  SilentRenewError: '#f38ba8',
-  LoginError: '#f38ba8',
-  LogoutError: '#f38ba8',
-  InitError: '#f38ba8',
+  Init: '#4c6ef5',
+  LoginStart: '#e67700',
+  UserLoaded: '#2f9e44',
+  SessionRestored: '#2f9e44',
+  NoSession: '#868e96',
+  LogoutStart: '#e67700',
+  UserUnloaded: '#e67700',
+  AccessTokenExpiring: '#e67700',
+  AccessTokenExpired: '#e03131',
+  SilentRenewStart: '#4c6ef5',
+  SilentRenewSuccess: '#2f9e44',
+  SilentRenewError: '#e03131',
+  LoginError: '#e03131',
+  LogoutError: '#e03131',
+  InitError: '#e03131',
 };
 
 export function LogViewer({ logs }: Props) {
