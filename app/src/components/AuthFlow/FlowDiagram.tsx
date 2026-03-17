@@ -16,40 +16,30 @@ interface FlowStep {
   description: string;
 }
 
-const STEPS: FlowStep[] = [
-  {
-    id: 'start',
-    label: 'SPA',
-    icon: '📱',
-    description: 'ログインボタン押下',
-  },
-  {
-    id: 'redirect',
-    label: 'Cognito',
-    icon: '🔐',
-    description: '/oauth2/authorize',
-  },
-  {
-    id: 'auth',
-    label: 'Hosted UI',
-    icon: '🔑',
-    description: 'ID/PW認証',
-  },
-  {
-    id: 'callback',
-    label: 'Callback',
-    icon: '↩️',
-    description: 'code → token交換',
-  },
-  {
-    id: 'tokens',
-    label: 'JWT取得',
-    icon: '🎫',
-    description: 'ID / Access / Refresh',
-  },
+const LOCAL_STEPS: FlowStep[] = [
+  { id: 'start', label: 'SPA', icon: '📱', description: 'ログインボタン押下' },
+  { id: 'redirect', label: 'Cognito', icon: '🔐', description: '/oauth2/authorize' },
+  { id: 'auth', label: 'Hosted UI', icon: '🔑', description: 'ID/PW認証' },
+  { id: 'callback', label: 'Callback', icon: '↩️', description: 'code → token交換' },
+  { id: 'tokens', label: 'JWT取得', icon: '🎫', description: 'ID / Access / Refresh' },
 ];
 
+const FEDERATION_STEPS: FlowStep[] = [
+  { id: 'start', label: 'SPA', icon: '📱', description: 'IdPログイン押下' },
+  { id: 'redirect', label: 'Cognito', icon: '🔐', description: 'identity_provider指定' },
+  { id: 'idp', label: '外部IdP', icon: '🔵', description: 'Auth0 / Entra ID' },
+  { id: 'federation', label: 'Federation', icon: '🔄', description: 'OIDC code交換 + JIT' },
+  { id: 'callback', label: 'Callback', icon: '↩️', description: 'Cognito JWT発行' },
+  { id: 'tokens', label: 'JWT取得', icon: '🎫', description: 'identitiesクレーム含む' },
+];
+
+function isFederationFlow(user: User | null, logs: AuthLogEntry[]): boolean {
+  if (user?.profile.identities) return true;
+  return logs.some((l) => l.event === 'FederationLoginStart');
+}
+
 function deriveStepStatuses(
+  steps: FlowStep[],
   user: User | null,
   logs: AuthLogEntry[],
 ): Record<string, StepStatus> {
@@ -57,45 +47,45 @@ function deriveStepStatuses(
   const eventNames = logs.map((l) => l.event);
 
   const hasError = eventNames.some((e) => e.includes('Error'));
-  const loginStarted = eventNames.includes('LoginStart');
+  const loginStarted = eventNames.includes('LoginStart') || eventNames.includes('FederationLoginStart');
   const userLoaded = eventNames.includes('UserLoaded') || eventNames.includes('SessionRestored');
 
   if (user && !user.expired) {
-    // 認証完了
-    for (const step of STEPS) statuses[step.id] = 'done';
+    for (const step of steps) statuses[step.id] = 'done';
   } else if (hasError) {
-    statuses['start'] = 'done';
-    statuses['redirect'] = 'done';
-    statuses['auth'] = 'error';
-    statuses['callback'] = 'pending';
-    statuses['tokens'] = 'pending';
+    for (const step of steps) statuses[step.id] = 'pending';
+    statuses[steps[0].id] = 'done';
+    statuses[steps[1].id] = 'done';
+    statuses[steps[2].id] = 'error';
   } else if (userLoaded) {
-    for (const step of STEPS) statuses[step.id] = 'done';
+    for (const step of steps) statuses[step.id] = 'done';
   } else if (loginStarted) {
-    statuses['start'] = 'done';
-    statuses['redirect'] = 'active';
-    statuses['auth'] = 'pending';
-    statuses['callback'] = 'pending';
-    statuses['tokens'] = 'pending';
+    for (const step of steps) statuses[step.id] = 'pending';
+    statuses[steps[0].id] = 'done';
+    statuses[steps[1].id] = 'active';
   } else {
-    statuses['start'] = 'active';
-    statuses['redirect'] = 'pending';
-    statuses['auth'] = 'pending';
-    statuses['callback'] = 'pending';
-    statuses['tokens'] = 'pending';
+    for (const step of steps) statuses[step.id] = 'pending';
+    statuses[steps[0].id] = 'active';
   }
 
   return statuses;
 }
 
 export function FlowDiagram({ user, logs }: Props) {
-  const statuses = deriveStepStatuses(user, logs);
+  const federation = isFederationFlow(user, logs);
+  const steps = federation ? FEDERATION_STEPS : LOCAL_STEPS;
+  const statuses = deriveStepStatuses(steps, user, logs);
 
   return (
     <div className={styles.container}>
-      <h2>認証フロー (Authorization Code + PKCE)</h2>
+      <h2>
+        認証フロー{' '}
+        {federation
+          ? '(Federation: Cognito ↔ 外部IdP)'
+          : '(Authorization Code + PKCE)'}
+      </h2>
       <div className={styles.flow}>
-        {STEPS.map((step, i) => (
+        {steps.map((step, i) => (
           <div key={step.id} className={styles.stepWrapper}>
             <div
               className={`${styles.step} ${styles[statuses[step.id] || 'pending']}`}
@@ -104,11 +94,11 @@ export function FlowDiagram({ user, logs }: Props) {
               <span className={styles.label}>{step.label}</span>
               <span className={styles.desc}>{step.description}</span>
             </div>
-            {i < STEPS.length - 1 && (
+            {i < steps.length - 1 && (
               <div
                 className={`${styles.arrow} ${
-                  statuses[STEPS[i + 1].id] === 'done' ||
-                  statuses[STEPS[i + 1].id] === 'active'
+                  statuses[steps[i + 1].id] === 'done' ||
+                  statuses[steps[i + 1].id] === 'active'
                     ? styles.arrowActive
                     : ''
                 }`}

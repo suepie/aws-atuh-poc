@@ -25,7 +25,9 @@ interface AuthContextType {
   logs: AuthLogEntry[];
   userManager: UserManager | null;
   login: () => Promise<void>;
+  loginWithIdp: (idpName: string) => Promise<void>;
   logout: () => Promise<void>;
+  logoutFull: () => Promise<void>;
   silentRenew: () => Promise<void>;
 }
 
@@ -136,6 +138,52 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [addLog]);
 
+  const logoutFull = useCallback(async () => {
+    if (!userManagerRef.current) return;
+    try {
+      addLog('FullLogoutStart', '完全ログアウトを開始します（Cognito + IdPセッション破棄）');
+
+      // Cognitoのセッションをクリア
+      await userManagerRef.current.removeUser();
+      setUser(null);
+
+      // Auth0のセッションも破棄してからCognitoのログアウトへ
+      const auth0Domain = import.meta.env.VITE_AUTH0_DOMAIN;
+      const cognitoDomain = import.meta.env.VITE_COGNITO_DOMAIN;
+      const clientId = import.meta.env.VITE_COGNITO_CLIENT_ID;
+      const postLogoutUri = import.meta.env.VITE_POST_LOGOUT_URI || 'http://localhost:5173/';
+
+      if (auth0Domain) {
+        // Auth0 ログアウト → Cognito ログアウト → SPA に戻る
+        const cognitoLogoutUrl = `${cognitoDomain}/logout?client_id=${clientId}&logout_uri=${encodeURIComponent(postLogoutUri)}`;
+        const auth0LogoutUrl = `https://${auth0Domain}/v2/logout?client_id=${import.meta.env.VITE_AUTH0_CLIENT_ID || ''}&returnTo=${encodeURIComponent(cognitoLogoutUrl)}`;
+        window.location.href = auth0LogoutUrl;
+      } else {
+        // Auth0なしの場合はCognitoのみログアウト
+        const cognitoLogoutUrl = `${cognitoDomain}/logout?client_id=${clientId}&logout_uri=${encodeURIComponent(postLogoutUri)}`;
+        window.location.href = cognitoLogoutUrl;
+      }
+    } catch (err) {
+      const message = (err as Error).message;
+      setError(message);
+      addLog('FullLogoutError', `完全ログアウトに失敗: ${message}`);
+    }
+  }, [addLog]);
+
+  const loginWithIdp = useCallback(async (idpName: string) => {
+    if (!userManagerRef.current) return;
+    try {
+      addLog('FederationLoginStart', `フェデレーションログインを開始します（IdP: ${idpName}）`);
+      await userManagerRef.current.signinRedirect({
+        extraQueryParams: { identity_provider: idpName },
+      });
+    } catch (err) {
+      const message = (err as Error).message;
+      setError(message);
+      addLog('LoginError', `フェデレーションログイン開始に失敗: ${message}`);
+    }
+  }, [addLog]);
+
   const silentRenew = useCallback(async () => {
     if (!userManagerRef.current) return;
     try {
@@ -154,7 +202,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <AuthContext.Provider
-      value={{ user, isLoading, error, logs, userManager: userManagerRef.current, login, logout, silentRenew }}
+      value={{ user, isLoading, error, logs, userManager: userManagerRef.current, login, loginWithIdp, logout, logoutFull, silentRenew }}
     >
       {children}
     </AuthContext.Provider>

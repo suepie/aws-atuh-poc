@@ -1,8 +1,9 @@
 import { useAuth } from '../../auth/AuthProvider';
+import { externalIdpName } from '../../auth/config';
 import styles from './AuthStatus.module.css';
 
 export function AuthStatus() {
-  const { user, isLoading, error, login, logout, silentRenew } = useAuth();
+  const { user, isLoading, error, login, loginWithIdp, logout, logoutFull, silentRenew } = useAuth();
 
   if (isLoading) {
     return (
@@ -33,6 +34,14 @@ export function AuthStatus() {
             <span className={styles.label}>Subject (sub):</span>
             <code className={styles.code}>{user.profile.sub}</code>
           </div>
+          <div className={styles.statusRow}>
+            <span className={styles.label}>認証方式:</span>
+            <span>
+              {user.profile.identities
+                ? `フェデレーション（${(user.profile.identities as Array<{ providerName: string }>)[0]?.providerName || '不明'}）`
+                : 'ローカル（Hosted UI）'}
+            </span>
+          </div>
           {user.profile['cognito:groups'] && (
             <div className={styles.statusRow}>
               <span className={styles.label}>Groups:</span>
@@ -56,9 +65,19 @@ export function AuthStatus() {
 
       <div className={styles.actions}>
         {!user ? (
-          <button className={styles.loginBtn} onClick={login}>
-            ログイン（Hosted UI）
-          </button>
+          <>
+            <button className={styles.loginBtn} onClick={login}>
+              ログイン（Hosted UI）
+            </button>
+            {externalIdpName && (
+              <button
+                className={styles.federationBtn}
+                onClick={() => loginWithIdp(externalIdpName)}
+              >
+                ログイン（{externalIdpName}）
+              </button>
+            )}
+          </>
         ) : (
           <>
             <button className={styles.renewBtn} onClick={silentRenew}>
@@ -66,6 +85,9 @@ export function AuthStatus() {
             </button>
             <button className={styles.logoutBtn} onClick={logout}>
               ログアウト
+            </button>
+            <button className={styles.logoutFullBtn} onClick={logoutFull}>
+              完全ログアウト（SSO破棄）
             </button>
           </>
         )}

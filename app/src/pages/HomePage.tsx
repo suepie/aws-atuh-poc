@@ -2,6 +2,7 @@ import { useAuth } from '../auth/AuthProvider';
 import { AuthStatus } from '../components/AuthFlow/AuthStatus';
 import { FlowDiagram } from '../components/AuthFlow/FlowDiagram';
 import { TokenViewer } from '../components/TokenViewer/TokenViewer';
+import { ApiTester } from '../components/ApiTester/ApiTester';
 import { LogViewer } from '../components/LogViewer/LogViewer';
 import styles from './HomePage.module.css';
 
@@ -12,7 +13,7 @@ export function HomePage() {
     <div className={styles.page}>
       <header className={styles.header}>
         <h1>AWS Auth PoC</h1>
-        <span className={styles.phase}>Phase 1: Cognito + Hosted UI</span>
+        <span className={styles.phase}>Phase 3: API Gateway + Lambda Authorizer</span>
       </header>
 
       <FlowDiagram user={user} logs={logs} />
@@ -20,6 +21,7 @@ export function HomePage() {
       <div className={styles.grid}>
         <div className={styles.left}>
           <AuthStatus />
+          {user && <ApiTester user={user} />}
           <LogViewer logs={logs} />
         </div>
 
@@ -28,7 +30,7 @@ export function HomePage() {
             <TokenViewer user={user} />
           ) : (
             <div className={styles.placeholder}>
-              <p>ログインするとトークン情報が表示されます</p>
+              <p>ログインするとトークン情報とAPI Testerが表示されます</p>
             </div>
           )}
         </div>

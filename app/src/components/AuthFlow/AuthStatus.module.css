@@ -99,6 +99,36 @@
   background: #e03131;
 }
 
+.federationBtn {
+  background: #ff922b;
+  color: #fff;
+  border: none;
+  padding: 0.6rem 1.5rem;
+  border-radius: 6px;
+  font-weight: bold;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+
+.federationBtn:hover {
+  background: #e8590c;
+}
+
+.logoutFullBtn {
+  background: #862e9c;
+  color: #fff;
+  border: none;
+  padding: 0.6rem 1.5rem;
+  border-radius: 6px;
+  font-weight: bold;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.logoutFullBtn:hover {
+  background: #5f3dc4;
+}
+
 .renewBtn {
   background: #40c057;
   color: #fff;
