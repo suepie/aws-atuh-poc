@@ -1,0 +1,111 @@
+.container {
+  background: #1e1e2e;
+  border-radius: 8px;
+  padding: 1.5rem;
+  color: #cdd6f4;
+}
+
+.container h2 {
+  margin-top: 0;
+  color: #89b4fa;
+}
+
+.statusRow {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.4rem 0;
+}
+
+.label {
+  color: #a6adc8;
+  min-width: 120px;
+  font-size: 0.9rem;
+}
+
+.authenticated {
+  background: #a6e3a1;
+  color: #1e1e2e;
+  padding: 0.2rem 0.8rem;
+  border-radius: 4px;
+  font-weight: bold;
+  font-size: 0.85rem;
+}
+
+.unauthenticated {
+  background: #45475a;
+  color: #cdd6f4;
+  padding: 0.2rem 0.8rem;
+  border-radius: 4px;
+  font-size: 0.85rem;
+}
+
+.code {
+  font-family: monospace;
+  font-size: 0.8rem;
+  color: #fab387;
+  background: #11111b;
+  padding: 0.15rem 0.4rem;
+  border-radius: 3px;
+}
+
+.error {
+  color: #f38ba8;
+  background: #11111b;
+  padding: 0.5rem;
+  border-radius: 4px;
+  font-size: 0.85rem;
+}
+
+.actions {
+  display: flex;
+  gap: 0.75rem;
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid #313244;
+}
+
+.loginBtn {
+  background: #89b4fa;
+  color: #1e1e2e;
+  border: none;
+  padding: 0.6rem 1.5rem;
+  border-radius: 6px;
+  font-weight: bold;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+
+.loginBtn:hover {
+  background: #74c7ec;
+}
+
+.logoutBtn {
+  background: #f38ba8;
+  color: #1e1e2e;
+  border: none;
+  padding: 0.6rem 1.5rem;
+  border-radius: 6px;
+  font-weight: bold;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+
+.logoutBtn:hover {
+  background: #eba0ac;
+}
+
+.renewBtn {
+  background: #a6e3a1;
+  color: #1e1e2e;
+  border: none;
+  padding: 0.6rem 1.5rem;
+  border-radius: 6px;
+  font-weight: bold;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+
+.renewBtn:hover {
+  background: #94e2d5;
+}

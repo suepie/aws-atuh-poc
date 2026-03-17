@@ -1,0 +1,159 @@
+.container {
+  background: #1e1e2e;
+  border-radius: 8px;
+  padding: 1.5rem;
+  color: #cdd6f4;
+}
+
+.container h2 {
+  margin-top: 0;
+  color: #89b4fa;
+}
+
+.tabs {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+  border-bottom: 1px solid #45475a;
+  padding-bottom: 0.5rem;
+}
+
+.tab {
+  padding: 0.5rem 1rem;
+  border: none;
+  background: transparent;
+  color: #a6adc8;
+  cursor: pointer;
+  border-radius: 4px 4px 0 0;
+  font-size: 0.9rem;
+}
+
+.tab:hover {
+  background: #313244;
+}
+
+.tab.active {
+  background: #313244;
+  color: #89b4fa;
+  font-weight: bold;
+}
+
+.content {
+  min-height: 200px;
+}
+
+.section {
+  margin-bottom: 1rem;
+}
+
+.section h4 {
+  color: #f9e2af;
+  margin-bottom: 0.5rem;
+}
+
+.json {
+  background: #11111b;
+  padding: 0.75rem;
+  border-radius: 4px;
+  font-size: 0.85rem;
+  overflow-x: auto;
+  color: #a6e3a1;
+  margin: 0;
+}
+
+.raw {
+  background: #11111b;
+  padding: 0.75rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  word-break: break-all;
+  white-space: pre-wrap;
+  color: #fab387;
+  margin-top: 0.5rem;
+}
+
+.expiry {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1rem;
+  font-size: 0.9rem;
+}
+
+.valid {
+  background: #a6e3a1;
+  color: #1e1e2e;
+  padding: 0.2rem 0.6rem;
+  border-radius: 4px;
+  font-weight: bold;
+  font-size: 0.8rem;
+}
+
+.expired {
+  background: #f38ba8;
+  color: #1e1e2e;
+  padding: 0.2rem 0.6rem;
+  border-radius: 4px;
+  font-weight: bold;
+  font-size: 0.8rem;
+}
+
+.signature {
+  color: #fab387;
+  font-size: 0.85rem;
+}
+
+.claimsTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.claimsTable th {
+  text-align: left;
+  padding: 0.5rem;
+  background: #313244;
+  color: #cba6f7;
+}
+
+.claimsTable td {
+  padding: 0.5rem;
+  border-bottom: 1px solid #313244;
+  vertical-align: top;
+}
+
+.claimKey {
+  color: #89b4fa;
+  font-family: monospace;
+  white-space: nowrap;
+  width: 200px;
+}
+
+.claimValue {
+  margin: 0;
+  color: #cdd6f4;
+  font-size: 0.85rem;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.toggleRaw {
+  background: #313244;
+  color: #a6adc8;
+  border: none;
+  padding: 0.4rem 0.8rem;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.8rem;
+  margin-top: 0.5rem;
+}
+
+.toggleRaw:hover {
+  background: #45475a;
+}
+
+.note {
+  color: #a6adc8;
+  font-style: italic;
+  font-size: 0.9rem;
+}

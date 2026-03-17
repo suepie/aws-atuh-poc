@@ -1,0 +1,58 @@
+.container {
+  background: #1e1e2e;
+  border-radius: 8px;
+  padding: 1.5rem;
+  color: #cdd6f4;
+}
+
+.container h2 {
+  margin-top: 0;
+  color: #89b4fa;
+}
+
+.logList {
+  max-height: 400px;
+  overflow-y: auto;
+  font-family: 'Fira Code', 'Cascadia Code', monospace;
+  font-size: 0.8rem;
+}
+
+.logEntry {
+  padding: 0.3rem 0;
+  border-bottom: 1px solid #1e1e2e;
+  line-height: 1.5;
+}
+
+.logEntry:hover {
+  background: #181825;
+}
+
+.time {
+  color: #6c7086;
+  margin-right: 0.75rem;
+}
+
+.event {
+  font-weight: bold;
+  margin-right: 0.5rem;
+  min-width: 160px;
+  display: inline-block;
+}
+
+.detail {
+  color: #cdd6f4;
+}
+
+.data {
+  margin: 0.25rem 0 0 2rem;
+  padding: 0.4rem;
+  background: #11111b;
+  border-radius: 4px;
+  color: #a6adc8;
+  font-size: 0.75rem;
+}
+
+.empty {
+  color: #6c7086;
+  font-style: italic;
+}

@@ -1,0 +1,63 @@
+.page {
+  min-height: 100vh;
+  background: #11111b;
+  color: #cdd6f4;
+  padding: 1rem 2rem;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  margin-bottom: 1.5rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid #313244;
+}
+
+.header h1 {
+  margin: 0;
+  color: #cba6f7;
+  font-size: 1.5rem;
+}
+
+.phase {
+  background: #313244;
+  color: #a6adc8;
+  padding: 0.3rem 0.8rem;
+  border-radius: 4px;
+  font-size: 0.85rem;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5rem;
+  align-items: start;
+}
+
+.left {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.right {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.placeholder {
+  background: #1e1e2e;
+  border-radius: 8px;
+  padding: 3rem;
+  text-align: center;
+  color: #6c7086;
+  font-size: 1rem;
+}
+
+@media (max-width: 900px) {
+  .grid {
+    grid-template-columns: 1fr;
+  }
+}
