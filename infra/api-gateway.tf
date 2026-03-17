@@ -53,6 +53,10 @@ resource "aws_lambda_function" "authorizer" {
       # Phase 4: ローカル Cognito
       LOCAL_COGNITO_USER_POOL_ID = aws_cognito_user_pool.local.id
       LOCAL_COGNITO_CLIENT_ID    = aws_cognito_user_pool_client.local_spa.id
+      # Phase 5: DR Cognito（大阪）- terraform apply 後に手動設定、または data source で参照
+      DR_COGNITO_USER_POOL_ID = var.dr_cognito_user_pool_id
+      DR_COGNITO_REGION       = "ap-northeast-3"
+      DR_COGNITO_CLIENT_ID    = var.dr_cognito_client_id
     }
   }
 

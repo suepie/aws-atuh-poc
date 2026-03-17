@@ -36,6 +36,12 @@ LOCAL_POOL_ID = os.environ.get("LOCAL_COGNITO_USER_POOL_ID", "")
 LOCAL_CLIENT_ID = os.environ.get("LOCAL_COGNITO_CLIENT_ID", "")
 LOCAL_ISSUER = f"https://cognito-idp.{COGNITO_REGION}.amazonaws.com/{LOCAL_POOL_ID}" if LOCAL_POOL_ID else ""
 
+# DR Cognito（大阪リージョン）
+DR_REGION = os.environ.get("DR_COGNITO_REGION", "ap-northeast-3")
+DR_POOL_ID = os.environ.get("DR_COGNITO_USER_POOL_ID", "")
+DR_CLIENT_ID = os.environ.get("DR_COGNITO_CLIENT_ID", "")
+DR_ISSUER = f"https://cognito-idp.{DR_REGION}.amazonaws.com/{DR_POOL_ID}" if DR_POOL_ID else ""
+
 # 許可する issuer のリスト（マルチissuer対応）
 ALLOWED_ISSUERS: dict[str, dict[str, str]] = {
     CENTRAL_ISSUER: {
@@ -48,6 +54,12 @@ if LOCAL_ISSUER and LOCAL_POOL_ID:
     ALLOWED_ISSUERS[LOCAL_ISSUER] = {
         "client_id": LOCAL_CLIENT_ID,
         "type": "local",
+    }
+
+if DR_ISSUER and DR_POOL_ID:
+    ALLOWED_ISSUERS[DR_ISSUER] = {
+        "client_id": DR_CLIENT_ID,
+        "type": "dr",
     }
 
 logger.info(f"Allowed issuers: {list(ALLOWED_ISSUERS.keys())}")

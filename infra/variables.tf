@@ -50,3 +50,20 @@ variable "auth0_client_secret" {
   default     = ""
   sensitive   = true
 }
+
+# ==============================================================================
+# Phase 5: DR Cognito（大阪）設定
+# dr-osaka の terraform output から取得して設定する
+# ==============================================================================
+
+variable "dr_cognito_user_pool_id" {
+  description = "DR Cognito User Pool ID (大阪、dr-osaka terraform output から取得)"
+  type        = string
+  default     = ""
+}
+
+variable "dr_cognito_client_id" {
+  description = "DR Cognito App Client ID (大阪、dr-osaka terraform output から取得)"
+  type        = string
+  default     = ""
+}

@@ -3,23 +3,24 @@
 ## 目的
 AWSを使った統合認証基盤の設計・検証。Cognito vs Keycloakを実際に構築して比較する。
 
-## PoCの構成
-- **第1パターン**: Cognitoハイブリッド構成（集約Cognito + ローカルCognito）
-- **第2パターン**: Keycloak構成（後日）
+## 完了した Phase（2026-03-17時点）
+- Phase 1: 集約Cognito + Hosted UI + React SPA ✅
+- Phase 2: Auth0 Free を外部IdPとしてフェデレーション認証 ✅
+- Phase 3: Lambda Authorizer + API Gateway（JWT検証・認可・Context伝播）✅
+- Phase 4: ローカルCognito追加、マルチissuer対応 ✅
 
-## 制約
-- AWSアカウントは1つのみ（User Pool 2つで擬似マルチアカウント）
-- 外部IdP（Entra ID）なし → Phase 2でAuth0 Freeを外部IdP代替として使用
+## 残り Phase
+- Phase 5: DR検証（マルチリージョン）
+- Phase 6: Keycloak構成（第2パターン）
 
 ## 技術スタック
 - IaC: Terraform
-- Frontend: React + TypeScript + Vite（SPA）
-- 認証ライブラリ: oidc-client-ts（Keycloak検証時にも流用可能）
-- 将来デプロイ: S3 + CloudFront or Amplify Hosting
+- Frontend: React + TypeScript + Vite + oidc-client-ts
+- Backend: Python 3.11 (Lambda) + PyJWT
+- AWS: Cognito User Pool x2, API Gateway, Lambda x2
 
-## 段階的検証プラン
-- Phase 1: 集約Cognito + Hosted UI + React SPA（基本認証フロー）
-- Phase 2: Auth0 Free を外部IdPとして追加（フェデレーション検証）
-- Phase 3: Lambda Authorizer + API Gateway（JWT検証・認可）
-- Phase 4: ローカルCognito追加（ハイブリッド・マルチissuer）
-- Phase 5: DR検証（マルチリージョン）
+## 主要な技術的知見
+- Cognitoアクセストークンは`aud`ではなく`client_id`クレームを使用
+- JWKSは公開エンドポイント → クロスアカウントでもIAM不要
+- SSOセッションはIdP側に残る → 完全ログアウトには多段リダイレクト必要
+- LambdaのPythonライブラリはLinux向けビルドが必要

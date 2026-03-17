@@ -10,6 +10,7 @@ import {
 import { User, UserManager } from 'oidc-client-ts';
 import { oidcConfig } from './config';
 import { localOidcConfig, localCognitoEnabled } from './localConfig';
+import { drOidcConfig, drCognitoEnabled, drIdpName } from './drConfig';
 
 // ログエントリの型
 export interface AuthLogEntry {
@@ -29,10 +30,13 @@ interface AuthContextType {
   login: () => Promise<void>;
   loginWithIdp: (idpName: string) => Promise<void>;
   loginLocal: () => Promise<void>;
+  loginDr: () => Promise<void>;
+  loginDrWithIdp: () => Promise<void>;
   logout: () => Promise<void>;
   logoutFull: () => Promise<void>;
   silentRenew: () => Promise<void>;
   localEnabled: boolean;
+  drEnabled: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -50,6 +54,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [logs, setLogs] = useState<AuthLogEntry[]>([]);
   const userManagerRef = useRef<UserManager | null>(null);
   const localUserManagerRef = useRef<UserManager | null>(null);
+  const drUserManagerRef = useRef<UserManager | null>(null);
 
   const addLog = useCallback((event: string, detail: string, data?: unknown) => {
     setLogs((prev) => [
@@ -107,7 +112,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       addLog('Init', 'ローカル Cognito UserManager を初期化しました');
     }
 
-    // 既存セッション確認（集約 → ローカルの順に確認）
+    // DR Cognito（大阪）UserManager 初期化
+    if (drCognitoEnabled && drOidcConfig) {
+      const drMgr = new UserManager(drOidcConfig);
+      drUserManagerRef.current = drMgr;
+
+      drMgr.events.addUserLoaded((u) => {
+        setUser(u);
+        addLog('DrUserLoaded', 'DR Cognito（大阪）のトークンが取得されました', {
+          sub: u.profile.sub,
+          issuer: 'dr',
+        });
+      });
+
+      addLog('Init', 'DR Cognito（大阪）UserManager を初期化しました');
+    }
+
+    // 既存セッション確認（集約 → ローカル → DRの順に確認）
     addLog('Init', 'OIDC UserManager を初期化中...');
     mgr
       .getUser()
@@ -119,13 +140,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             expires_at: existingUser.expires_at,
           });
         } else if (localUserManagerRef.current) {
-          // ローカル Cognito のセッションも確認
           const localUser = await localUserManagerRef.current.getUser();
           if (localUser && !localUser.expired) {
             setUser(localUser);
             addLog('SessionRestored', '既存セッションを復元しました（ローカルCognito）', {
               sub: localUser.profile.sub,
               expires_at: localUser.expires_at,
+            });
+            return;
+          }
+          // DR Cognito も確認
+          if (drUserManagerRef.current) {
+            const drUser = await drUserManagerRef.current.getUser();
+            if (drUser && !drUser.expired) {
+              setUser(drUser);
+              addLog('SessionRestored', '既存セッションを復元しました（DR Cognito 大阪）', {
+                sub: drUser.profile.sub,
+                expires_at: drUser.expires_at,
+              });
+              return;
+            }
+          }
+          addLog('NoSession', '有効なセッションがありません');
+        } else if (drUserManagerRef.current) {
+          const drUser = await drUserManagerRef.current.getUser();
+          if (drUser && !drUser.expired) {
+            setUser(drUser);
+            addLog('SessionRestored', '既存セッションを復元しました（DR Cognito 大阪）', {
+              sub: drUser.profile.sub,
+              expires_at: drUser.expires_at,
             });
           } else {
             addLog('NoSession', '有効なセッションがありません');
@@ -168,6 +211,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const message = (err as Error).message;
       setError(message);
       addLog('LoginError', `ローカルログイン開始に失敗: ${message}`);
+    }
+  }, [addLog]);
+
+  const loginDr = useCallback(async () => {
+    if (!drUserManagerRef.current) return;
+    try {
+      addLog('DrLoginStart', 'DR Cognito（大阪）ログインを開始します');
+      await drUserManagerRef.current.signinRedirect();
+    } catch (err) {
+      const message = (err as Error).message;
+      setError(message);
+      addLog('LoginError', `DRログイン開始に失敗: ${message}`);
+    }
+  }, [addLog]);
+
+  const loginDrWithIdp = useCallback(async () => {
+    if (!drUserManagerRef.current) return;
+    try {
+      addLog('DrFederationLoginStart', 'DR Cognito（大阪）フェデレーションログインを開始します');
+      await drUserManagerRef.current.signinRedirect({
+        extraQueryParams: { identity_provider: drIdpName },
+      });
+    } catch (err) {
+      const message = (err as Error).message;
+      setError(message);
+      addLog('LoginError', `DRフェデレーションログイン開始に失敗: ${message}`);
     }
   }, [addLog]);
 
@@ -267,7 +336,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <AuthContext.Provider
-      value={{ user, isLoading, error, logs, userManager: userManagerRef.current, localUserManager: localUserManagerRef.current, login, loginWithIdp, loginLocal, logout, logoutFull, silentRenew, localEnabled: localCognitoEnabled }}
+      value={{ user, isLoading, error, logs, userManager: userManagerRef.current, localUserManager: localUserManagerRef.current, login, loginWithIdp, loginLocal, loginDr, loginDrWithIdp, logout, logoutFull, silentRenew, localEnabled: localCognitoEnabled, drEnabled: drCognitoEnabled }}
     >
       {children}
     </AuthContext.Provider>

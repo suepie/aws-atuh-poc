@@ -99,6 +99,21 @@
   background: #e03131;
 }
 
+.drBtn {
+  background: #be4bdb;
+  color: #fff;
+  border: none;
+  padding: 0.6rem 1.5rem;
+  border-radius: 6px;
+  font-weight: bold;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.drBtn:hover {
+  background: #9c36b5;
+}
+
 .localBtn {
   background: #20c997;
   color: #fff;

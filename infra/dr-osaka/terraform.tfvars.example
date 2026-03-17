@@ -1,0 +1,5 @@
+# Auth0 設定（東京と同じ値を使用）
+auth0_enabled       = true
+auth0_domain        = "your-tenant.auth0.com"
+auth0_client_id     = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+auth0_client_secret = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
