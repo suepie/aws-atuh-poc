@@ -64,7 +64,7 @@ resource "aws_cognito_user_pool_client" "dr_spa" {
   allowed_oauth_flows                  = ["code"]
   allowed_oauth_flows_user_pool_client = true
   allowed_oauth_scopes                 = ["openid", "profile", "email"]
-  supported_identity_providers         = var.auth0_enabled ? ["COGNITO", aws_cognito_identity_provider.auth0_dr[0].provider_name] : ["COGNITO"]
+  supported_identity_providers         = ["COGNITO", aws_cognito_identity_provider.auth0_dr.provider_name]
 
   callback_urls = var.callback_urls
   logout_urls   = var.logout_urls
@@ -102,26 +102,39 @@ resource "aws_cognito_user_pool_client" "dr_spa" {
   ]
 }
 
-# Auth0 IdP（東京と同じ設定）
+# Auth0 IdP（手動エンドポイント指定）
+# 大阪リージョンでは Cognito の .well-known 自動検出が Auth0 に対して失敗するため、
+# コンソールの「Manual input」モードで作成し terraform import した。
+# 以下の設定はコンソール作成時の内容と一致させている。
+# See: ADR-007
 resource "aws_cognito_identity_provider" "auth0_dr" {
-  count = var.auth0_enabled ? 1 : 0
-
   user_pool_id  = aws_cognito_user_pool.dr.id
   provider_name = "Auth0"
   provider_type = "OIDC"
 
   provider_details = {
-    client_id                = var.auth0_client_id
-    client_secret            = var.auth0_client_secret
-    oidc_issuer              = "https://${var.auth0_domain}/"
-    attributes_request_method = "GET"
-    authorize_scopes         = "openid email profile"
+    client_id                     = var.auth0_client_id
+    client_secret                 = var.auth0_client_secret
+    oidc_issuer                   = "https://${var.auth0_domain}"
+    authorize_scopes              = "openid email profile"
+    attributes_request_method     = "GET"
+    # 手動エンドポイント指定（.well-known 自動検出のバイパス）
+    authorize_url                 = "https://${var.auth0_domain}/authorize"
+    token_url                     = "https://${var.auth0_domain}/oauth/token"
+    attributes_url                = "https://${var.auth0_domain}/userinfo"
+    jwks_uri                      = "https://${var.auth0_domain}/.well-known/jwks.json"
+    attributes_url_add_attributes = "false"
   }
 
   attribute_mapping = {
     email    = "email"
     name     = "name"
     username = "sub"
+  }
+
+  lifecycle {
+    # コンソールで作成→importした場合、provider_detailsの差分で再作成されないようにする
+    ignore_changes = [provider_details]
   }
 }
 
