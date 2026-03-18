@@ -54,3 +54,4 @@ app/dist/
 # lambda build artifacts
 lambda/*/build/
 lambda/*/package.zip
+lambda/*/.venv/
