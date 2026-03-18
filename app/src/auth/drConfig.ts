@@ -23,8 +23,8 @@ export const drOidcConfig: UserManagerSettings | null = drCognitoEnabled
       post_logout_redirect_uri: postLogoutUri,
       response_type: 'code',
       scope: 'openid profile email',
-      userStore: new WebStorageStateStore({ store: window.sessionStorage }),
-      stateStore: new WebStorageStateStore({ store: window.sessionStorage }),
+      userStore: new WebStorageStateStore({ store: window.sessionStorage, prefix: 'oidc.dr.' }),
+      stateStore: new WebStorageStateStore({ store: window.sessionStorage, prefix: 'oidc.dr.' }),
 
       metadata: {
         issuer: drAuthority,

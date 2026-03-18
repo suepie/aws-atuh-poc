@@ -1,8 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { UserManager } from 'oidc-client-ts';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from './AuthProvider';
-import { drOidcConfig, drCognitoEnabled } from './drConfig';
 
 /**
  * OAuth コールバックページ
@@ -12,7 +10,7 @@ import { drOidcConfig, drCognitoEnabled } from './drConfig';
  */
 export function CallbackPage() {
   const navigate = useNavigate();
-  const { userManager, localUserManager } = useAuth();
+  const { userManager, localUserManager, drUserManager } = useAuth();
   const [error, setError] = useState<string | null>(null);
   const processed = useRef(false);
 
@@ -38,10 +36,9 @@ export function CallbackPage() {
       }
 
       // DR Cognito（大阪）
-      if (drCognitoEnabled && drOidcConfig) {
+      if (drUserManager) {
         try {
-          const drMgr = new UserManager(drOidcConfig);
-          await drMgr.signinRedirectCallback();
+          await drUserManager.signinRedirectCallback();
           navigate('/', { replace: true });
           return;
         } catch { /* DRでもない */ }
@@ -54,7 +51,7 @@ export function CallbackPage() {
       console.error('Callback error:', err);
       setError((err as Error).message);
     });
-  }, [navigate, userManager, localUserManager]);
+  }, [navigate, userManager, localUserManager, drUserManager]);
 
   if (error) {
     return (

@@ -18,7 +18,8 @@ export const oidcConfig: UserManagerSettings = {
   post_logout_redirect_uri: postLogoutUri,
   response_type: 'code',
   scope: 'openid profile email',
-  userStore: new WebStorageStateStore({ store: window.sessionStorage }),
+  userStore: new WebStorageStateStore({ store: window.sessionStorage, prefix: 'oidc.central.' }),
+  stateStore: new WebStorageStateStore({ store: window.sessionStorage, prefix: 'oidc.central.' }),
 
   // Cognito固有: Hosted UIのlogoutエンドポイント
   metadata: {

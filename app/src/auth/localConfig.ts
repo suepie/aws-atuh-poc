@@ -23,9 +23,8 @@ export const localOidcConfig: UserManagerSettings | null = localCognitoEnabled
       post_logout_redirect_uri: postLogoutUri,
       response_type: 'code',
       scope: 'openid profile email',
-      // ローカル用は別の storage key を使い、集約Cognitoのセッションと分離
-      userStore: new WebStorageStateStore({ store: window.sessionStorage }),
-      stateStore: new WebStorageStateStore({ store: window.sessionStorage }),
+      userStore: new WebStorageStateStore({ store: window.sessionStorage, prefix: 'oidc.local.' }),
+      stateStore: new WebStorageStateStore({ store: window.sessionStorage, prefix: 'oidc.local.' }),
 
       metadata: {
         issuer: localAuthority,

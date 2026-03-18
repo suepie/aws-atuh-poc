@@ -27,6 +27,7 @@ interface AuthContextType {
   logs: AuthLogEntry[];
   userManager: UserManager | null;
   localUserManager: UserManager | null;
+  drUserManager: UserManager | null;
   login: () => Promise<void>;
   loginWithIdp: (idpName: string) => Promise<void>;
   loginLocal: () => Promise<void>;
@@ -240,22 +241,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [addLog]);
 
-  const isLocalUser = useCallback(() => {
-    if (!user) return false;
+  const getUserType = useCallback((): 'central' | 'local' | 'dr' => {
+    if (!user) return 'central';
+    const iss = user.profile.iss || '';
     const localAuthority = import.meta.env.VITE_LOCAL_COGNITO_AUTHORITY || '';
-    return localAuthority && user.profile.iss === localAuthority;
+    const drAuthority = import.meta.env.VITE_DR_COGNITO_AUTHORITY || '';
+    if (localAuthority && iss === localAuthority) return 'local';
+    if (drAuthority && iss === drAuthority) return 'dr';
+    return 'central';
   }, [user]);
 
   const logout = useCallback(async () => {
+    const type = getUserType();
+    const postLogoutUri = import.meta.env.VITE_POST_LOGOUT_URI || 'http://localhost:5173/';
+
     try {
-      if (isLocalUser() && localUserManagerRef.current) {
+      if (type === 'local' && localUserManagerRef.current) {
         addLog('LogoutStart', 'ログアウトを開始します（ローカルCognito）');
         await localUserManagerRef.current.removeUser();
         setUser(null);
-        const localDomain = import.meta.env.VITE_LOCAL_COGNITO_DOMAIN;
-        const localClientId = import.meta.env.VITE_LOCAL_COGNITO_CLIENT_ID;
-        const postLogoutUri = import.meta.env.VITE_POST_LOGOUT_URI || 'http://localhost:5173/';
-        window.location.href = `${localDomain}/logout?client_id=${localClientId}&logout_uri=${encodeURIComponent(postLogoutUri)}`;
+        const domain = import.meta.env.VITE_LOCAL_COGNITO_DOMAIN;
+        const clientId = import.meta.env.VITE_LOCAL_COGNITO_CLIENT_ID;
+        window.location.href = `${domain}/logout?client_id=${clientId}&logout_uri=${encodeURIComponent(postLogoutUri)}`;
+      } else if (type === 'dr' && drUserManagerRef.current) {
+        addLog('LogoutStart', 'ログアウトを開始します（DR Cognito 大阪）');
+        await drUserManagerRef.current.removeUser();
+        setUser(null);
+        const domain = import.meta.env.VITE_DR_COGNITO_DOMAIN;
+        const clientId = import.meta.env.VITE_DR_COGNITO_CLIENT_ID;
+        window.location.href = `${domain}/logout?client_id=${clientId}&logout_uri=${encodeURIComponent(postLogoutUri)}`;
       } else if (userManagerRef.current) {
         addLog('LogoutStart', 'ログアウトを開始します（集約Cognito）');
         await userManagerRef.current.signoutRedirect();
@@ -265,30 +279,42 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setError(message);
       addLog('LogoutError', `ログアウトに失敗: ${message}`);
     }
-  }, [addLog, isLocalUser]);
+  }, [addLog, getUserType]);
 
   const logoutFull = useCallback(async () => {
+    const type = getUserType();
+
     try {
       addLog('FullLogoutStart', '完全ログアウトを開始します（全セッション破棄）');
 
-      // 両方のUserManagerのセッションをクリア
+      // 全UserManagerのセッションをクリア
       if (userManagerRef.current) await userManagerRef.current.removeUser();
       if (localUserManagerRef.current) await localUserManagerRef.current.removeUser();
+      if (drUserManagerRef.current) await drUserManagerRef.current.removeUser();
       setUser(null);
 
       const postLogoutUri = import.meta.env.VITE_POST_LOGOUT_URI || 'http://localhost:5173/';
+      const auth0Domain = import.meta.env.VITE_AUTH0_DOMAIN;
 
-      if (isLocalUser()) {
-        // ローカルCognitoのログアウト
-        const localDomain = import.meta.env.VITE_LOCAL_COGNITO_DOMAIN;
-        const localClientId = import.meta.env.VITE_LOCAL_COGNITO_CLIENT_ID;
-        window.location.href = `${localDomain}/logout?client_id=${localClientId}&logout_uri=${encodeURIComponent(postLogoutUri)}`;
+      if (type === 'local') {
+        const domain = import.meta.env.VITE_LOCAL_COGNITO_DOMAIN;
+        const clientId = import.meta.env.VITE_LOCAL_COGNITO_CLIENT_ID;
+        window.location.href = `${domain}/logout?client_id=${clientId}&logout_uri=${encodeURIComponent(postLogoutUri)}`;
+      } else if (type === 'dr') {
+        // DR Cognito + Auth0 の完全ログアウト
+        const domain = import.meta.env.VITE_DR_COGNITO_DOMAIN;
+        const clientId = import.meta.env.VITE_DR_COGNITO_CLIENT_ID;
+        if (auth0Domain) {
+          const cognitoLogoutUrl = `${domain}/logout?client_id=${clientId}&logout_uri=${encodeURIComponent(postLogoutUri)}`;
+          const auth0LogoutUrl = `https://${auth0Domain}/v2/logout?client_id=${import.meta.env.VITE_AUTH0_CLIENT_ID || ''}&returnTo=${encodeURIComponent(cognitoLogoutUrl)}`;
+          window.location.href = auth0LogoutUrl;
+        } else {
+          window.location.href = `${domain}/logout?client_id=${clientId}&logout_uri=${encodeURIComponent(postLogoutUri)}`;
+        }
       } else {
         // 集約Cognito + Auth0 の完全ログアウト
-        const auth0Domain = import.meta.env.VITE_AUTH0_DOMAIN;
         const cognitoDomain = import.meta.env.VITE_COGNITO_DOMAIN;
         const clientId = import.meta.env.VITE_COGNITO_CLIENT_ID;
-
         if (auth0Domain) {
           const cognitoLogoutUrl = `${cognitoDomain}/logout?client_id=${clientId}&logout_uri=${encodeURIComponent(postLogoutUri)}`;
           const auth0LogoutUrl = `https://${auth0Domain}/v2/logout?client_id=${import.meta.env.VITE_AUTH0_CLIENT_ID || ''}&returnTo=${encodeURIComponent(cognitoLogoutUrl)}`;
@@ -302,7 +328,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setError(message);
       addLog('FullLogoutError', `完全ログアウトに失敗: ${message}`);
     }
-  }, [addLog]);
+  }, [addLog, getUserType]);
 
   const loginWithIdp = useCallback(async (idpName: string) => {
     if (!userManagerRef.current) return;
@@ -336,7 +362,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <AuthContext.Provider
-      value={{ user, isLoading, error, logs, userManager: userManagerRef.current, localUserManager: localUserManagerRef.current, login, loginWithIdp, loginLocal, loginDr, loginDrWithIdp, logout, logoutFull, silentRenew, localEnabled: localCognitoEnabled, drEnabled: drCognitoEnabled }}
+      value={{ user, isLoading, error, logs, userManager: userManagerRef.current, localUserManager: localUserManagerRef.current, drUserManager: drUserManagerRef.current, login, loginWithIdp, loginLocal, loginDr, loginDrWithIdp, logout, logoutFull, silentRenew, localEnabled: localCognitoEnabled, drEnabled: drCognitoEnabled }}
     >
       {children}
     </AuthContext.Provider>
