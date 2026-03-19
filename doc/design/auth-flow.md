@@ -205,17 +205,97 @@ sequenceDiagram
 
 ### 6.2 DR検証での確認事項
 
-| 項目 | 結果 |
-|------|------|
-| 大阪Cognito Hosted UIログイン | ✅ |
-| 大阪Auth0フェデレーション | ✅（コンソール手動作成が必要） |
-| 大阪JWTでAPI認可（issuerType=dr） | ✅ |
-| Auth0 SSOでパスワード不要 | ✅（IdPセッション維持） |
-| ログアウト（通常/完全） | ✅（getUserTypeで大阪判定） |
+| 項目 | 結果 | 備考 |
+|------|------|------|
+| 大阪Cognito Hosted UIログイン | ✅ | |
+| 大阪Auth0フェデレーション | ✅ | コンソール手動作成 |
+| 大阪JWTでAPI認可（issuerType=dr） | ✅ | |
+| Auth0 SSOでパスワード不要 | ✅ | IdPセッション維持 |
+| ログアウト（通常/完全） | ✅ | getUserTypeで大阪判定 |
+| **Route 53 自動フェイルオーバー** | **未検証** | 本番フェーズで実施 |
+
+### 6.3 自動フェイルオーバー（本番フェーズで実施）
+
+PoCでは**手動切替**（ボタン選択）で大阪Cognitoの動作を確認した。
+本番では以下の構成でユーザーが意識しない自動切替を実現する。
+
+```mermaid
+flowchart LR
+    subgraph Required["自動フェイルオーバーに必要な構成"]
+        Domain["カスタムドメイン\nauth.example.com"]
+        ACM["ACM証明書"]
+        HC["Route 53 ヘルスチェック\n東京JWKS 30秒間隔"]
+        FO["フェイルオーバーレコード\nPrimary=東京\nSecondary=大阪\nTTL=60秒"]
+    end
+
+    Domain --> ACM --> HC --> FO
+```
+
+- 切替時間: ヘルスチェック失敗検知（約90秒） + DNS TTL（60秒） = **約2.5分**
+- 切替後はAuth0 SSOでパスワード再入力不要
+- 詳細は [poc-results.md](poc-results.md) のDRセクションを参照
 
 ---
 
-## 7. 技術的知見サマリー
+## 7. 同一ブラウザでの複数Cognitoログイン（PoC固有の挙動）
+
+PoCでは1つのSPAから東京・大阪・ローカルの3つのCognitoにログインできるため、同一ブラウザで複数のJWTが共存する場合がある。本番ではカスタムドメイン統一によりこの状況は発生しない。
+
+### 7.1 セッションの保存場所
+
+| セッション | 保存場所 | スコープ |
+|-----------|---------|---------|
+| 東京 JWT | sessionStorage `oidc.central.*` | ブラウザタブ単位 |
+| ローカル JWT | sessionStorage `oidc.local.*` | ブラウザタブ単位 |
+| 大阪 JWT | sessionStorage `oidc.dr.*` | ブラウザタブ単位 |
+| Auth0 SSOセッション | Auth0 Cookie（`auth0.com`） | **ブラウザ全体で共有** |
+
+### 7.2 東京→大阪の順でAuth0ログインした場合
+
+```mermaid
+sequenceDiagram
+    participant SPA as 📱 SPA
+    participant Storage as 💾 sessionStorage
+    participant Auth0 as 🔵 Auth0 Cookie
+
+    Note over SPA: ① 東京Auth0でログイン
+    SPA->>Storage: oidc.central.* = 東京JWT
+    SPA->>Auth0: SSOセッション作成
+
+    Note over SPA: ② 大阪Auth0でログイン
+    Note over Auth0: SSO有効 → パスワード不要
+    SPA->>Storage: oidc.dr.* = 大阪JWT
+    Note over Storage: 東京JWT(central)と<br/>大阪JWT(dr)が共存
+
+    Note over SPA: 画面のuser状態 = 最後のログイン（大阪）
+```
+
+### 7.3 API呼び出し
+
+SPAは現在の`user`状態のJWTをBearerトークンとして送信する。Lambda Authorizerは`ALLOWED_ISSUERS`に東京・大阪両方を登録しているため、**どちらのJWTでもAPI認可は成功する**。
+
+### 7.4 ログアウト時の挙動
+
+| 操作 | 破棄されるもの | 残るもの |
+|------|-------------|---------|
+| ログアウト（通常） | 現在表示中のCognito（例: 大阪）のセッション | 東京JWT + Auth0 SSOセッション |
+| 完全ログアウト（SSO破棄） | Auth0 SSOセッション + 現在のCognitoセッション | **もう片方のJWT（sessionStorage内）** |
+| 完全ログアウト後にページリロード | - | AuthProviderが初期化時にsessionStorageを走査し、残存JWTを発見 → **認証済み状態に復元** |
+
+### 7.5 本番との違い
+
+| 観点 | PoC | 本番 |
+|------|-----|------|
+| Cognito接続先 | 3つのCognito（ボタン選択） | 1つのカスタムドメイン（Route 53で自動切替） |
+| JWT共存 | 複数のJWTがsessionStorageに共存し得る | 常に1つのCognitoからのJWTのみ |
+| ログアウト | 現在のCognitoのみ破棄、他が残る場合あり | 1つのCognitoのみなので問題なし |
+| Auth0 SSO | 全Cognitoで共有（正常動作） | 同様（正常動作） |
+
+**結論**: この挙動はPoCの検証用UI（複数ログインボタン）に起因するものであり、本番のカスタムドメイン統一構成では発生しない。PoCの動作確認時は**テスト前にsessionStorageをクリアする**ことで混乱を避けられる。
+
+---
+
+## 8. 技術的知見サマリー
 
 | 知見 | 詳細 |
 |------|------|
