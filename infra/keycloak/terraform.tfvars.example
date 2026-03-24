@@ -1,0 +1,8 @@
+# RDS PostgreSQL パスワード
+db_password = "change-me-keycloak-db"
+
+# Keycloak Admin Console パスワード
+keycloak_admin_password = "change-me-admin"
+
+# ECRにpushしたイメージタグ
+keycloak_image_tag = "latest"

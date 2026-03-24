@@ -1,0 +1,155 @@
+{
+  "realm": "auth-poc",
+  "enabled": true,
+  "displayName": "Auth PoC - Keycloak",
+  "sslRequired": "external",
+  "registrationAllowed": true,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": true,
+  "editUsernameAllowed": false,
+  "bruteForceProtected": true,
+  "permanentLockout": false,
+  "maxFailureWaitSeconds": 900,
+  "minimumQuickLoginWaitSeconds": 60,
+  "waitIncrementSeconds": 60,
+  "quickLoginCheckMilliSeconds": 1000,
+  "maxDeltaTimeSeconds": 43200,
+  "failureFactor": 5,
+  "accessTokenLifespan": 3600,
+  "ssoSessionIdleTimeout": 1800,
+  "ssoSessionMaxLifespan": 36000,
+  "offlineSessionIdleTimeout": 2592000,
+  "accessCodeLifespan": 60,
+  "accessCodeLifespanUserAction": 300,
+  "roles": {
+    "realm": [
+      {
+        "name": "user",
+        "description": "一般ユーザー"
+      },
+      {
+        "name": "admin",
+        "description": "管理者"
+      },
+      {
+        "name": "expense-approver",
+        "description": "経費承認者"
+      }
+    ]
+  },
+  "groups": [
+    {
+      "name": "expense-users",
+      "realmRoles": ["user"]
+    },
+    {
+      "name": "expense-approvers",
+      "realmRoles": ["user", "expense-approver"]
+    },
+    {
+      "name": "admins",
+      "realmRoles": ["user", "admin"]
+    }
+  ],
+  "clients": [
+    {
+      "clientId": "auth-poc-spa",
+      "name": "Auth PoC SPA",
+      "description": "React SPA for Auth PoC (Keycloak pattern)",
+      "enabled": true,
+      "publicClient": true,
+      "directAccessGrantsEnabled": false,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "protocol": "openid-connect",
+      "rootUrl": "http://localhost:5173",
+      "baseUrl": "/",
+      "redirectUris": [
+        "http://localhost:5173/callback",
+        "http://localhost:5173/*"
+      ],
+      "webOrigins": [
+        "http://localhost:5173"
+      ],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "http://localhost:5173/"
+      },
+      "defaultClientScopes": [
+        "openid",
+        "profile",
+        "email",
+        "roles"
+      ]
+    },
+    {
+      "clientId": "auth-poc-backend",
+      "name": "Auth PoC Backend API",
+      "description": "Backend API Client for server-to-server",
+      "enabled": true,
+      "publicClient": false,
+      "serviceAccountsEnabled": true,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "protocol": "openid-connect",
+      "secret": "change-me-in-production"
+    }
+  ],
+  "users": [
+    {
+      "username": "test@example.com",
+      "email": "test@example.com",
+      "emailVerified": true,
+      "enabled": true,
+      "firstName": "Test",
+      "lastName": "User",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "TestUser1!",
+          "temporary": false
+        }
+      ],
+      "groups": ["expense-users"]
+    },
+    {
+      "username": "approver@example.com",
+      "email": "approver@example.com",
+      "emailVerified": true,
+      "enabled": true,
+      "firstName": "Approver",
+      "lastName": "User",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "Approver1!",
+          "temporary": false
+        }
+      ],
+      "groups": ["expense-approvers"]
+    },
+    {
+      "username": "admin@example.com",
+      "email": "admin@example.com",
+      "emailVerified": true,
+      "enabled": true,
+      "firstName": "Admin",
+      "lastName": "User",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "AdminUser1!",
+          "temporary": false
+        }
+      ],
+      "groups": ["admins"]
+    }
+  ],
+  "scopeMappings": [
+    {
+      "client": "auth-poc-spa",
+      "roles": ["user", "admin", "expense-approver"]
+    }
+  ]
+}
