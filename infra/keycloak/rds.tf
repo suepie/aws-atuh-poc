@@ -8,7 +8,7 @@ resource "aws_db_subnet_group" "keycloak" {
 resource "aws_db_instance" "keycloak" {
   identifier     = "${local.prefix}-db"
   engine         = "postgres"
-  engine_version = "16.4"
+  engine_version = "16.13"
   instance_class = "db.t4g.micro"
 
   allocated_storage     = 20

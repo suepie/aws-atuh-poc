@@ -63,8 +63,8 @@ resource "aws_ecs_task_definition" "keycloak" {
   family                   = "${local.prefix}-task"
   network_mode             = "awsvpc"
   requires_compatibilities = ["FARGATE"]
-  cpu                      = "512"   # 0.5 vCPU
-  memory                   = "1024"  # 1 GB
+  cpu                      = "1024"  # 1 vCPU
+  memory                   = "2048"  # 2 GB
   execution_role_arn       = aws_iam_role.ecs_execution.arn
 
   container_definitions = jsonencode([
@@ -92,7 +92,7 @@ resource "aws_ecs_task_definition" "keycloak" {
         { name = "KC_HEALTH_ENABLED", value = "true" },
       ]
 
-      command = ["start", "--optimized", "--import-realm"]
+      command = ["start-dev", "--import-realm"]
 
       logConfiguration = {
         logDriver = "awslogs"
@@ -104,7 +104,7 @@ resource "aws_ecs_task_definition" "keycloak" {
       }
 
       healthCheck = {
-        command     = ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/8080 && echo -e 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\n\\r\\n' >&3 && cat <&3 | grep -q '\"status\":\"UP\"'"]
+        command     = ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/9000 && echo -e 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\n\\r\\n' >&3 && cat <&3 | grep -q '\"status\":\"UP\"'"]
         interval    = 30
         timeout     = 10
         retries     = 5

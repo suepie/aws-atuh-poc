@@ -21,7 +21,7 @@ resource "aws_lb_target_group" "keycloak" {
     unhealthy_threshold = 5
     timeout             = 10
     interval            = 30
-    path                = "/health/ready"
+    path                = "/realms/master"
     matcher             = "200"
   }
 

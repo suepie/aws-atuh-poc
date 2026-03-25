@@ -41,3 +41,12 @@ data "aws_subnets" "default" {
 }
 
 data "aws_caller_identity" "current" {}
+
+# plan/apply 実行時の自分のグローバルIPを自動取得
+data "http" "my_ip" {
+  url = "https://checkip.amazonaws.com"
+}
+
+locals {
+  my_ip_cidr = "${chomp(data.http.my_ip.response_body)}/32"
+}

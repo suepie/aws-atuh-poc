@@ -5,19 +5,19 @@ resource "aws_security_group" "alb" {
   vpc_id      = data.aws_vpc.default.id
 
   ingress {
-    description = "HTTP from anywhere"
+    description = "HTTP from my IP (auto-detected) + allowed IPs"
     from_port   = 80
     to_port     = 80
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    cidr_blocks = distinct(concat([local.my_ip_cidr], var.allowed_cidr_blocks))
   }
 
   ingress {
-    description = "HTTPS from anywhere"
+    description = "HTTPS from my IP (auto-detected) + allowed IPs"
     from_port   = 443
     to_port     = 443
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    cidr_blocks = distinct(concat([local.my_ip_cidr], var.allowed_cidr_blocks))
   }
 
   egress {
@@ -62,6 +62,14 @@ resource "aws_security_group" "rds" {
     to_port         = 5432
     protocol        = "tcp"
     security_groups = [aws_security_group.ecs.id]
+  }
+
+  ingress {
+    description = "Temporary: from my IP for DB maintenance"
+    from_port   = 5432
+    to_port     = 5432
+    protocol    = "tcp"
+    cidr_blocks = [local.my_ip_cidr]
   }
 
   egress {

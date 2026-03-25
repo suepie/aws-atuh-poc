@@ -22,6 +22,12 @@ variable "keycloak_image_tag" {
   default     = "latest"
 }
 
+variable "allowed_cidr_blocks" {
+  description = "ALB へのアクセスを追加で許可するCIDRブロック（例: [\"203.0.113.10/32\"]）。実行者のIPは自動追加される。"
+  type        = list(string)
+  default     = []
+}
+
 variable "app_callback_urls" {
   description = "Allowed callback URLs for SPA"
   type        = list(string)
