@@ -2,7 +2,7 @@
   "realm": "auth-poc",
   "enabled": true,
   "displayName": "Auth PoC - Keycloak",
-  "sslRequired": "external",
+  "sslRequired": "NONE",
   "registrationAllowed": true,
   "loginWithEmailAllowed": true,
   "duplicateEmailsAllowed": false,

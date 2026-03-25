@@ -9,3 +9,4 @@
 | [poc-scope.md](poc-scope.md) | PoC範囲・制約・技術スタック | Phase 5 反映済 |
 | [poc-results.md](poc-results.md) | 検証結果サマリー（Phase 1〜5） | Phase 5 反映済 |
 | [setup-guide.md](setup-guide.md) | 構築手順書（ゼロからの再現手順） | 新規作成 |
+| [keycloak-test-scenarios.md](keycloak-test-scenarios.md) | Keycloak検証シナリオ（リリース・障害・DR） | Phase 6 用 |

@@ -8,6 +8,8 @@
 | [cognito-pricing-2024-revision.md](cognito-pricing-2024-revision.md) | Cognito料金体系（2024年11月改定、3ティア制） |
 | [auth0-free-as-idp.md](auth0-free-as-idp.md) | Auth0 FreeをEntra ID代替として使う方法（Phase 2用） |
 | [sso-implementation-types.md](sso-implementation-types.md) | SSO実装方式の比較（Cookie/リバースプロキシ/フェデレーション） |
+| [keycloak-dr-aurora-sync.md](keycloak-dr-aurora-sync.md) | Keycloak DR + Aurora Global DBのユーザー同期詳細 |
+| [keycloak-configuration-guide.md](keycloak-configuration-guide.md) | Keycloak設定ガイド（ビルド時/実行時/DB保存の分類、トラブルシューティング） |
 
 ## 過去の検討ドキュメント
 

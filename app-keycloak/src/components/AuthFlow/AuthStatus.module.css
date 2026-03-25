@@ -1,0 +1,175 @@
+.container {
+  background: #ffffff;
+  border: 1px solid #dee2e6;
+  border-radius: 8px;
+  padding: 1.5rem;
+  color: #1a1a2e;
+}
+
+.container h2 {
+  margin-top: 0;
+  color: #6c63ff;
+  font-size: 1.1rem;
+}
+
+.statusRow {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.4rem 0;
+}
+
+.label {
+  color: #868e96;
+  min-width: 120px;
+  font-size: 0.9rem;
+}
+
+.authenticated {
+  background: #40c057;
+  color: #fff;
+  padding: 0.2rem 0.8rem;
+  border-radius: 4px;
+  font-weight: bold;
+  font-size: 0.85rem;
+}
+
+.unauthenticated {
+  background: #e9ecef;
+  color: #495057;
+  padding: 0.2rem 0.8rem;
+  border-radius: 4px;
+  font-size: 0.85rem;
+}
+
+.code {
+  font-family: monospace;
+  font-size: 0.8rem;
+  color: #e67700;
+  background: #fff9db;
+  padding: 0.15rem 0.4rem;
+  border-radius: 3px;
+  border: 1px solid #ffe066;
+}
+
+.error {
+  color: #e03131;
+  background: #fff5f5;
+  border: 1px solid #ffc9c9;
+  padding: 0.5rem;
+  border-radius: 4px;
+  font-size: 0.85rem;
+}
+
+.actions {
+  display: flex;
+  gap: 0.75rem;
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid #e9ecef;
+}
+
+.loginBtn {
+  background: #6c63ff;
+  color: #fff;
+  border: none;
+  padding: 0.6rem 1.5rem;
+  border-radius: 6px;
+  font-weight: bold;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+
+.loginBtn:hover {
+  background: #5a52d5;
+}
+
+.logoutBtn {
+  background: #ff6b6b;
+  color: #fff;
+  border: none;
+  padding: 0.6rem 1.5rem;
+  border-radius: 6px;
+  font-weight: bold;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+
+.logoutBtn:hover {
+  background: #e03131;
+}
+
+.drBtn {
+  background: #be4bdb;
+  color: #fff;
+  border: none;
+  padding: 0.6rem 1.5rem;
+  border-radius: 6px;
+  font-weight: bold;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.drBtn:hover {
+  background: #9c36b5;
+}
+
+.localBtn {
+  background: #20c997;
+  color: #fff;
+  border: none;
+  padding: 0.6rem 1.5rem;
+  border-radius: 6px;
+  font-weight: bold;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+
+.localBtn:hover {
+  background: #12b886;
+}
+
+.federationBtn {
+  background: #ff922b;
+  color: #fff;
+  border: none;
+  padding: 0.6rem 1.5rem;
+  border-radius: 6px;
+  font-weight: bold;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+
+.federationBtn:hover {
+  background: #e8590c;
+}
+
+.logoutFullBtn {
+  background: #862e9c;
+  color: #fff;
+  border: none;
+  padding: 0.6rem 1.5rem;
+  border-radius: 6px;
+  font-weight: bold;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.logoutFullBtn:hover {
+  background: #5f3dc4;
+}
+
+.renewBtn {
+  background: #40c057;
+  color: #fff;
+  border: none;
+  padding: 0.6rem 1.5rem;
+  border-radius: 6px;
+  font-weight: bold;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+
+.renewBtn:hover {
+  background: #2f9e44;
+}
