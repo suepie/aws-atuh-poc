@@ -33,7 +33,7 @@ sequenceDiagram
     Note over User,DB: ③ ログアウト
     User->>Server: ログアウト要求 + Cookie: SESSION=abc123
     Server->>DB: abc123 を削除
-    Server->>User: Set-Cookie: SESSION=; Max-Age=0
+    Server->>User: Set-Cookie: SESSION= Max-Age=0
 ```
 
 ### 1.2 Keycloakにおけるセッションの全体像

@@ -10,3 +10,4 @@
 | [poc-results.md](poc-results.md) | 検証結果サマリー（Phase 1〜5） | Phase 5 反映済 |
 | [setup-guide.md](setup-guide.md) | 構築手順書（ゼロからの再現手順） | 新規作成 |
 | [keycloak-test-scenarios.md](keycloak-test-scenarios.md) | Keycloak検証シナリオ（リリース・障害・DR） | Phase 6 用 |
+| [phase7-mfa-sso-auth0-scenarios.md](phase7-mfa-sso-auth0-scenarios.md) | MFA・SSO・Auth0連携 検証シナリオ | Phase 7 用 |

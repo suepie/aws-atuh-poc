@@ -307,20 +307,80 @@ sequenceDiagram
 
 ## シナリオ5: Cognito vs Keycloak 対比まとめ
 
-検証完了後に以下の表を埋める：
+### 検証結果
 
-| 観点 | Cognito（Phase 1-5） | Keycloak（Phase 6） | 備考 |
-|------|---------------------|---------------------|------|
-| **初回ログイン** | ✅ 検証済 | ⬜ シナリオ1-1 | |
-| **ログアウト** | ✅ 多段リダイレクト | ⬜ シナリオ1-3 | Keycloakの方がシンプルか？ |
-| **設定変更の反映** | Terraform apply | ⬜ シナリオ2-1 | Keycloakは即時反映だが変更管理が課題 |
-| **認証サーバー障害** | マネージド（SLA 99.9%） | ⬜ シナリオ3-1 | |
-| **DB障害** | マネージド | ⬜ シナリオ3-2 | |
-| **バージョンアップ** | 不要 | ⬜ シナリオ2-3 | |
-| **DR** | Phase 5 で検証済 | ⬜ シナリオ4 | |
-| **JWKS可用性** | 常時（AWS基盤） | ⬜ シナリオ3-4 | |
-| **設定のGit管理** | Terraform (.tf) | ⬜ シナリオ2-2 | realm-export.json |
-| **運用コスト** | $0（マネージド） | ⬜ 運用チーム必要 | |
+| 観点 | Cognito（Phase 1-5） | Keycloak（Phase 6） | 優位 |
+|------|---------------------|---------------------|:---:|
+| **初回ログイン** | ✅ Hosted UI | ✅ Keycloakログイン画面 | 同等 |
+| **OIDC標準準拠** | △ metadata手動指定、audなし | ✅ OIDC Discovery完全対応、aud含む | **KC** |
+| **ログアウト** | △ 多段リダイレクト（Auth0セッション別途破棄） | ✅ signoutRedirect()のみで完結 | **KC** |
+| **SSO** | Auth0セッションで実現（ログアウト後もPW不要） | Keycloakセッション（DBセッション有効期限内はPW不要） | 同等 |
+| **設定変更の反映** | terraform apply（数分） | Admin Consoleで即時反映（再起動不要） | **KC** |
+| **設定の変更管理** | ✅ Terraform（単一の真実の情報源） | △ Admin Console→export→git commit（逆方向） | **Cognito** |
+| **設定の保存場所** | ✅ 1箇所（AWS API / Terraform） | △ 3箇所（ビルド時/環境変数/DB）で管理が複雑 | **Cognito** |
+| **認証サーバー障害** | ✅ マネージド SLA 99.9%（障害はAWSが対応） | △ ECS停止→認証全停止（自分で復旧） | **Cognito** |
+| **DB障害** | ✅ マネージド（利用者から不可視） | ❌ RDS停止→Keycloak全停止→認証不可 | **Cognito** |
+| **ECS再起動後のセッション** | N/A | ✅ DB保存のため生存（KC26の改善） | - |
+| **バージョンアップ** | ✅ 不要（AWSが自動管理） | △ Dockerfile変更→再ビルド→デプロイ（互換性確認が必要） | **Cognito** |
+| **DR構成** | ✅ Route 53 + 独立User Pool（RTO 1-2分, RPO 0） | △ Aurora Global DB（RTO 5-15分, RPO <1秒, 全ユーザー再ログイン） | **Cognito** |
+| **DR構成の複雑さ** | ✅ Route 53のみ | △ Aurora Global + ECS + Infinispan（Active-Activeはクロスリージョン非対応） | **Cognito** |
+| **DRコスト** | ✅ $0.50/月（Route 53） | △ $50-100/月（Aurora Global） | **Cognito** |
+| **JWKS可用性** | ✅ AWS基盤で常時可用 | △ Keycloak稼働に依存 | **Cognito** |
+| **ロール/グループ管理** | △ フラットなGroups | ✅ Realm Roles + Client Roles + Composite Roles（階層的） | **KC** |
+| **トークンのカスタマイズ** | △ Pre Token Lambda（コード必要） | ✅ Protocol Mappers（Admin Consoleで設定） | **KC** |
+| **セッション管理の可視性** | △ セッション一覧は見えない | ✅ Admin Consoleで全セッション可視・強制削除 | **KC** |
+| **管理者ロックアウトリスク** | ✅ なし（IAMで常にアクセス可能） | ❌ あり（SSL設定/PW紛失でAdmin Console利用不可） | **Cognito** |
+| **初期構築の工数** | ✅ terraform apply のみ | △ ECS + RDS + ALB + Docker + Realm設定 | **Cognito** |
+| **運用コスト（人件費）** | ✅ $0（マネージド） | △ 運用チーム必要（監視・バージョンアップ・障害対応） | **Cognito** |
+| **運用コスト（インフラ）** | フェデレーション $0.015/MAU | ECS + RDS + ALB（固定 $70-100/月 + 変動） | MAU次第 |
+| **カスタマイズ性** | △ AWSの仕様に制約される | ✅ 認証フロー・テーマ・SPI等ほぼ全て変更可能 | **KC** |
+
+### 集計
+
+| カテゴリ | Cognito優位 | Keycloak優位 | 同等 |
+|---------|:-----------:|:----------:|:---:|
+| **運用・可用性** | 8 | 1 | 0 |
+| **機能・柔軟性** | 0 | 5 | 2 |
+| **コスト** | 2 | 0 | 0 |
+
+### 総合評価
+
+```mermaid
+flowchart TB
+    Q1{"何を重視するか？"}
+    Q1 -->|"運用負荷の最小化\n可用性・DR\nコスト"| C["✅ Cognito 推奨\n運用・可用性・コストで圧倒的優位"]
+    Q1 -->|"カスタマイズ性\n認証フローの柔軟性\nセッション管理の可視性"| K["✅ Keycloak 推奨\n機能・柔軟性で優位"]
+    Q1 -->|"バランス"| B["Cognito + Lambda Triggers\nで多くのカスタマイズ要件に対応可能"]
+
+    C --> Note1["PoC検証で確認済み:\n- マルチissuer ✅\n- フェデレーション ✅\n- DR ✅\n- Lambda Authorizer ✅"]
+    K --> Note2["Keycloakが必要なケース:\n- 100万MAU超（コスト逆転）\n- 独自認証フロー必須\n- データ主権要件\n- 既存Keycloak運用チームあり"]
+
+    style C fill:#d3f9d8,stroke:#2b8a3e
+    style K fill:#f5f0ff,stroke:#6600cc
+    style B fill:#fffde7,stroke:#f9a825
+```
+
+### 推奨判断フロー
+
+```mermaid
+flowchart TB
+    Q1{"MAU規模は？"}
+    Q1 -->|"17.5万未満"| R1["Cognito一択\nコスト・運用ともに優位"]
+    Q1 -->|"17.5万〜100万"| Q2{"カスタマイズ要件は？"}
+    Q1 -->|"100万超"| Q3{"運用チームは確保可能？"}
+
+    Q2 -->|"標準的\n(OIDC/SAML, グループベース認可)"| R2["Cognito推奨\n運用負荷を考慮"]
+    Q2 -->|"高度\n(独自認証フロー, 複雑な認可)"| R3["Keycloak検討\nただし運用体制の確保が前提"]
+
+    Q3 -->|"可能"| R4["Keycloak推奨\nコストメリットあり"]
+    Q3 -->|"困難"| R5["Cognito推奨\n運用負荷 > コスト差"]
+
+    style R1 fill:#d3f9d8,stroke:#2b8a3e
+    style R2 fill:#d3f9d8,stroke:#2b8a3e
+    style R3 fill:#f5f0ff,stroke:#6600cc
+    style R4 fill:#f5f0ff,stroke:#6600cc
+    style R5 fill:#d3f9d8,stroke:#2b8a3e
+```
 
 ---
 

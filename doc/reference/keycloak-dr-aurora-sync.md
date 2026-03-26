@@ -310,6 +310,105 @@ flowchart TB
 
 ---
 
+## 5.5 フェイルバック（東京復旧時）のデータ統合
+
+### 問題: DR中に大阪で追加されたデータはどうなるか
+
+フェイルオーバー中に大阪（新Primary）で登録されたユーザー・MFA・セッション等のデータは、東京が復旧した時に自動で同期されるのか。
+
+**答え: 正しい手順を踏めば同期される。ただし手順を誤るとデータを消失する。**
+
+### Aurora Global Database のレプリケーション方向
+
+```mermaid
+flowchart LR
+    subgraph Normal["通常時"]
+        T_N["東京 (Primary)\n読み書き"] -->|"レプリケーション →"| O_N["大阪 (Secondary)\n読み取り専用"]
+    end
+
+    subgraph Failover["障害時（フェイルオーバー後）"]
+        O_F["大阪 (Primary に昇格)\n読み書き"]
+        T_F["東京\n停止中"]
+    end
+
+    subgraph Failback["復旧時（フェイルバック）"]
+        O_FB["大阪 (Primary 維持)"] -->|"レプリケーション →"| T_FB["東京 (Secondary として再参加)\n大阪のデータが同期される"]
+    end
+```
+
+**レプリケーションは常に Primary → Secondary の一方向。** フェイルオーバーで大阪がPrimaryになった後、東京はSecondaryとして再参加し、大阪のデータを受け取る。
+
+### 正しいフェイルバック手順
+
+```mermaid
+sequenceDiagram
+    participant Tokyo as 東京 Aurora
+    participant Osaka as 大阪 Aurora
+    participant KC_Osaka as Keycloak (大阪)
+
+    Note over Osaka: ① 障害中: 大阪がPrimary
+    Note over KC_Osaka: 新規ユーザー登録<br/>MFA設定<br/>ロール変更 etc.
+
+    Note over Tokyo: ② 東京が復旧
+
+    Note over Tokyo: ③ 東京を大阪のSecondaryとして再追加<br/>（旧データを破棄し、大阪から同期）
+    Osaka->>Tokyo: 全データをレプリケーション<br/>★ 大阪で追加されたデータも含む
+
+    Note over Tokyo: ④ レプリケーション完了を確認
+
+    Note over Tokyo,Osaka: ⑤ 計画 Switchover 実行（任意）<br/>東京をPrimaryに戻す
+    Note over Tokyo: Primary に昇格
+    Note over Osaka: Secondary に降格
+    Tokyo->>Osaka: レプリケーション方向が元に戻る
+
+    Note over Tokyo: ⑥ Keycloakを東京ECSで起動<br/>大阪ECSを停止
+
+    Note over Tokyo,Osaka: ✅ 全データ統合完了<br/>大阪で追加されたユーザー・MFAも東京に存在
+```
+
+### やってはいけないこと
+
+| 操作 | リスク |
+|------|--------|
+| **東京の旧Auroraを独立して再起動** | 大阪で追加されたデータが全て消失 |
+| **東京をPrimaryとして復活させ、大阪をSecondaryに戻す（データ同期前に）** | 大阪のデータが東京の古いデータで上書きされる |
+| **Global Clusterを削除して再構築** | 全データ消失 |
+
+### Cognito DR との比較（フェイルバック時）
+
+| 観点 | Cognito | Keycloak + Aurora Global |
+|------|---------|------------------------|
+| **DR中に登録されたユーザー** | 大阪User Poolにのみ存在。**東京には同期されない** | **Switchover で東京に自動同期** |
+| **DR中に設定されたMFA** | 大阪User Poolにのみ存在。**東京では再登録必要** | **Switchover で東京に自動同期** |
+| **フェイルバック手順** | ① 大阪User Poolを使い続ける、または ② 手動でユーザー移行（MFAは移行不可） | **Aurora Switchover（数分、データ損失なし）** |
+| **データの一貫性** | 東京と大阪で別々のユーザーDBが存在する状態に | **単一のAurora Global DBで一貫性維持** |
+
+```mermaid
+flowchart TB
+    subgraph Cognito_FB["Cognito フェイルバック"]
+        C1["東京 User Pool\n（障害前のデータ）"]
+        C2["大阪 User Pool\n（DR中に追加されたデータ）"]
+        C3["⚠️ 2つのUser Poolに\nデータが分散\n手動統合が必要"]
+        C1 --> C3
+        C2 --> C3
+    end
+
+    subgraph KC_FB["Keycloak フェイルバック"]
+        K1["大阪 Aurora (Primary)\n全データ保持"]
+        K2["東京 Aurora (Secondary)\n大阪から同期"]
+        K3["✅ Switchover で\n東京がPrimaryに復帰\nデータ完全統合"]
+        K1 -->|"レプリケーション"| K2
+        K2 --> K3
+    end
+
+    style Cognito_FB fill:#fff0f0,stroke:#cc0000
+    style KC_FB fill:#d3f9d8,stroke:#2b8a3e
+```
+
+**結論**: フェイルバック時のデータ統合は**Keycloak + Aurora Global が明確に優位**。Cognitoは2つのUser Pool間でユーザーデータ（特にMFA）を統合する標準的な方法がない。
+
+---
+
 ## 6. Keycloak 公式推奨のDR構成（参考）
 
 ### 5.1 公式推奨: 同一リージョン内 Active-Active

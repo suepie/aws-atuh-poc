@@ -12,6 +12,7 @@
 | [keycloak-configuration-guide.md](keycloak-configuration-guide.md) | Keycloak設定ガイド（ビルド時/実行時/DB保存の分類、トラブルシューティング） |
 | [keycloak-realm-and-db.md](keycloak-realm-and-db.md) | Keycloak Realm設計・DB構造・セッション管理・トークン比較 |
 | [session-management-deep-dive.md](session-management-deep-dive.md) | セッション管理の基礎・中途半端なログアウト問題・Cognito/Keycloak比較 |
+| [mfa-sso-comparison.md](mfa-sso-comparison.md) | MFA・SSO比較マトリクス（Cognito/Keycloak/Auth0の組合せ） |
 
 ## 過去の検討ドキュメント
 
