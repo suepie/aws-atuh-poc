@@ -3,37 +3,53 @@
 ## 目的
 AWSを使った統合認証基盤の設計・検証。Cognito vs Keycloakを実際に構築して比較する。
 
-## 完了した Phase（2026-03-24時点）
+## 完了した Phase（2026-03-25時点）
 - Phase 1: 集約Cognito + Hosted UI + React SPA ✅
 - Phase 2: Auth0 Free を外部IdPとしてフェデレーション認証 ✅
 - Phase 3: Lambda Authorizer + API Gateway（JWT検証・認可・Context伝播）✅
 - Phase 4: ローカルCognito追加、マルチissuer対応 ✅
 - Phase 5: DR検証（大阪リージョン、マルチリージョンCognito）✅
+- Phase 6: Keycloak構成（基本動作確認: ログイン・ログアウト）✅ ← 進行中
 
-## 残り Phase
-- Phase 6: Keycloak構成（第2パターン）
+## Phase 6 残り
+- シナリオ2: リリース・設定変更検証
+- シナリオ3: 障害時検証（ECS停止、RDS停止等）
+- シナリオ4: DR検証
+- シナリオ5: Cognito vs Keycloak 対比まとめ
 
 ## 技術スタック
-- IaC: Terraform（東京 + 大阪）
+- IaC: Terraform（東京Cognito + 大阪DR + 東京Keycloak）★3つの独立state
 - Frontend: React + TypeScript + Vite + oidc-client-ts
+  - app/ (Cognito版, port:5173)
+  - app-keycloak/ (Keycloak版, port:5174) ★Phase 6追加
 - Backend: Python 3.11 (Lambda) + PyJWT
-- AWS: Cognito User Pool x3（東京集約・東京ローカル・大阪DR）, API Gateway, Lambda x2
+- AWS Cognito: User Pool x3（東京集約・東京ローカル・大阪DR）
+- AWS Keycloak: ECS Fargate + RDS PostgreSQL 16.13 + ALB ★Phase 6追加
+  - Keycloak 26.0.8 (start-dev モード)
+  - Realm: auth-poc
 
 ## AWSリソース構成
-- 東京: 集約Cognito + ローカルCognito + API Gateway + Lambda Authorizer + Backend Lambda
+- 東京: 集約Cognito + ローカルCognito + API Gateway + Lambda x2
+- 東京: ECS(Keycloak) + RDS(PostgreSQL) + ALB + ECR ★Phase 6
 - 大阪: DR Cognito（Auth0 IdPはコンソール手動作成→terraform import）
 
 ## 主要な技術的知見
+### Cognito
 - Cognitoアクセストークンは`aud`ではなく`client_id`クレーム
-- JWKSは公開エンドポイント → クロスアカウント・クロスリージョンでもIAM不要
 - SSOセッションはIdP側に残る → 完全ログアウトには多段リダイレクト
-- LambdaのPythonライブラリはLinux向けビルドが必要（venv + --platform manylinux2014_x86_64）
-- マルチUserManagerのstateStoreはプレフィックス分離が必須
-- 大阪CognitoからAuth0の.well-known自動検出が失敗（コンソールManual inputで回避）
-- Auth0 Allowed Logout URLsはURLエンコード済み完全一致で登録
+- 大阪CognitoからAuth0の.well-known自動検出が失敗（Manual inputで回避）
+
+### Keycloak
+- 設定は3箇所（ビルド時/環境変数/DB）に分散 → 運用複雑性の主因
+- start-devとstart --optimizedの違い（ビルド時設定の扱い）
+- DB内のsslRequired設定でAdmin Consoleロックアウトのリスク
+- ヘルスチェックはManagement Interface(port:9000)で提供
+- ECSメモリ1GBでは不足 → 2GBに拡張
+- KeycloakのログアウトはsignoutRedirect()のみで完結（Cognitoより簡単）
+- realm_access.rolesでロール管理（Cognitoはcognito:groups）
 
 ## ドキュメント構成
-- doc/design/ - 最新設計（architecture, auth-flow, poc-scope, poc-results, setup-guide）
+- doc/design/ - 最新設計（architecture, auth-flow, poc-scope, poc-results, setup-guide, keycloak-test-scenarios）
 - doc/adr/ - ADR 001-007
-- doc/reference/ - 参考情報（App Client, 料金, Auth0設定, SSO実装方式比較）
+- doc/reference/ - 参考情報（SSO方式, KC DR/Aurora, KC設定ガイド, KC Realm/DB構造）
 - doc/old/ - 過去の検討ドキュメント（読み取り専用）

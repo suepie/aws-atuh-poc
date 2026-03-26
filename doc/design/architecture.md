@@ -1,6 +1,6 @@
 # 全体アーキテクチャ（PoC実構成）
 
-**最終更新**: 2026-03-18（Phase 5 完了時点）
+**最終更新**: 2026-03-25（Phase 6 Keycloak基本動作確認時点）
 
 ---
 
@@ -9,7 +9,7 @@
 ### 1.1 全体構成
 
 ```mermaid
-flowchart TB
+flowchart LR
     subgraph External["外部"]
         Auth0["🔵 Auth0 Free\n（外部IdP / Entra ID代替）"]
     end
@@ -69,7 +69,37 @@ flowchart TB
     style APILayer fill:#f0f0ff,stroke:#0000cc
 ```
 
-### 1.2 本番想定構成との対応
+### 1.2 Phase 6: Keycloak構成
+
+```mermaid
+flowchart TB
+    subgraph KC_Infra["Phase 6: Keycloak (auth-poc-kc-*)"]
+        ALB_KC["🌐 ALB\nauth-poc-kc-alb\nHTTP:80"]
+        ECS["🐳 ECS Fargate\nauth-poc-kc-service\n1 vCPU / 2GB\nKeycloak 26.0.8 (start-dev)"]
+        RDS["🗄️ RDS PostgreSQL 16.13\nauth-poc-kc-db\ndb.t4g.micro"]
+        ECR["📦 ECR\nauth-poc-kc-repo"]
+
+        ALB_KC -->|"HTTP:8080"| ECS
+        ECS -->|"JDBC:5432"| RDS
+        ECR -.->|"イメージ pull"| ECS
+    end
+
+    subgraph KC_Realm["Keycloak Realm: auth-poc"]
+        Realm_Users["👤 ユーザー\ntest@example.com"]
+        Realm_Client["📱 Client: auth-poc-spa\nPublic / PKCE"]
+        Realm_Roles["🏷️ Realm Roles\nuser"]
+    end
+
+    SPA_KC["📱 React SPA (Keycloak版)\nlocalhost:5174\noidc-client-ts"]
+
+    SPA_KC -->|"OIDC\nAuth Code + PKCE"| ALB_KC
+    ECS --> KC_Realm
+
+    style KC_Infra fill:#f5f0ff,stroke:#6600cc
+    style KC_Realm fill:#e8f5e9,stroke:#2e7d32
+```
+
+### 1.3 本番想定構成との対応
 
 | 要素 | PoC | 本番想定 | 差異 |
 |------|-----|---------|------|
