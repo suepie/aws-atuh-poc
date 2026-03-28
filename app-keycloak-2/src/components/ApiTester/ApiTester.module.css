@@ -1,0 +1,154 @@
+.container {
+  background: #ffffff;
+  border: 1px solid #dee2e6;
+  border-radius: 8px;
+  padding: 1.5rem;
+  color: #1a1a2e;
+}
+
+.container h2 {
+  margin-top: 0;
+  color: #6c63ff;
+}
+
+.endpoint {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.label {
+  color: #868e96;
+  font-size: 0.9rem;
+}
+
+.url {
+  background: #f8f9fa;
+  border: 1px solid #e9ecef;
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  color: #495057;
+}
+
+.actions {
+  display: flex;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.callBtn {
+  background: #6c63ff;
+  color: #fff;
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  font-weight: bold;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.callBtn:hover {
+  background: #5a52d5;
+}
+
+.callBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.callBtnDanger {
+  background: #ff6b6b;
+  color: #fff;
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  font-weight: bold;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.callBtnDanger:hover {
+  background: #e03131;
+}
+
+.callBtnDanger:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.loading {
+  color: #6c63ff;
+  font-style: italic;
+}
+
+.error {
+  color: #e03131;
+  background: #fff5f5;
+  border: 1px solid #ffc9c9;
+  padding: 0.5rem;
+  border-radius: 4px;
+  font-size: 0.85rem;
+}
+
+.response {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid #e9ecef;
+}
+
+.statusLine {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.statusOk {
+  background: #d3f9d8;
+  color: #2b8a3e;
+  padding: 0.3rem 0.8rem;
+  border-radius: 4px;
+  font-weight: bold;
+  font-size: 0.9rem;
+  border: 1px solid #8ce99a;
+}
+
+.statusErr {
+  background: #ffe3e3;
+  color: #c92a2a;
+  padding: 0.3rem 0.8rem;
+  border-radius: 4px;
+  font-weight: bold;
+  font-size: 0.9rem;
+  border: 1px solid #ffa8a8;
+}
+
+.duration {
+  color: #868e96;
+  font-size: 0.85rem;
+}
+
+.section {
+  margin-bottom: 1rem;
+}
+
+.section h4 {
+  color: #e67700;
+  margin-bottom: 0.5rem;
+  font-size: 0.9rem;
+}
+
+.json {
+  background: #f8f9fa;
+  border: 1px solid #e9ecef;
+  padding: 0.75rem;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  overflow-x: auto;
+  color: #2f9e44;
+  margin: 0;
+  max-height: 300px;
+  overflow-y: auto;
+}

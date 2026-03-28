@@ -289,7 +289,36 @@ Cognito は**User Pool単位・リージョン単位**でMAU課金される。
 
 ---
 
-## 6. 残課題
+## 6. Phase 7: MFA・SSO・Auth0連携 検証結果
+
+### 検証シナリオと結果
+
+| シナリオ | 結果 | 重要な発見 |
+|---------|:---:|-----------|
+| 7-1. MFA（TOTP）有効化 | ✅ | Required Actionsの既存ユーザーへの適用は個別設定が必要 |
+| 7-2. MFA + ECS再起動 | ✅ | MFAデータはDB保存、ECS再起動で消えない |
+| 7-3. MFA + RDS障害 | ✅ | RDS復旧後もMFAデータ維持 |
+| 7-4. SSO（複数Client） | ✅ | 同一Realm内でネイティブSSO、外部通信不要 |
+| 7-5. Auth0 Identity Brokering | ✅ | IdP追加でログイン画面に自動表示。初回はFirst Broker Login画面 |
+| 7-6. Auth0 MFAスキップ | ✅ | Conditional OTP + OTP未設定で二重MFA回避 |
+
+### Phase 7 で明らかになった Cognito vs Keycloak の差分
+
+| 観点 | Cognito | Keycloak | 優位 |
+|------|---------|----------|:---:|
+| MFA条件分岐（ユーザー種別別） | カスタム実装必要 | **認証フローで設定のみ** | KC |
+| MFA DR時の維持 | **別User Poolで再登録必要** | Aurora同期で自動維持 | KC |
+| SSO方式 | Auth0セッション経由（外部通信） | **Realm内ネイティブ（高速）** | KC |
+| IdP追加時のSPA変更 | `identity_provider` パラメータ指定が必要 | **SPA変更不要（自動表示）** | KC |
+| Back-Channel Logout | 未対応 | **対応** | KC |
+| 安定稼働 | **SLA 99.9%** | ECS頻繁停止（start-dev起因） | Cognito |
+| 設定管理 | **Terraform一元管理** | Admin Console→export→Git（逆方向） | Cognito |
+
+詳細な検証手順・ノウハウ: [phase7-mfa-sso-auth0-scenarios.md](phase7-mfa-sso-auth0-scenarios.md)
+
+---
+
+## 7. 残課題
 
 | カテゴリ | 課題 | 優先度 |
 |---------|------|--------|

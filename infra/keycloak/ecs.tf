@@ -63,8 +63,8 @@ resource "aws_ecs_task_definition" "keycloak" {
   family                   = "${local.prefix}-task"
   network_mode             = "awsvpc"
   requires_compatibilities = ["FARGATE"]
-  cpu                      = "1024"  # 1 vCPU
-  memory                   = "2048"  # 2 GB
+  cpu                      = "2048"  # 2 vCPU
+  memory                   = "4096"  # 4 GB
   execution_role_arn       = aws_iam_role.ecs_execution.arn
 
   container_definitions = jsonencode([
