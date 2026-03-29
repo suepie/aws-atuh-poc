@@ -68,9 +68,9 @@ flowchart TB
         D6["トークン有効期限"]
     end
 
-    BuildTime -->|"変更には kc.sh build\n+ コンテナ再ビルドが必要"| Note1["再デプロイ必要"]
-    Runtime -->|"環境変数変更\n+ タスク再起動"| Note2["ECSタスク再起動"]
-    Database -->|"Admin Console\nまたは Admin REST API"| Note3["即時反映"]
+    BuildTime -->|"変更には kc.sh build<br/>+ コンテナ再ビルドが必要"| Note1["再デプロイ必要"]
+    Runtime -->|"環境変数変更<br/>+ タスク再起動"| Note2["ECSタスク再起動"]
+    Database -->|"Admin Console<br/>または Admin REST API"| Note3["即時反映"]
 
     style BuildTime fill:#fff0f0,stroke:#cc0000
     style Runtime fill:#fffde7,stroke:#f9a825

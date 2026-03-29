@@ -47,18 +47,18 @@ flowchart TB
         D1["ユーザー ✅"]
         D2["Realm設定 ✅"]
         D3["クライアント設定 ✅"]
-        D4["ユーザーセッション ✅\n(KC26で追加)"]
+        D4["ユーザーセッション ✅<br/>(KC26で追加)"]
     end
 
     subgraph Cache["Infinispan (キャッシュ)"]
         direction TB
-        C1["キャッシュ無効化メッセージ ❌\n(work cache - 最重要)"]
-        C2["認証セッション ❌\n(ログイン途中の状態)"]
-        C3["ログイン失敗カウンタ ❌\n(ブルートフォース検知)"]
-        C4["アクショントークン ❌\n(パスワードリセット等)"]
+        C1["キャッシュ無効化メッセージ ❌<br/>(work cache - 最重要)"]
+        C2["認証セッション ❌<br/>(ログイン途中の状態)"]
+        C3["ログイン失敗カウンタ ❌<br/>(ブルートフォース検知)"]
+        C4["アクショントークン ❌<br/>(パスワードリセット等)"]
     end
 
-    Aurora["Aurora Global Database\n(非同期レプリケーション)"]
+    Aurora["Aurora Global Database<br/>(非同期レプリケーション)"]
     Aurora --> DB
     Aurora -.->|"❌ 同期しない"| Cache
 
@@ -263,9 +263,9 @@ sequenceDiagram
 ```mermaid
 flowchart TB
     Q1{"可用性目標は？"}
-    Q1 -->|"99.9%\n(年間ダウンタイム 8.7時間)"| R1["方式A で十分\nRTO 30-60分 × 年数回 = 数時間\nコスト最小"]
-    Q1 -->|"99.95%\n(年間ダウンタイム 4.4時間)"| R2["方式B 推奨\nRTO 5-15分 + Aurora Global\n月$50-100追加"]
-    Q1 -->|"99.99%\n(年間ダウンタイム 52分)"| R3["Keycloakでは困難\n→ Cognito推奨\n(SLA 99.9% + Route 53 DR)"]
+    Q1 -->|"99.9%<br/>(年間ダウンタイム 8.7時間)"| R1["方式A で十分<br/>RTO 30-60分 × 年数回 = 数時間<br/>コスト最小"]
+    Q1 -->|"99.95%<br/>(年間ダウンタイム 4.4時間)"| R2["方式B 推奨<br/>RTO 5-15分 + Aurora Global<br/>月$50-100追加"]
+    Q1 -->|"99.99%<br/>(年間ダウンタイム 52分)"| R3["Keycloakでは困難<br/>→ Cognito推奨<br/>(SLA 99.9% + Route 53 DR)"]
 
     style R1 fill:#d3f9d8,stroke:#2b8a3e
     style R2 fill:#fffde7,stroke:#f9a825
@@ -323,16 +323,16 @@ flowchart TB
 ```mermaid
 flowchart LR
     subgraph Normal["通常時"]
-        T_N["東京 (Primary)\n読み書き"] -->|"レプリケーション →"| O_N["大阪 (Secondary)\n読み取り専用"]
+        T_N["東京 (Primary)<br/>読み書き"] -->|"レプリケーション →"| O_N["大阪 (Secondary)<br/>読み取り専用"]
     end
 
     subgraph Failover["障害時（フェイルオーバー後）"]
-        O_F["大阪 (Primary に昇格)\n読み書き"]
-        T_F["東京\n停止中"]
+        O_F["大阪 (Primary に昇格)<br/>読み書き"]
+        T_F["東京<br/>停止中"]
     end
 
     subgraph Failback["復旧時（フェイルバック）"]
-        O_FB["大阪 (Primary 維持)"] -->|"レプリケーション →"| T_FB["東京 (Secondary として再参加)\n大阪のデータが同期される"]
+        O_FB["大阪 (Primary 維持)"] -->|"レプリケーション →"| T_FB["東京 (Secondary として再参加)<br/>大阪のデータが同期される"]
     end
 ```
 
@@ -386,17 +386,17 @@ sequenceDiagram
 ```mermaid
 flowchart TB
     subgraph Cognito_FB["Cognito フェイルバック"]
-        C1["東京 User Pool\n（障害前のデータ）"]
-        C2["大阪 User Pool\n（DR中に追加されたデータ）"]
-        C3["⚠️ 2つのUser Poolに\nデータが分散\n手動統合が必要"]
+        C1["東京 User Pool<br/>（障害前のデータ）"]
+        C2["大阪 User Pool<br/>（DR中に追加されたデータ）"]
+        C3["⚠️ 2つのUser Poolに<br/>データが分散<br/>手動統合が必要"]
         C1 --> C3
         C2 --> C3
     end
 
     subgraph KC_FB["Keycloak フェイルバック"]
-        K1["大阪 Aurora (Primary)\n全データ保持"]
-        K2["東京 Aurora (Secondary)\n大阪から同期"]
-        K3["✅ Switchover で\n東京がPrimaryに復帰\nデータ完全統合"]
+        K1["大阪 Aurora (Primary)<br/>全データ保持"]
+        K2["東京 Aurora (Secondary)<br/>大阪から同期"]
+        K3["✅ Switchover で<br/>東京がPrimaryに復帰<br/>データ完全統合"]
         K1 -->|"レプリケーション"| K2
         K2 --> K3
     end
@@ -417,22 +417,22 @@ flowchart TB
 flowchart TB
     subgraph Region["同一AWSリージョン（東京）"]
         subgraph AZ_A["AZ-a"]
-            KC_A["Keycloak\nCluster A"]
-            IS_A["External\nInfinispan A"]
+            KC_A["Keycloak<br/>Cluster A"]
+            IS_A["External<br/>Infinispan A"]
         end
 
         subgraph AZ_B["AZ-b"]
-            KC_B["Keycloak\nCluster B"]
-            IS_B["External\nInfinispan B"]
+            KC_B["Keycloak<br/>Cluster B"]
+            IS_B["External<br/>Infinispan B"]
         end
 
-        Aurora["Aurora Multi-AZ\n(同期レプリケーション)"]
+        Aurora["Aurora Multi-AZ<br/>(同期レプリケーション)"]
 
         KC_A --> Aurora
         KC_B --> Aurora
         KC_A <--> IS_A
         KC_B <--> IS_B
-        IS_A <-->|"Cross-site\nreplication"| IS_B
+        IS_A <-->|"Cross-site<br/>replication"| IS_B
     end
 
     LB["AWS Global Accelerator"] --> KC_A
@@ -517,12 +517,12 @@ sequenceDiagram
 
 ```mermaid
 flowchart TB
-    Q1{"クロスリージョンDR\n必要か？"}
-    Q1 -->|"不要\n(同一リージョン可用性で十分)"| A1["Aurora Multi-AZ\n+ Infinispan Cross-AZ\n(公式推奨)"]
+    Q1{"クロスリージョンDR<br/>必要か？"}
+    Q1 -->|"不要<br/>(同一リージョン可用性で十分)"| A1["Aurora Multi-AZ<br/>+ Infinispan Cross-AZ<br/>(公式推奨)"]
     Q1 -->|"必要"| Q2{"許容できるRTOは？"}
-    Q2 -->|"< 15分"| A2["方式B: Warm Standby\nAurora Global DB\n+ KC停止待機"]
-    Q2 -->|"< 60分"| A3["方式A: Cold Standby\nDBスナップショット復元"]
-    Q2 -->|"数時間OK"| A4["方式D: realm-export\nGitから再構築"]
+    Q2 -->|"< 15分"| A2["方式B: Warm Standby<br/>Aurora Global DB<br/>+ KC停止待機"]
+    Q2 -->|"< 60分"| A3["方式A: Cold Standby<br/>DBスナップショット復元"]
+    Q2 -->|"数時間OK"| A4["方式D: realm-export<br/>Gitから再構築"]
 
     style A1 fill:#d3f9d8,stroke:#2b8a3e
     style A2 fill:#fffde7,stroke:#f9a825

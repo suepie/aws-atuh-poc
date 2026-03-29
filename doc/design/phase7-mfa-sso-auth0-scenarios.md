@@ -301,12 +301,12 @@ browser Browser - Conditional OTP    (Conditional)
 
 ```mermaid
 flowchart TD
-    A["7-1: MFA有効化\n(Admin Console設定)"] --> B["7-2: MFA + ECS再起動\n(障害耐性)"]
-    B --> C["7-3: MFA + RDS障害\n(障害耐性)"]
-    C --> D["7-4: SSO確認\n(複数Client)"]
-    D --> E["7-5: Auth0 Identity Brokering\n(外部IdP設定)"]
-    E --> F["7-6: Auth0 SSO + MFA\n(二重MFA確認)"]
-    F --> G["結果まとめ\n→ ドキュメント更新"]
+    A["7-1: MFA有効化<br/>(Admin Console設定)"] --> B["7-2: MFA + ECS再起動<br/>(障害耐性)"]
+    B --> C["7-3: MFA + RDS障害<br/>(障害耐性)"]
+    C --> D["7-4: SSO確認<br/>(複数Client)"]
+    D --> E["7-5: Auth0 Identity Brokering<br/>(外部IdP設定)"]
+    E --> F["7-6: Auth0 SSO + MFA<br/>(二重MFA確認)"]
+    F --> G["結果まとめ<br/>→ ドキュメント更新"]
 ```
 
 ---
@@ -371,15 +371,15 @@ flowchart TD
 ```mermaid
 flowchart TB
     subgraph KC_Adv["Keycloak が優位な点（Phase 7 で確認）"]
-        K1["MFA条件分岐が認証フローで設定可能\n（Cognitoはカスタム実装必要）"]
-        K2["SSO がRealm内ネイティブ\n（外部IdP不要、高速）"]
-        K3["IdP追加でログイン画面自動更新\n（SPA変更不要）"]
-        K4["Back-Channel Logout\n（Cognito未対応）"]
-        K5["MFA DR時に自動同期\n（Aurora Global DB）"]
+        K1["MFA条件分岐が認証フローで設定可能<br/>（Cognitoはカスタム実装必要）"]
+        K2["SSO がRealm内ネイティブ<br/>（外部IdP不要、高速）"]
+        K3["IdP追加でログイン画面自動更新<br/>（SPA変更不要）"]
+        K4["Back-Channel Logout<br/>（Cognito未対応）"]
+        K5["MFA DR時に自動同期<br/>（Aurora Global DB）"]
     end
 
     subgraph C_Adv["Cognito が優位な点（変わらず）"]
-        C1["マネージドで安定稼働\n（ECS頻繁停止問題なし）"]
+        C1["マネージドで安定稼働<br/>（ECS頻繁停止問題なし）"]
         C2["設定変更がTerraformで一元管理"]
         C3["運用チーム不要"]
     end

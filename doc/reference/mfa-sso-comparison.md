@@ -34,13 +34,13 @@
 ```mermaid
 flowchart TB
     subgraph Cognito_Arch["Cognito構成"]
-        CU_Local["ローカルユーザー\n→ CognitoがMFA提供"]
-        CU_Fed["フェデレーションユーザー\n→ Auth0/Entra IDがMFA提供\n→ CognitoはMFA不要"]
+        CU_Local["ローカルユーザー<br/>→ CognitoがMFA提供"]
+        CU_Fed["フェデレーションユーザー<br/>→ Auth0/Entra IDがMFA提供<br/>→ CognitoはMFA不要"]
     end
 
     subgraph KC_Arch["Keycloak構成"]
-        KU_Local["ローカルユーザー\n→ KeycloakがMFA提供"]
-        KU_Fed["フェデレーションユーザー\n→ Auth0/Entra IDがMFA提供\n→ KeycloakはMFAスキップ"]
+        KU_Local["ローカルユーザー<br/>→ KeycloakがMFA提供"]
+        KU_Fed["フェデレーションユーザー<br/>→ Auth0/Entra IDがMFA提供<br/>→ KeycloakはMFAスキップ"]
     end
 
     style Cognito_Arch fill:#fff0f0,stroke:#cc0000
@@ -66,14 +66,14 @@ flowchart TB
 ```mermaid
 flowchart TB
     subgraph Cognito_DR["Cognito DR"]
-        C_Tokyo["東京 User Pool\nMFA: TOTP登録済み"]
-        C_Osaka["大阪 User Pool\nMFA: ★未登録（別Pool）"]
+        C_Tokyo["東京 User Pool<br/>MFA: TOTP登録済み"]
+        C_Osaka["大阪 User Pool<br/>MFA: ★未登録（別Pool）"]
         C_Tokyo -.->|"同期されない"| C_Osaka
     end
 
     subgraph KC_DR["Keycloak DR (Aurora Global DB)"]
-        K_Tokyo["東京 RDS\ncredential テーブル\nMFA: TOTP登録済み"]
-        K_Osaka["大阪 Aurora Secondary\ncredential テーブル\nMFA: ★同期済み（<1秒遅れ）"]
+        K_Tokyo["東京 RDS<br/>credential テーブル<br/>MFA: TOTP登録済み"]
+        K_Osaka["大阪 Aurora Secondary<br/>credential テーブル<br/>MFA: ★同期済み（<1秒遅れ）"]
         K_Tokyo -->|"非同期レプリケーション"| K_Osaka
     end
 
@@ -101,14 +101,14 @@ flowchart TB
 ```mermaid
 flowchart TB
     subgraph Works["✅ SSOが効く"]
-        W1["Cognito: User Pool A(Auth0) → User Pool B(Auth0)\n同じAuth0テナント → Auth0セッションで自動ログイン"]
-        W2["Keycloak: Client A → Client B\n同じRealm → Keycloakセッションで自動ログイン"]
-        W3["Keycloak+Auth0: Client A(Auth0経由) → Client B\n同じRealm → Keycloakセッションで自動ログイン\n（Auth0に再問い合わせしない）"]
+        W1["Cognito: User Pool A(Auth0) → User Pool B(Auth0)<br/>同じAuth0テナント → Auth0セッションで自動ログイン"]
+        W2["Keycloak: Client A → Client B<br/>同じRealm → Keycloakセッションで自動ログイン"]
+        W3["Keycloak+Auth0: Client A(Auth0経由) → Client B<br/>同じRealm → Keycloakセッションで自動ログイン<br/>（Auth0に再問い合わせしない）"]
     end
 
     subgraph NotWork["❌ SSOが効かない"]
-        N1["Cognito: User Pool A → User Pool B\nAuth0を使わずローカルユーザーのみ\n→ 別Poolなので独立"]
-        N2["Keycloak: Realm A → Realm B\n異なるRealm → セッション共有なし"]
+        N1["Cognito: User Pool A → User Pool B<br/>Auth0を使わずローカルユーザーのみ<br/>→ 別Poolなので独立"]
+        N2["Keycloak: Realm A → Realm B<br/>異なるRealm → セッション共有なし"]
     end
 
     style Works fill:#d3f9d8,stroke:#2b8a3e
@@ -253,9 +253,9 @@ flowchart TB
         Start["ログイン要求"]
         Start --> Check["SSOセッション確認"]
         Check -->|"有効"| ClientCheck{"どのClient？"}
-        ClientCheck -->|"expense-spa\n(通常)"| Skip["MFAスキップ\n→ トークン発行"]
-        ClientCheck -->|"approval-spa\n(承認画面)"| Require["MFA再要求\n→ TOTP入力\n→ トークン発行"]
-        Check -->|"無効"| Login["PW + MFA\n→ SSOセッション作成"]
+        ClientCheck -->|"expense-spa<br/>(通常)"| Skip["MFAスキップ<br/>→ トークン発行"]
+        ClientCheck -->|"approval-spa<br/>(承認画面)"| Require["MFA再要求<br/>→ TOTP入力<br/>→ トークン発行"]
+        Check -->|"無効"| Login["PW + MFA<br/>→ SSOセッション作成"]
     end
 
     style Skip fill:#d3f9d8,stroke:#2b8a3e

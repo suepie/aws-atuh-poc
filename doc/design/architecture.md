@@ -11,49 +11,49 @@
 ```mermaid
 flowchart LR
     subgraph External["外部"]
-        Auth0["🔵 Auth0 Free\n（外部IdP / Entra ID代替）"]
+        Auth0["🔵 Auth0 Free<br/>（外部IdP / Entra ID代替）"]
     end
 
     subgraph Tokyo["東京リージョン (ap-northeast-1)"]
         subgraph CentralCognito["集約 Cognito（共通認証基盤）"]
-            CentralPool["🔴 User Pool A\nauth-poc-central"]
-            CentralClient["App Client: auth-poc-spa\n(PKCE, No Secret)"]
+            CentralPool["🔴 User Pool A<br/>auth-poc-central"]
+            CentralClient["App Client: auth-poc-spa<br/>(PKCE, No Secret)"]
             CentralJWKS["🔑 JWKS Endpoint"]
             IdPConfig["IdP: Auth0 (OIDC)"]
         end
 
         subgraph LocalCognito["ローカル Cognito（サービスアカウント相当）"]
-            LocalPool["🟢 User Pool B\nauth-poc-local"]
+            LocalPool["🟢 User Pool B<br/>auth-poc-local"]
             LocalClient["App Client: auth-poc-local-spa"]
             LocalJWKS["🔑 JWKS Endpoint"]
         end
 
         subgraph APILayer["API レイヤー"]
-            APIGW["🟣 API Gateway REST API\nGET /v1/test"]
-            Authorizer["🟠 Lambda Authorizer\nPython 3.11 / PyJWT\nマルチissuer対応\n(central/local/dr)"]
+            APIGW["🟣 API Gateway REST API<br/>GET /v1/test"]
+            Authorizer["🟠 Lambda Authorizer<br/>Python 3.11 / PyJWT<br/>マルチissuer対応<br/>(central/local/dr)"]
             Backend["🟢 Backend Lambda"]
         end
     end
 
     subgraph Osaka["大阪リージョン (ap-northeast-3)"]
         subgraph DRCognito["DR Cognito（災害復旧用）"]
-            DRPool["🟣 User Pool C\nauth-poc-dr-osaka"]
+            DRPool["🟣 User Pool C<br/>auth-poc-dr-osaka"]
             DRClient["App Client: auth-poc-dr-spa"]
             DRJWKS["🔑 JWKS Endpoint"]
-            DRIdPConfig["IdP: Auth0 (OIDC)\n※コンソール手動作成"]
+            DRIdPConfig["IdP: Auth0 (OIDC)<br/>※コンソール手動作成"]
         end
     end
 
     subgraph Client["クライアント"]
-        SPA["📱 React SPA\nVite + TypeScript\noidc-client-ts\nlocalhost:5173"]
+        SPA["📱 React SPA<br/>Vite + TypeScript<br/>oidc-client-ts<br/>localhost:5173"]
     end
 
     Auth0 <-->|"OIDC"| CentralPool
     Auth0 <-->|"OIDC"| DRPool
 
-    SPA -->|"① ログイン\n（5パターン）"| CentralCognito
+    SPA -->|"① ログイン<br/>（5パターン）"| CentralCognito
     SPA -->|"① ログイン"| LocalCognito
-    SPA -->|"① ログイン\n（DR）"| DRCognito
+    SPA -->|"① ログイン<br/>（DR）"| DRCognito
 
     SPA -->|"③ Bearer Token"| APIGW
     APIGW --> Authorizer
@@ -74,10 +74,10 @@ flowchart LR
 ```mermaid
 flowchart TB
     subgraph KC_Infra["Phase 6: Keycloak (auth-poc-kc-*)"]
-        ALB_KC["🌐 ALB\nauth-poc-kc-alb\nHTTP:80"]
-        ECS["🐳 ECS Fargate\nauth-poc-kc-service\n1 vCPU / 2GB\nKeycloak 26.0.8 (start-dev)"]
-        RDS["🗄️ RDS PostgreSQL 16.13\nauth-poc-kc-db\ndb.t4g.micro"]
-        ECR["📦 ECR\nauth-poc-kc-repo"]
+        ALB_KC["🌐 ALB<br/>auth-poc-kc-alb<br/>HTTP:80"]
+        ECS["🐳 ECS Fargate<br/>auth-poc-kc-service<br/>1 vCPU / 2GB<br/>Keycloak 26.0.8 (start-dev)"]
+        RDS["🗄️ RDS PostgreSQL 16.13<br/>auth-poc-kc-db<br/>db.t4g.micro"]
+        ECR["📦 ECR<br/>auth-poc-kc-repo"]
 
         ALB_KC -->|"HTTP:8080"| ECS
         ECS -->|"JDBC:5432"| RDS
@@ -85,14 +85,14 @@ flowchart TB
     end
 
     subgraph KC_Realm["Keycloak Realm: auth-poc"]
-        Realm_Users["👤 ユーザー\ntest@example.com"]
-        Realm_Client["📱 Client: auth-poc-spa\nPublic / PKCE"]
-        Realm_Roles["🏷️ Realm Roles\nuser"]
+        Realm_Users["👤 ユーザー<br/>test@example.com"]
+        Realm_Client["📱 Client: auth-poc-spa<br/>Public / PKCE"]
+        Realm_Roles["🏷️ Realm Roles<br/>user"]
     end
 
-    SPA_KC["📱 React SPA (Keycloak版)\nlocalhost:5174\noidc-client-ts"]
+    SPA_KC["📱 React SPA (Keycloak版)<br/>localhost:5174<br/>oidc-client-ts"]
 
-    SPA_KC -->|"OIDC\nAuth Code + PKCE"| ALB_KC
+    SPA_KC -->|"OIDC<br/>Auth Code + PKCE"| ALB_KC
     ECS --> KC_Realm
 
     style KC_Infra fill:#f5f0ff,stroke:#6600cc

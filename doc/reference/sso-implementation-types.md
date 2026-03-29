@@ -133,8 +133,8 @@ flowchart TB
 
     subgraph Proxy["リバースプロキシ方式の課題"]
         P1["ヘッダーはプロキシが注入"]
-        P2["プロキシをバイパスされると\nヘッダー偽装が可能"]
-        P3["全通信がプロキシ経由\n→ ボトルネック"]
+        P2["プロキシをバイパスされると<br/>ヘッダー偽装が可能"]
+        P3["全通信がプロキシ経由<br/>→ ボトルネック"]
         P1 --> P2
         P1 --> P3
     end
@@ -142,8 +142,8 @@ flowchart TB
     subgraph Fed["フェデレーション方式の強み"]
         F1["秘密鍵はIdPだけが保持"]
         F2["公開鍵で誰でも検証可能"]
-        F3["トークン自体が改ざん証明を持つ\n→ 経路に依存しない"]
-        F4["分散検証可能\n→ SPOFなし"]
+        F3["トークン自体が改ざん証明を持つ<br/>→ 経路に依存しない"]
+        F4["分散検証可能<br/>→ SPOFなし"]
         F1 --> F2
         F2 --> F3
         F3 --> F4
@@ -171,11 +171,11 @@ SSOの実装方式は大きく5つに分類される。
 flowchart TB
     SSO["SSO 実装方式"]
 
-    SSO --> Agent["① エージェント方式\n各サーバーに認証モジュール組込み"]
-    SSO --> Proxy["② リバースプロキシ方式\nプロキシ経由で通信集約"]
-    SSO --> Federation["③ フェデレーション方式\nSAML/OIDCで標準連携"]
-    SSO --> Delegate["④ 代理認証方式\nクライアントSWがID/PW代行入力"]
-    SSO --> Transparent["⑤ 透過型方式\nネットワーク機器で通信監視"]
+    SSO --> Agent["① エージェント方式<br/>各サーバーに認証モジュール組込み"]
+    SSO --> Proxy["② リバースプロキシ方式<br/>プロキシ経由で通信集約"]
+    SSO --> Federation["③ フェデレーション方式<br/>SAML/OIDCで標準連携"]
+    SSO --> Delegate["④ 代理認証方式<br/>クライアントSWがID/PW代行入力"]
+    SSO --> Transparent["⑤ 透過型方式<br/>ネットワーク機器で通信監視"]
 
     Federation -->|"本PoCで採用"| Cognito["Cognito + OIDC"]
 
@@ -191,7 +191,7 @@ flowchart TB
 
 ```mermaid
 flowchart LR
-    Browser["ブラウザ"] --> WebServer["Webサーバー\n+ エージェント"]
+    Browser["ブラウザ"] --> WebServer["Webサーバー<br/>+ エージェント"]
     WebServer <--> AuthServer["認証サーバー"]
     WebServer --> App["アプリケーション"]
 
@@ -212,10 +212,10 @@ flowchart LR
 
 ```mermaid
 flowchart LR
-    Browser["ブラウザ"] --> Proxy["リバースプロキシ\n（認証処理）"]
+    Browser["ブラウザ"] --> Proxy["リバースプロキシ<br/>（認証処理）"]
     Proxy <--> AuthServer["認証サーバー"]
-    Proxy -->|"HTTPヘッダーに\nユーザー情報注入"| App1["Webアプリ A"]
-    Proxy -->|"X-Remote-User\nX-User-Groups"| App2["Webアプリ B"]
+    Proxy -->|"HTTPヘッダーに<br/>ユーザー情報注入"| App1["Webアプリ A"]
+    Proxy -->|"X-Remote-User<br/>X-User-Groups"| App2["Webアプリ B"]
     Proxy -->|"ヘッダーベース認証"| App3["レガシーアプリ C"]
 
     style Proxy fill:#f5f0ff,stroke:#6600cc
@@ -236,8 +236,8 @@ flowchart LR
 
 ```mermaid
 flowchart LR
-    Browser["ブラウザ"] --> App["アプリケーション\n（OIDC RP / SAML SP）"]
-    App <-->|"標準プロトコル\n（OIDC / SAML）"| IdP["IdP\n（Cognito / Entra ID）"]
+    Browser["ブラウザ"] --> App["アプリケーション<br/>（OIDC RP / SAML SP）"]
+    App <-->|"標準プロトコル<br/>（OIDC / SAML）"| IdP["IdP<br/>（Cognito / Entra ID）"]
     IdP -->|"JWT / SAMLアサーション"| App
 
     style App fill:#d3f9d8,stroke:#2b8a3e
@@ -293,10 +293,10 @@ flowchart LR
 ```mermaid
 flowchart TB
     subgraph Decision["判断フロー"]
-        Q1{"統合対象システムは\nOIDC/SAML対応可能か？"}
-        Q1 -->|"全て対応可能"| A1["フェデレーション方式のみ\n（本PoCの構成）"]
-        Q1 -->|"一部レガシーあり"| A2["ハイブリッド構成\n（下記参照）"]
-        Q1 -->|"大半がレガシー"| A3["リバースプロキシ方式\nまたは段階的移行"]
+        Q1{"統合対象システムは<br/>OIDC/SAML対応可能か？"}
+        Q1 -->|"全て対応可能"| A1["フェデレーション方式のみ<br/>（本PoCの構成）"]
+        Q1 -->|"一部レガシーあり"| A2["ハイブリッド構成<br/>（下記参照）"]
+        Q1 -->|"大半がレガシー"| A3["リバースプロキシ方式<br/>または段階的移行"]
     end
 
     style A1 fill:#d3f9d8,stroke:#2b8a3e
@@ -311,17 +311,17 @@ flowchart TB
     Browser["ブラウザ"]
 
     subgraph Modern["新規アプリ（OIDC対応）"]
-        SPA["React SPA\n（OIDC RP）"]
-        SPA <-->|"OIDC\nAuthorization Code + PKCE"| Cognito
+        SPA["React SPA<br/>（OIDC RP）"]
+        SPA <-->|"OIDC<br/>Authorization Code + PKCE"| Cognito
     end
 
     subgraph Legacy["レガシーアプリ（OIDC非対応）"]
-        ALB["ALB\n+ Cognito認証\n（実質リバースプロキシ）"]
+        ALB["ALB<br/>+ Cognito認証<br/>（実質リバースプロキシ）"]
         ALB <-->|"OIDC"| Cognito
-        ALB -->|"HTTPヘッダー注入\nX-Amzn-Oidc-Identity\nX-Amzn-Oidc-Data\nX-Amzn-Oidc-Accesstoken"| LegacyApp["レガシーWebアプリ\n（改修不要）"]
+        ALB -->|"HTTPヘッダー注入<br/>X-Amzn-Oidc-Identity<br/>X-Amzn-Oidc-Data<br/>X-Amzn-Oidc-Accesstoken"| LegacyApp["レガシーWebアプリ<br/>（改修不要）"]
     end
 
-    Cognito["🔴 Cognito\n（共通IdP）"]
+    Cognito["🔴 Cognito<br/>（共通IdP）"]
 
     Browser --> SPA
     Browser --> ALB

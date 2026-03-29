@@ -111,9 +111,9 @@ flowchart TB
     Decode --> ExtractIss["issuer (iss) 抽出"]
     ExtractIss --> Check{ALLOWED_ISSUERS 辞書}
 
-    Check -->|"東京集約 Cognito"| Central["type: central\nclient_id: 東京App Client"]
-    Check -->|"ローカル Cognito"| Local["type: local\nclient_id: ローカルApp Client"]
-    Check -->|"大阪DR Cognito"| DR["type: dr\nclient_id: 大阪App Client"]
+    Check -->|"東京集約 Cognito"| Central["type: central<br/>client_id: 東京App Client"]
+    Check -->|"ローカル Cognito"| Local["type: local<br/>client_id: ローカルApp Client"]
+    Check -->|"大阪DR Cognito"| DR["type: dr<br/>client_id: 大阪App Client"]
     Check -->|"不明"| Deny["❌ Unauthorized"]
 
     Central --> Verify["JWKS取得 → 署名検証 → client_id検証"]
@@ -149,11 +149,11 @@ flowchart TB
     Type -->|"dr"| DRLogout["大阪DR Cognito /logout"]
 
     subgraph FullLogout["完全ログアウト（SSO破棄）の場合"]
-        CentralLogout --> Auth0Central["Auth0 /v2/logout\n→ 集約Cognito /logout\n→ SPA"]
-        DRLogout --> Auth0DR["Auth0 /v2/logout\n→ 大阪Cognito /logout\n→ SPA"]
+        CentralLogout --> Auth0Central["Auth0 /v2/logout<br/>→ 集約Cognito /logout<br/>→ SPA"]
+        DRLogout --> Auth0DR["Auth0 /v2/logout<br/>→ 大阪Cognito /logout<br/>→ SPA"]
     end
 
-    LocalLogout --> SPALocal["→ SPA\n（Auth0セッションなし）"]
+    LocalLogout --> SPALocal["→ SPA<br/>（Auth0セッションなし）"]
 ```
 
 ### 5.3 Auth0 Allowed Logout URLs 設定
@@ -222,10 +222,10 @@ PoCでは**手動切替**（ボタン選択）で大阪Cognitoの動作を確認
 ```mermaid
 flowchart LR
     subgraph Required["自動フェイルオーバーに必要な構成"]
-        Domain["カスタムドメイン\nauth.example.com"]
+        Domain["カスタムドメイン<br/>auth.example.com"]
         ACM["ACM証明書"]
-        HC["Route 53 ヘルスチェック\n東京JWKS 30秒間隔"]
-        FO["フェイルオーバーレコード\nPrimary=東京\nSecondary=大阪\nTTL=60秒"]
+        HC["Route 53 ヘルスチェック<br/>東京JWKS 30秒間隔"]
+        FO["フェイルオーバーレコード<br/>Primary=東京<br/>Secondary=大阪<br/>TTL=60秒"]
     end
 
     Domain --> ACM --> HC --> FO

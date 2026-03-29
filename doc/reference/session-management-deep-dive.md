@@ -43,21 +43,21 @@ Keycloakでは「ログイン状態」を構成する要素が**3箇所に分散
 ```mermaid
 flowchart TB
     subgraph Browser["① ブラウザ側（2つ）"]
-        Cookie["🍪 Keycloakセッション Cookie\n(KEYCLOAK_SESSION)\nドメイン: keycloak.example.com\n→ Keycloakに「誰のセッションか」を伝える"]
-        Storage["💾 sessionStorage\n(oidc-client-ts が管理)\nAccess/ID/Refresh Token\n→ SPA がAPIを呼ぶ時に使う"]
+        Cookie["🍪 Keycloakセッション Cookie<br/>(KEYCLOAK_SESSION)<br/>ドメイン: keycloak.example.com<br/>→ Keycloakに「誰のセッションか」を伝える"]
+        Storage["💾 sessionStorage<br/>(oidc-client-ts が管理)<br/>Access/ID/Refresh Token<br/>→ SPA がAPIを呼ぶ時に使う"]
     end
 
     subgraph KC["② Keycloak サーバー側"]
-        KCSession["⚡ Infinispan キャッシュ\nCookie の session_id と紐づく\n→ 高速なセッション参照用"]
+        KCSession["⚡ Infinispan キャッシュ<br/>Cookie の session_id と紐づく<br/>→ 高速なセッション参照用"]
     end
 
     subgraph DB["③ データベース"]
-        DBSession["🗄️ user_session テーブル\n永続化されたセッション (KC26)\n→ ECS再起動でも残る"]
+        DBSession["🗄️ user_session テーブル<br/>永続化されたセッション (KC26)<br/>→ ECS再起動でも残る"]
     end
 
     Cookie -->|"session_id で参照"| KCSession
     KCSession -->|"キャッシュ元"| DBSession
-    Storage -.->|"Refresh Token で\nKeycloakに問い合わせ"| KC
+    Storage -.->|"Refresh Token で<br/>Keycloakに問い合わせ"| KC
 
     style Browser fill:#e3f2fd,stroke:#1565c0
     style KC fill:#fff0f0,stroke:#cc0000
@@ -86,13 +86,13 @@ flowchart TB
 
 ```mermaid
 flowchart LR
-    Login["ログイン\n10:00"] --> Active["SSOセッション開始"]
+    Login["ログイン<br/>10:00"] --> Active["SSOセッション開始"]
 
-    Active --> Idle["無操作\n30分で期限切れ\n(SSO Session Idle)"]
-    Active --> Max["ログインから\n10時間で強制期限切れ\n(SSO Session Max)"]
+    Active --> Idle["無操作<br/>30分で期限切れ<br/>(SSO Session Idle)"]
+    Active --> Max["ログインから<br/>10時間で強制期限切れ<br/>(SSO Session Max)"]
 
-    Active --> AT["Access Token\n5分で期限切れ"]
-    AT --> Refresh["Refresh Token で更新\n→ Session の last_refresh を更新\n→ Idle タイマーリセット"]
+    Active --> AT["Access Token<br/>5分で期限切れ"]
+    AT --> Refresh["Refresh Token で更新<br/>→ Session の last_refresh を更新<br/>→ Idle タイマーリセット"]
 
     Idle --> Expired["セッション無効"]
     Max --> Expired
@@ -163,7 +163,7 @@ sequenceDiagram
 ```mermaid
 flowchart LR
     subgraph Cleared["✅ 削除された"]
-        S1["sessionStorage\n(トークン)"]
+        S1["sessionStorage<br/>(トークン)"]
     end
     subgraph Remaining["⚠️ 残っている"]
         S2["Keycloak Cookie"]
@@ -198,11 +198,11 @@ flowchart LR
         S1["sessionStorage"]
     end
     subgraph Unknown["❓ 不確定"]
-        S2["Cookie\n(レスポンス前にクラッシュ)"]
+        S2["Cookie<br/>(レスポンス前にクラッシュ)"]
     end
     subgraph Remaining["⚠️ 残っている可能性"]
-        S3["Infinispan\n(ECS再起動で消える)"]
-        S4["DBセッション\n★ これが問題"]
+        S3["Infinispan<br/>(ECS再起動で消える)"]
+        S4["DBセッション<br/>★ これが問題"]
     end
 
     style Cleared fill:#d3f9d8,stroke:#2b8a3e
@@ -231,7 +231,7 @@ flowchart LR
         S3["Infinispan"]
     end
     subgraph Remaining["⚠️ 残っている"]
-        S4["DBセッション\n(ゴーストセッション)"]
+        S4["DBセッション<br/>(ゴーストセッション)"]
     end
 
     style Cleared fill:#d3f9d8,stroke:#2b8a3e
@@ -255,13 +255,13 @@ flowchart LR
 
 ```mermaid
 flowchart TB
-    Ghost["DBセッションが\n残存している"]
+    Ghost["DBセッションが<br/>残存している"]
 
-    Ghost --> L1["🔒 第1の防御: Cookie\nCookieがなければセッションを\n利用できない"]
-    Ghost --> L2["⏰ 第2の防御: Session Idle\n無操作30分で自動期限切れ"]
-    Ghost --> L3["⏰ 第3の防御: Session Max\nログインから最大10時間で\n強制期限切れ"]
-    Ghost --> L4["🧹 第4の防御: 定期クリーンアップ\nKeycloakが期限切れセッションを\nDBから定期的に削除"]
-    Ghost --> L5["👨‍💼 第5の防御: 管理者操作\nAdmin Console から\n強制ログアウト可能"]
+    Ghost --> L1["🔒 第1の防御: Cookie<br/>Cookieがなければセッションを<br/>利用できない"]
+    Ghost --> L2["⏰ 第2の防御: Session Idle<br/>無操作30分で自動期限切れ"]
+    Ghost --> L3["⏰ 第3の防御: Session Max<br/>ログインから最大10時間で<br/>強制期限切れ"]
+    Ghost --> L4["🧹 第4の防御: 定期クリーンアップ<br/>Keycloakが期限切れセッションを<br/>DBから定期的に削除"]
+    Ghost --> L5["👨‍💼 第5の防御: 管理者操作<br/>Admin Console から<br/>強制ログアウト可能"]
 
     style L1 fill:#d3f9d8,stroke:#2b8a3e
     style L2 fill:#d3f9d8,stroke:#2b8a3e
@@ -274,11 +274,11 @@ flowchart TB
 
 ```mermaid
 flowchart TB
-    Q1{"DBセッションが\n残っている"}
-    Q1 --> Q2{"ブラウザに\nCookieがあるか？"}
-    Q2 -->|"ない\n(ブラウザ閉じた/別端末)"| R1["✅ 安全\nセッションは利用不可\nIdle で自動期限切れ"]
-    Q2 -->|"ある\n(同じブラウザ)"| Q3{"誰がアクセス？"}
-    Q3 -->|"本人"| R2["✅ 問題なし\n本人がPW不要でログイン\n= 利便性"]
+    Q1{"DBセッションが<br/>残っている"}
+    Q1 --> Q2{"ブラウザに<br/>Cookieがあるか？"}
+    Q2 -->|"ない<br/>(ブラウザ閉じた/別端末)"| R1["✅ 安全<br/>セッションは利用不可<br/>Idle で自動期限切れ"]
+    Q2 -->|"ある<br/>(同じブラウザ)"| Q3{"誰がアクセス？"}
+    Q3 -->|"本人"| R2["✅ 問題なし<br/>本人がPW不要でログイン<br/>= 利便性"]
     Q3 -->|"共有PCで他の人"| R3["⚠️ リスクあり"]
     R3 --> M["対策が必要"]
 

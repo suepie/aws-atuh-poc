@@ -45,7 +45,7 @@ flowchart TB
         end
     end
 
-    Note1["各Realmは完全に独立\nユーザー・設定・トークンを共有しない"]
+    Note1["各Realmは完全に独立<br/>ユーザー・設定・トークンを共有しない"]
 
     style R1 fill:#fff0f0,stroke:#cc0000
     style R2 fill:#d3f9d8,stroke:#2b8a3e
@@ -71,18 +71,18 @@ flowchart TB
 ```mermaid
 flowchart LR
     subgraph Cognito["AWS Cognito"]
-        UP1["User Pool A\n(本番)"]
-        UP2["User Pool B\n(ステージング)"]
-        UP3["User Pool C\n(テナントA)"]
-        Note_C["User Pool間のSSOは\nカスタム実装が必要"]
+        UP1["User Pool A<br/>(本番)"]
+        UP2["User Pool B<br/>(ステージング)"]
+        UP3["User Pool C<br/>(テナントA)"]
+        Note_C["User Pool間のSSOは<br/>カスタム実装が必要"]
     end
 
     subgraph Keycloak["Keycloak"]
         KC["Keycloakインスタンス"]
-        KC --> R1["Realm A\n(本番)"]
-        KC --> R2["Realm B\n(ステージング)"]
-        KC --> R3["Realm C\n(テナントA)"]
-        Note_K["Realm内はSSO自動\nRealm間はSSO不可"]
+        KC --> R1["Realm A<br/>(本番)"]
+        KC --> R2["Realm B<br/>(ステージング)"]
+        KC --> R3["Realm C<br/>(テナントA)"]
+        Note_K["Realm内はSSO自動<br/>Realm間はSSO不可"]
     end
 ```
 
@@ -103,15 +103,15 @@ flowchart LR
 flowchart TB
     Realm["Realm: auth-poc"]
 
-    Realm --> Settings["⚙️ Realm設定\nSSL, トークン有効期限, ブルートフォース等"]
-    Realm --> Users["👤 ユーザー\nID/PW, 属性, メール検証状態"]
-    Realm --> Clients["📱 クライアント\nSPA, Backend API, モバイル等"]
-    Realm --> Roles["🏷️ ロール\nRealm Roles + Client Roles"]
-    Realm --> Groups["👥 グループ\nユーザーをまとめてロール割当"]
-    Realm --> IdPs["🔵 Identity Providers\nEntra ID, Auth0, Google等"]
-    Realm --> AuthFlows["🔐 認証フロー\nログイン手順のカスタマイズ"]
-    Realm --> Scopes["📋 Client Scopes\nトークンに含めるクレームの定義"]
-    Realm --> Events["📊 イベント設定\n監査ログ, ログイン通知"]
+    Realm --> Settings["⚙️ Realm設定<br/>SSL, トークン有効期限, ブルートフォース等"]
+    Realm --> Users["👤 ユーザー<br/>ID/PW, 属性, メール検証状態"]
+    Realm --> Clients["📱 クライアント<br/>SPA, Backend API, モバイル等"]
+    Realm --> Roles["🏷️ ロール<br/>Realm Roles + Client Roles"]
+    Realm --> Groups["👥 グループ<br/>ユーザーをまとめてロール割当"]
+    Realm --> IdPs["🔵 Identity Providers<br/>Entra ID, Auth0, Google等"]
+    Realm --> AuthFlows["🔐 認証フロー<br/>ログイン手順のカスタマイズ"]
+    Realm --> Scopes["📋 Client Scopes<br/>トークンに含めるクレームの定義"]
+    Realm --> Events["📊 イベント設定<br/>監査ログ, ログイン通知"]
 
     style Realm fill:#d3f9d8,stroke:#2b8a3e
 ```
@@ -272,13 +272,13 @@ flowchart LR
     end
 
     subgraph KC["Keycloak"]
-        AdminUI["Admin Console\n(設定変更)"]
-        DB["PostgreSQL\n(設定保存)"]
+        AdminUI["Admin Console<br/>(設定変更)"]
+        DB["PostgreSQL<br/>(設定保存)"]
     end
 
-    JSON -->|"初回: import\n(Dockerfile COPY + --import-realm)"| DB
+    JSON -->|"初回: import<br/>(Dockerfile COPY + --import-realm)"| DB
     AdminUI -->|"変更"| DB
-    DB -->|"export-realm.sh\n(変更後にエクスポート)"| JSON
+    DB -->|"export-realm.sh<br/>(変更後にエクスポート)"| JSON
     JSON -->|"git commit"| Git
 
     style Git fill:#d3f9d8,stroke:#2b8a3e
@@ -308,15 +308,15 @@ flowchart LR
 flowchart TB
     subgraph KC["Keycloak Instance"]
         subgraph Master["master realm（管理用）"]
-            AdminUser["admin ユーザー\n(KEYCLOAK_ADMIN で作成)"]
-            AdminConsole["Admin Console\n/admin/master/console/"]
+            AdminUser["admin ユーザー<br/>(KEYCLOAK_ADMIN で作成)"]
+            AdminConsole["Admin Console<br/>/admin/master/console/"]
         end
 
         subgraph AuthPoc["auth-poc realm（検証用）"]
-            Users["ユーザー\ntest@example.com"]
-            Client["Client\nauth-poc-spa"]
-            Roles["Realm Roles\nuser, admin, expense-approver"]
-            Groups["Groups\nexpense-users, admins"]
+            Users["ユーザー<br/>test@example.com"]
+            Client["Client<br/>auth-poc-spa"]
+            Roles["Realm Roles<br/>user, admin, expense-approver"]
+            Groups["Groups<br/>expense-users, admins"]
         end
     end
 
@@ -365,15 +365,15 @@ flowchart TB
 ```mermaid
 flowchart LR
     subgraph Cognito["Cognito"]
-        UP["User Pool"] --> AC1["App Client A\n(SPA用)"]
-        UP --> AC2["App Client B\n(Backend用)"]
-        UP --> AC3["App Client C\n(Mobile用)"]
+        UP["User Pool"] --> AC1["App Client A<br/>(SPA用)"]
+        UP --> AC2["App Client B<br/>(Backend用)"]
+        UP --> AC3["App Client C<br/>(Mobile用)"]
     end
 
     subgraph Keycloak["Keycloak"]
-        Realm["Realm"] --> C1["Client A\n(SPA用)\nPublic"]
-        Realm --> C2["Client B\n(Backend用)\nConfidential"]
-        Realm --> C3["Client C\n(Service Account)\nConfidential + Service"]
+        Realm["Realm"] --> C1["Client A<br/>(SPA用)<br/>Public"]
+        Realm --> C2["Client B<br/>(Backend用)<br/>Confidential"]
+        Realm --> C3["Client C<br/>(Service Account)<br/>Confidential + Service"]
     end
 
     style Cognito fill:#fff0f0,stroke:#cc0000
@@ -423,7 +423,7 @@ flowchart TB
     end
 
     subgraph CompositeExample["Composite Role の例"]
-        manager["manager\n(Composite Role)"]
+        manager["manager<br/>(Composite Role)"]
         manager --> user
         manager --> approver
         manager --> view
@@ -574,16 +574,16 @@ erDiagram
 ```mermaid
 flowchart TB
     subgraph Login["ログインフロー"]
-        AuthSession["認証セッション\n(authenticationSessions)\nInfinispanのみ"]
+        AuthSession["認証セッション<br/>(authenticationSessions)<br/>Infinispanのみ"]
     end
 
     subgraph Active["ログイン後"]
-        UserSession["ユーザーセッション\n(user_session テーブル)\nDB + Infinispanキャッシュ"]
-        ClientSession["クライアントセッション\n(client_session テーブル)\nDB + Infinispanキャッシュ"]
+        UserSession["ユーザーセッション<br/>(user_session テーブル)<br/>DB + Infinispanキャッシュ"]
+        ClientSession["クライアントセッション<br/>(client_session テーブル)<br/>DB + Infinispanキャッシュ"]
     end
 
     subgraph Offline["オフライン"]
-        OfflineSession["オフラインセッション\n(offline_user_session テーブル)\nDB + Infinispanキャッシュ"]
+        OfflineSession["オフラインセッション<br/>(offline_user_session テーブル)<br/>DB + Infinispanキャッシュ"]
     end
 
     AuthSession -->|"認証成功"| UserSession

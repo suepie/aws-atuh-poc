@@ -72,13 +72,13 @@ flowchart TB
         V1["大阪Cognitoの認証動作"]
         V2["大阪JWTのAPI認可"]
         V3["Auth0 SSOの大阪維持"]
-        V4["Lambda Authorizerの\nマルチissuer(central/local/dr)"]
+        V4["Lambda Authorizerの<br/>マルチissuer(central/local/dr)"]
     end
 
     subgraph NotVerified["❌ 本番フェーズで検証"]
-        N1["Route 53 フェイルオーバーレコード\n(Primary=東京, Secondary=大阪)"]
-        N2["ヘルスチェック\n(東京JWKS endpoint監視)"]
-        N3["カスタムドメイン\n(auth.example.com)"]
+        N1["Route 53 フェイルオーバーレコード<br/>(Primary=東京, Secondary=大阪)"]
+        N2["ヘルスチェック<br/>(東京JWKS endpoint監視)"]
+        N3["カスタムドメイン<br/>(auth.example.com)"]
         N4["ACM証明書"]
         N5["自動切替の実動作"]
     end

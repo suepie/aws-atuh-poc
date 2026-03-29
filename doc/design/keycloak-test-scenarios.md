@@ -348,12 +348,12 @@ sequenceDiagram
 ```mermaid
 flowchart TB
     Q1{"何を重視するか？"}
-    Q1 -->|"運用負荷の最小化\n可用性・DR\nコスト"| C["✅ Cognito 推奨\n運用・可用性・コストで圧倒的優位"]
-    Q1 -->|"カスタマイズ性\n認証フローの柔軟性\nセッション管理の可視性"| K["✅ Keycloak 推奨\n機能・柔軟性で優位"]
-    Q1 -->|"バランス"| B["Cognito + Lambda Triggers\nで多くのカスタマイズ要件に対応可能"]
+    Q1 -->|"運用負荷の最小化<br/>可用性・DR<br/>コスト"| C["✅ Cognito 推奨<br/>運用・可用性・コストで圧倒的優位"]
+    Q1 -->|"カスタマイズ性<br/>認証フローの柔軟性<br/>セッション管理の可視性"| K["✅ Keycloak 推奨<br/>機能・柔軟性で優位"]
+    Q1 -->|"バランス"| B["Cognito + Lambda Triggers<br/>で多くのカスタマイズ要件に対応可能"]
 
-    C --> Note1["PoC検証で確認済み:\n- マルチissuer ✅\n- フェデレーション ✅\n- DR ✅\n- Lambda Authorizer ✅"]
-    K --> Note2["Keycloakが必要なケース:\n- 100万MAU超（コスト逆転）\n- 独自認証フロー必須\n- データ主権要件\n- 既存Keycloak運用チームあり"]
+    C --> Note1["PoC検証で確認済み:<br/>- マルチissuer ✅<br/>- フェデレーション ✅<br/>- DR ✅<br/>- Lambda Authorizer ✅"]
+    K --> Note2["Keycloakが必要なケース:<br/>- 100万MAU超（コスト逆転）<br/>- 独自認証フロー必須<br/>- データ主権要件<br/>- 既存Keycloak運用チームあり"]
 
     style C fill:#d3f9d8,stroke:#2b8a3e
     style K fill:#f5f0ff,stroke:#6600cc
@@ -365,15 +365,15 @@ flowchart TB
 ```mermaid
 flowchart TB
     Q1{"MAU規模は？"}
-    Q1 -->|"17.5万未満"| R1["Cognito一択\nコスト・運用ともに優位"]
+    Q1 -->|"17.5万未満"| R1["Cognito一択<br/>コスト・運用ともに優位"]
     Q1 -->|"17.5万〜100万"| Q2{"カスタマイズ要件は？"}
     Q1 -->|"100万超"| Q3{"運用チームは確保可能？"}
 
-    Q2 -->|"標準的\n(OIDC/SAML, グループベース認可)"| R2["Cognito推奨\n運用負荷を考慮"]
-    Q2 -->|"高度\n(独自認証フロー, 複雑な認可)"| R3["Keycloak検討\nただし運用体制の確保が前提"]
+    Q2 -->|"標準的<br/>(OIDC/SAML, グループベース認可)"| R2["Cognito推奨<br/>運用負荷を考慮"]
+    Q2 -->|"高度<br/>(独自認証フロー, 複雑な認可)"| R3["Keycloak検討<br/>ただし運用体制の確保が前提"]
 
-    Q3 -->|"可能"| R4["Keycloak推奨\nコストメリットあり"]
-    Q3 -->|"困難"| R5["Cognito推奨\n運用負荷 > コスト差"]
+    Q3 -->|"可能"| R4["Keycloak推奨<br/>コストメリットあり"]
+    Q3 -->|"困難"| R5["Cognito推奨<br/>運用負荷 > コスト差"]
 
     style R1 fill:#d3f9d8,stroke:#2b8a3e
     style R2 fill:#d3f9d8,stroke:#2b8a3e
@@ -388,13 +388,13 @@ flowchart TB
 
 ```mermaid
 flowchart TD
-    A["1. terraform apply\n(infra/keycloak)"] --> B["2. deploy.sh\n(ECR push + ECS)"]
-    B --> C["3. シナリオ1\n基本動作"]
-    C --> D["4. シナリオ2\nリリース・設定変更"]
-    D --> E["5. シナリオ3\n障害時"]
-    E --> F["6. シナリオ4\nDR"]
-    F --> G["7. シナリオ5\n対比まとめ記入"]
-    G --> H["8. 判断材料として\nドキュメント整理"]
+    A["1. terraform apply<br/>(infra/keycloak)"] --> B["2. deploy.sh<br/>(ECR push + ECS)"]
+    B --> C["3. シナリオ1<br/>基本動作"]
+    C --> D["4. シナリオ2<br/>リリース・設定変更"]
+    D --> E["5. シナリオ3<br/>障害時"]
+    E --> F["6. シナリオ4<br/>DR"]
+    F --> G["7. シナリオ5<br/>対比まとめ記入"]
+    G --> H["8. 判断材料として<br/>ドキュメント整理"]
 ```
 
 各シナリオの結果は実施後にこのドキュメントに追記する。
