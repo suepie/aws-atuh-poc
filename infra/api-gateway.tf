@@ -34,6 +34,26 @@ resource "aws_iam_role_policy_attachment" "lambda_basic" {
 # Lambda Authorizer
 # ------------------------------------------------------------------------------
 
+# ------------------------------------------------------------------------------
+# CloudWatch Log Groups（Terraform管理に含めてdestroy時に削除されるようにする）
+# ------------------------------------------------------------------------------
+
+resource "aws_cloudwatch_log_group" "authorizer" {
+  name              = "/aws/lambda/${var.project_name}-authorizer"
+  retention_in_days = 7
+  tags              = { Project = var.project_name }
+}
+
+resource "aws_cloudwatch_log_group" "backend" {
+  name              = "/aws/lambda/${var.project_name}-backend"
+  retention_in_days = 7
+  tags              = { Project = var.project_name }
+}
+
+# ------------------------------------------------------------------------------
+# Lambda Functions
+# ------------------------------------------------------------------------------
+
 resource "aws_lambda_function" "authorizer" {
   function_name = "${var.project_name}-authorizer"
   role          = aws_iam_role.lambda_role.arn
