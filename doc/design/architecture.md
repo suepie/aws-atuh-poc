@@ -1,105 +1,78 @@
 # 全体アーキテクチャ（PoC実構成）
 
-**最終更新**: 2026-03-25（Phase 6 Keycloak基本動作確認時点）
+**最終更新**: 2026-03-29（Phase 7 完了、全環境削除済み）
 
 ---
 
-## 1. PoC 実構成図
+## 1. PoC 全体構成図
 
-### 1.1 全体構成
+### 1.1 Cognito構成（Phase 1-5）+ Keycloak構成（Phase 6-7）
 
 ```mermaid
-flowchart LR
-    subgraph External["外部"]
-        Auth0["🔵 Auth0 Free<br/>（外部IdP / Entra ID代替）"]
+flowchart TB
+    subgraph External["外部サービス"]
+        Auth0["🔵 Auth0 Free<br/>（Entra ID 代替）"]
+    end
+
+    subgraph Client["クライアント"]
+        SPA_C["📱 React SPA（Cognito版）<br/>localhost:5173<br/>oidc-client-ts<br/>UserManager x3"]
+        SPA_K["📱 React SPA（Keycloak版）<br/>localhost:5174<br/>oidc-client-ts<br/>UserManager x1"]
+        SPA_K2["📱 React SPA（SSO検証）<br/>localhost:5175"]
     end
 
     subgraph Tokyo["東京リージョン (ap-northeast-1)"]
-        subgraph CentralCognito["集約 Cognito（共通認証基盤）"]
-            CentralPool["🔴 User Pool A<br/>auth-poc-central"]
-            CentralClient["App Client: auth-poc-spa<br/>(PKCE, No Secret)"]
-            CentralJWKS["🔑 JWKS Endpoint"]
-            IdPConfig["IdP: Auth0 (OIDC)"]
+        subgraph CognitoLayer["Cognito（Phase 1-5）"]
+            CentralPool["🔴 集約 Cognito<br/>auth-poc-central<br/>+ Auth0 IdP"]
+            LocalPool["🟢 ローカル Cognito<br/>auth-poc-local"]
         end
 
-        subgraph LocalCognito["ローカル Cognito（サービスアカウント相当）"]
-            LocalPool["🟢 User Pool B<br/>auth-poc-local"]
-            LocalClient["App Client: auth-poc-local-spa"]
-            LocalJWKS["🔑 JWKS Endpoint"]
-        end
-
-        subgraph APILayer["API レイヤー"]
-            APIGW["🟣 API Gateway REST API<br/>GET /v1/test"]
-            Authorizer["🟠 Lambda Authorizer<br/>Python 3.11 / PyJWT<br/>マルチissuer対応<br/>(central/local/dr)"]
+        subgraph APILayer["API レイヤー（Phase 3）"]
+            APIGW["🟣 API Gateway<br/>GET /v1/test"]
+            Authorizer["🟠 Lambda Authorizer<br/>マルチissuer<br/>(central/local/dr)"]
             Backend["🟢 Backend Lambda"]
+        end
+
+        subgraph KeycloakLayer["Keycloak（Phase 6-7）"]
+            ALB["🌐 ALB<br/>auth-poc-kc-alb<br/>HTTP:80"]
+            ECS["🐳 ECS Fargate<br/>Keycloak 26.0.8<br/>2 vCPU / 4 GB<br/>start-dev"]
+            RDS["🗄️ RDS PostgreSQL 16.13<br/>db.t4g.micro"]
+            ECR["📦 ECR"]
         end
     end
 
     subgraph Osaka["大阪リージョン (ap-northeast-3)"]
-        subgraph DRCognito["DR Cognito（災害復旧用）"]
-            DRPool["🟣 User Pool C<br/>auth-poc-dr-osaka"]
-            DRClient["App Client: auth-poc-dr-spa"]
-            DRJWKS["🔑 JWKS Endpoint"]
-            DRIdPConfig["IdP: Auth0 (OIDC)<br/>※コンソール手動作成"]
-        end
+        DRPool["🟣 DR Cognito<br/>auth-poc-dr-osaka<br/>+ Auth0 IdP<br/>（コンソール手動作成）"]
     end
 
-    subgraph Client["クライアント"]
-        SPA["📱 React SPA<br/>Vite + TypeScript<br/>oidc-client-ts<br/>localhost:5173"]
-    end
+    %% Cognito SPA
+    SPA_C -->|"OIDC"| CentralPool
+    SPA_C -->|"OIDC"| LocalPool
+    SPA_C -->|"OIDC (DR)"| DRPool
+    SPA_C -->|"Bearer Token"| APIGW
 
+    %% Keycloak SPA
+    SPA_K -->|"OIDC"| ALB
+    SPA_K2 -->|"OIDC (SSO検証)"| ALB
+
+    %% Auth0
     Auth0 <-->|"OIDC"| CentralPool
     Auth0 <-->|"OIDC"| DRPool
+    Auth0 <-->|"Identity<br/>Brokering"| ECS
 
-    SPA -->|"① ログイン<br/>（5パターン）"| CentralCognito
-    SPA -->|"① ログイン"| LocalCognito
-    SPA -->|"① ログイン<br/>（DR）"| DRCognito
+    %% API Layer
+    APIGW --> Authorizer --> Backend
 
-    SPA -->|"③ Bearer Token"| APIGW
-    APIGW --> Authorizer
-    Authorizer -.->|"JWKS取得"| CentralJWKS
-    Authorizer -.->|"JWKS取得"| LocalJWKS
-    Authorizer -.->|"JWKS取得"| DRJWKS
-    Authorizer --> APIGW
-    APIGW --> Backend
+    %% Keycloak Internal
+    ALB --> ECS --> RDS
+    ECR -.-> ECS
 
-    style CentralCognito fill:#fff0f0,stroke:#cc0000
-    style LocalCognito fill:#f0fff0,stroke:#006600
-    style DRCognito fill:#f5f0ff,stroke:#6600cc
+    style CognitoLayer fill:#fff0f0,stroke:#cc0000
+    style KeycloakLayer fill:#f5f0ff,stroke:#6600cc
     style APILayer fill:#f0f0ff,stroke:#0000cc
+    style Osaka fill:#f5f0ff,stroke:#6600cc
 ```
 
-### 1.2 Phase 6: Keycloak構成
-
-```mermaid
-flowchart TB
-    subgraph KC_Infra["Phase 6: Keycloak (auth-poc-kc-*)"]
-        ALB_KC["🌐 ALB<br/>auth-poc-kc-alb<br/>HTTP:80"]
-        ECS["🐳 ECS Fargate<br/>auth-poc-kc-service<br/>1 vCPU / 2GB<br/>Keycloak 26.0.8 (start-dev)"]
-        RDS["🗄️ RDS PostgreSQL 16.13<br/>auth-poc-kc-db<br/>db.t4g.micro"]
-        ECR["📦 ECR<br/>auth-poc-kc-repo"]
-
-        ALB_KC -->|"HTTP:8080"| ECS
-        ECS -->|"JDBC:5432"| RDS
-        ECR -.->|"イメージ pull"| ECS
-    end
-
-    subgraph KC_Realm["Keycloak Realm: auth-poc"]
-        Realm_Users["👤 ユーザー<br/>test@example.com"]
-        Realm_Client["📱 Client: auth-poc-spa<br/>Public / PKCE"]
-        Realm_Roles["🏷️ Realm Roles<br/>user"]
-    end
-
-    SPA_KC["📱 React SPA (Keycloak版)<br/>localhost:5174<br/>oidc-client-ts"]
-
-    SPA_KC -->|"OIDC<br/>Auth Code + PKCE"| ALB_KC
-    ECS --> KC_Realm
-
-    style KC_Infra fill:#f5f0ff,stroke:#6600cc
-    style KC_Realm fill:#e8f5e9,stroke:#2e7d32
-```
-
-### 1.3 本番想定構成との対応
+### 1.2 本番想定構成との対応
 
 | 要素 | PoC | 本番想定 | 差異 |
 |------|-----|---------|------|
@@ -109,12 +82,13 @@ flowchart TB
 | 外部IdP | Auth0 Free | Entra ID / Okta | OIDC設定は同一構造 |
 | JWKS取得 | HTTPS（3 User Pool） | クロスアカウント HTTPS | **動作差異なし** |
 | API Gateway | 東京のみ | 各サービスアカウント | 大阪にはAPI GWなし |
+| Keycloak | ECS Fargate + RDS | ECS Fargate + Aurora | start-dev → start --optimized + HTTPS |
 
 ---
 
 ## 2. コンポーネント一覧
 
-### 2.1 Cognito User Pools
+### 2.1 Cognito（Phase 1-5）
 
 | User Pool | リージョン | 名前 | 役割 | Auth0 IdP |
 |-----------|----------|------|------|-----------|
@@ -122,39 +96,72 @@ flowchart TB
 | B（ローカル） | 東京 | auth-poc-local | パートナーユーザー | なし |
 | C（DR） | 大阪 | auth-poc-dr-osaka | 災害復旧 | コンソール手動（※） |
 
-※ 大阪リージョンのCognitoからAuth0への`.well-known`自動検出が失敗するため、コンソール「Manual input」モードで作成し`terraform import`で管理。詳細: [ADR-007](../adr/007-osaka-auth0-idp-limitation.md)
+※ 大阪の制限: [ADR-007](../adr/007-osaka-auth0-idp-limitation.md)
 
-### 2.2 Lambda
+### 2.2 API Gateway + Lambda（Phase 3）
 
-| Lambda | 役割 | ランタイム | 主要ライブラリ |
-|--------|------|----------|-------------|
-| auth-poc-authorizer | JWT検証 + 認可判定 | Python 3.11 | PyJWT[crypto] 2.9.0 |
-| auth-poc-backend | サンプルAPI | Python 3.11 | 標準ライブラリのみ |
+| リソース | 役割 | 詳細 |
+|---------|------|------|
+| API Gateway | REST API | GET /v1/test, CORS有効 |
+| Lambda Authorizer | JWT検証 + 認可 | Python 3.11, PyJWT, マルチissuer(central/local/dr) |
+| Backend Lambda | サンプルAPI | Context情報を返却 |
 
-### 2.3 API Gateway
+### 2.3 Keycloak（Phase 6-7）
 
-| 設定 | 値 |
-|------|-----|
-| タイプ | REST API |
-| エンドポイント | GET /v1/test |
-| 認可 | Lambda Authorizer (TOKEN, TTL 300秒) |
-| CORS | Access-Control-Allow-Origin: * |
+| リソース | 名前 | 仕様 |
+|---------|------|------|
+| ALB | auth-poc-kc-alb | HTTP:80, ヘルスチェック: /realms/master |
+| ECS Fargate | auth-poc-kc-service | 2 vCPU / 4 GB, Keycloak 26.0.8 (start-dev) |
+| RDS PostgreSQL | auth-poc-kc-db | 16.13, db.t4g.micro, 停止可能 |
+| ECR | auth-poc-kc-repo | カスタムKeycloakイメージ |
+| Keycloak Realm | auth-poc | Client: auth-poc-spa / auth-poc-spa-2 |
+| Identity Provider | auth0 | Auth0をOIDC IdPとしてBrokering |
 
 ### 2.4 React SPA
 
-| 設定 | 値 |
-|------|-----|
-| フレームワーク | React 19 + TypeScript + Vite 8 |
-| 認証ライブラリ | oidc-client-ts |
-| UserManager | 3つ（central/local/dr、各プレフィックス付きstateStore） |
+| アプリ | ポート | 接続先 | UserManager数 | 用途 |
+|--------|:-----:|--------|:------------:|------|
+| app/ | 5173 | Cognito (central/local/dr) | 3 | Phase 1-5: Cognito検証 |
+| app-keycloak/ | 5174 | Keycloak (auth-poc-spa) | 1 | Phase 6-7: Keycloak検証 |
+| app-keycloak-2/ | 5175 | Keycloak (auth-poc-spa-2) | 1 | Phase 7: SSO検証 |
+
+### 2.5 Terraform state の分離
+
+| state | ディレクトリ | 管理対象 | 独立destroy |
+|-------|------------|---------|:-----------:|
+| 東京 Cognito + API | infra/ | Cognito x2 + API GW + Lambda x2 | ✅ |
+| 大阪 DR | infra/dr-osaka/ | DR Cognito | ✅ |
+| Keycloak | infra/keycloak/ | ALB + ECS + RDS + ECR | ✅ |
 
 ---
 
-## 3. ディレクトリ構成
+## 3. 認証パターン一覧
+
+### Cognito（Phase 1-5: 5パターン）
+
+| # | パターン | フロー | Phase |
+|---|---------|--------|:-----:|
+| 1 | 集約Cognito Hosted UI | SPA → Cognito → PW認証 → SPA | 1 |
+| 2 | Auth0 フェデレーション | SPA → Cognito → Auth0 → Cognito → SPA | 2 |
+| 3 | ローカルCognito | SPA → ローカルCognito → PW認証 → SPA | 4 |
+| 4 | DR Hosted UI | SPA → 大阪Cognito → PW認証 → SPA | 5 |
+| 5 | DR Auth0 フェデレーション | SPA → 大阪Cognito → Auth0 → 大阪Cognito → SPA | 5 |
+
+### Keycloak（Phase 6-7: 3パターン）
+
+| # | パターン | フロー | Phase |
+|---|---------|--------|:-----:|
+| 6 | ローカルユーザー + MFA | SPA → Keycloak → PW + TOTP → SPA | 6-7 |
+| 7 | Auth0 Identity Brokering | SPA → Keycloak → Auth0 → Keycloak(JIT) → SPA | 7 |
+| 8 | SSO（複数Client） | Client A認証済み → Client B → PW/MFA不要 | 7 |
+
+---
+
+## 4. ディレクトリ構成
 
 ```
 aws-auth-poc/
-├── app/                          # React SPA
+├── app/                          # React SPA（Cognito版, port:5173）
 │   ├── src/
 │   │   ├── auth/
 │   │   │   ├── config.ts         # 集約Cognito OIDC設定（prefix: oidc.central.）
@@ -163,27 +170,53 @@ aws-auth-poc/
 │   │   │   ├── AuthProvider.tsx  # 認証コンテキスト（3つのUserManager管理）
 │   │   │   ├── CallbackPage.tsx  # OAuthコールバック（3 UserManager順番試行）
 │   │   │   └── tokenUtils.ts    # JWTデコード
-│   │   ├── components/
-│   │   │   ├── AuthFlow/         # 認証状態 + フロー図
-│   │   │   ├── TokenViewer/      # トークンデコード表示
-│   │   │   ├── ApiTester/        # API呼び出しテスト
-│   │   │   └── LogViewer/        # 認証イベントログ
+│   │   ├── components/           # AuthFlow / TokenViewer / ApiTester / LogViewer
 │   │   └── pages/
-│   │       └── HomePage.tsx
-│   ├── .env                      # 環境変数（git対象外）
-│   └── .env.example              # 環境変数テンプレート
+│   ├── .env.example
+│   └── vite.config.ts
 │
-├── infra/                        # Terraform（東京リージョン）
-│   ├── main.tf                   # プロバイダ
-│   ├── variables.tf              # 変数（Auth0, DR設定含む）
+├── app-keycloak/                 # React SPA（Keycloak版, port:5174）
+│   ├── src/
+│   │   ├── auth/
+│   │   │   ├── config.ts         # Keycloak OIDC設定（OIDC Discovery自動）
+│   │   │   ├── AuthProvider.tsx  # 認証コンテキスト（UserManager 1つ）
+│   │   │   └── CallbackPage.tsx  # OAuthコールバック（シンプル）
+│   │   ├── components/           # Cognito版と同構造
+│   │   └── pages/
+│   ├── .env.example
+│   └── vite.config.ts            # port: 5174
+│
+├── app-keycloak-2/               # React SPA（SSO検証用, port:5175）
+│   └── ...                       # app-keycloakのコピー、client_id=auth-poc-spa-2
+│
+├── keycloak/                     # Keycloakコンテナ・設定
+│   ├── Dockerfile                # Keycloak 26.0 ベースイメージ
+│   ├── docker-compose.yml        # ローカル開発用（参考）
+│   ├── deploy.sh                 # ECRにpush + ECS更新
+│   ├── stop.sh                   # ECS+RDS停止（コスト削減）
+│   ├── start.sh                  # ECS+RDS起動
+│   └── config/
+│       ├── realm-export.json     # Realm設定（Git管理）
+│       ├── export-realm.sh       # 設定エクスポート
+│       └── import-realm.sh       # 設定インポート
+│
+├── infra/                        # Terraform（東京 Cognito + API Gateway）
+│   ├── main.tf
 │   ├── cognito.tf                # 集約Cognito + ローカルCognito + Auth0 IdP
-│   ├── api-gateway.tf            # API GW + Lambda Authorizer + Backend
-│   ├── outputs.tf                # 出力（SPA .env値含む）
-│   └── dr-osaka/                 # Terraform（大阪リージョン）
-│       ├── main.tf
-│       ├── variables.tf
-│       ├── cognito.tf            # DR Cognito + Auth0 IdP（手動import）
+│   ├── api-gateway.tf            # API GW + Lambda Authorizer + Backend + CloudWatch Logs
+│   ├── outputs.tf
+│   └── dr-osaka/                 # Terraform（大阪 DR Cognito）
+│       ├── cognito.tf
 │       └── outputs.tf
+│
+├── infra/keycloak/               # Terraform（Keycloak）★独立state
+│   ├── main.tf                   # Provider + VPC + 自動IP取得
+│   ├── security-groups.tf        # ALB/ECS/RDS の SG（IPアドレス自動取得）
+│   ├── rds.tf                    # RDS PostgreSQL 16.13
+│   ├── ecr.tf                    # ECRリポジトリ
+│   ├── alb.tf                    # ALB + Target Group
+│   ├── ecs.tf                    # ECS Fargate（2 vCPU / 4 GB）
+│   └── outputs.tf                # URL + 停止/起動コマンド
 │
 ├── lambda/
 │   ├── authorizer/
@@ -194,8 +227,8 @@ aws-auth-poc/
 │       └── index.py              # サンプルAPI
 │
 └── doc/
-    ├── design/                   # 最新設計ドキュメント
-    ├── adr/                      # Architecture Decision Records
-    ├── reference/                # 参考情報
+    ├── design/                   # 設計・検証結果・手順
+    ├── adr/                      # Architecture Decision Records（001-009）
+    ├── reference/                # 参考情報（認証基礎/Cognito/Keycloak）
     └── old/                      # 過去の検討ドキュメント（読み取り専用）
 ```
