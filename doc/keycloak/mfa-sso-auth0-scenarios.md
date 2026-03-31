@@ -1,4 +1,4 @@
-# Phase 7: MFA・SSO・Auth0 検証シナリオ
+# Keycloak MFA・SSO・Auth0 検証シナリオ
 
 **作成日**: 2026-03-26
 
