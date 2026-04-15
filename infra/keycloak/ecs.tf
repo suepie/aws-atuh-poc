@@ -58,6 +58,45 @@ resource "aws_iam_role_policy" "ecr_pull" {
   })
 }
 
+# ECS Task Role（ECS Exec 用のSSM権限付与先）
+resource "aws_iam_role" "ecs_task" {
+  name = "${local.prefix}-ecs-task"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "ecs-tasks.amazonaws.com"
+        }
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy" "ecs_exec" {
+  name = "${local.prefix}-ecs-exec"
+  role = aws_iam_role.ecs_task.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "ssmmessages:CreateControlChannel",
+          "ssmmessages:CreateDataChannel",
+          "ssmmessages:OpenControlChannel",
+          "ssmmessages:OpenDataChannel"
+        ]
+        Resource = "*"
+      }
+    ]
+  })
+}
+
 # ECS Task Definition
 resource "aws_ecs_task_definition" "keycloak" {
   family                   = "${local.prefix}-task"
@@ -66,6 +105,7 @@ resource "aws_ecs_task_definition" "keycloak" {
   cpu                      = "2048"  # 2 vCPU
   memory                   = "4096"  # 4 GB
   execution_role_arn       = aws_iam_role.ecs_execution.arn
+  task_role_arn            = aws_iam_role.ecs_task.arn
 
   container_definitions = jsonencode([
     {
@@ -105,10 +145,10 @@ resource "aws_ecs_task_definition" "keycloak" {
 
       healthCheck = {
         command     = ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/9000 && echo -e 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\n\\r\\n' >&3 && cat <&3 | grep -q '\"status\":\"UP\"'"]
-        interval    = 30
-        timeout     = 10
-        retries     = 5
-        startPeriod = 120
+        interval    = 60
+        timeout     = 30
+        retries     = 10
+        startPeriod = 180
       }
     }
   ])
@@ -121,6 +161,7 @@ resource "aws_ecs_service" "keycloak" {
   task_definition = aws_ecs_task_definition.keycloak.arn
   desired_count   = 1
   launch_type     = "FARGATE"
+  enable_execute_command = true
 
   network_configuration {
     subnets          = data.aws_subnets.default.ids

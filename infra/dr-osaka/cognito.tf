@@ -45,8 +45,7 @@ resource "aws_cognito_user_pool" "dr" {
   }
 
   tags = {
-    Project = var.project_name
-    Role    = "dr-cognito-osaka"
+    Role = "dr-cognito-osaka"
   }
 }
 

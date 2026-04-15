@@ -12,4 +12,13 @@ terraform {
 # 大阪リージョン
 provider "aws" {
   region = "ap-northeast-3"
+
+  default_tags {
+    tags = {
+      Project     = var.project_name
+      Environment = var.environment
+      Owner       = var.owner
+      ManagedBy   = "terraform"
+    }
+  }
 }

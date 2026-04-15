@@ -7,12 +7,16 @@
     "ghcr.io/devcontainers/features/terraform:1": {},
     "ghcr.io/devcontainers/features/python:1": {
       "version": "3.12"
+    },
+    "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {
+      "moby": false
     }
   },
 
   "mounts": [
     "source=${localEnv:HOME}${localEnv:USERPROFILE}/.aws,target=/home/node/.aws,type=bind",
-    "source=${localEnv:HOME}${localEnv:USERPROFILE}/.claude,target=/home/node/.claude,type=bind"
+    "source=${localEnv:HOME}${localEnv:USERPROFILE}/.claude,target=/home/node/.claude,type=bind",
+    "source=/var/run/docker.sock,target=/var/run/docker.sock,type=bind"
   ],
 
   "postCreateCommand": "cd /workspaces/aws-atuh-poc/app && npm install && cd /workspaces/aws-atuh-poc/app-keycloak && npm install && cd /workspaces/aws-atuh-poc/app-keycloak-2 && npm install && pip install PyJWT[crypto]",

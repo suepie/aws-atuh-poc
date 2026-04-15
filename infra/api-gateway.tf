@@ -22,7 +22,6 @@ resource "aws_iam_role" "lambda_role" {
     ]
   })
 
-  tags = { Project = var.project_name }
 }
 
 resource "aws_iam_role_policy_attachment" "lambda_basic" {
@@ -41,13 +40,13 @@ resource "aws_iam_role_policy_attachment" "lambda_basic" {
 resource "aws_cloudwatch_log_group" "authorizer" {
   name              = "/aws/lambda/${var.project_name}-authorizer"
   retention_in_days = 7
-  tags              = { Project = var.project_name }
+
 }
 
 resource "aws_cloudwatch_log_group" "backend" {
   name              = "/aws/lambda/${var.project_name}-backend"
   retention_in_days = 7
-  tags              = { Project = var.project_name }
+
 }
 
 # ------------------------------------------------------------------------------
@@ -80,7 +79,7 @@ resource "aws_lambda_function" "authorizer" {
     }
   }
 
-  tags = { Project = var.project_name }
+
 }
 
 # ------------------------------------------------------------------------------
@@ -98,7 +97,7 @@ resource "aws_lambda_function" "backend" {
   filename         = "${path.module}/../lambda/backend/package.zip"
   source_code_hash = filebase64sha256("${path.module}/../lambda/backend/package.zip")
 
-  tags = { Project = var.project_name }
+
 }
 
 # ------------------------------------------------------------------------------
@@ -109,7 +108,7 @@ resource "aws_api_gateway_rest_api" "main" {
   name        = "${var.project_name}-api"
   description = "Auth PoC API"
 
-  tags = { Project = var.project_name }
+
 }
 
 # Authorizer 設定
@@ -246,5 +245,5 @@ resource "aws_api_gateway_stage" "prod" {
   rest_api_id   = aws_api_gateway_rest_api.main.id
   stage_name    = "prod"
 
-  tags = { Project = var.project_name }
+
 }

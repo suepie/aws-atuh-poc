@@ -52,8 +52,7 @@ resource "aws_cognito_user_pool" "central" {
   }
 
   tags = {
-    Project = var.project_name
-    Role    = "central-cognito"
+    Role = "central-cognito"
   }
 }
 
@@ -213,8 +212,7 @@ resource "aws_cognito_user_pool" "local" {
   }
 
   tags = {
-    Project = var.project_name
-    Role    = "local-cognito"
+    Role = "local-cognito"
   }
 }
 

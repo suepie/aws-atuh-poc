@@ -13,15 +13,16 @@ provider "aws" {
 
   default_tags {
     tags = {
-      Project = "auth-poc"
-      Phase   = "6-keycloak"
-      ManagedBy = "terraform"
+      Project     = var.project_name
+      Environment = var.environment
+      Owner       = var.owner
+      ManagedBy   = "terraform"
     }
   }
 }
 
 locals {
-  prefix = "auth-poc-kc"
+  prefix = "${var.project_name}-kc"
 }
 
 # 既存VPC情報の取得（デフォルトVPC使用）

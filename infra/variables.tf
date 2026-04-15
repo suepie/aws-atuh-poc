@@ -10,6 +10,18 @@ variable "project_name" {
   default     = "auth-poc"
 }
 
+variable "environment" {
+  description = "Environment name (poc, dev, stg, prod)"
+  type        = string
+  default     = "poc"
+}
+
+variable "owner" {
+  description = "Owner of the resources"
+  type        = string
+  default     = "auth-poc"
+}
+
 variable "callback_urls" {
   description = "OAuth callback URLs"
   type        = list(string)

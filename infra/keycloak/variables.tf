@@ -4,6 +4,24 @@ variable "aws_region" {
   default     = "ap-northeast-1"
 }
 
+variable "project_name" {
+  description = "Project name prefix"
+  type        = string
+  default     = "auth-poc"
+}
+
+variable "environment" {
+  description = "Environment name (poc, dev, stg, prod)"
+  type        = string
+  default     = "poc"
+}
+
+variable "owner" {
+  description = "Owner of the resources"
+  type        = string
+  default     = "auth-poc"
+}
+
 variable "db_password" {
   description = "RDS PostgreSQL password for Keycloak"
   type        = string
