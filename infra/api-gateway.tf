@@ -232,6 +232,15 @@ resource "aws_api_gateway_deployment" "main" {
       aws_api_gateway_method.test_options,
       aws_api_gateway_integration.test_options,
       aws_api_gateway_authorizer.jwt,
+      # 経費精算API（認可検証用）
+      aws_api_gateway_resource.expenses,
+      aws_api_gateway_resource.expense_item,
+      aws_api_gateway_resource.expense_approve,
+      aws_api_gateway_resource.tenants,
+      aws_api_gateway_resource.tenant_item,
+      aws_api_gateway_resource.tenant_expenses,
+      aws_api_gateway_method.expense,
+      aws_api_gateway_integration.expense,
     ]))
   }
 

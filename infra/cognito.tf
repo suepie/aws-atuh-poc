@@ -51,6 +51,16 @@ resource "aws_cognito_user_pool" "central" {
     }
   }
 
+  # Pre Token Generation Lambda (tenant_id / roles 注入)
+  lambda_config {
+    pre_token_generation = aws_lambda_function.pre_token.arn
+
+    pre_token_generation_config {
+      lambda_arn     = aws_lambda_function.pre_token.arn
+      lambda_version = "V2_0"
+    }
+  }
+
   tags = {
     Role = "central-cognito"
   }
@@ -145,11 +155,15 @@ resource "aws_cognito_identity_provider" "auth0" {
   }
 
   # クレームマッピング（Auth0 → Cognito カスタム属性）
-  # 本番では Entra ID のクレーム名に合わせてマッピングする
+  # Auth0側で app_metadata.tenant_id / role を ID トークンのトップレベル
+  # クレーム（tenant_id / role）として発行するカスタムクレーム設定が必要。
+  # 本番では Entra ID 側の拡張属性クレームに合わせてマッピング名を変更する。
   attribute_mapping = {
-    email    = "email"
-    name     = "name"
-    username = "sub"
+    email                = "email"
+    name                 = "name"
+    username             = "sub"
+    "custom:tenant_id"   = "tenant_id"
+    "custom:roles"       = "role"
   }
 }
 
@@ -204,10 +218,29 @@ resource "aws_cognito_user_pool" "local" {
     }
   }
 
+  schema {
+    name                = "roles"
+    attribute_data_type = "String"
+    mutable             = true
+    string_attribute_constraints {
+      min_length = 0
+      max_length = 256
+    }
+  }
+
   account_recovery_setting {
     recovery_mechanism {
       name     = "verified_email"
       priority = 1
+    }
+  }
+
+  lambda_config {
+    pre_token_generation = aws_lambda_function.pre_token.arn
+
+    pre_token_generation_config {
+      lambda_arn     = aws_lambda_function.pre_token.arn
+      lambda_version = "V2_0"
     }
   }
 
@@ -245,8 +278,8 @@ resource "aws_cognito_user_pool_client" "local_spa" {
     refresh_token = "days"
   }
 
-  read_attributes  = ["email", "email_verified", "name", "custom:tenant_id"]
-  write_attributes = ["email", "name", "custom:tenant_id"]
+  read_attributes  = ["email", "email_verified", "name", "custom:tenant_id", "custom:roles"]
+  write_attributes = ["email", "name", "custom:tenant_id", "custom:roles"]
 
   enable_token_revocation = true
 

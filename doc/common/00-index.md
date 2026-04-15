@@ -5,6 +5,8 @@ Cognito / Keycloak 横断の全体設計・比較・管理。
 | ドキュメント | 内容 |
 |------------|------|
 | [architecture.md](architecture.md) | 全体アーキテクチャ（Cognito + Keycloak構成図・ディレクトリ） |
-| [poc-scope.md](poc-scope.md) | PoC範囲・制約・技術スタック・Phase 1-7 |
+| [poc-scope.md](poc-scope.md) | PoC範囲・制約・技術スタック・Phase 1-8 |
 | [poc-results.md](poc-results.md) | 検証結果サマリー・Cognito vs Keycloak比較 |
+| [claim-mapping-authz-scenario.md](claim-mapping-authz-scenario.md) | Phase 8: クレームマッピング・認可シナリオ（経費精算SaaS） |
+| [auth0-setup-claims.md](auth0-setup-claims.md) | Auth0 カスタムクレーム設定ガイド（Action / app_metadata） |
 | [destroy-guide.md](destroy-guide.md) | 環境削除・残存リソース確認手順 |

@@ -318,12 +318,70 @@ Cognito は**User Pool単位・リージョン単位**でMAU課金される。
 
 ---
 
-## 7. 残課題
+## 7. Phase 8: クレームマッピング・認可の具体化（Cognito）
+
+**実施日**: 2026-04-15
+
+**目的**: IdP 属性（Auth0 `app_metadata`）を Cognito カスタム属性にマッピングし、
+マルチテナント経費精算 API でロール・テナントスコープの認可が機能することを確認する。
+
+### 検証シナリオ
+
+経費精算 SaaS を題材に、以下のエンドポイント・ロールで認可を設計。
+詳細は [claim-mapping-authz-scenario.md](claim-mapping-authz-scenario.md) 参照。
+
+| エンドポイント | 要求ロール | テナントスコープ |
+|-------------|----------|---------------|
+| GET /v1/expenses | employee | 自分の申請のみ |
+| POST /v1/expenses | employee | JWT から tenant_id 自動付与 |
+| POST /v1/expenses/{id}/approve | manager+ | 同テナント内 |
+| DELETE /v1/expenses/{id} | admin | 同テナント内 |
+| GET /v1/tenants/{tenantId}/expenses | manager+ | tenantId == JWT.tenant_id |
+
+### 実装要素
+
+1. **Auth0 側**: `app_metadata.tenant_id` / `app_metadata.role` を設定
+2. **Auth0 Post Login Action**: app_metadata を IDトークンカスタムクレームに注入
+3. **Cognito attribute_mapping**: Auth0 クレーム → `custom:tenant_id` / `custom:roles`
+4. **Pre Token Generation Lambda V2**:
+   - Access Token / ID Token 両方に `tenant_id` / `roles` / `email` を注入
+   - Cognito 自動付与のフェデレーション内部グループ（`<pool>_Auth0` 等）を除外
+5. **Lambda Authorizer**: Context に `tenantId` / `roles` を伝播
+6. **Backend Lambda**: ロール階層 (`employee<manager<admin`) とテナントスコープ検証
+
+### 検証結果
+
+| テストケース | ユーザー | エンドポイント | 期待 | 実測 |
+|-----------|---------|-------------|-----|-----|
+| 自分の申請一覧 | alice (employee) | GET /v1/expenses | 200 | ✅ |
+| 申請作成 | alice (employee) | POST /v1/expenses | 201 | ✅ |
+| 承認 (権限不足) | alice (employee) | POST /v1/expenses/x/approve | 403 | ✅ |
+| 承認 | bob (manager) | 同上 | 200 | ✅ |
+| 削除 (権限不足) | bob (manager) | DELETE /v1/expenses/x | 403 | ✅ |
+| 削除 | carol (admin) | 同上 | 200 | ✅ |
+| 別テナント遮断 | bob (manager, acme) | GET /v1/tenants/globex-inc/expenses | 403 | ✅ |
+| 自テナント閲覧 | dave (manager, globex) | GET /v1/tenants/globex-inc/expenses | 200 | ✅ |
+| ローカルユーザー | eve (local, employee) | GET /v1/expenses | 200 | ✅ |
+| tenant_id 欠落 | (カスタム属性なし) | GET /v1/expenses | 403 | ✅ |
+
+### 技術的知見（Phase 8）
+
+| 知見 | 詳細 | 対応 |
+|------|------|------|
+| **Pre Token V1 では Access Token にクレーム注入できない** | V1 は ID Token 限定。API Gateway Authorizer が Access Token を使う場合 V2 必須 | `lambda_version = "V2_0"` + `claimsAndScopeOverrideDetails` |
+| **Cognito Access Token には `email` が入らない** | 認可ロジックで email が必要な場合は明示注入 | Pre Token Lambda で email をトップレベルに |
+| **フェデレーションユーザーに内部グループが自動付与される** | 例: `ap-northeast-1_xxx_Auth0` が roles に混入 | Pre Token Lambda で正規表現除外 |
+| **attribute_mapping 変更後の既存ユーザー** | JIT 済ユーザーは再ログインしても属性が上書きされない | Cognito 側で手動更新 or ユーザー削除して再 JIT |
+| **Auth0 Action Deploy だけでは実行されない** | Login Flow に配置しないと動作しない | Actions → Triggers → post-login にドラッグ |
+
+---
+
+## 8. 残課題
 
 | カテゴリ | 課題 | 優先度 |
 |---------|------|--------|
 | 認証 | Entra ID / Okta での実地検証 | 高 |
-| 認証 | Pre Token Lambda（テナント識別グループ付与） | 高 |
-| 認可 | グループベース認可ルール実装 | 高 |
+| 認可 | Keycloak 版でも同じシナリオが通ることを確認 (Protocol Mapper) | 中 |
+| 認可 | 行レベルデータ分離（DynamoDB/RDS の tenant_id 条件）| 中 |
 | DR | Route 53 フェイルオーバー（自動切替） | 中 |
 | コスト | **顧客のMAU規模確認（損益分岐点17.5万MAU）** | **最高** |

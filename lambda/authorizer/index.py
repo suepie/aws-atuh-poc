@@ -154,9 +154,24 @@ def verify_token(token: str) -> dict:
 
 
 def extract_user_context(payload: dict) -> dict:
-    """JWT ペイロードからユーザー情報を抽出（Context として Backend に渡す）"""
-    # cognito:groups からテナント・グループ情報を取得
-    groups = payload.get("cognito:groups", [])
+    """JWT ペイロードからユーザー情報を抽出（Context として Backend に渡す）
+
+    Pre Token Generation Lambda で注入された tenant_id / roles クレームを取り出す。
+    - tenant_id: Auth0 フェデレーションユーザーは attribute_mapping 経由、
+                 ローカルユーザーは custom:tenant_id で設定済み。
+    - roles: cognito:groups と custom:roles を合成したカンマ区切り文字列。
+    """
+    # roles: Pre Token Lambda が roles クレームをカンマ区切り文字列で注入済み。
+    # 互換のため cognito:groups も fallback で読む。
+    roles_claim = payload.get("roles")
+    if roles_claim:
+        roles = [r.strip() for r in roles_claim.split(",") if r.strip()]
+    else:
+        groups = payload.get("cognito:groups", [])
+        roles = groups if isinstance(groups, list) else [groups]
+
+    # tenant_id: トップレベル（Pre Token Lambda 注入）優先、無ければ custom属性
+    tenant_id = payload.get("tenant_id") or payload.get("custom:tenant_id", "")
 
     # identities からフェデレーション情報を取得
     identities = payload.get("identities", [])
@@ -165,7 +180,9 @@ def extract_user_context(payload: dict) -> dict:
     return {
         "userId": payload.get("sub", ""),
         "email": payload.get("email", ""),
-        "groups": ",".join(groups) if isinstance(groups, list) else str(groups),
+        "tenantId": tenant_id,
+        "roles": ",".join(roles),
+        "groups": ",".join(roles),  # 後方互換
         "issuerType": payload.get("_issuer_type", "unknown"),
         "idpName": idp_name,
         "tokenUse": payload.get("token_use", ""),
@@ -236,7 +253,8 @@ def handler(event: dict, context: Any) -> dict:
             "event": "authorization_success",
             "userId": user_context["userId"],
             "email": user_context["email"],
-            "groups": user_context["groups"],
+            "tenantId": user_context["tenantId"],
+            "roles": user_context["roles"],
             "issuerType": user_context["issuerType"],
             "idpName": user_context["idpName"],
         }))
