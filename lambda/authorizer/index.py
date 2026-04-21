@@ -42,8 +42,15 @@ DR_POOL_ID = os.environ.get("DR_COGNITO_USER_POOL_ID", "")
 DR_CLIENT_ID = os.environ.get("DR_COGNITO_CLIENT_ID", "")
 DR_ISSUER = f"https://cognito-idp.{DR_REGION}.amazonaws.com/{DR_POOL_ID}" if DR_POOL_ID else ""
 
+# Keycloak (PoC の ALB 経由)
+KEYCLOAK_ISSUER = os.environ.get("KEYCLOAK_ISSUER", "")
+KEYCLOAK_CLIENT_ID = os.environ.get("KEYCLOAK_CLIENT_ID", "")
+
 # 許可する issuer のリスト（マルチissuer対応）
-ALLOWED_ISSUERS: dict[str, dict[str, str]] = {
+# skip_client_check=True の場合、 aud/client_id 検証をスキップする
+# (Keycloak の access token は aud が "account" で client_id はトップレベルに
+#  azp として入るなど、検証が柔軟になるため)
+ALLOWED_ISSUERS: dict[str, dict[str, Any]] = {
     CENTRAL_ISSUER: {
         "client_id": CENTRAL_CLIENT_ID,
         "type": "central",
@@ -62,11 +69,44 @@ if DR_ISSUER and DR_POOL_ID:
         "type": "dr",
     }
 
+if KEYCLOAK_ISSUER:
+    ALLOWED_ISSUERS[KEYCLOAK_ISSUER] = {
+        "client_id": KEYCLOAK_CLIENT_ID,
+        "type": "keycloak",
+    }
+
 logger.info(f"Allowed issuers: {list(ALLOWED_ISSUERS.keys())}")
 
 # JWKS キャッシュ
 _jwks_cache: dict[str, Any] = {}
+_jwks_uri_cache: dict[str, str] = {}
 JWKS_CACHE_TTL = 3600  # 1時間
+
+
+def get_jwks_uri(issuer: str) -> str:
+    """OIDC Discovery から jwks_uri を取得（キャッシュ付き）。
+    Cognito: {issuer}/.well-known/jwks.json
+    Keycloak: {issuer}/protocol/openid-connect/certs
+    IdP ごとに JWKS パスが異なるため、Discovery で動的に取得する。
+    """
+    if issuer in _jwks_uri_cache:
+        return _jwks_uri_cache[issuer]
+
+    discovery_url = f"{issuer}/.well-known/openid-configuration"
+    try:
+        with urllib.request.urlopen(discovery_url, timeout=5) as response:
+            config = json.loads(response.read())
+            jwks_uri = config.get("jwks_uri", "")
+            if jwks_uri:
+                _jwks_uri_cache[issuer] = jwks_uri
+                return jwks_uri
+    except Exception as e:
+        logger.warning(f"OIDC Discovery failed for {issuer}: {e}")
+
+    # フォールバック: Cognito 互換パス
+    fallback = f"{issuer}/.well-known/jwks.json"
+    _jwks_uri_cache[issuer] = fallback
+    return fallback
 
 
 def get_jwks(issuer: str) -> dict:
@@ -78,7 +118,7 @@ def get_jwks(issuer: str) -> dict:
         if now - cached["time"] < JWKS_CACHE_TTL:
             return cached["jwks"]
 
-    jwks_url = f"{issuer}/.well-known/jwks.json"
+    jwks_url = get_jwks_uri(issuer)
     logger.info(f"Fetching JWKS from: {jwks_url}")
 
     with urllib.request.urlopen(jwks_url, timeout=5) as response:
@@ -139,12 +179,24 @@ def verify_token(token: str) -> dict:
         options={"verify_aud": False},
     )
 
-    # client_id または aud でクライアント検証（アクセストークン/IDトークン両対応）
-    token_client_id = payload.get("client_id") or payload.get("aud")
+    # client_id / azp / aud のいずれかで Client 検証
+    # - Cognito Access Token: client_id
+    # - Cognito ID Token: aud
+    # - Keycloak Access Token: azp（aud は "account"）
+    token_client_candidates = [
+        payload.get("client_id"),
+        payload.get("azp"),
+    ]
+    aud = payload.get("aud")
+    if isinstance(aud, list):
+        token_client_candidates.extend(aud)
+    elif aud:
+        token_client_candidates.append(aud)
+
     expected_client_id = issuer_config["client_id"]
-    if token_client_id != expected_client_id:
+    if expected_client_id and expected_client_id not in token_client_candidates:
         raise ValueError(
-            f"Client ID mismatch: expected={expected_client_id}, got={token_client_id}"
+            f"Client ID mismatch: expected={expected_client_id}, got={token_client_candidates}"
         )
 
     # issuer タイプを追加
@@ -161,14 +213,26 @@ def extract_user_context(payload: dict) -> dict:
                  ローカルユーザーは custom:tenant_id で設定済み。
     - roles: cognito:groups と custom:roles を合成したカンマ区切り文字列。
     """
-    # roles: Pre Token Lambda が roles クレームをカンマ区切り文字列で注入済み。
-    # 互換のため cognito:groups も fallback で読む。
+    # roles: Cognito (Pre Token Lambda) はカンマ区切り文字列、Keycloak は配列で来る。
+    # どちらも受けられるよう両対応。
+    # fallback: cognito:groups / realm_access.roles
+    # IdP内部ロール（Keycloak デフォルト等）を除外するセット
+    _INTERNAL_ROLES = {
+        "offline_access", "uma_authorization", "default-roles-auth-poc",
+        "manage-account", "manage-account-links", "view-profile",
+    }
+
     roles_claim = payload.get("roles")
-    if roles_claim:
+    if isinstance(roles_claim, list):
+        roles = [str(r).strip() for r in roles_claim if str(r).strip()]
+    elif isinstance(roles_claim, str) and roles_claim:
         roles = [r.strip() for r in roles_claim.split(",") if r.strip()]
     else:
-        groups = payload.get("cognito:groups", [])
+        groups = payload.get("cognito:groups") or payload.get("realm_access", {}).get("roles", [])
         roles = groups if isinstance(groups, list) else [groups]
+
+    # IdP内部ロールを除外
+    roles = [r for r in roles if r not in _INTERNAL_ROLES]
 
     # tenant_id: トップレベル（Pre Token Lambda 注入）優先、無ければ custom属性
     tenant_id = payload.get("tenant_id") or payload.get("custom:tenant_id", "")

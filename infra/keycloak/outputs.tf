@@ -4,8 +4,13 @@ output "keycloak_url" {
 }
 
 output "keycloak_admin_url" {
-  description = "Keycloak Admin Console URL"
-  value       = "http://${aws_lb.keycloak.dns_name}/admin"
+  description = "Keycloak Admin Console URL (Admin ALB - IP restricted)"
+  value       = "http://${aws_lb.keycloak_admin.dns_name}/admin"
+}
+
+output "keycloak_public_url" {
+  description = "Keycloak Public URL (OIDC endpoints)"
+  value       = "http://${aws_lb.keycloak.dns_name}"
 }
 
 output "keycloak_oidc_issuer" {

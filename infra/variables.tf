@@ -79,3 +79,19 @@ variable "dr_cognito_client_id" {
   type        = string
   default     = ""
 }
+
+# ==============================================================================
+# Phase 8: Keycloak 対応（同じ Lambda Authorizer でマルチ IdP を処理）
+# ==============================================================================
+
+variable "keycloak_issuer" {
+  description = "Keycloak OIDC issuer URL (infra/keycloak terraform output から取得)"
+  type        = string
+  default     = ""
+}
+
+variable "keycloak_client_id" {
+  description = "Keycloak Client ID (auth-poc-spa 等)"
+  type        = string
+  default     = ""
+}

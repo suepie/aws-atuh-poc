@@ -1,6 +1,6 @@
 # ドキュメント一覧
 
-**最終更新**: 2026-03-30（Phase 7 完了、全環境削除済み）
+**最終更新**: 2026-04-21（Phase 8 完了、要件定義フェーズ開始）
 
 ---
 
@@ -13,6 +13,7 @@ doc/
 ├── keycloak/        # Keycloak固有（認証フロー・構築手順・検証シナリオ）
 ├── adr/             # Architecture Decision Records（001-009）
 ├── reference/       # 参考情報（認証基礎 / Cognito / Keycloak）
+├── requirements/    # 要件定義（PoC総括・ヒアリング・要件定義書）
 └── old/             # 過去の検討ドキュメント（読み取り専用）
 ```
 
@@ -56,6 +57,14 @@ doc/
 | 認証基礎・SSO | 3 |
 | Cognito | 3 |
 | Keycloak | 3 |
+
+## 要件定義（[requirements/](requirements/00-index.md)）
+
+| ドキュメント | 内容 |
+|------------|------|
+| [poc-summary-evaluation.md](requirements/poc-summary-evaluation.md) | PoC総括評価：成果・ドキュメント評価・不足箇所分析 |
+| [requirements-hearing-strategy.md](requirements/requirements-hearing-strategy.md) | ヒアリング戦略：確認事項・ステークホルダー・スケジュール |
+| [requirements-document-structure.md](requirements/requirements-document-structure.md) | 要件定義資料の構成案・作成順序 |
 
 ## 過去の検討（[old/](old/)）
 

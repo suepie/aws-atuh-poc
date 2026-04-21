@@ -76,6 +76,9 @@ resource "aws_lambda_function" "authorizer" {
       DR_COGNITO_USER_POOL_ID = var.dr_cognito_user_pool_id
       DR_COGNITO_REGION       = "ap-northeast-3"
       DR_COGNITO_CLIENT_ID    = var.dr_cognito_client_id
+      # Phase 8: Keycloak 対応（同じ認可ロジックで両方検証）
+      KEYCLOAK_ISSUER    = var.keycloak_issuer
+      KEYCLOAK_CLIENT_ID = var.keycloak_client_id
     }
   }
 

@@ -1,6 +1,8 @@
 {
   "name": "AWS Auth PoC",
-  "image": "mcr.microsoft.com/devcontainers/typescript-node:22",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
 
   "features": {
     "ghcr.io/devcontainers/features/aws-cli:1": {},
@@ -57,7 +59,14 @@
     "5173": { "label": "App (Cognito)", "onAutoForward": "notify" },
     "5174": { "label": "App (Keycloak)", "onAutoForward": "notify" },
     "5175": { "label": "App (Keycloak-2)", "onAutoForward": "notify" },
-    "8080": { "label": "Keycloak", "onAutoForward": "notify" }
+    "8080": { "label": "Keycloak", "onAutoForward": "notify" }API Error: Unable to connect to API: Self-signed certificate detected. Check your proxy or corporate SSL certificates
+  },
+
+  "remoteEnv": {
+    "NODE_EXTRA_CA_CERTS": "/usr/local/share/ca-certificates/netskope.crt"
+  },
+  "containerEnv": {
+    "NODE_EXTRA_CA_CERTS": "/usr/local/share/ca-certificates/netskope.crt"
   },
 
   "remoteUser": "node"
