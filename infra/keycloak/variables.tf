@@ -51,3 +51,9 @@ variable "app_callback_urls" {
   type        = list(string)
   default     = ["http://localhost:5173/callback"]
 }
+
+variable "vpc_cidr" {
+  description = "CIDR block for the Keycloak VPC"
+  type        = string
+  default     = "10.0.0.0/16"
+}

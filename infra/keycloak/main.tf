@@ -25,21 +25,8 @@ locals {
   prefix = "${var.project_name}-kc"
 }
 
-# 既存VPC情報の取得（デフォルトVPC使用）
-data "aws_vpc" "default" {
-  default = true
-}
-
-data "aws_subnets" "default" {
-  filter {
-    name   = "vpc-id"
-    values = [data.aws_vpc.default.id]
-  }
-  filter {
-    name   = "default-for-az"
-    values = ["true"]
-  }
-}
+# カスタム VPC は network.tf に定義（本番理想形）。
+# VPC / サブネット / IGW / ルートテーブルは aws_vpc.main / aws_subnet.public / aws_subnet.private で参照。
 
 data "aws_caller_identity" "current" {}
 

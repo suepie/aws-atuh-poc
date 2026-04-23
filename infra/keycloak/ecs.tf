@@ -4,7 +4,7 @@ resource "aws_ecs_cluster" "keycloak" {
 
   setting {
     name  = "containerInsights"
-    value = "disabled"  # PoCなのでコスト削減
+    value = "disabled" # PoCなのでコスト削減
   }
 }
 
@@ -102,8 +102,8 @@ resource "aws_ecs_task_definition" "keycloak" {
   family                   = "${local.prefix}-task"
   network_mode             = "awsvpc"
   requires_compatibilities = ["FARGATE"]
-  cpu                      = "2048"  # 2 vCPU
-  memory                   = "4096"  # 4 GB
+  cpu                      = "2048" # 2 vCPU
+  memory                   = "4096" # 4 GB
   execution_role_arn       = aws_iam_role.ecs_execution.arn
   task_role_arn            = aws_iam_role.ecs_task.arn
 
@@ -156,17 +156,17 @@ resource "aws_ecs_task_definition" "keycloak" {
 
 # ECS Service
 resource "aws_ecs_service" "keycloak" {
-  name            = "${local.prefix}-service"
-  cluster         = aws_ecs_cluster.keycloak.id
-  task_definition = aws_ecs_task_definition.keycloak.arn
-  desired_count   = 1
-  launch_type     = "FARGATE"
+  name                   = "${local.prefix}-service"
+  cluster                = aws_ecs_cluster.keycloak.id
+  task_definition        = aws_ecs_task_definition.keycloak.arn
+  desired_count          = 1
+  launch_type            = "FARGATE"
   enable_execute_command = true
 
   network_configuration {
-    subnets          = data.aws_subnets.default.ids
+    subnets          = aws_subnet.private[*].id
     security_groups  = [aws_security_group.ecs.id]
-    assign_public_ip = true  # デフォルトVPC + ECR pull にパブリックIPが必要
+    assign_public_ip = false # Private Subnet + VPC Endpoints 経由のため不要
   }
 
   load_balancer {
@@ -182,7 +182,7 @@ resource "aws_ecs_service" "keycloak" {
   }
 
   # デプロイ時の設定
-  deployment_minimum_healthy_percent = 0    # PoCなのでダウンタイム許容
+  deployment_minimum_healthy_percent = 0 # PoCなのでダウンタイム許容
   deployment_maximum_percent         = 100
 
   # desired_countの手動変更を無視（停止/起動はCLIで行う）

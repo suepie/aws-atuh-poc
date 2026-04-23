@@ -49,6 +49,7 @@ doc/
 | 001-007 | Cognito構成・Lambda Authorizer・oidc-client-ts・DR等 |
 | 008 | PoCでKeycloak start-devモードを使用 |
 | 009 | MFA責任はパスワード管理側に帰属させる |
+| 010 | Keycloak を Private Subnet + VPC Endpoint 構成へ移行 |
 
 ## 参考情報（[reference/](reference/00-index.md)）
 

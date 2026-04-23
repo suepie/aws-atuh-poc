@@ -2,7 +2,7 @@
 resource "aws_ecr_repository" "keycloak" {
   name                 = "${local.prefix}-repo"
   image_tag_mutability = "MUTABLE"
-  force_delete         = true  # destroy時にイメージごと削除
+  force_delete         = true # destroy時にイメージごと削除
 
   image_scanning_configuration {
     scan_on_push = true
