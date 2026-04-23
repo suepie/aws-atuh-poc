@@ -11,3 +11,8 @@ ENV NODE_EXTRA_CA_CERTS=/usr/local/share/ca-certificates/netskope.crt
 RUN if command -v pip3 > /dev/null 2>&1; then \
       pip3 install --no-cache-dir PyJWT[crypto]; \
     fi
+
+# uv / uvx をインストール (serena MCP サーバー起動に必要)
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh \
+    && mv /root/.local/bin/uv /usr/local/bin/uv \
+    && mv /root/.local/bin/uvx /usr/local/bin/uvx

@@ -28,6 +28,302 @@
 
 ---
 
+## 1.3 検証内容サマリー
+
+### 1.3.1 認証パターンの検証（計 8 パターン）
+
+**Cognito 系（5 パターン）**:
+
+| # | パターン | 概要 | IdP | 検証 Phase |
+|---|---------|------|-----|-----------|
+| A | Hosted UI（ローカルユーザー） | Cognito 標準ログイン画面でID/PW認証 | Cognito (central) | Phase 1 |
+| B | Auth0 フェデレーション | Auth0（Entra ID 代替）経由の OIDC 連携 + JIT | Auth0 → Cognito (central) | Phase 2 |
+| C | ローカル Cognito | 顧客専用の別 User Pool | Cognito (local) | Phase 4 |
+| D | DR（大阪）ローカル | DR リージョンでのローカルユーザー認証 | Cognito (dr) | Phase 5 |
+| E | DR（大阪）+ Auth0 | DR リージョンでの Auth0 フェデレーション | Auth0 → Cognito (dr) | Phase 5 |
+
+**Keycloak 系（3 パターン）**:
+
+| # | パターン | 概要 | IdP | 検証 Phase |
+|---|---------|------|-----|-----------|
+| F | Keycloak ローカルユーザー | Realm 内ローカルユーザー + TOTP MFA | Keycloak | Phase 6, 7 |
+| G | Keycloak + Auth0 Brokering | Auth0 経由の IdP Brokering + 条件付き MFA スキップ | Auth0 → Keycloak | Phase 7 |
+| H | Keycloak SSO | 同一 Realm 内の複数 Client でのシングルサインオン | Keycloak | Phase 7 |
+
+### 1.3.2 機能別の検証項目
+
+| カテゴリ | 検証項目 | 結果 | 検証場所 |
+|---------|---------|------|---------|
+| **認証** | PKCE + Authorization Code フロー | ✅ | Phase 1, 6 |
+| | OIDC Identity Provider フェデレーション | ✅ | Phase 2, 7 |
+| | JIT プロビジョニング | ✅ | Phase 2, 7 |
+| | 複数 IdP 同時運用（central + local + dr） | ✅ | Phase 4, 5 |
+| **API 認可** | Lambda Authorizer マルチイシュア JWT 検証 | ✅ | Phase 3, 4, 5 |
+| | JWKS 取得・署名検証 | ✅ | Phase 3 |
+| | Authorizer キャッシュ（300 秒 TTL） | ✅ | Phase 3 |
+| | Context 伝播（tenantId, roles, issuerType） | ✅ | Phase 3, 8 |
+| **MFA** | Cognito TOTP | ✅ | Phase 1 |
+| | Keycloak TOTP | ✅ | Phase 7 |
+| | 条件付き MFA（フェデレーションユーザーはスキップ） | ✅ | Phase 7 |
+| | MFA 設定の永続化（ECS 再起動後） | ✅ | Phase 7 |
+| | MFA 設定の永続化（RDS 障害後） | ✅ | Phase 7 |
+| **SSO** | Cognito 同一 User Pool 内 SSO | ✅ | Phase 1 |
+| | Keycloak Realm 内マルチ Client SSO | ✅ | Phase 7 |
+| | Back-Channel Logout（Keycloak） | ✅ | Phase 7 |
+| | Auth0 経由のクロス IdP SSO | ✅ | Phase 2, 7 |
+| **ログアウト** | ローカルログアウト | ✅ | Phase 1, 6 |
+| | Cognito Hosted UI ログアウト | ✅ | Phase 1 |
+| | Auth0 セッション破棄（完全ログアウト） | ✅ | Phase 2 |
+| | Keycloak Back-Channel Logout | ✅ | Phase 7 |
+| | ハイブリッド環境での動的ログアウトルーティング | ✅ | Phase 4 |
+| **DR** | 3 イシュア対応（central / local / dr） | ✅ | Phase 5 |
+| | Auth0 SSO 維持でのリージョン切替 | ✅ | Phase 5（手動） |
+| | Route 53 ヘルスチェック + 自動フェイルオーバー | ❌ | Phase 5 未実施 |
+| | Cognito リージョン間バックアップ | ⚠ | Phase 5（仕組み設計のみ） |
+| **クレーム / 認可** | Pre Token Generation Lambda V2 | ✅ | Phase 8 |
+| | tenant_id 属性のトークン注入 | ✅ | Phase 8 |
+| | roles 属性のトークン注入 | ✅ | Phase 8 |
+| | ロール階層（employee < manager < admin） | ✅ | Phase 8 |
+| | テナント分離（cross-tenant 拒否） | ✅ | Phase 8 |
+| | Keycloak Protocol Mapper でのクレーム変換 | ❌ | Phase 9（未着手） |
+| **障害・復旧** | Keycloak ECS タスク停止 → 自動再起動 | ✅ | Phase 6 |
+| | RDS 停止 → 復旧 | ✅ | Phase 6 |
+| | Keycloak バージョンアップ（設定ファイル変更） | ✅ | Phase 6 |
+| | Client リダイレクト URI 変更 | ✅ | Phase 6 |
+| **コスト** | Cognito / Keycloak 3 年 TCO 試算 | ✅ | ADR-006 |
+| | 損益分岐 MAU の算出（175,000 MAU） | ✅ | ADR-006 |
+| | DR 構成のコスト比較 | ✅ | poc-results.md |
+
+### 1.3.3 障害注入テストの内容
+
+| 障害シナリオ | 対象 | 検証目的 | 結果 |
+|------------|------|---------|------|
+| ECS タスク強制停止 | Keycloak コンテナ | 自動復旧・セッション影響の確認 | ✅ 自動復旧、既存セッションは一時 503 → 復旧 |
+| RDS インスタンス停止 | Keycloak DB | Keycloak の挙動・復旧手順 | ✅ 停止中は認証不可、復旧後は MFA 設定も保持 |
+| リージョン障害想定 | 東京リージョン | DR への切替手順 | ⚠ 手動切替のみ確認（自動化未検証） |
+| Auth0 接続不可 | Auth0 Tenant | フォールバック挙動 | ✅ ローカルユーザーは影響なし |
+| Lambda Authorizer エラー | API Gateway | エラーレスポンス形式 | ✅ 401 正常返却 |
+
+### 1.3.4 観点 × プラットフォーム検証マトリクス
+
+「どの観点で、Cognito / Keycloak それぞれに何ができたか」を横並びで比較。
+
+凡例: ✅ 検証済み / ⚠ 一部検証・制約あり / ❌ 未検証 / ➖ 対象外
+
+#### (A) 認証方式
+
+| 観点 | Cognito | Keycloak | 備考 |
+|------|:-------:|:--------:|------|
+| ID/PW 認証（ローカルユーザー） | ✅ Phase 1 | ✅ Phase 6 | 両者とも Hosted UI / Admin Console 経由 |
+| Authorization Code + PKCE フロー | ✅ Phase 1 | ✅ Phase 6 | oidc-client-ts で統一実装 |
+| Hosted UI のカスタマイズ | ⚠ 制約あり | ✅ 自由 | Cognito は CSS / ロゴのみ、Keycloak はテーマ全面カスタム可 |
+| パスワードポリシー設定 | ✅ | ✅ | Cognito デフォルト / Keycloak は Realm 単位で細かく制御可 |
+| ソーシャルログイン | ❌ 未検証 | ❌ 未検証 | Google/Facebook 等、本 PoC では対象外 |
+
+#### (B) フェデレーション（外部 IdP 連携）
+
+| 観点 | Cognito | Keycloak | 備考 |
+|------|:-------:|:--------:|------|
+| Auth0 (OIDC) フェデレーション | ✅ Phase 2 | ✅ Phase 7 | 両者とも Authorization Code フロー |
+| JIT プロビジョニング | ✅ Phase 2 | ✅ Phase 7 | 初回ログイン時に自動ユーザー作成 |
+| 属性マッピング | ✅ attribute_mapping | ✅ IdP Mapper | Cognito は宣言的、Keycloak は Mapper 単位で柔軟 |
+| ログイン画面での IdP 自動表示 | ⚠ `identity_provider` パラメータ必要 | ✅ 自動表示 | **Keycloak が UX 優位** |
+| 大阪リージョンからの Auth0 接続 | ❌ 失敗（ADR-007） | ➖ | `.well-known` 到達不可 |
+| SAML IdP 対応 | ❌ 未検証 | ❌ 未検証 | 両者とも対応可だが本 PoC では未検証 |
+| LDAP IdP 対応 | ❌ **非対応** | ❌ 未検証（対応可） | **Cognito は仕様として非対応**、Keycloak は User Federation |
+
+#### (C) MFA
+
+| 観点 | Cognito | Keycloak | 備考 |
+|------|:-------:|:--------:|------|
+| TOTP MFA | ✅ Phase 1 | ✅ Phase 7 | — |
+| SMS MFA | ❌ 未検証 | ❌ 未検証 | Cognito は対応済、Keycloak は外部連携必要 |
+| WebAuthn / FIDO2 | ❌ 未検証 | ❌ 未検証（対応可） | Keycloak は標準対応、Cognito は未対応 |
+| フェデレーションユーザーの MFA スキップ | ⚠ 個別実装 | ✅ 条件付き OTP | **Keycloak が柔軟** |
+| MFA 設定の永続化（ECS 再起動後） | ➖ マネージド | ✅ Phase 7 | Keycloak は RDS 保持を確認済 |
+| MFA 設定の永続化（RDS 障害後） | ➖ マネージド | ✅ Phase 7 | 復旧後も設定保持 |
+| MFA 強制 / 任意の切替 | ✅ | ✅ | Realm / Pool 単位で設定可 |
+
+#### (D) SSO / ログアウト
+
+| 観点 | Cognito | Keycloak | 備考 |
+|------|:-------:|:--------:|------|
+| 同一 User Pool / Realm 内 SSO | ✅ Phase 1 | ✅ Phase 7 | — |
+| 複数 Client 間の SSO | ✅ | ✅ Phase 7 | マルチシステム連携の基本 |
+| ローカルログアウト | ✅ | ✅ | トークン破棄のみ |
+| Hosted UI / Keycloak UI ログアウト | ✅ | ✅ | IdP セッション破棄 |
+| Auth0 セッション破棄（完全ログアウト） | ⚠ URL エンコード要注意 | ✅ | Cognito は federated sign-out 実装に落とし穴あり |
+| Back-Channel Logout | ❌ **非対応** | ✅ Phase 7 | **Keycloak のみ対応** |
+| Front-Channel Logout | ✅ | ✅ | — |
+| ハイブリッド環境での動的ログアウト | ✅ Phase 4 | ➖ | Cognito central/local/dr 3 イシュア対応 |
+
+#### (E) マルチテナント / IdP Broker
+
+| 観点 | Cognito | Keycloak | 備考 |
+|------|:-------:|:--------:|------|
+| 複数 IdP 並行運用 | ✅ | ✅ | 両者対応 |
+| テナントごとの属性マッピング | ✅ attribute_mapping | ✅ IdP Mapper | — |
+| テナント追加時の既存システム影響 | ✅ 影響なし | ✅ 影響なし | Broker パターン（identity-broker-multi-idp.md）|
+| 顧客 IdP 数のスケーラビリティ | ✅ | ✅ | JWT 検証性能は IdP 数に依存しない |
+| ログイン画面での IdP 選択 UX | ⚠ パラメータ指定必要 | ✅ ボタン自動生成 | **Keycloak 優位** |
+
+#### (F) 認可（JWT / クレーム）
+
+| 観点 | Cognito | Keycloak | 備考 |
+|------|:-------:|:--------:|------|
+| JWT 発行（Access / ID / Refresh） | ✅ | ✅ | 標準 OIDC 準拠 |
+| JWT にカスタムクレーム注入 | ✅ Pre Token Lambda V2 | ❌ **未検証（Phase 9 で実施予定）** | **Keycloak は Protocol Mapper で対応可** |
+| tenant_id クレーム | ✅ Phase 8 | ❌ 未検証 | — |
+| roles クレーム（配列） | ✅ Phase 8 | ❌ 未検証 | — |
+| ロール階層（継承） | ✅ Phase 8（アプリ側実装） | ➖ | Keycloak は Realm Role の Composite で対応可 |
+| テナント分離（cross-tenant 拒否） | ✅ Phase 8 | ❌ 未検証 | Lambda Authorizer で実装済 |
+| Pre Token Lambda V1 の制約 | ⚠ Access Token 変更不可 | ➖ | V2 移行で解決 |
+| Federation ユーザーへのカスタムクレーム | ✅ Phase 8 | ❌ 未検証 | 内部グループ名の除外処理要 |
+
+#### (G) API 認可（Lambda Authorizer）
+
+| 観点 | Cognito | Keycloak | 備考 |
+|------|:-------:|:--------:|------|
+| JWT 署名検証（JWKS） | ✅ Phase 3 | ✅ Phase 8 | 同一 Lambda で両対応 |
+| マルチイシュア対応 | ✅ 3 イシュア（central/local/dr） | ✅ 1 イシュア追加済 | Authorizer コードは同一 |
+| Authorizer キャッシュ | ✅ 300 秒 TTL | ✅ 同様 | — |
+| Context 伝播（tenantId, roles 等） | ✅ Phase 3, 8 | ✅ | バックエンドへ情報引き継ぎ |
+| マルチアカウント想定の JWKS 公開 | ✅ HTTPS 公開 | ✅ HTTPS 公開 | ADR-004、jwks-public-exposure.md |
+
+#### (H) DR / 可用性
+
+| 観点 | Cognito | Keycloak | 備考 |
+|------|:-------:|:--------:|------|
+| マルチリージョン構成 | ✅ Phase 5（東京 + 大阪） | ❌ 未検証 | — |
+| DR リージョン IdP 連携 | ⚠ Auth0 は大阪不可 | ➖ | ADR-007 |
+| 手動フェイルオーバー | ✅ Phase 5 | ❌ 未検証 | — |
+| 自動フェイルオーバー（Route 53） | ❌ **未検証** | ❌ **未検証** | Phase 5 残課題 |
+| バックアップ・リストア | ⚠ 概念設計のみ | ⚠ RDS スナップショットのみ | — |
+| マネージド SLA | ✅ 99.9% | ❌ 自前設計 | AWS 保証 vs 自前 HA |
+| DR 時のセッション維持（Auth0 SSO） | ✅ Phase 5 | ❌ 未検証 | Auth0 側でセッション維持 |
+
+#### (I) 運用
+
+| 観点 | Cognito | Keycloak | 備考 |
+|------|:-------:|:--------:|------|
+| 管理コンソール | ✅ AWS Console | ✅ Keycloak Admin Console | Keycloak の方が機能豊富 |
+| Terraform 管理 | ✅ | ⚠ インフラのみ / Realm は別管理 | Keycloak Realm は realm-export.json |
+| バージョンアップ | ➖ 自動 | ⚠ 手動 Docker image 更新 | **Cognito 優位** |
+| パッチ適用 | ➖ 自動 | ⚠ 手動 | **Cognito 優位** |
+| 障害検知・自動復旧（ECS） | ➖ マネージド | ✅ Phase 6 | ECS 自動再起動確認済 |
+| 設定変更のリードタイム | ⚠ 一部再作成必要 | ✅ 即時反映 | Keycloak は多くを即時反映 |
+| ログ・監査 | ✅ CloudWatch + CloudTrail | ⚠ Keycloak Event + CloudWatch | Keycloak はイベント設定要 |
+
+#### (J) コスト
+
+| 観点 | Cognito | Keycloak | 備考 |
+|------|:-------:|:--------:|------|
+| 初期コスト（インフラ） | ✅ $0 | ❌ $940/月〜 | Keycloak は常時稼働必要 |
+| 従量課金（MAU） | ❌ $0.015/MAU（連携） | ➖ なし | — |
+| 損益分岐 MAU | ➖ | ➖ | **175,000 MAU**（ADR-006） |
+| DR コスト | ✅ $0.50/月 + MAU | ❌ $890/月 | **Cognito 圧倒的優位** |
+| 運用人件費 | ✅ ほぼ不要 | ❌ 月 $1,680 想定 | Keycloak は運用工数必要 |
+
+#### (K) 障害・復旧テスト
+
+| 観点 | Cognito | Keycloak | 備考 |
+|------|:-------:|:--------:|------|
+| ECS タスク停止 → 復旧 | ➖ | ✅ Phase 6 | 自動再起動確認 |
+| RDS 停止 → 復旧 | ➖ | ✅ Phase 6 | MFA 設定も永続 |
+| Auth0 接続不可時の挙動 | ✅ ローカルユーザー影響なし | ❌ 未検証 | — |
+| Lambda Authorizer エラー | ✅ 401 返却確認 | ✅ 同 Lambda 使用 | — |
+| リリース・設定変更（クライアントURI 等） | ✅ | ✅ Phase 6 | 両者とも即時反映 |
+
+### 1.3.5 観点別サマリー（どちらが優位か）
+
+| 観点カテゴリ | Cognito 優位 | Keycloak 優位 | 備考 |
+|------------|:-----------:|:------------:|------|
+| 認証方式 | — | ◯（柔軟性） | UI カスタマイズ |
+| フェデレーション | — | ◯（UX + LDAP） | IdP 自動表示、LDAP 対応 |
+| MFA | — | ◯（柔軟性） | WebAuthn、条件付き OTP |
+| SSO / ログアウト | — | ◯（Back-Channel） | ログアウト完全性 |
+| マルチテナント | △ 同等 | △ 同等 | UX で Keycloak やや優位 |
+| 認可・クレーム | ◯（検証進捗） | — | PoC では Cognito が先行、本番は同等 |
+| API 認可 | △ 同等 | △ 同等 | 同一 Lambda で対応 |
+| DR | ◯（コスト・SLA） | — | マネージドの強み |
+| 運用 | ◯（無運用） | — | 運用工数圧倒的差 |
+| コスト（小規模） | ◯ | — | 〜175K MAU |
+| コスト（大規模） | — | ◯ | 175K MAU〜 |
+| 障害復旧 | ◯（マネージド） | △ 要設計 | — |
+
+**総合傾向**: Cognito は**運用・コスト・可用性**で優位、Keycloak は**柔軟性・UX・大規模時コスト**で優位。選定は MAU 規模 + カスタマイズ要件が決定要因。
+
+---
+
+### 1.3.6 コスト検証の結果
+
+| シナリオ | Cognito | Keycloak | 備考 |
+|---------|---------|----------|------|
+| 初期コスト（100 MAU） | $0〜 | $940/月〜 | Keycloak は ECS/RDS 常時稼働 |
+| 50,000 MAU | $750/月 | $940/月 | Cognito 優位 |
+| **175,000 MAU（損益分岐）** | **$2,625/月** | **$2,625/月** | ADR-006 参照 |
+| 500,000 MAU | $7,500/月 | $2,625/月 | Keycloak 優位 |
+| DR 追加コスト | $0.50/月 + MAU 按分 | $890/月 | Keycloak DR は常時稼働必須 |
+
+---
+
+## 1.4 ADR（Architecture Decision Records）サマリー
+
+意思決定の記録が 9 件残っている。本番設計でも参照すべき重要な判断根拠。
+
+### 1.4.1 ADR 一覧と概要
+
+| ADR | タイトル | 状態 | 日付 | 一言サマリー |
+|-----|---------|------|------|------------|
+| [001](../adr/001-cognito-hybrid-for-poc.md) | PoC 第1パターンとして Cognito ハイブリッド構成を採用 | Accepted | 2026-03-17 | 中央 + ローカル + DR の 3 User Pool 構成で検証開始 |
+| [002](../adr/002-lambda-authorizer.md) | 認可方式として Lambda Authorizer を採用 | Accepted | 2026-03-17 | マルチイシュア対応・カスタムロジックが必要なため |
+| [003](../adr/003-oidc-client-ts.md) | 認証ライブラリとして oidc-client-ts を採用 | Accepted | 2026-03-17 | OIDC 標準準拠で Cognito/Keycloak 両対応 |
+| [004](../adr/004-single-account-poc.md) | 1 アカウント 2 User Pool でマルチアカウント構成を擬似再現 | Accepted | 2026-03-17 | JWKS は HTTPS 公開、アカウント分離は本番で再検証 |
+| [005](../adr/005-user-pool-not-identity-pool.md) | 共通認証基盤に User Pool を使用（Identity Pool ではない） | Accepted | 2026-03-17 | JWT 発行が目的で AWS STS クレデンシャル不要 |
+| [006](../adr/006-cognito-vs-keycloak-cost-breakeven.md) | Cognito vs Keycloak コスト損益分岐点の分析 | **Proposed** | 2026-03-17 | 損益分岐 175,000 MAU、MAU 規模次第で選定 |
+| [007](../adr/007-osaka-auth0-idp-limitation.md) | 大阪リージョンで Auth0 OIDC IdP 接続不可の記録 | Accepted | 2026-03-18 | ap-northeast-3 から Auth0 `.well-known` 到達不可、本番は Entra ID で要再検証 |
+| [008](../adr/008-keycloak-start-dev-for-poc.md) | PoC で Keycloak start-dev モードを使用 | Accepted | 2026-03-25 | HTTP 許可（ACM 不要）、本番は `start --optimized` 必須 |
+| [009](../adr/009-mfa-responsibility-by-idp.md) | MFA 責任はパスワード管理側に帰属させる | Accepted | 2026-03-28 | 二重 MFA 回避、フェデレーションユーザーは IdP 側で MFA |
+
+### 1.4.2 ADR の重要度・本番への影響度
+
+| ADR | 重要度 | 本番での再検討 | 理由 |
+|-----|--------|--------------|------|
+| 001 | 中 | **要** | PoC 用構成。本番はアカウント分離等で再設計 |
+| 002 | **高** | 基本維持 | マルチイシュア対応はそのまま継続可能 |
+| 003 | 中 | 基本維持 | フロントエンド再開発時も同ライブラリ採用推奨 |
+| 004 | **高** | **要** | 本番はマルチアカウント構成の実装が必要 |
+| 005 | 中 | 維持 | User Pool で十分、Identity Pool は別目的 |
+| 006 | **最高** | **要最終確定** | MAU 規模確定後に Proposed → Accepted に昇格すべき最重要 ADR |
+| 007 | **高** | **要再検証** | 本番の Entra ID / Okta では事象が異なる可能性 |
+| 008 | **高** | **要** | 本番は `start --optimized` + HTTPS 必須 |
+| 009 | 中 | 維持 | MFA 設計の基本方針は継続可能 |
+
+### 1.4.3 ADR で決定済みの主要設計
+
+- **認証ライブラリ**: oidc-client-ts（OIDC 標準準拠、Cognito/Keycloak 両対応）
+- **認可方式**: Lambda Authorizer（キャッシュ 300 秒、マルチイシュア対応）
+- **User Pool 構成**: 中央 + ローカル + DR の 3 分割（本番は顧客単位に拡張）
+- **Keycloak 運用モード**: 本番は start --optimized + ACM（PoC は start-dev）
+- **MFA 方針**: パスワード管理側に責任集約、二重 MFA を回避
+- **JWKS 公開方針**: パブリック公開が正解（暗号理論・OIDC 仕様・他社慣行）
+
+### 1.4.4 本番移行時に追加が必要な ADR（想定）
+
+要件定義・本番設計で以下の ADR を追加する想定：
+
+| 想定 ADR | テーマ | 判断タイミング |
+|---------|-------|-------------|
+| ADR-010 | Cognito vs Keycloak 最終選定 | Week 4 最終判断会議 |
+| ADR-011 | 本番マルチアカウント戦略 | 設計フェーズ |
+| ADR-012 | DR 自動フェイルオーバー方式（Route 53 等） | 設計フェーズ |
+| ADR-013 | カスタムドメイン・証明書管理 | 設計フェーズ |
+| ADR-014 | バックエンド実装言語・フレームワーク | 設計フェーズ |
+| ADR-015 | 監視・アラート設計 | 運用設計 |
+| ADR-016 | 監査ログの保存・検索基盤 | 運用設計 |
+
+---
+
 ## 2. 既存ドキュメント評価
 
 ### 2.1 ドキュメント品質マトリクス
@@ -67,6 +363,21 @@
 1. **大容量ファイル**: poc-results.md (66KB)、setup-guide.md (58KB) は分割が望ましい
 2. **インデックスの更新漏れ**: doc/common/00-index.md に Phase 8 追加ドキュメントが反映途上
 3. **old/ フォルダ**: アーカイブ基準が不明確
+
+### 2.4 ドキュメント最新化対応（2026-04-21 実施）
+
+Keycloak ネットワーク構成の実装実態とドキュメントに差分があったため、以下を対応済:
+
+| 対応 | 対象 | 内容 |
+|-----|------|------|
+| ✅ 新規作成 | [keycloak-network-architecture.md](../common/keycloak-network-architecture.md) | 実装実態に基づくネットワーク構成・IP 制限マトリクス・本番移行要件 |
+| ✅ 更新 | [architecture.md](../common/architecture.md) | Admin ALB の追記、Public ALB の L7 制限を注記 |
+| ✅ 更新 | [jwks-public-exposure.md](../common/jwks-public-exposure.md) | Public ALB の L7 パスベース制限を追記（従来は L4 SG のみの記載） |
+
+**検出された主な差分**:
+- Admin ALB が `architecture.md` に未反映だった
+- `jwks-public-exposure.md` が Public ALB の L7 Listener Rule（JWKS 以外のパスは IP 制限）を記載していなかった
+- RDS の「メンテナンス用自分の IP 許可」がどのドキュメントにも記載されていなかった（**本番では削除必須**）
 
 ---
 

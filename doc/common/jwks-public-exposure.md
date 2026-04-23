@@ -188,27 +188,78 @@ flowchart TB
     end
 
     subgraph AWS["AWS"]
-        ALB_Public["Public ALB<br/>OIDC + JWKS<br/>（全IP許可）"]
-        ALB_Admin["Admin ALB<br/>Admin Console<br/>（管理者IP限定）"]
+        ALB_Public["Public ALB<br/>L4 SG: 0.0.0.0/0<br/>L7 Rule でパスベース制限"]
+        ALB_Admin["Admin ALB<br/>L4 SG: 管理者IP限定<br/>L7: 全パス転送"]
         KC["Keycloak ECS"]
     end
 
-    Browser -->|認証| ALB_Public
-    Lambda -->|JWKS取得| ALB_Public
-    ExtRS -->|JWKS取得| ALB_Public
+    Browser -->|ログイン (IP制限)| ALB_Public
+    Lambda -->|JWKS (全IP可)| ALB_Public
+    ExtRS -->|JWKS (全IP可)| ALB_Public
     ALB_Admin -->|Admin Console| KC
     ALB_Public --> KC
     ALB_Admin --> KC
 ```
 
-| ALB | 用途 | SG |
-|-----|------|-----|
-| Public ALB | OIDC認証 + JWKS | `0.0.0.0/0`（全IP） |
-| Admin ALB | Admin Console | 管理者IP限定 |
+### 5.1 Public ALB の L7 パスベース制限（実装実態）
+
+L4（SG）レベルでは `0.0.0.0/0` を許可しているが、**L7（Listener Rule）レベルで 3 段階の制限**を掛けている。
+
+| 優先度 | パス条件 | ソース IP 条件 | 動作 |
+|:------:|---------|:------------:|------|
+| 100 | `/realms/*/.well-known/*` + `/realms/*/protocol/openid-connect/certs` | なし（全 IP） | Keycloak に転送 |
+| 200 | 任意 | `my_ip + allowed_cidr_blocks` | Keycloak に転送 |
+| default | — | — | **403 Forbidden 固定レスポンス** |
+
+**要点**:
+- JWKS / OIDC Discovery は Lambda Authorizer 等の出口 IP が不定のため**全 IP 許可が必須**
+- ログイン画面・トークンエンドポイントはブラウザ IP が予測可能なため**IP 制限可能**
+- L4 で SG を絞るとすべてのパスが不可になるため、L7 でパスベース制限している
+
+| ALB | 用途 | L4 SG | L7 制限 |
+|-----|------|-------|-------|
+| Public ALB | OIDC認証 + JWKS | `0.0.0.0/0` | パスベース IP 制限（上記表） |
+| Admin ALB | Admin Console | 管理者IP限定 | なし（全パス転送） |
+
+> 詳細な IP 制限マトリクス・本番移行要件は [keycloak-network-architecture.md](keycloak-network-architecture.md) 参照。
 
 ---
 
-## 6. 参考文献
+## 6. 検証結果（PoCで実測）
+
+公開が必要であることを実際に検証した。
+
+### 検証手順
+
+1. Public ALB の SG（L4）を `0.0.0.0/0` から特定IPのみに変更
+   （Lambda の出口 IP は許可リスト外）
+2. SPA から API Tester 経由で Backend Lambda にリクエスト
+3. Lambda Authorizer が Keycloak の JWKS エンドポイントへアクセス試行
+
+### 結果
+
+| 状態 | Lambda Authorizer 動作 | API レスポンス |
+|------|--------------------|--------------|
+| Public ALB SG = `0.0.0.0/0` | ✅ JWKS 取得成功 | 200 OK |
+| Public ALB SG = 特定IPのみ | ❌ JWKS取得タイムアウト/拒否 | 403 / CORS エラー |
+
+→ Lambda（VPC外）から Keycloak の JWKS エンドポイントに到達できない場合、
+  JWT 検証が一切できなくなる。
+
+### この結果が示すこと
+
+- 「Admin Console と JWKS を同じ ALB の SG だけで制限する」設計は不可
+- 解決策は次の 3 つ:
+  1. ALB を**公開用と管理用に分離**する（Public ALB + Admin ALB）
+  2. **Lambda を VPC 内に配置**して VPC 内 IP を許可する
+  3. **L7 Listener Rule でパスベース制限**する（SG は全開、JWKS パスのみ全公開、他は IP 制限）
+- **本 PoC は 1 + 3 の組み合わせを採用**:
+  - ALB 分離（Public + Admin）で管理画面を Admin ALB 側に隔離
+  - さらに Public ALB 側は L7 でパスベース制限（JWKS は全公開、他は IP 制限、不明パスは 403）
+
+---
+
+## 7. 参考文献
 
 - [RFC 7517 - JSON Web Key (JWK)](https://datatracker.ietf.org/doc/html/rfc7517)
 - [OpenID Connect Discovery 1.0](https://openid.net/specs/openid-connect-discovery-1_0.html)

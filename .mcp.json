@@ -10,8 +10,15 @@
         "--context",
         "ide-assistant",
         "--project",
-        "/Users/suepie/Develop/10_project/aws-atuh-poc"
-      ]
+        "/workspaces/aws-atuh-poc"
+      ],
+      "env": {
+        "SERENA_USAGE_REPORTING": "false"
+      }
+    },
+    "context7": {
+      "type": "http",
+      "url": "https://mcp.context7.com/mcp"
     }
   }
 }

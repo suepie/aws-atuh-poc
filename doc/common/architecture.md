@@ -33,7 +33,8 @@ flowchart TB
         end
 
         subgraph KeycloakLayer["Keycloak（Phase 6-7）"]
-            ALB["🌐 ALB<br/>auth-poc-kc-alb<br/>HTTP:80"]
+            ALB["🌐 Public ALB<br/>auth-poc-kc-alb<br/>HTTP:80<br/>JWKS=全IP, 他=IP制限, 他=403"]
+            AdminALB["🔒 Admin ALB<br/>auth-poc-kc-admin-alb<br/>HTTP:80 (管理者IP限定)"]
             ECS["🐳 ECS Fargate<br/>Keycloak 26.0.8<br/>2 vCPU / 4 GB<br/>start-dev"]
             RDS["🗄️ RDS PostgreSQL 16.13<br/>db.t4g.micro"]
             ECR["📦 ECR"]
@@ -64,6 +65,7 @@ flowchart TB
 
     %% Keycloak Internal
     ALB --> ECS --> RDS
+    AdminALB --> ECS
     ECR -.-> ECS
 
     style CognitoLayer fill:#fff0f0,stroke:#cc0000
@@ -83,6 +85,8 @@ flowchart TB
 | JWKS取得 | HTTPS（3 User Pool） | クロスアカウント HTTPS | **動作差異なし** |
 | API Gateway | 東京のみ | 各サービスアカウント | 大阪にはAPI GWなし |
 | Keycloak | ECS Fargate + RDS | ECS Fargate + Aurora | start-dev → start --optimized + HTTPS |
+| Keycloak Public ALB | HTTP:80、L7パスベースIP制限 | HTTPS:443 + WAF | 詳細: [keycloak-network-architecture.md](keycloak-network-architecture.md) |
+| Keycloak Admin ALB | internet-facing + SG制限 | `internal` + VPN/DirectConnect | 管理画面は非公開化必須 |
 
 ---
 
