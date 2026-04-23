@@ -38,18 +38,20 @@
 
 **重要: フェデレーションにはボリューム割引がない。これがコスト比較の鍵。**
 
-### Keycloak 固定コスト（HA構成）
+### Keycloak 固定コスト（本番 HA 構成の想定値）
 
 | コンポーネント | 月額 |
 |--------------|------|
 | ECS Fargate（4vCPU × 8GB × 3タスク） | $510 |
 | Aurora PostgreSQL Multi-AZ（db.r6g.large × 2） | $300 |
 | ALB | $50 |
-| NAT Gateway（2 AZ） | $80 |
+| NAT Gateway（2 AZ）※ | $80 |
 | CloudWatch + Secrets Manager | $60 |
 | **インフラ小計** | **$940/月** |
 | 運用人件費（月21h × $80/h） | **$1,680/月** |
 | **合計** | **$2,620/月** |
+
+※ **NAT Gateway の扱い**: PoC では NAT ではなく VPC Endpoint（ECR / S3 / Logs、月 $22）を採用し、AWS サービスへの外部通信を VPC 内完結にしている。ただし本番 Keycloak が Identity Brokering で外部 IdP（Auth0/Entra ID 等）と直接通信する場合は NAT Gateway が別途必要となる。PoC の実装詳細は [keycloak-network-architecture.md](../common/keycloak-network-architecture.md) 参照。
 
 ### 損益分岐点
 

@@ -177,57 +177,27 @@ flowchart TB
 
 ---
 
-## 5. 本PoCでの設計
+## 5. ネットワーク実装での具現化
 
-```mermaid
-flowchart TB
-    subgraph Internet["インターネット"]
-        Browser["ブラウザ"]
-        Lambda["Lambda Authorizer"]
-        ExtRS["外部 Resource Server"]
-    end
+JWKS を公開しつつ Admin Console と認証エンドポイントを保護するために、**ALB の分離 + L7 パスベース制限**を実装している。
 
-    subgraph AWS["AWS"]
-        ALB_Public["Public ALB<br/>L4 SG: 0.0.0.0/0<br/>L7 Rule でパスベース制限"]
-        ALB_Admin["Admin ALB<br/>L4 SG: 管理者IP限定<br/>L7: 全パス転送"]
-        KC["Keycloak ECS"]
-    end
+具体的な実装（ALB 構成、Listener Rule 定義、IP 制限マトリクス、SG 設計）は [keycloak-network-architecture.md](keycloak-network-architecture.md) に一元化。本ドキュメントでは「なぜ公開が必要で安全か」の根拠のみ扱う。
 
-    Browser -->|ログイン (IP制限)| ALB_Public
-    Lambda -->|JWKS (全IP可)| ALB_Public
-    ExtRS -->|JWKS (全IP可)| ALB_Public
-    ALB_Admin -->|Admin Console| KC
-    ALB_Public --> KC
-    ALB_Admin --> KC
-```
+### 5.1 JWKS の公開を成立させる 3 つの設計選択肢
 
-### 5.1 Public ALB の L7 パスベース制限（実装実態）
+Resource Server（Lambda Authorizer 等）の出口 IP が予測不能という事実から、取れる設計は 3 つある:
 
-L4（SG）レベルでは `0.0.0.0/0` を許可しているが、**L7（Listener Rule）レベルで 3 段階の制限**を掛けている。
+1. **ALB を公開用と管理用に分離**（Public ALB + Admin ALB）
+2. **Resource Server を VPC 内に配置**して VPC 内 IP を許可
+3. **L7 Listener Rule でパスベース制限**（SG は全開、JWKS パスのみ全公開、他は IP 制限）
 
-| 優先度 | パス条件 | ソース IP 条件 | 動作 |
-|:------:|---------|:------------:|------|
-| 100 | `/realms/*/.well-known/*` + `/realms/*/protocol/openid-connect/certs` | なし（全 IP） | Keycloak に転送 |
-| 200 | 任意 | `my_ip + allowed_cidr_blocks` | Keycloak に転送 |
-| default | — | — | **403 Forbidden 固定レスポンス** |
-
-**要点**:
-- JWKS / OIDC Discovery は Lambda Authorizer 等の出口 IP が不定のため**全 IP 許可が必須**
-- ログイン画面・トークンエンドポイントはブラウザ IP が予測可能なため**IP 制限可能**
-- L4 で SG を絞るとすべてのパスが不可になるため、L7 でパスベース制限している
-
-| ALB | 用途 | L4 SG | L7 制限 |
-|-----|------|-------|-------|
-| Public ALB | OIDC認証 + JWKS | `0.0.0.0/0` | パスベース IP 制限（上記表） |
-| Admin ALB | Admin Console | 管理者IP限定 | なし（全パス転送） |
-
-> 詳細な IP 制限マトリクス・本番移行要件は [keycloak-network-architecture.md](keycloak-network-architecture.md) 参照。
+**本 PoC は 1 + 3 の組み合わせを採用**（実装詳細は [keycloak-network-architecture.md §2-3](keycloak-network-architecture.md)）。
 
 ---
 
 ## 6. 検証結果（PoCで実測）
 
-公開が必要であることを実際に検証した。
+公開が必要であることを実測で確認した。
 
 ### 検証手順
 
@@ -243,19 +213,7 @@ L4（SG）レベルでは `0.0.0.0/0` を許可しているが、**L7（Listener
 | Public ALB SG = `0.0.0.0/0` | ✅ JWKS 取得成功 | 200 OK |
 | Public ALB SG = 特定IPのみ | ❌ JWKS取得タイムアウト/拒否 | 403 / CORS エラー |
 
-→ Lambda（VPC外）から Keycloak の JWKS エンドポイントに到達できない場合、
-  JWT 検証が一切できなくなる。
-
-### この結果が示すこと
-
-- 「Admin Console と JWKS を同じ ALB の SG だけで制限する」設計は不可
-- 解決策は次の 3 つ:
-  1. ALB を**公開用と管理用に分離**する（Public ALB + Admin ALB）
-  2. **Lambda を VPC 内に配置**して VPC 内 IP を許可する
-  3. **L7 Listener Rule でパスベース制限**する（SG は全開、JWKS パスのみ全公開、他は IP 制限）
-- **本 PoC は 1 + 3 の組み合わせを採用**:
-  - ALB 分離（Public + Admin）で管理画面を Admin ALB 側に隔離
-  - さらに Public ALB 側は L7 でパスベース制限（JWKS は全公開、他は IP 制限、不明パスは 403）
+→ Lambda（VPC外）から Keycloak の JWKS エンドポイントに到達できない場合、JWT 検証が一切できなくなる。したがって JWKS の公開は**仕様的に必須**であり、これを避ける設計（VPC 内配置やゲートウェイ集中）には大きな追加コストが伴う。
 
 ---
 
