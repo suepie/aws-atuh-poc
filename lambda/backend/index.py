@@ -92,27 +92,35 @@ def handler(event: dict, context: Any) -> dict:
     if not caller["tenantId"]:
         return deny("tenant_id claim missing", 403)
 
+    # /v1/* と /v2/* はどちらも同じビジネスロジック（Authorizer のみ違う）
+    # ルーティング判定のため先頭の /vN/ プレフィックスを除去して正規化する
+    normalized = path
+    for prefix in ("/v1/", "/v2/"):
+        if path.startswith(prefix):
+            normalized = "/" + path[len(prefix):]
+            break
+
     # ルーティング
     try:
-        if path in ("/v1/test", "/test") and method == "GET":
+        if normalized in ("/test",) and method == "GET":
             return handle_debug(event, authz)
 
-        if path == "/v1/expenses" and method == "GET":
+        if normalized == "/expenses" and method == "GET":
             return handle_list_my(caller)
 
-        if path == "/v1/expenses" and method == "POST":
+        if normalized == "/expenses" and method == "POST":
             return handle_create(event, caller)
 
-        if path in ("/v1/expenses/{id}", "/expenses/{id}") and method == "GET":
+        if normalized == "/expenses/{id}" and method == "GET":
             return handle_get(path_params.get("id", ""), caller)
 
-        if path in ("/v1/expenses/{id}/approve", "/expenses/{id}/approve") and method == "POST":
+        if normalized == "/expenses/{id}/approve" and method == "POST":
             return handle_approve(path_params.get("id", ""), caller)
 
-        if path in ("/v1/expenses/{id}", "/expenses/{id}") and method == "DELETE":
+        if normalized == "/expenses/{id}" and method == "DELETE":
             return handle_delete(path_params.get("id", ""), caller)
 
-        if path in ("/v1/tenants/{tenantId}/expenses", "/tenants/{tenantId}/expenses") and method == "GET":
+        if normalized == "/tenants/{tenantId}/expenses" and method == "GET":
             return handle_list_tenant(path_params.get("tenantId", ""), caller)
 
         return response(404, {"error": f"Not found: {method} {path}"})

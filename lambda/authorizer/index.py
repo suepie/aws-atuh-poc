@@ -82,13 +82,32 @@ _jwks_cache: dict[str, Any] = {}
 _jwks_uri_cache: dict[str, str] = {}
 JWKS_CACHE_TTL = 3600  # 1時間
 
+# JWKS URL の override（ADR-012）
+# 本番想定: VPC Lambda では Public ALB URL（JWT の iss）ではなく
+# Internal ALB URL から JWKS を取得したい。
+# KEYCLOAK_INTERNAL_JWKS_URL が設定されていれば、KEYCLOAK_ISSUER の JWKS 取得先を
+# この URL に差し替える。非 VPC Lambda は環境変数未設定のため従来通り動作。
+JWKS_URL_OVERRIDES: dict[str, str] = {}
+if KEYCLOAK_ISSUER:
+    _kc_internal = os.environ.get("KEYCLOAK_INTERNAL_JWKS_URL", "")
+    if _kc_internal:
+        JWKS_URL_OVERRIDES[KEYCLOAK_ISSUER] = _kc_internal
+        logger.info(f"JWKS override enabled: {KEYCLOAK_ISSUER} → {_kc_internal}")
+
 
 def get_jwks_uri(issuer: str) -> str:
     """OIDC Discovery から jwks_uri を取得（キャッシュ付き）。
     Cognito: {issuer}/.well-known/jwks.json
     Keycloak: {issuer}/protocol/openid-connect/certs
     IdP ごとに JWKS パスが異なるため、Discovery で動的に取得する。
+
+    override がある場合（VPC Lambda 本番想定）は Discovery をスキップして
+    直接 override URL を返す。
     """
+    # override チェック（ADR-012）
+    if issuer in JWKS_URL_OVERRIDES:
+        return JWKS_URL_OVERRIDES[issuer]
+
     if issuer in _jwks_uri_cache:
         return _jwks_uri_cache[issuer]
 

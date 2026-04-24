@@ -14,3 +14,7 @@
 | [008](008-keycloak-start-dev-for-poc.md) | PoCでKeycloak start-devモードを使用 | Accepted | 2026-03-25 |
 | [009](009-mfa-responsibility-by-idp.md) | MFA責任はパスワード管理側に帰属させる | Accepted | 2026-03-28 |
 | [010](010-keycloak-private-subnet-vpc-endpoints.md) | Keycloak 環境を Private Subnet + VPC Endpoint 構成へ移行 | Accepted | 2026-04-21 |
+| [011](011-auth-frontend-network-design.md) | 認証基盤前段ネットワーク設計（HTTPS / カスタムドメイン / WAF / CloudFront）の統合判断 | Proposed | 2026-04-21 |
+| [012](012-vpc-lambda-authorizer-internal-jwks.md) | VPC Lambda Authorizer + Internal ALB による JWKS プライベート化 | Accepted | 2026-04-23 |
+| [013](013-cloudfront-waf-ip-restriction.md) | CloudFront + WAF による IP 制限の置き換え戦略 | Proposed | 2026-04-24 |
+| [014](014-auth-patterns-scope.md) | 共有認証基盤が対応する認証パターンの範囲 | Proposed | 2026-04-24 |

@@ -181,6 +181,12 @@ resource "aws_ecs_service" "keycloak" {
     container_port   = 8080
   }
 
+  load_balancer {
+    target_group_arn = aws_lb_target_group.keycloak_internal.arn
+    container_name   = "keycloak"
+    container_port   = 8080
+  }
+
   # デプロイ時の設定
   deployment_minimum_healthy_percent = 0 # PoCなのでダウンタイム許容
   deployment_maximum_percent         = 100

@@ -109,6 +109,20 @@ resource "aws_security_group" "ecs" {
   }
 }
 
+# S3 Gateway Endpoint 経由の S3 アクセスは、destination が S3 のパブリック IP
+# のまま（ルートテーブルで VPC 内に閉じ込められる）なので、SG では
+# S3 prefix list を指定する必要がある。
+# ECR DKR が image layer を S3 から pull するのに必要。
+resource "aws_security_group_rule" "ecs_egress_s3" {
+  type              = "egress"
+  from_port         = 443
+  to_port           = 443
+  protocol          = "tcp"
+  prefix_list_ids   = [aws_vpc_endpoint.s3.prefix_list_id]
+  security_group_id = aws_security_group.ecs.id
+  description       = "HTTPS to S3 via Gateway Endpoint (ECR image layers)"
+}
+
 # RDS SG
 # - Ingress: ECS SG のみ
 # - 過去にあったメンテ用 my_ip 許可は本番理想形のため削除。

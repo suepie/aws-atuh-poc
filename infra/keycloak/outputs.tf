@@ -44,6 +44,32 @@ output "commands" {
   }
 }
 
+# VPC Lambda Authorizer (ADR-012)
+output "vpc_authorizer_function_name" {
+  description = "VPC Lambda Authorizer function name (ADR-012)"
+  value       = aws_lambda_function.vpc_authorizer.function_name
+}
+
+output "vpc_authorizer_function_arn" {
+  description = "VPC Lambda Authorizer function ARN"
+  value       = aws_lambda_function.vpc_authorizer.arn
+}
+
+output "vpc_authorizer_invoke_arn" {
+  description = "VPC Lambda Authorizer invoke ARN (for API Gateway)"
+  value       = aws_lambda_function.vpc_authorizer.invoke_arn
+}
+
+output "keycloak_internal_alb_dns" {
+  description = "Internal ALB DNS name (VPC-only)"
+  value       = aws_lb.keycloak_internal.dns_name
+}
+
+output "keycloak_internal_jwks_url" {
+  description = "Internal ALB 経由の JWKS URL (VPC 内のみ到達可)"
+  value       = "http://${aws_lb.keycloak_internal.dns_name}/realms/auth-poc/protocol/openid-connect/certs"
+}
+
 # SPA用設定
 output "spa_env_config" {
   description = "Environment variables for React SPA (.env)"

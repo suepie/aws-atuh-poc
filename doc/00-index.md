@@ -50,6 +50,10 @@ doc/
 | 008 | PoCでKeycloak start-devモードを使用 |
 | 009 | MFA責任はパスワード管理側に帰属させる |
 | 010 | Keycloak を Private Subnet + VPC Endpoint 構成へ移行 |
+| 011 | 認証基盤前段ネットワーク設計（HTTPS / カスタムドメイン / WAF / CloudFront）統合判断（Proposed） |
+| 012 | VPC Lambda Authorizer + Internal ALB による JWKS プライベート化（Accepted） |
+| 013 | CloudFront + WAF による IP 制限の置き換え戦略（Proposed） |
+| 014 | 共有認証基盤が対応する認証パターンの範囲（Proposed） |
 
 ## 参考情報（[reference/](reference/00-index.md)）
 

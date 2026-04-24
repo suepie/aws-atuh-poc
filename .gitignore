@@ -57,3 +57,6 @@ app/dist/
 lambda/*/build/
 lambda/*/package.zip
 lambda/*/.venv/
+
+# keycloak admin console の REST API export（一時バックアップ）
+backup/

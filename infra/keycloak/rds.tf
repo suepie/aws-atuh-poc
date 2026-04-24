@@ -16,9 +16,14 @@ resource "aws_db_instance" "keycloak" {
   storage_type          = "gp3"
   storage_encrypted     = true
 
-  db_name  = "keycloak"
-  username = "keycloak"
+  # Snapshot 復元時は db_name / username / allocated_storage は
+  # スナップショットから継承されるため明示指定しない
+  db_name  = var.rds_snapshot_identifier == "" ? "keycloak" : null
+  username = var.rds_snapshot_identifier == "" ? "keycloak" : null
   password = var.db_password
+
+  # VPC 移行時のデータ保全: 指定があればスナップショットから復元
+  snapshot_identifier = var.rds_snapshot_identifier != "" ? var.rds_snapshot_identifier : null
 
   db_subnet_group_name   = aws_db_subnet_group.keycloak.name
   vpc_security_group_ids = [aws_security_group.rds.id]
@@ -33,6 +38,6 @@ resource "aws_db_instance" "keycloak" {
 
   # 停止時の自動起動を防ぐ（7日後に自動起動はAWS仕様で回避不可）
   lifecycle {
-    ignore_changes = [engine_version]
+    ignore_changes = [engine_version, snapshot_identifier]
   }
 }

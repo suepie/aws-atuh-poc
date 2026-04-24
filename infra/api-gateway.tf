@@ -244,6 +244,18 @@ resource "aws_api_gateway_deployment" "main" {
       aws_api_gateway_resource.tenant_expenses,
       aws_api_gateway_method.expense,
       aws_api_gateway_integration.expense,
+      # ADR-012: VPC Lambda Authorizer /v2/*
+      aws_api_gateway_resource.v2,
+      aws_api_gateway_resource.v2_test,
+      aws_api_gateway_resource.v2_expenses,
+      aws_api_gateway_resource.v2_expense_item,
+      aws_api_gateway_resource.v2_expense_approve,
+      aws_api_gateway_resource.v2_tenants,
+      aws_api_gateway_resource.v2_tenant_item,
+      aws_api_gateway_resource.v2_tenant_expenses,
+      aws_api_gateway_authorizer.jwt_vpc,
+      aws_api_gateway_method.v2,
+      aws_api_gateway_integration.v2,
     ]))
   }
 

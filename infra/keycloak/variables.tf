@@ -57,3 +57,42 @@ variable "vpc_cidr" {
   type        = string
   default     = "10.0.0.0/16"
 }
+
+# ==============================================================================
+# VPC Lambda Authorizer 用: Cognito 情報
+# Tokyo stack の terraform output から手動で取得して tfvars に設定する
+# ==============================================================================
+
+variable "central_cognito_user_pool_id" {
+  description = "Central Cognito User Pool ID (Tokyo stack output)"
+  type        = string
+  default     = ""
+}
+
+variable "central_cognito_client_id" {
+  description = "Central Cognito App Client ID"
+  type        = string
+  default     = ""
+}
+
+variable "local_cognito_user_pool_id" {
+  description = "Local Cognito User Pool ID"
+  type        = string
+  default     = ""
+}
+
+variable "local_cognito_client_id" {
+  description = "Local Cognito App Client ID"
+  type        = string
+  default     = ""
+}
+
+# ==============================================================================
+# RDS Restore from Snapshot (VPC 移行時のデータ保全用)
+# ==============================================================================
+
+variable "rds_snapshot_identifier" {
+  description = "RDS を既存スナップショットから復元する場合のスナップショット ID。空文字列なら新規作成。"
+  type        = string
+  default     = ""
+}

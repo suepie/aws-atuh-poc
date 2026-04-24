@@ -376,12 +376,79 @@ Cognito は**User Pool単位・リージョン単位**でMAU課金される。
 
 ---
 
-## 8. 残課題
+## 8. Phase 9: Keycloak + VPC Lambda Authorizer + 完全プライベート JWKS
+
+**実施日**: 2026-04-24
+**関連**: [ADR-012](../adr/012-vpc-lambda-authorizer-internal-jwks.md)、[keycloak-network-architecture.md §6.5](keycloak-network-architecture.md)、[jwks-public-exposure.md](jwks-public-exposure.md)
+
+**目的**: Phase 8 で実装したクレーム・認可ロジックを **Keycloak 発行 JWT でも同一動作**することを確認し、さらに **VPC 内 Lambda + Internal ALB + VPC Endpoint で JWKS 取得経路を完全プライベート化**できることを検証する。
+
+### 検証シナリオ
+
+同じ API Gateway 上に **2 系統の Authorizer** を並列に配置して比較:
+
+| パス | Authorizer | Keycloak JWKS 取得 | Cognito JWKS 取得 |
+|-----|-----------|-------------------|------------------|
+| `/v1/*` | 非 VPC Lambda（従来）| Public ALB 経由（インターネット）| AWS パブリック |
+| `/v2/*` | **VPC Lambda（新規）** | **Internal ALB 経由（VPC 内）** | **VPC Endpoint 経由（VPC 内）** |
+
+Backend Lambda は **完全に同じコード・同じ認可ロジック**。プレフィックス `/v1` / `/v2` は除去して処理される。
+
+### 実装要素
+
+1. **Keycloak ネットワーク再構築（Option B 本番理想形）**
+   - カスタム VPC 10.0.0.0/16、Public/Private 2 AZ
+   - ECS / RDS を Private Subnet 配置、Public IP なし
+   - ECR / CloudWatch Logs / S3 は VPC Endpoint 経由
+   - NAT Gateway 不使用
+2. **3 系統の ALB**
+   - Public ALB: OIDC エンドポイント公開（L7 でパスベース IP 制限）
+   - Admin ALB: 管理者 IP 限定
+   - **Internal ALB**: VPC 内 Resource Server 向け JWKS/token
+3. **Cognito 用 VPC Interface Endpoint**（cognito-idp）、Private DNS 有効化
+4. **VPC Lambda Authorizer**: 既存 `index.py` 流用 + 環境変数 `KEYCLOAK_INTERNAL_JWKS_URL` で JWKS 取得先を Internal ALB に差し替え
+5. **API Gateway `/v2/*` エンドポイント群**: Backend は共通、Authorizer のみ VPC 版を指定
+6. **Backend Lambda の path 正規化**: `/v1/` と `/v2/` プレフィックスを除去してビジネスロジックを共通化
+7. **RDS スナップショット + Terraform `snapshot_identifier`**: VPC 移行時に Keycloak ユーザー・Realm 設定を完全保持
+
+### 検証結果
+
+| # | テスト | ユーザー | エンドポイント | 期待 | 実測 |
+|---|-------|---------|-------------|-----|-----|
+| 1 | 従来経路（非 VPC Authorizer） | bob-kc | GET /v1/expenses | 200 | ✅ |
+| 2 | **VPC Authorizer 経路** | bob-kc | GET /v2/expenses | 200 | ✅ |
+| 3 | 両経路で同じ JWT を使用 | bob-kc | /v1 と /v2 を同一トークンで連続実行 | 両方 200 | ✅ |
+| 4 | Keycloak JWKS 取得先（CloudWatch）| bob-kc | /v1 → Public ALB URL / /v2 → Internal ALB URL | URL が違う | ✅ |
+| 5 | 認可判定の一貫性 | bob-kc (manager) | POST /v2/expenses/exp-002/approve | 200 | ✅ |
+| 6 | テナントスコープ | bob-kc | GET /v2/tenants/globex-inc/expenses | 403 | ✅ |
+
+### 技術的知見（Phase 9）
+
+| 知見 | 詳細 | 対応 |
+|------|------|------|
+| **Public ALB の内部 DNS 解決** | internet-facing ALB は VPC 内でも public IP に解決され、NAT 無しでは到達不可 | Internal ALB を別途用意（SG / DNS 分離） |
+| **JWT `iss` と JWKS URL の不整合回避** | OIDC Discovery だと Public ALB URL が返り VPC Lambda が叩けない | 環境変数 `KEYCLOAK_INTERNAL_JWKS_URL` で差し替え（iss 検証は Public ALB URL のまま）|
+| **S3 Gateway Endpoint の SG 要件** | VPC CIDR だけでは通らない。**S3 prefix list 指定が必須** | `aws_security_group_rule` の `prefix_list_ids = [aws_vpc_endpoint.s3.prefix_list_id]` |
+| **Internal ALB → ECS SG 許可漏れ** | ECS SG に Internal ALB SG からの ingress がないとヘルスチェック失敗 | `aws_security_group_rule.ecs_from_alb_internal` で ingress 追加 |
+| **VPC 移行時の RDS データ保持** | VPC 間で RDS は「移動」できない。スナップショット → destroy → 新 VPC で `snapshot_identifier` 復元が唯一解 | Terraform の `snapshot_identifier` を variable 化、tfvars で制御 |
+| **Cognito VPC Endpoint（Private DNS）** | `com.amazonaws.<region>.cognito-idp` Interface Endpoint で透過的に切替 | Lambda コード変更不要、DNS 解決だけで経路切替 |
+| **CloudFront managed prefix list でのオリジン保護** | `AWS_CLOUDFRONT` prefix list を ALB SG に指定すると、CloudFront 以外からの ALB 直叩きを遮断 | 本番理想形ドキュメント（§6.5）で採用 |
+
+### 本 Phase で示されたこと
+
+- **認証基盤はバックエンドの実装方式を選ばない**: Lambda（VPC内/外）、ECS、Spring Boot などで同じ JWT を同じロジックで検証可能
+- **完全プライベートな認可経路が実現可能**: JWKS を含む全ての OIDC 経由通信を VPC 内に閉じ込められる（NAT Gateway 不要）
+- **認証と認可の責務が綺麗に分離**: Authorizer は「誰か」を確定、Backend は「何を許すか」を判断。バックエンド言語・フレームワーク非依存
+
+---
+
+## 9. 残課題
 
 | カテゴリ | 課題 | 優先度 |
 |---------|------|--------|
 | 認証 | Entra ID / Okta での実地検証 | 高 |
-| 認可 | Keycloak 版でも同じシナリオが通ることを確認 (Protocol Mapper) | 中 |
 | 認可 | 行レベルデータ分離（DynamoDB/RDS の tenant_id 条件）| 中 |
 | DR | Route 53 フェイルオーバー（自動切替） | 中 |
+| 本番移行 | CloudFront + WAF 実装（現在は設計書のみ）| 中 |
+| 本番移行 | Split-horizon DNS（カスタムドメイン + Route 53 PHZ）| 中 |
 | コスト | **顧客のMAU規模確認（損益分岐点17.5万MAU）** | **最高** |
