@@ -1,73 +1,39 @@
-# React + TypeScript + Vite
+# app-keycloak
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+**ステータス**: 参照用に維持（**新規開発は `app/` 統合版を使ってください**）
 
-Currently, two official plugins are available:
+## 経緯
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+Phase 6 ～ Phase 9 で Keycloak 単体検証用に作成された SPA。
+Phase 9 完了後（2026-04 以降）、`app/` に Keycloak サポートが統合されたため、
+新規の検証は `app/` (port 5173) で行うのが推奨。
 
-## React Compiler
+本 SPA は以下の理由で**削除せず残置**:
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+- Phase 6/7 当時の検証セットアップを再現したい場合の参照
+- ミニマルな Keycloak-only SPA としての参考実装
+- ドキュメントからの過去リンク維持
 
-## Expanding the ESLint configuration
+## 起動
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+make app-kc-dev   # http://localhost:5174
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+## 設定
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+`.env`（`.env.example` を参考に作成）:
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```env
+VITE_KEYCLOAK_AUTHORITY=http://<keycloak-alb>/realms/auth-poc
+VITE_KEYCLOAK_CLIENT_ID=auth-poc-spa
+VITE_REDIRECT_URI=http://localhost:5174/callback
+VITE_POST_LOGOUT_URI=http://localhost:5174/
+
+VITE_API_ENDPOINT=https://<api-gateway>/prod
 ```
+
+## 関連
+
+- `app/` — Cognito + Keycloak 統合版（推奨）
+- `app-sso-peer/` — Keycloak の cross-client SSO 検証用ピア SPA（旧 app-keycloak-2）

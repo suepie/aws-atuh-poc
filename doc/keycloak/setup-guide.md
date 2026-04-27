@@ -135,7 +135,7 @@ npm run dev
 
 ```bash
 # Admin Console で auth-poc-spa-2 を作成（redirect: localhost:5175）
-cd app-keycloak-2
+cd app-sso-peer
 cp .env.example .env
 # VITE_KEYCLOAK_CLIENT_ID=auth-poc-spa-2, ポート5175
 

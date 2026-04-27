@@ -3,7 +3,7 @@ import { externalIdpName } from '../../auth/config';
 import styles from './AuthStatus.module.css';
 
 export function AuthStatus() {
-  const { user, isLoading, error, login, loginWithIdp, loginLocal, loginDr, loginDrWithIdp, logout, logoutFull, silentRenew, localEnabled, drEnabled } = useAuth();
+  const { user, isLoading, error, login, loginWithIdp, loginLocal, loginDr, loginDrWithIdp, loginKeycloak, logout, logoutFull, silentRenew, localEnabled, drEnabled, keycloakEnabled } = useAuth();
 
   if (isLoading) {
     return (
@@ -93,6 +93,11 @@ export function AuthStatus() {
                   </button>
                 )}
               </>
+            )}
+            {keycloakEnabled && (
+              <button className={styles.loginBtn} onClick={loginKeycloak}>
+                ログイン（Keycloak）
+              </button>
             )}
           </>
         ) : (

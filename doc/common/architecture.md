@@ -125,9 +125,9 @@ flowchart TB
 
 | アプリ | ポート | 接続先 | UserManager数 | 用途 |
 |--------|:-----:|--------|:------------:|------|
-| app/ | 5173 | Cognito (central/local/dr) | 3 | Phase 1-5: Cognito検証 |
-| app-keycloak/ | 5174 | Keycloak (auth-poc-spa) | 1 | Phase 6-7: Keycloak検証 |
-| app-keycloak-2/ | 5175 | Keycloak (auth-poc-spa-2) | 1 | Phase 7: SSO検証 |
+| app/ | 5173 | Cognito (central/local/dr) + Keycloak（統合） | 4 | Phase 1-9: 統合検証（多 IdP）|
+| app-keycloak/ | 5174 | Keycloak (auth-poc-spa) | 1 | Phase 6-7 当時の Keycloak 単体 SPA（参照用に維持）|
+| app-sso-peer/ | 5175 | Keycloak (auth-poc-spa-2)（旧 app-keycloak-2） | 1 | Phase 7/9: cross-client SSO 検証用ピア SPA |
 
 ### 2.5 Terraform state の分離
 
@@ -190,7 +190,7 @@ aws-auth-poc/
 │   ├── .env.example
 │   └── vite.config.ts            # port: 5174
 │
-├── app-keycloak-2/               # React SPA（SSO検証用, port:5175）
+├── app-sso-peer/                 # React SPA（cross-client SSO 検証用, port:5175）旧 app-keycloak-2
 │   └── ...                       # app-keycloakのコピー、client_id=auth-poc-spa-2
 │
 ├── keycloak/                     # Keycloakコンテナ・設定

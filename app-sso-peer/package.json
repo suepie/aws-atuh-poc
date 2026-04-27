@@ -1,5 +1,5 @@
 {
-  "name": "app-keycloak-2",
+  "name": "app-sso-peer",
   "private": true,
   "version": "0.0.0",
   "type": "module",

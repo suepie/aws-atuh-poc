@@ -11,6 +11,7 @@ import { User, UserManager } from 'oidc-client-ts';
 import { oidcConfig } from './config';
 import { localOidcConfig, localCognitoEnabled } from './localConfig';
 import { drOidcConfig, drCognitoEnabled, drIdpName } from './drConfig';
+import { keycloakOidcConfig, keycloakEnabled } from './keycloakConfig';
 
 // ログエントリの型
 export interface AuthLogEntry {
@@ -28,16 +29,19 @@ interface AuthContextType {
   userManager: UserManager | null;
   localUserManager: UserManager | null;
   drUserManager: UserManager | null;
+  keycloakUserManager: UserManager | null;
   login: () => Promise<void>;
   loginWithIdp: (idpName: string) => Promise<void>;
   loginLocal: () => Promise<void>;
   loginDr: () => Promise<void>;
   loginDrWithIdp: () => Promise<void>;
+  loginKeycloak: () => Promise<void>;
   logout: () => Promise<void>;
   logoutFull: () => Promise<void>;
   silentRenew: () => Promise<void>;
   localEnabled: boolean;
   drEnabled: boolean;
+  keycloakEnabled: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -56,6 +60,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const userManagerRef = useRef<UserManager | null>(null);
   const localUserManagerRef = useRef<UserManager | null>(null);
   const drUserManagerRef = useRef<UserManager | null>(null);
+  const keycloakUserManagerRef = useRef<UserManager | null>(null);
 
   const addLog = useCallback((event: string, detail: string, data?: unknown) => {
     setLogs((prev) => [
@@ -127,6 +132,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
 
       addLog('Init', 'DR Cognito（大阪）UserManager を初期化しました');
+    }
+
+    // Keycloak UserManager 初期化
+    if (keycloakEnabled && keycloakOidcConfig) {
+      const keycloakMgr = new UserManager(keycloakOidcConfig);
+      keycloakUserManagerRef.current = keycloakMgr;
+
+      keycloakMgr.events.addUserLoaded((u) => {
+        setUser(u);
+        addLog('KeycloakUserLoaded', 'Keycloak のトークンが取得されました', {
+          sub: u.profile.sub,
+          issuer: 'keycloak',
+        });
+      });
+
+      addLog('Init', 'Keycloak UserManager を初期化しました');
     }
 
     // 既存セッション確認（集約 → ローカル → DRの順に確認）
@@ -241,13 +262,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [addLog]);
 
-  const getUserType = useCallback((): 'central' | 'local' | 'dr' => {
+  const loginKeycloak = useCallback(async () => {
+    if (!keycloakUserManagerRef.current) return;
+    try {
+      addLog('KeycloakLoginStart', 'Keycloak ログインを開始します');
+      await keycloakUserManagerRef.current.signinRedirect();
+    } catch (err) {
+      const message = (err as Error).message;
+      setError(message);
+      addLog('LoginError', `Keycloak ログイン開始に失敗: ${message}`);
+    }
+  }, [addLog]);
+
+  const getUserType = useCallback((): 'central' | 'local' | 'dr' | 'keycloak' => {
     if (!user) return 'central';
     const iss = user.profile.iss || '';
     const localAuthority = import.meta.env.VITE_LOCAL_COGNITO_AUTHORITY || '';
     const drAuthority = import.meta.env.VITE_DR_COGNITO_AUTHORITY || '';
+    const keycloakAuthority = import.meta.env.VITE_KEYCLOAK_AUTHORITY || '';
     if (localAuthority && iss === localAuthority) return 'local';
     if (drAuthority && iss === drAuthority) return 'dr';
+    if (keycloakAuthority && iss === keycloakAuthority) return 'keycloak';
     return 'central';
   }, [user]);
 
@@ -270,6 +305,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const domain = import.meta.env.VITE_DR_COGNITO_DOMAIN;
         const clientId = import.meta.env.VITE_DR_COGNITO_CLIENT_ID;
         window.location.href = `${domain}/logout?client_id=${clientId}&logout_uri=${encodeURIComponent(postLogoutUri)}`;
+      } else if (type === 'keycloak' && keycloakUserManagerRef.current) {
+        addLog('LogoutStart', 'ログアウトを開始します（Keycloak）');
+        await keycloakUserManagerRef.current.signoutRedirect();
       } else if (userManagerRef.current) {
         addLog('LogoutStart', 'ログアウトを開始します（集約Cognito）');
         await userManagerRef.current.signoutRedirect();
@@ -291,6 +329,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (userManagerRef.current) await userManagerRef.current.removeUser();
       if (localUserManagerRef.current) await localUserManagerRef.current.removeUser();
       if (drUserManagerRef.current) await drUserManagerRef.current.removeUser();
+      if (keycloakUserManagerRef.current) await keycloakUserManagerRef.current.removeUser();
       setUser(null);
 
       const postLogoutUri = import.meta.env.VITE_POST_LOGOUT_URI || 'http://localhost:5173/';
@@ -311,6 +350,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         } else {
           window.location.href = `${domain}/logout?client_id=${clientId}&logout_uri=${encodeURIComponent(postLogoutUri)}`;
         }
+      } else if (type === 'keycloak' && keycloakUserManagerRef.current) {
+        // Keycloak はネイティブに signoutRedirect でセッション破棄まで行う
+        await keycloakUserManagerRef.current.signoutRedirect();
       } else {
         // 集約Cognito + Auth0 の完全ログアウト
         const cognitoDomain = import.meta.env.VITE_COGNITO_DOMAIN;
@@ -362,7 +404,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <AuthContext.Provider
-      value={{ user, isLoading, error, logs, userManager: userManagerRef.current, localUserManager: localUserManagerRef.current, drUserManager: drUserManagerRef.current, login, loginWithIdp, loginLocal, loginDr, loginDrWithIdp, logout, logoutFull, silentRenew, localEnabled: localCognitoEnabled, drEnabled: drCognitoEnabled }}
+      value={{
+        user, isLoading, error, logs,
+        userManager: userManagerRef.current,
+        localUserManager: localUserManagerRef.current,
+        drUserManager: drUserManagerRef.current,
+        keycloakUserManager: keycloakUserManagerRef.current,
+        login, loginWithIdp, loginLocal, loginDr, loginDrWithIdp, loginKeycloak,
+        logout, logoutFull, silentRenew,
+        localEnabled: localCognitoEnabled,
+        drEnabled: drCognitoEnabled,
+        keycloakEnabled,
+      }}
     >
       {children}
     </AuthContext.Provider>

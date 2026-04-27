@@ -21,7 +21,7 @@
     "source=/var/run/docker.sock,target=/var/run/docker.sock,type=bind"
   ],
 
-  "postCreateCommand": "cd /workspaces/aws-atuh-poc/app && npm install && cd /workspaces/aws-atuh-poc/app-keycloak && npm install && cd /workspaces/aws-atuh-poc/app-keycloak-2 && npm install && pip install PyJWT[crypto]",
+  "postCreateCommand": "cd /workspaces/aws-atuh-poc/app && npm install && cd /workspaces/aws-atuh-poc/app-keycloak && npm install && cd /workspaces/aws-atuh-poc/app-sso-peer && npm install && pip install PyJWT[crypto]",
 
   "customizations": {
     "vscode": {
@@ -58,8 +58,8 @@
   "portsAttributes": {
     "5173": { "label": "App (Cognito)", "onAutoForward": "notify" },
     "5174": { "label": "App (Keycloak)", "onAutoForward": "notify" },
-    "5175": { "label": "App (Keycloak-2)", "onAutoForward": "notify" },
-    "8080": { "label": "Keycloak", "onAutoForward": "notify" }API Error: Unable to connect to API: Self-signed certificate detected. Check your proxy or corporate SSL certificates
+    "5175": { "label": "App (SSO Peer)", "onAutoForward": "notify" },
+    "8080": { "label": "Keycloak", "onAutoForward": "notify" }
   },
 
   "remoteEnv": {
