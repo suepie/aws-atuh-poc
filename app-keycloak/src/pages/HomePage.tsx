@@ -11,10 +11,14 @@ export function HomePage() {
 
   return (
     <div className={styles.page}>
-      <header className={styles.header}>
-        <h1>Keycloak Auth PoC</h1>
-        <span className={styles.phase}>Phase 6: Keycloak (OIDC)</span>
+      <header className={styles.header} data-app="keycloak">
+        <span className={styles.appBadge} data-color="blue">app-keycloak</span>
+        <h1>🔵 Keycloak 単体 SPA（参照用）</h1>
+        <span className={styles.phase}>:5174 / Keycloak のみ (auth-poc-spa)</span>
       </header>
+      <p className={styles.description}>
+        Phase 6/7 当時の Keycloak 単体検証用 SPA。新規検証は <code>app/</code> 統合版（:5173）の利用を推奨。
+      </p>
 
       <FlowDiagram user={user} logs={logs} />
 

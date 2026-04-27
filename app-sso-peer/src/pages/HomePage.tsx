@@ -11,10 +11,14 @@ export function HomePage() {
 
   return (
     <div className={styles.page}>
-      <header className={styles.header}>
-        <h1>Keycloak Auth PoC - Client 2</h1>
-        <span className={styles.phase}>Phase 7: SSO検証 (auth-poc-spa-2)</span>
+      <header className={styles.header} data-app="sso-peer">
+        <span className={styles.appBadge} data-color="orange">app-sso-peer</span>
+        <h1>🟠 SSO 検証用ピア SPA</h1>
+        <span className={styles.phase}>:5175 / Keycloak Realm 内の別 Client (auth-poc-spa-2)</span>
       </header>
+      <p className={styles.description}>
+        cross-client SSO 検証用。app または app-keycloak でログイン後にこの画面を開くと、パスワード入力なしでログイン状態になれば SSO 成功。
+      </p>
 
       <FlowDiagram user={user} logs={logs} />
 

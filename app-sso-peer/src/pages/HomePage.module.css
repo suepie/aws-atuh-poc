@@ -3,20 +3,22 @@
   background: #f8f9fa;
   color: #1a1a2e;
   padding: 1rem 2rem;
+  border-left: 8px solid #f57c00; /* SSO peer = オレンジ */
 }
 
 .header {
   display: flex;
   align-items: center;
-  gap: 1.5rem;
-  margin-bottom: 1.5rem;
+  gap: 1rem;
+  margin-bottom: 0.5rem;
   padding-bottom: 1rem;
   border-bottom: 1px solid #dee2e6;
+  flex-wrap: wrap;
 }
 
 .header h1 {
   margin: 0;
-  color: #6c63ff;
+  color: #f57c00;
   font-size: 1.5rem;
 }
 
@@ -25,6 +27,33 @@
   color: #495057;
   padding: 0.3rem 0.8rem;
   border-radius: 4px;
+  font-size: 0.85rem;
+  font-family: monospace;
+}
+
+.appBadge {
+  background: #f57c00;
+  color: white;
+  padding: 0.3rem 0.8rem;
+  border-radius: 4px;
+  font-size: 0.85rem;
+  font-weight: bold;
+  font-family: monospace;
+}
+
+.description {
+  margin: 0 0 1.5rem 0;
+  padding: 0.6rem 1rem;
+  background: #fff3e0;
+  border-left: 4px solid #f57c00;
+  color: #495057;
+  font-size: 0.9rem;
+}
+
+.description code {
+  background: rgba(255, 255, 255, 0.6);
+  padding: 0.1rem 0.4rem;
+  border-radius: 3px;
   font-size: 0.85rem;
 }
 
