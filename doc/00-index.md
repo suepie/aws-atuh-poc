@@ -54,6 +54,7 @@ doc/
 | 012 | VPC Lambda Authorizer + Internal ALB による JWKS プライベート化（Accepted） |
 | 013 | CloudFront + WAF による IP 制限の置き換え戦略（Proposed） |
 | 014 | 共有認証基盤が対応する認証パターンの範囲（Proposed） |
+| 015 | PoC では RHBK 検証を実施せず本番設計フェーズへ先送り（Proposed） |
 
 ## 参考情報（[reference/](reference/00-index.md)）
 

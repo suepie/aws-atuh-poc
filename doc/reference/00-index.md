@@ -2,7 +2,7 @@
 
 検討過程で得た参考情報や学習メモ。
 
-**最終更新**: 2026-03-29
+**最終更新**: 2026-05-08
 
 ## 認証基礎・SSO
 
@@ -19,6 +19,7 @@
 | [cognito-app-client.md](cognito-app-client.md) | App Clientの概念と設計パターン（システム×アプリ種別の粒度） |
 | [cognito-pricing-2024-revision.md](cognito-pricing-2024-revision.md) | 料金体系（2024年11月改定、Lite/Essentials/Plus 3ティア制） |
 | [auth0-free-as-idp.md](auth0-free-as-idp.md) | Auth0 FreeをEntra ID代替として使う方法 |
+| [cognito-knockout-conditions.md](cognito-knockout-conditions.md) | **Cognito のノックアウト条件網羅**（Hard / Soft / Quota / Regional / UX、公式 + PoC ベース、判定チェックリスト付き） |
 
 ## Keycloak
 
@@ -27,6 +28,8 @@
 | [keycloak-realm-and-db.md](keycloak-realm-and-db.md) | Realmの概念、realm-export.json解説、DB構造（ER図）、トークン比較 |
 | [keycloak-configuration-guide.md](keycloak-configuration-guide.md) | 設定の3箇所分類（ビルド時/環境変数/DB）、SSL問題、変更困難な設定一覧 |
 | [keycloak-dr-aurora-sync.md](keycloak-dr-aurora-sync.md) | Aurora Global DBのレプリケーション詳細、フェイルバック手順、Cognito DR比較 |
+| [keycloak-upstream-vs-rhbk.md](keycloak-upstream-vs-rhbk.md) | Upstream（OSS版）vs Red Hat build of Keycloak の比較・切り替え難易度・本番判断フレーム |
+| [rhbk-support-and-pricing.md](rhbk-support-and-pricing.md) | RHBK サポート対象範囲（OS/DB/JVM/コンテナ基盤）・サブスクリプション構造・価格レンジ・現 PoC との差分・Red Hat 確認事項リスト |
 
 ## 過去の検討ドキュメント
 

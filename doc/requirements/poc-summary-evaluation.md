@@ -319,12 +319,14 @@
 | ADR-012 | VPC Lambda Authorizer + Internal ALB による JWKS プライベート化（発番済・Accepted） | ✅ 2026-04-23 |
 | ADR-013 | CloudFront + WAF による IP 制限置き換え（発番済・Proposed） | ⏳ 要件定義で確定後 Accepted 化 |
 | ADR-014 | 共有認証基盤が対応する認証パターンの範囲（発番済・Proposed） | ⏳ 要件定義 Phase A/B で確定 |
-| ADR-015 | Cognito vs Keycloak 最終選定 | Week 4 最終判断会議（ADR-014 確定後） |
-| ADR-016 | 本番マルチアカウント戦略 | 設計フェーズ |
-| ADR-017 | DR 自動フェイルオーバー方式（Route 53 等） | 設計フェーズ |
-| ADR-018 | バックエンド実装言語・フレームワーク | 設計フェーズ |
-| ADR-019 | 監視・アラート設計 | 運用設計 |
-| ADR-020 | 監査ログの保存・検索基盤 | 運用設計 |
+| ADR-015 | PoC では RHBK 検証を実施せず本番設計フェーズへ先送り（発番済・Proposed） | ⏳ 本番設計時に Accepted 化 or 撤回 |
+| ADR-016 | Upstream Keycloak vs RHBK 最終選定 | 本番設計フェーズ（FIPS / サポート / 予算 確定後） |
+| ADR-017 | Cognito vs Keycloak 最終選定 | Week 4 最終判断会議（ADR-014 確定後） |
+| ADR-018 | 本番マルチアカウント戦略 | 設計フェーズ |
+| ADR-019 | DR 自動フェイルオーバー方式（Route 53 等） | 設計フェーズ |
+| ADR-020 | バックエンド実装言語・フレームワーク | 設計フェーズ |
+| ADR-021 | 監視・アラート設計 | 運用設計 |
+| ADR-022 | 監査ログの保存・検索基盤 | 運用設計 |
 
 ---
 
