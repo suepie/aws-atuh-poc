@@ -89,7 +89,8 @@
 | NFR-SEC-007 | Refresh Token Rotation | (D) **有効化** | ⚠ デフォルト OFF（要設定） | ✅ デフォルト ON | 🟡 |
 | NFR-SEC-008 | トークン失効（Revocation） | (D) **対応必須** | ⚠ Refresh Token のみ | ✅ Token Revocation | 🟡 |
 | NFR-SEC-009 | パスワード保管アルゴリズム | (D) **PBKDF2 / bcrypt / Argon2** | ✅ AWS 内部 | ✅ PBKDF2-SHA512（デフォルト） | ✅ |
-| NFR-SEC-010 | ブルートフォース対策 | (D) **連続失敗で一時ロック** | ⚠ Plus ティア（$0.02/MAU 追加）必要（2024-12〜 Advanced Security は Plus に統合） | ✅ Realm Settings | 🟡 |
+| NFR-SEC-010 | ブルートフォース対策 | (D) **連続失敗で一時ロック** | **2 段階**: ⚠ 全ティア標準 BF 保護（パラメータ調整不可） / ✅ **Plus ティア**（+$0.02/MAU）で詳細設定可（リスクベース）。詳細: [ADR-016](../adr/016-cognito-feature-tier-selection.md) | ✅ Realm Settings | 🟡 |
+| NFR-SEC-010-2 | **侵害クレデンシャル検出**（Compromised Credentials Detection / Have I Been Pwned 相当）| (TBD) | ⚠ **Plus ティア**（+$0.02/MAU）必要 | ⚠ プラグイン / カスタム要件 | 🔴 |
 | NFR-SEC-011 | WAF 適用 | (D) **AWS WAF（CloudFront）** | ✅ | ⚠ ADR-013 で計画 | 🟡 |
 | NFR-SEC-012 | DDoS 対策 | (D) **Shield Standard** | ✅ AWS 標準 | ✅ AWS 標準 | ✅ |
 | NFR-SEC-013 | ペネトレーションテスト | (TBD) 年 N 回 | — | — | 🔴 |

@@ -1,7 +1,48 @@
-# 要件定義資料の構成案
+# 要件定義資料の構成案（SSOT）
 
-> 最終更新: 2026-04-21
-> 目的: 要件定義フェーズで作成すべきドキュメント体系と作成順序の定義
+> 最終更新: 2026-05-13（SSOT 化：§0 ナラティブ / §8 依存関係 / §9 状態ダッシュボード / §10 ID 体系ルール を追加）
+> 目的: 要件定義フェーズで作成すべきドキュメント体系・作成順序・**語る順序（ナラティブ）**・状態の単一情報源
+> 位置付け: 本ドキュメントは要件定義フェーズの **SSOT (Single Source of Truth)**。プロセス（どう進めるか）は [requirements-process-plan.md](requirements-process-plan.md)、ヒアリング項目は [hearing-checklist.md](hearing-checklist.md) を参照。
+
+---
+
+## 0. 要件定義の語る順序（ナラティブ）
+
+要件定義書（`requirements-spec.md`）および対顧客説明資料は、以下の 5 ステップで論理を組み立てる。**「対応する認証フローを示す → それを実現する構成として Broker を採用 → 実装プラットフォームを選定」** が本フェーズの中核ストーリー。
+
+```mermaid
+flowchart LR
+    S1["①<br/>対応する<br/>認証フロー"] --> S2["②<br/>対応する<br/>IdP 接続要件"]
+    S2 --> S3["③<br/>Broker パターン<br/>採用根拠"]
+    S3 --> S4["④<br/>Cognito vs<br/>Keycloak 選定"]
+    S4 --> S5["⑤<br/>非機能要件<br/>(可用性 / DR / 性能 / セキュリティ / コスト)"]
+
+    style S3 fill:#fff3e0,stroke:#e65100
+    style S4 fill:#e3f2fd,stroke:#1565c0
+```
+
+### 0.1 各ステップで答える問いと参照先
+
+| Step | 答える問い | 一次ソース | 補強ドキュメント |
+|:---:|---|---|---|
+| ① | **どんな認証フローに対応する基盤か？**（SPA / SSR / Mobile / M2M） | [functional-requirements.md §1.1 FR-AUTH 認証フロー](functional-requirements.md) | [auth-patterns.md](../common/auth-patterns.md)、[system-design-patterns.md](../common/system-design-patterns.md) |
+| ② | **どんな顧客 IdP 構成に対応する基盤か？**（Entra ID / Okta / Google / SAML / LDAP） | [functional-requirements.md §2 FR-FED](functional-requirements.md) | [identity-broker-multi-idp.md](../common/identity-broker-multi-idp.md) |
+| ③ | **なぜ Broker パターンか？**（代替案として個別連携 / Mesh / Fabric / BYOI と比較） | [identity-broker-multi-idp.md](../common/identity-broker-multi-idp.md) | [sso-implementation-types.md](../reference/sso-implementation-types.md)、[user-types-and-auth.md](../common/user-types-and-auth.md) |
+| ④ | **Cognito か Keycloak か？**（要件 × 制約 × コスト） | [platform-selection-decision.md](platform-selection-decision.md) | [ADR-006](../adr/006-cognito-vs-keycloak-cost-breakeven.md)、[ADR-014](../adr/014-auth-patterns-scope.md)、[ADR-015](../adr/015-rhbk-validation-deferred.md) |
+| ⑤ | **可用性・DR・性能・コストの目標は？** | [non-functional-requirements.md](non-functional-requirements.md) | [keycloak-network-architecture.md](../common/keycloak-network-architecture.md)、[ADR-010〜013](../adr/) |
+
+### 0.2 ステップ ③（Broker 採用根拠）の論理構造
+
+Broker パターン採用の根拠は ① と ② から導出される（独立した「Broker を採用する理由」ではない）:
+
+| ①／② の要件 | 帰結 |
+|---|---|
+| FR-AUTH-001〜003 が Must（複数の Grant Type / Client 種別を統一的に提供） | OIDC/OAuth 標準実装の認可サーバーが必要 |
+| FR-FED-010 が Must（複数顧客 IdP を並行運用） | 集約点が必要 = **Hub-and-Spoke** |
+| FR-FED-011 が Must（顧客追加で各システム変更不要） | 各システムが見る issuer は 1 つ = **Broker が JWT 一元化** |
+| FR-FED-009 が Must（IdP ごとのクレーム差異を吸収） | 属性変換層が必要 = **Broker の attribute mapping / Protocol Mapper** |
+
+→ ①②③ の要件が確定すれば、Broker パターン採用は**自動的に導かれる**（選択というより必然）。Cognito vs Keycloak は ④ で「どの Broker 実装か」のみが残論点。
 
 ---
 
@@ -190,53 +231,66 @@ doc/requirements/
 
 ## 4. 機能要件一覧（functional-requirements.md）の構成案
 
-| 要件 ID | カテゴリ | 要件名 | 優先度 | PoC 検証状況 | 備考 |
-|---------|---------|--------|--------|-------------|------|
-| FR-AUTH-001 | 認証 | ローカルユーザーのID/PW認証 | Must | ✅ Phase 1,4 | — |
-| FR-AUTH-002 | 認証 | Entra ID フェデレーション | Must | ⚠ Auth0 で代替検証 | 実 Entra ID 要検証 |
-| FR-AUTH-003 | 認証 | Okta フェデレーション | Should | ❌ 未検証 | 2 社目 IdP 追加 |
-| FR-AUTH-004 | 認証 | SAML IdP 対応 | Could | ❌ 未検証 | レガシー顧客向け |
-| FR-AUTH-005 | 認証 | LDAP 連携 | Could | ❌ 未検証 | Keycloak のみ対応 |
-| FR-MFA-001 | MFA | TOTP 認証 | Must | ✅ Phase 7 | — |
-| FR-MFA-002 | MFA | WebAuthn / FIDO2 | Should | ❌ 未検証 | Keycloak は対応 |
-| FR-MFA-003 | MFA | フェデレーション時の MFA スキップ | Must | ✅ Phase 7 | 条件付き OTP |
-| FR-SSO-001 | SSO | シングルサインオン | Must | ✅ Phase 7 | — |
-| FR-SSO-002 | SSO | シングルログアウト | Must | ✅ Phase 7 | Back-Channel 対応 |
-| FR-AUTHZ-001 | 認可 | JWT ベースロール認可 | Must | ✅ Phase 8 | — |
-| FR-AUTHZ-002 | 認可 | テナント分離 | Must | ✅ Phase 8 | — |
-| FR-AUTHZ-003 | 認可 | ロール階層 | Should | ✅ Phase 8 | — |
-| FR-USER-001 | ユーザー管理 | JIT プロビジョニング | Must | ✅ Phase 2 | — |
-| FR-USER-002 | ユーザー管理 | SCIM プロビジョニング | Could | ❌ 未検証 | 自動同期 |
-| FR-USER-003 | ユーザー管理 | セルフサービスパスワードリセット | Should | ❌ 未検証 | — |
-| FR-ADMIN-001 | 管理 | 管理コンソール | Must | ✅ Phase 6 | Keycloak Admin Console |
-| FR-ADMIN-002 | 管理 | IdP 追加・削除 | Must | △ 概念設計のみ | オンボーディングフロー |
+機能要件の **実体（ID 一覧・優先度・PoC 状況）は [functional-requirements.md](functional-requirements.md) を一次ソース**とする。本セクションでは構成原則のみを示す。
+
+### 4.1 カテゴリ体系
+
+| カテゴリ | 接頭辞 | 範囲 | 備考 |
+|---|---|---|---|
+| 認証 | `FR-AUTH-*` | 認証フロー（§1.1）+ パスワード・ローカルユーザー管理（§1.2） | ID は連続。サブセクションで性質分け |
+| フェデレーション | `FR-FED-*` | 外部 IdP 連携、JIT、属性マッピング、マルチ IdP 運用 | Broker パターンの中核 |
+| MFA | `FR-MFA-*` | 多要素認証（TOTP / WebAuthn / SMS / 条件付き等） | [ADR-009](../adr/009-mfa-responsibility-by-idp.md) と連動 |
+| SSO・ログアウト | `FR-SSO-*` | クライアント間 SSO、各種ログアウト | RFC 8606 等 |
+| 認可 | `FR-AUTHZ-*` | クレーム認可、テナント分離、scope、UMA 等 | [authz-architecture-design.md](../common/authz-architecture-design.md) |
+| ユーザー管理 | `FR-USER-*` | CRUD、SCIM、セルフサービス、ロール割当 | |
+| 管理機能 | `FR-ADMIN-*` | 管理コンソール、テナント管理、監査 | |
+| 外部統合 | `FR-INT-*` | OIDC/SAML 準拠、Webhook、Terraform | |
+
+### 4.2 表項目の必須カラム
+
+functional-requirements.md の各表は以下のカラムを必ず持つ:
+
+| カラム | 用途 |
+|---|---|
+| ID | `FR-{CAT}-NNN` |
+| 要件 | 短い記述 |
+| 優先度 | Must / Should / Could / Won't / TBD（凡例は functional-requirements.md §凡例） |
+| Cognito 列 | ✅ / ⚠ / ❌ + 実現方法の手がかり |
+| Keycloak 列 | 同上 |
+| PoC | 検証 Phase or ❌ |
+| 状態 | ✅ 確定 / 🟡 デフォルト / 🔴 TBD |
 
 ---
 
 ## 5. 非機能要件一覧（non-functional-requirements.md）の構成案
 
-| 要件 ID | カテゴリ | 要件名 | 目標値 | PoC 状況 | ヒアリングで確定 |
-|---------|---------|--------|--------|---------|-----------------|
-| NFR-AVL-001 | 可用性 | サービス稼働率 | 99.9%〜99.99% | Cognito: 99.9% SLA | Phase C で確定 |
-| NFR-AVL-002 | 可用性 | 計画メンテナンス窓 | 月 N 時間 | — | Phase C |
-| NFR-PER-001 | 性能 | 認証応答時間 | < 2 秒（P99） | PoC 未計測 | Phase B |
-| NFR-PER-002 | 性能 | 同時認証リクエスト | N req/s | PoC 未計測 | Phase A (MAU) |
-| NFR-PER-003 | 性能 | Lambda Authorizer 応答 | < 100ms（キャッシュあり） | PoC: 15-60ms | — |
-| NFR-SEC-001 | セキュリティ | 通信暗号化 | TLS 1.2+ | PoC: HTTP（Keycloak） | 本番必須 |
-| NFR-SEC-002 | セキュリティ | データ暗号化 | AES-256 at-rest | PoC: 未対応 | 本番必須 |
-| NFR-SEC-003 | セキュリティ | 監査ログ保存 | N 年 | PoC: CloudWatch 基本 | Phase C |
-| NFR-SEC-004 | セキュリティ | パスワードポリシー | 要定義 | Cognito デフォルト | Phase C |
-| NFR-SEC-005 | セキュリティ | アカウントロック | N 回失敗で N 分ロック | 未定義 | Phase C |
-| NFR-SEC-006 | セキュリティ | トークン失効 | 即時 / N 分以内 | 未検証 | Phase C |
-| NFR-DR-001 | DR | RTO | N 分 | 手動切替のみ | Phase C |
-| NFR-DR-002 | DR | RPO | N 分 | 未計測 | Phase C |
-| NFR-DR-003 | DR | フェイルオーバー方式 | 自動 / 手動 | 手動のみ検証 | Phase C |
-| NFR-OPS-001 | 運用 | 監視ツール | 要定義 | CloudWatch | Phase C |
-| NFR-OPS-002 | 運用 | アラート条件 | 要定義 | 未定義 | Phase C |
-| NFR-OPS-003 | 運用 | バックアップ | 日次 / PITR | 手動 | Phase C |
-| NFR-OPS-004 | 運用 | バージョンアップ方針 | N ヶ月以内 | Keycloak 26.0 | Phase C |
-| NFR-SCL-001 | 拡張性 | MAU スケール上限 | N 万 MAU | 175K MAU 損益分岐 | Phase A |
-| NFR-SCL-002 | 拡張性 | IdP 追加リードタイム | N 営業日 | 未定義 | Phase C |
+非機能要件の **実体は [non-functional-requirements.md](non-functional-requirements.md) を一次ソース**とする。本セクションでは構成原則のみを示す。
+
+### 5.1 カテゴリ体系
+
+| カテゴリ | 接頭辞 | 範囲 |
+|---|---|---|
+| 可用性 | `NFR-AVL-*` | SLA、メンテ窓 |
+| 性能 | `NFR-PERF-*` | 応答時間、スループット、レイテンシ |
+| 拡張性 | `NFR-SCL-*` | MAU 上限、IdP 追加リードタイム |
+| セキュリティ | `NFR-SEC-*` | 暗号化、監査ログ、ブルートフォース対策 |
+| DR / BCP | `NFR-DR-*` | RTO / RPO、フェイルオーバー方式 |
+| 運用 | `NFR-OPS-*` | 監視、ログ、バックアップ、バージョンアップ |
+| 法務 / コンプラ | `NFR-COMPLIANCE-*` | FIPS、データ所在、業界規制 |
+| コスト | `NFR-COST-*` | 月額・年額目標、Cognito ティア追加課金 |
+| 移行性 | `NFR-MIG-*` | 既存システム互換、段階的移行 |
+
+### 5.2 表項目の必須カラム
+
+| カラム | 用途 |
+|---|---|
+| ID | `NFR-{CAT}-NNN` |
+| 要件 | 短い記述 |
+| 目標値 | 数値 or 定性記述（TBD 可） |
+| Cognito での実現方法 | |
+| Keycloak での実現方法 | |
+| PoC 状況 | 計測値 or 未計測 |
+| 状態 | ✅ / 🟡 / 🔴 |
 
 ---
 
@@ -303,3 +357,165 @@ Week 5:
   📋 migration-strategy.md
   📋 cost-estimation.md
 ```
+
+---
+
+## 8. ドキュメント間の依存関係と読み順
+
+### 8.1 読み順（新規参画者向け）
+
+要件定義フェーズに新たに加わる人が最短で把握するための推奨読み順:
+
+```mermaid
+flowchart TD
+    R0["1. 本ドキュメント §0 ナラティブ<br/>(全体ストーリー把握)"]
+    R1["2. poc-summary-evaluation.md<br/>(PoC 成果と不足箇所)"]
+    R2["3. functional-requirements.md<br/>(対応する機能の範囲)"]
+    R3["4. identity-broker-multi-idp.md<br/>(Broker パターン採用根拠)"]
+    R4["5. non-functional-requirements.md<br/>(可用性 / DR / セキュリティ / コスト)"]
+    R5["6. platform-selection-decision.md<br/>(Cognito vs Keycloak)"]
+    R6["7. requirements-process-plan.md<br/>(進め方・終了基準)"]
+    R7["8. hearing-checklist.md<br/>(残 TBD 項目)"]
+
+    R0 --> R1 --> R2 --> R3 --> R4 --> R5 --> R6 --> R7
+```
+
+### 8.2 書く順序（作成依存関係）
+
+ドキュメント間の依存（A が B の前提）:
+
+```mermaid
+flowchart LR
+    PoC["poc-summary-<br/>evaluation.md"]
+
+    Strategy["requirements-<br/>hearing-strategy.md"]
+    Checklist["hearing-<br/>checklist.md"]
+    Process["requirements-<br/>process-plan.md"]
+    Structure["requirements-<br/>document-structure.md<br/>(本 SSOT)"]
+
+    FR["functional-<br/>requirements.md"]
+    NFR["non-functional-<br/>requirements.md"]
+
+    Vendor["rhbk-vendor-<br/>inquiry.md"]
+
+    Hearing["hearing-phase-<br/>a/b/c/d.md"]
+
+    Platform["platform-selection-<br/>decision.md"]
+    Spec["requirements-<br/>spec.md"]
+
+    PoC --> Structure
+    PoC --> Strategy
+    Strategy --> Checklist
+    Structure --> FR
+    Structure --> NFR
+    Structure --> Process
+    Process --> Hearing
+    Checklist --> Hearing
+    Vendor --> Platform
+    Hearing --> FR
+    Hearing --> NFR
+    Hearing --> Platform
+    FR --> Spec
+    NFR --> Spec
+    Platform --> Spec
+
+    style Structure fill:#fff3e0,stroke:#e65100
+    style Spec fill:#e3f2fd,stroke:#1565c0
+```
+
+---
+
+## 9. ドキュメント状態ダッシュボード
+
+> 各ドキュメントの作成・更新状況を一元管理。状態は実際の作成状況に応じて更新する。
+
+### 9.1 報告・総括
+
+| ドキュメント | 役割 | 状態 | 最終更新 |
+|---|---|:---:|---|
+| [poc-summary-evaluation.md](poc-summary-evaluation.md) | PoC 成果総括・不足箇所分析 | ✅ Done | 2026-05-13 |
+| poc-presentation.md | ステークホルダー向け報告資料 | 📋 未着手 | — |
+
+### 9.2 ヒアリング
+
+| ドキュメント | 役割 | 状態 | 最終更新 |
+|---|---|:---:|---|
+| [requirements-hearing-strategy.md](requirements-hearing-strategy.md) | Phase A〜D の進め方 | ✅ Done | 2026-04-21 |
+| [hearing-checklist.md](hearing-checklist.md) | 全 67 項目の TBD 一覧 | ✅ Done | 2026-05-13 |
+| hearing-phase-a.md | 事業要件ヒアリング記録 | ⏳ 未実施 | — |
+| hearing-phase-b.md | 技術要件ヒアリング記録 | ⏳ 未実施 | — |
+| hearing-phase-c.md | 運用・セキュリティ要件記録 | ⏳ 未実施 | — |
+| hearing-phase-d.md | 最終判断会議記録 | ⏳ 未実施 | — |
+
+### 9.3 要件定義書
+
+| ドキュメント | 役割 | 状態 | 最終更新 |
+|---|---|:---:|---|
+| **requirements-document-structure.md（本 SSOT）** | 構成・ナラティブ・状態 | 🔄 SSOT 化済（継続更新） | 2026-05-13 |
+| [requirements-process-plan.md](requirements-process-plan.md) | 4 段階プロセス・終了基準 | ✅ Done | 2026-05-08 |
+| [functional-requirements.md](functional-requirements.md) | 機能要件一覧（~75 件、FR-AUTH §1.1/§1.2 分割済） | 🔄 ヒアリング待ち（TBD 多数） | 2026-05-13 |
+| [non-functional-requirements.md](non-functional-requirements.md) | 非機能要件一覧（~75 件） | 🔄 ヒアリング待ち（TBD 多数） | 2026-05-13 |
+| [platform-selection-decision.md](platform-selection-decision.md) | Cognito / Keycloak 選定判断 | 🚧 ドラフト（評価基準のみ） | 2026-05-08 |
+| [rhbk-vendor-inquiry.md](rhbk-vendor-inquiry.md) | Red Hat 問い合わせ文面 | ✅ Done（送付待ち） | — |
+| requirements-spec.md | 要件定義書本体 | 📋 未着手 | — |
+
+### 9.4 付録
+
+| ドキュメント | 役割 | 状態 |
+|---|---|:---:|
+| migration-strategy.md | 既存システムからの移行戦略 | 📋 未着手 |
+| cost-estimation.md | 詳細コスト見積もり | 📋 未着手 |
+
+### 9.5 状態凡例
+
+| 記号 | 意味 |
+|:---:|---|
+| ✅ Done | 完成。継続的な微修正のみ |
+| 🔄 進行中 | 主要内容は揃っているが、ヒアリング結果等で更新中 |
+| 🚧 ドラフト | 骨格はあるが内容未確定 |
+| ⏳ 未実施 | 前提イベント（ヒアリング等）待ち |
+| 📋 未着手 | 着手予定 |
+
+---
+
+## 10. ID 体系と改廃ルール
+
+### 10.1 ID 体系（横断ルール）
+
+| 種別 | 形式 | 例 | 採番ルール |
+|---|---|---|---|
+| 機能要件 | `FR-{CAT}-NNN` | `FR-AUTH-002` | カテゴリごとに連番。**一度採番した ID は再利用しない**（廃止時も欠番として残す） |
+| 非機能要件 | `NFR-{CAT}-NNN` | `NFR-AVL-001` | 同上 |
+| ADR | `ADR-NNN` | `ADR-012` | プロジェクト横断連番 |
+| ヒアリング | `{Phase}-NNN` | `B-104` | Phase（A/B/C/D）+ 連番 |
+
+### 10.2 サブセクション化の指針
+
+要件群の性質が同一カテゴリ内で分かれる場合、ID は連続のまま**サブセクションで分ける**（既存参照を破壊しない）。
+
+**実例**: FR-AUTH-001〜014 のうち、001〜008 は OAuth/OIDC フロー、009〜014 はパスワード・ローカル管理。意味は別物だが ADR / hearing checklist / NFR から既に番号参照されているため、IDは維持し functional-requirements.md §1.1 / §1.2 でサブセクション化（2026-05-13）。
+
+### 10.3 ドキュメント追加時の手順
+
+1. 本 SSOT §9 ダッシュボードに行を追加
+2. §1 体系図に位置づけを追記
+3. §0 ナラティブのどの Step に対応するか明記
+4. 他ドキュメントからのリンクが必要なら追記
+
+### 10.4 ドキュメント廃止時の手順
+
+1. ファイル削除前に**廃止理由とリンク先を本 SSOT に残す**（短い「廃止」エントリ）
+2. 他ドキュメントからのリンクを grep で洗い出して更新
+3. doc/old/ への移動も選択肢（読み取り専用扱い）
+
+---
+
+## 11. 関連ドキュメント
+
+- [requirements-process-plan.md](requirements-process-plan.md): 要件定義の進め方（4 段階）
+- [requirements-hearing-strategy.md](requirements-hearing-strategy.md): ヒアリング戦略
+- [hearing-checklist.md](hearing-checklist.md): ヒアリング項目（単一一覧）
+- [functional-requirements.md](functional-requirements.md): 機能要件
+- [non-functional-requirements.md](non-functional-requirements.md): 非機能要件
+- [platform-selection-decision.md](platform-selection-decision.md): プラットフォーム選定
+- [poc-summary-evaluation.md](poc-summary-evaluation.md): PoC 総括

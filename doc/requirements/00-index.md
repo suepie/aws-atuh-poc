@@ -3,11 +3,16 @@
 PoC完了後の要件定義フェーズに向けた資料。
 報告・調整・ヒアリングの基盤となるドキュメント群。
 
+> 🌟 **まずここから**: [requirements-document-structure.md](requirements-document-structure.md) が要件定義フェーズの **SSOT (Single Source of Truth)**。
+> §0 ナラティブ（要件定義の語る順序）／§8 ドキュメント間の依存関係と読み順／§9 ドキュメント状態ダッシュボード が全体把握の入口。
+
+## ドキュメント一覧
+
 | ドキュメント | 内容 |
 |------------|------|
+| **[requirements-document-structure.md](requirements-document-structure.md)** ⭐ | **要件定義 SSOT**：ナラティブ・体系・依存関係・状態ダッシュボード・ID 体系ルール |
 | [poc-summary-evaluation.md](poc-summary-evaluation.md) | PoC総括評価：成果・既存ドキュメント評価・不足箇所分析 |
 | [requirements-hearing-strategy.md](requirements-hearing-strategy.md) | 要件定義ヒアリング戦略：確認事項・ステークホルダー・進め方 |
-| [requirements-document-structure.md](requirements-document-structure.md) | 要件定義資料の構成案：ドキュメント体系・作成順序 |
 | [platform-selection-decision.md](platform-selection-decision.md) | プラットフォーム選定判断書（評価基準 / 候補 / スコアリングフレーム）— ドラフト |
 | [rhbk-vendor-inquiry.md](rhbk-vendor-inquiry.md) | Red Hat / 認定リセラへの問い合わせ文面（Q1〜Q10、日英 + リセラ別補足） |
 | [functional-requirements.md](functional-requirements.md) | 機能要件一覧（FR-AUTH / FED / MFA / SSO / AUTHZ / USER / ADMIN / INT、~75 件、Cognito vs Keycloak 比較列付き）|

@@ -19,3 +19,4 @@
 | [013](013-cloudfront-waf-ip-restriction.md) | CloudFront + WAF による IP 制限の置き換え戦略 | Proposed | 2026-04-24 |
 | [014](014-auth-patterns-scope.md) | 共有認証基盤が対応する認証パターンの範囲 | Proposed | 2026-04-24 |
 | [015](015-rhbk-validation-deferred.md) | PoC では RHBK 検証を実施せず本番設計フェーズへ先送り | Proposed | 2026-04-24 |
+| [016](016-cognito-feature-tier-selection.md) | Cognito 機能ティア（Lite / Essentials / Plus）の機能マトリクスと選定基準 | Proposed | 2026-05-13 |

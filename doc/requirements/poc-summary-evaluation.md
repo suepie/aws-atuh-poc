@@ -120,8 +120,10 @@
 |------|:-------:|:--------:|------|
 | ID/PW 認証（ローカルユーザー） | ✅ Phase 1 | ✅ Phase 6 | 両者とも Hosted UI / Admin Console 経由 |
 | Authorization Code + PKCE フロー | ✅ Phase 1 | ✅ Phase 6 | oidc-client-ts で統一実装 |
-| Hosted UI のカスタマイズ | ⚠ 制約あり | ✅ 自由 | Cognito は CSS / ロゴのみ、Keycloak はテーマ全面カスタム可 |
-| パスワードポリシー設定 | ✅ | ✅ | Cognito デフォルト / Keycloak は Realm 単位で細かく制御可 |
+| Hosted UI のカスタマイズ | ⚠ Lite: CSS/ロゴのみ / Essentials+: Managed Login UI でテーマ拡張可 | ✅ 自由（Theme フルカスタム） | Cognito Essentials 以降で Managed Login UI 利用可（ADR-016）|
+| パスワードポリシー設定 | ✅ 全ティア標準 | ✅ | Cognito 明示設定済（cognito.tf: min 8 + 大小数字）/ Keycloak は Realm 単位で細かく制御可 |
+| **パスワード履歴** | ⚠ **Essentials+ ティア必要**（`PasswordHistorySize` 0〜24）| ✅ N 履歴設定可 | ADR-016 参照。Terraform 未対応 |
+| **アカウントロック（設定可能）** | ⚠ 標準 BF 保護 / **Plus ティア**で詳細設定 | ✅ Realm 設定（`failureFactor` 等）| ADR-016 参照 |
 | ソーシャルログイン | ❌ 未検証 | ❌ 未検証 | Google/Facebook 等、本 PoC では対象外 |
 
 #### (B) フェデレーション（外部 IdP 連携）
@@ -273,7 +275,7 @@
 
 ## 1.4 ADR（Architecture Decision Records）サマリー
 
-意思決定の記録が 15 件残っている。本番設計でも参照すべき重要な判断根拠。
+意思決定の記録が 16 件残っている。本番設計でも参照すべき重要な判断根拠。
 
 ### 1.4.1 ADR 一覧と概要
 
@@ -294,6 +296,7 @@
 | [013](../adr/013-cloudfront-waf-ip-restriction.md) | CloudFront + WAF による IP 制限の置き換え戦略 | Proposed | 2026-04-24 | 要件定義で確定後 Accepted 化 |
 | [014](../adr/014-auth-patterns-scope.md) | 共有認証基盤が対応する認証パターンの範囲 | Proposed | 2026-04-24 | Token Exchange / Device Code / SAML IdP / mTLS が Keycloak 必須要因 |
 | [015](../adr/015-rhbk-validation-deferred.md) | PoC では RHBK 検証を実施せず本番設計フェーズへ先送り | Proposed | 2026-04-24 | Red Hat ライセンス取得困難。Upstream 検証結果は転用可能 |
+| [016](../adr/016-cognito-feature-tier-selection.md) | Cognito 機能ティア（Lite / Essentials / Plus）の機能マトリクスと選定基準 | Proposed | 2026-05-13 | パスワード履歴 / WebAuthn は Essentials+、リスクベース MFA / 詳細アカウントロック / 侵害検知は Plus |
 
 ### 1.4.2 ADR の重要度・本番への影響度
 
@@ -320,19 +323,18 @@
 
 ### 1.4.4 本番移行時に追加が必要な ADR（未発番、想定）
 
-ADR-010〜015 は既に発番済（§1.4.1 参照）。要件定義以降に追加する想定の未発番 ADR：
+ADR-010〜016 は既に発番済（§1.4.1 参照）。要件定義以降に追加する想定の未発番 ADR：
 
 | 想定 ADR | テーマ | 判断タイミング |
 |---------|-------|-------------|
-| ADR-016 | Upstream Keycloak vs RHBK 最終選定 | 本番設計フェーズ（FIPS / サポート / 予算 確定後） |
-| ADR-017 | Cognito vs Keycloak 最終選定 | Week 4 最終判断会議（ADR-014 確定後） |
-| ADR-018 | 本番マルチアカウント戦略 | 設計フェーズ |
-| ADR-019 | DR 自動フェイルオーバー方式（Route 53 等） | 設計フェーズ |
-| ADR-020 | Keycloak HA 構成（Multi-AZ / Aurora Global DB / ECS Auto Scaling） | 設計フェーズ |
-| ADR-021 | バックエンド実装言語・フレームワーク | 設計フェーズ |
-| ADR-022 | 監視・アラート設計 | 運用設計 |
-| ADR-023 | 監査ログの保存・検索基盤 | 運用設計 |
-| ADR-024 | **Cognito Plus ティア採用判断**（FR-AUTH-011 / FR-MFA-002 / FR-MFA-006 が Must の場合）| 要件確定後 |
+| ADR-017 | Upstream Keycloak vs RHBK 最終選定 | 本番設計フェーズ（FIPS / サポート / 予算 確定後） |
+| ADR-018 | Cognito vs Keycloak 最終選定 | Week 4 最終判断会議（ADR-014 / ADR-016 確定後） |
+| ADR-019 | 本番マルチアカウント戦略 | 設計フェーズ |
+| ADR-020 | DR 自動フェイルオーバー方式（Route 53 等） | 設計フェーズ |
+| ADR-021 | Keycloak HA 構成（Multi-AZ / Aurora Global DB / ECS Auto Scaling） | 設計フェーズ |
+| ADR-022 | バックエンド実装言語・フレームワーク | 設計フェーズ |
+| ADR-023 | 監視・アラート設計 | 運用設計 |
+| ADR-024 | 監査ログの保存・検索基盤 | 運用設計 |
 
 ---
 

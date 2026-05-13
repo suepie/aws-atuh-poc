@@ -32,6 +32,13 @@
 
 ## 1. FR-AUTH（認証方式）
 
+FR-AUTH は性質の異なる 2 つの観点を含む。
+
+- **§1.1 認証フロー / Grant Type**（FR-AUTH-001〜008）— OIDC / OAuth 2.0 標準フロー群。**Broker（Cognito / Keycloak）が OIDC 標準実装である**ことから自動的に提供される機能（ROPC を除く 001〜007 は Broker パターンとしてカバー対象）。クライアント種別（SPA / SSR / Mobile / M2M）に応じて使い分ける。
+- **§1.2 パスワード・ローカルユーザー管理**（FR-AUTH-009〜014）— Broker が**ローカル IdP モード**で動作するときの認証情報管理ポリシー。フェデレーションユーザーには適用されず、外部 IdP（Entra ID / Okta 等）側の責務となる（[ADR-009](../adr/009-mfa-responsibility-by-idp.md)）。
+
+### 1.1 認証フロー / Grant Type
+
 | ID | 要件 | 優先度 | Cognito | Keycloak | PoC | 状態 |
 |----|------|:----:|:------:|:------:|:---:|:---:|
 | FR-AUTH-001 | ID/PW 認証（ローカルユーザー） | Must | ✅ Hosted UI | ✅ Realm Login Page | ✅ | ✅ |
@@ -42,14 +49,28 @@
 | FR-AUTH-006 | Device Code Flow | TBD | ❌ 非対応 | ✅ ネイティブ対応 | ❌ | 🔴 |
 | FR-AUTH-007 | mTLS Client Authentication（RFC 8705） | Could | ❌ 非対応 | ✅ FAPI Profile | ❌ | 🔴 |
 | FR-AUTH-008 | ROPC（Password Grant） | Won't | ✅（非推奨） | ✅（非推奨） | — | ✅ 不採用 |
+
+**Broker パターンとの関係**: 001〜003（Must）はいずれも OIDC/OAuth 標準フロー（RFC 6749 / 7636）であり、Broker が OIDC OP として実装されている限り構造的に提供可能。004 は実装上の設定差はあるが Broker パターンとして対応可能。005〜007 は実装依存（Cognito 非対応・Keycloak 対応）であり、要否次第でプラットフォーム選定に直結する（§9.1 参照）。
+
+**詳細**: [auth-patterns.md §2.1〜2.9](../common/auth-patterns.md)
+
+### 1.2 パスワード・ローカルユーザー管理
+
+ローカル IdP モード（Broker 自体にユーザー DB を持つ運用）でのみ適用。フェデレーションユーザーは外部 IdP のポリシーに従う。
+
+> **Cognito ティア依存の機能**: FR-AUTH-010 / FR-AUTH-011 は Cognito のティア選定（Lite / Essentials / Plus）に依存する。詳細マトリクスは [ADR-016](../adr/016-cognito-feature-tier-selection.md) 参照。
+> なお Cognito Essentials ティアはフェデレーション課金が Lite と同額（$0.015/MAU）のため、FR-AUTH-010 / FR-MFA-002 を採用しても**フェデレーション利用なら追加コストは発生しない**。
+
+| ID | 要件 | 優先度 | Cognito | Keycloak | PoC | 状態 |
+|----|------|:----:|:------:|:------:|:---:|:---:|
 | FR-AUTH-009 | パスワードポリシー（最小長・複雑性） | Must | ✅ User Pool 設定 | ✅ Realm Policy | ✅ Cognito 明示設定済（min 8 + 大小数字必須） | ✅ |
-| FR-AUTH-010 | パスワード履歴 | Should | ❌ 非対応（`passwordHistoryLength` 相当なし） | ✅ N 履歴設定可 | ❌ | 🔴 |
-| FR-AUTH-011 | アカウントロック（連続失敗） | Must | ⚠ Plus ティア（$0.02/MAU 追加）必要 | ✅ Realm 設定 | ✅ Phase 7（realm-export.json `bruteForceProtected: true, failureFactor: 5`） | 🟡 |
+| FR-AUTH-010 | パスワード履歴（N 個と一致禁止）| Should | ⚠ **Essentials+ ティア必要**（`PasswordHistorySize` 0〜24、Terraform 未対応 [#39016](https://github.com/hashicorp/terraform-provider-aws/issues/39016)）| ✅ N 履歴設定可 | ❌ | 🔴 |
+| FR-AUTH-011 | アカウントロック（連続失敗） | Must | **2 段階**: ⚠ 全ティア標準ブルートフォース保護（パラメータ調整不可）/ ✅ **Plus ティア**で詳細設定可（リスクベース適応認証）| ✅ Realm 設定（`failureFactor` 等細かく制御可） | ✅ Phase 7（realm-export.json `bruteForceProtected: true, failureFactor: 5`） | 🟡 |
 | FR-AUTH-012 | パスワード有効期限 | Should | ✅ 設定可 | ✅ 設定可 | ❌ | 🟡 |
 | FR-AUTH-013 | セルフサービスパスワードリセット | Must | ✅ Forgot Password | ✅ Forgot Password | ❌ | 🟡 |
 | FR-AUTH-014 | 初期パスワード強制変更 | Should | ✅ Required Action | ✅ Required Action | ❌ | 🟡 |
 
-**詳細**: [auth-patterns.md §2.1〜2.9](../common/auth-patterns.md)
+**ID 体系について**: 性質はフローと異なるが、ADR-006 / poc-summary-evaluation.md / hearing-checklist.md / non-functional-requirements.md から既に番号参照されているため、ID は `FR-AUTH-NNN` のまま維持する（サブセクション分けのみ）。
 
 ---
 
@@ -81,7 +102,7 @@
 | ID | 要件 | 優先度 | Cognito | Keycloak | PoC | 状態 |
 |----|------|:----:|:------:|:------:|:---:|:---:|
 | FR-MFA-001 | TOTP（Google Authenticator 等） | Must | ✅ | ✅ | ✅ Phase 1,7 | ✅ |
-| FR-MFA-002 | WebAuthn / FIDO2（Passkeys） | Should | ✅ ネイティブ対応（Essentials+ ティア、2024-11〜） | ✅ | ❌ 未検証 | 🟡 |
+| FR-MFA-002 | WebAuthn / FIDO2（Passkeys） | Should | ✅ ネイティブ対応（**Essentials+ ティア**、2024-11〜）— フェデレーション利用なら Lite と単価同額のため追加コストなし | ✅ | ❌ 未検証 | 🟡 |
 | FR-MFA-003 | SMS OTP | Could | ✅（追加課金） | ⚠ プラグイン | ❌ | 🔴 |
 | FR-MFA-004 | メール OTP | Could | ✅ | ✅ | ❌ | 🔴 |
 | FR-MFA-005 | バックアップコード | Should | ❌ | ✅ | ❌ | 🟡 |
@@ -204,6 +225,20 @@
 | FR-SSO-007 | Back-Channel Logout |
 
 ※ **FR-MFA-002 WebAuthn / FIDO2 は Cognito も対応**（2024-11〜、Essentials+ ティア）。「Keycloak 必須要因」ではない。
+
+### 9.2 Cognito ティア選定への影響要因
+
+以下の要件が Must になると Cognito のティア選定に影響する（[ADR-016](../adr/016-cognito-feature-tier-selection.md) 参照）:
+
+| 要件 ID | 内容 | 必要ティア |
+|--------|------|----------|
+| FR-AUTH-010 | パスワード履歴 | **Essentials+**（フェデレーション利用なら追加コストなし）|
+| FR-MFA-002 | WebAuthn / Passkeys | **Essentials+**（同上）|
+| FR-AUTH-011 | 設定可能なアカウントロック（連続失敗閾値・ロック時間）| **Plus**（+$0.02/MAU）|
+| FR-MFA-006 | リスクベース MFA（適応認証）| **Plus**（同上）|
+| NFR-SEC-011 | 侵害クレデンシャル検出 | **Plus**（同上）|
+
+→ Plus ティア採用時は損益分岐 MAU が **175,000 → 75,000** に変動（[ADR-006](../adr/006-cognito-vs-keycloak-cost-breakeven.md)）。
 
 ### 9.2 ヒアリングで早期確定すべき項目（🔴 TBD）
 
