@@ -8,6 +8,21 @@
 
 ## 0. 要件定義の語る順序（ナラティブ）
 
+### 0.1 本基盤の北極星（全要件のトーン判断基準）
+
+本基盤は **「絶対安全に、どんなアプリでも、効率よく認証し、運用負荷やコストがかからない」共通認証基盤** を目指す。すべての要件は次の 4 軸で評価する：
+
+| 北極星の柱 | 解釈 |
+|---|---|
+| **絶対安全** | セキュリティ最優先（OAuth 2.1 / NIST SP 800-63B Rev 4 / 業界最新ベストプラクティス準拠）|
+| **どんなアプリでも** | 認証フロー・IdP・クライアント種別の網羅性 |
+| **効率よく認証** | 顧客追加・システム追加のフリクションレス |
+| **運用負荷・コスト最小** | マネージド優先、自前運用は限定 |
+
+すべての要件は **AWS マルチアカウント前提**で **Cognito / Keycloak OSS / Keycloak RHBK のいずれでも構成可能**な設計を採用する。proposal/ 配下の各ファイル / functional-requirements.md / non-functional-requirements.md の各セクションは、この 4 軸に対する立場を明示すること。
+
+### 0.2 要件定義の 5 ステップ（語る順序）
+
 要件定義書（`requirements-spec.md`）および対顧客説明資料は、以下の 5 ステップで論理を組み立てる。**「対応する認証フローを示す → それを実現する構成として Broker を採用 → 実装プラットフォームを選定」** が本フェーズの中核ストーリー。
 
 ```mermaid
@@ -21,7 +36,7 @@ flowchart LR
     style S4 fill:#e3f2fd,stroke:#1565c0
 ```
 
-### 0.1 各ステップで答える問いと参照先
+### 0.3 各ステップで答える問いと参照先
 
 | Step | 答える問い | 一次ソース | 補強ドキュメント |
 |:---:|---|---|---|
@@ -31,7 +46,7 @@ flowchart LR
 | ④ | **Cognito か Keycloak か？**（要件 × 制約 × コスト） | [platform-selection-decision.md](platform-selection-decision.md) | [ADR-006](../adr/006-cognito-vs-keycloak-cost-breakeven.md)、[ADR-014](../adr/014-auth-patterns-scope.md)、[ADR-015](../adr/015-rhbk-validation-deferred.md) |
 | ⑤ | **可用性・DR・性能・コストの目標は？** | [non-functional-requirements.md](non-functional-requirements.md) | [keycloak-network-architecture.md](../common/keycloak-network-architecture.md)、[ADR-010〜013](../adr/) |
 
-### 0.2 ステップ ③（Broker 採用根拠）の論理構造
+### 0.4 ステップ ③（Broker 採用根拠）の論理構造
 
 Broker パターン採用の根拠は ① と ② から導出される（独立した「Broker を採用する理由」ではない）:
 
@@ -53,7 +68,11 @@ doc/requirements/
 ├── 00-index.md                          ← 本フォルダのインデックス
 │
 ├── [顧客向け要件定義提示・社内総括]
-│   ├── proposal-overview.md             ← 顧客向け要件定義 提示版（骨格作成済、サブセクションごとに合意取り）
+│   ├── proposal/                        ← 顧客向け要件定義 提示版（フォルダ化、章ごとにファイル分割）
+│   │   ├── 00-index.md                  ← proposal SSOT（北極星・5 ステップ・章ナビ）
+│   │   ├── 02-auth.md                   ← §2 認証
+│   │   ├── 03-federation.md             ← §3 フェデレーション（§3.2 はサブ・サブ分割済）
+│   │   ├── 04-mfa.md 〜 15-poc-note.md  ← §4〜§15
 │   └── poc-summary-evaluation.md        ← 社内 PoC 総括評価（作成済、要件提示の裏どり資料）
 │
 ├── [ヒアリング]
@@ -80,23 +99,36 @@ doc/requirements/
 
 ### Phase 1: 顧客向け要件定義提示・社内総括（Week 1 前半）
 
-| # | ドキュメント | 目的 | ページ数目安 | 状態 |
-|---|------------|------|-------------|------|
-| 1 | proposal-overview.md | **顧客向け要件定義 提示版**（FR/NFR と 1:1 対応で要件ベースライン提示） | 12-15 | 🚧 骨格作成済（サブセクションごとに合意取り） |
-| 2 | poc-summary-evaluation.md | **社内** PoC 成果総括（要件提示の裏どり資料、顧客には直接出さない） | 10-15 | ✅ 作成済み |
+| # | ドキュメント | 目的 | 状態 |
+|---|------------|------|------|
+| 1 | proposal/（フォルダ）| **顧客向け要件定義 提示版**（章ごとにファイル分割、FR/NFR と 1:1 対応で要件ベースライン提示） | 🚧 §2 / §3.1 / §3.2 記載済、他は骨格のみ |
+| 2 | poc-summary-evaluation.md | **社内** PoC 成果総括（要件提示の裏どり資料、顧客には直接出さない） | ✅ 作成済み |
 
-**proposal-overview.md の構成**（[proposal-overview.md](proposal-overview.md) 参照）:
-- §0 はじめに（目的・読み方）
-- §1 要件ベースラインの全体像（5 ステップ + FR/NFR 対応表）
-- §2〜§9 機能要件のベースライン提示（FR-AUTH/FED/MFA/SSO/AUTHZ/USER/ADMIN/INT と 1:1）
-- §10 アーキテクチャ（Identity Broker）
-- §11 実装プラットフォーム（Cognito / Keycloak）
-- §12 非機能要件（NFR と 1:1）
-- §13 TBD / 要確認 事項サマリー
-- §14 想定スケジュール
-- §15 参考：弊社内の事前検証について（PoC は控えめに）
+**proposal/ の構成**（[proposal/00-index.md](proposal/00-index.md) 参照）:
+- 00-index.md = SSOT（はじめに・北極星・5 ステップ・章ナビ）
+- 02-auth.md = §2 認証（§2.1 認証フロー / §2.2 パスワード）
+- 03-federation.md = §3 フェデレーション（§3.1 IdP 接続 / §3.2.1 JIT / §3.2.2 属性マッピング / §3.2.3 MFA 重複回避 / §3.3 マルチテナント運用）
+- 04-mfa.md = §4 MFA（§4.1 要素 / §4.2 適用ポリシー）
+- 05-sso.md = §5 SSO・ログアウト（§5.1 SSO / §5.2 ログアウト / §5.3 セッション管理）
+- 06-authz.md = §6 認可（§6.1 基本 / §6.2 細粒度）
+- 07-user.md = §7 ユーザー管理（§7.1〜§7.4）
+- 08-admin.md = §8 管理機能（§8.1〜§8.3）
+- 09-integration.md = §9 外部統合（§9.1〜§9.3）
+- 10-architecture.md = §10 Identity Broker
+- 11-platform.md = §11 実装プラットフォーム
+- 12-nfr.md = §12 非機能要件（§12.1〜§12.9）
+- 13-tbd-summary.md = §13 TBD まとめ
+- 14-schedule.md = §14 スケジュール
+- 15-poc-note.md = §15 PoC 控えめ
 
 **各サブセクション**: "**ベースライン**" + "**TBD / 要確認**" の対構造。詳細マトリクスは functional-requirements.md / non-functional-requirements.md へリンク委譲。
+
+**各章の冒頭規約（§X.0 前提と背景）**: proposal/ 配下の各章（§2〜§15）は冒頭に **§X.0「前提と背景」**を必ず置く。構成：
+1. **用語整理** — 本章で扱う概念の定義（共通認証基盤の文脈で）
+2. **なぜここ（§X）で決めるか** — 他章との関係を mermaid で図化
+3. **本章で扱うサブセクションの一覧**
+
+理由：顧客は認証技術の専門家ではないため、各章でいきなり要件案を出すと「なぜそれを決める必要があるのか」が伝わらず合意取りが空回りする。事前に共通理解を作ってから本論に入る。
 
 ### Phase 2: ヒアリング実施（Week 1-3）
 
@@ -342,10 +374,10 @@ Week 0 (現在):
   ✅ poc-summary-evaluation.md
   ✅ requirements-hearing-strategy.md
   ✅ requirements-document-structure.md（本ドキュメント、SSOT 化）
-  🚧 proposal-overview.md（顧客向け要件定義 提示版、骨格作成済）
+  🚧 proposal/（顧客向け要件定義 提示版、章ごとファイル化、§2/§3.1/§3.2 記載済）
 
 Week 1:
-  📋 proposal-overview.md サブセクションごとに合意取り＆中身埋め
+  📋 proposal/ 各章のサブセクションごとに合意取り＆中身埋め
   📋 hearing-phase-a.md（事業要件ヒアリング実施後）
 
 Week 2:
@@ -442,7 +474,7 @@ flowchart LR
 
 | ドキュメント | 役割 | 状態 | 最終更新 |
 |---|---|:---:|---|
-| **[proposal-overview.md](proposal-overview.md)** ⭐ | **顧客向け要件定義 提示版**（FR/NFR と 1:1 対応で要件ベースライン提示） | 🚧 骨格のみ（サブセクション順に合意取り中） | 2026-05-13 |
+| **[proposal/](proposal/00-index.md)** ⭐ | **顧客向け要件定義 提示版**（フォルダ化、章ごとファイル分割、FR/NFR と 1:1 対応）| 🚧 §2 / §3.1 / §3.2 記載済、§4〜§15 骨格のみ | 2026-05-13 |
 | [poc-summary-evaluation.md](poc-summary-evaluation.md) | **社内** PoC 成果総括・不足箇所分析（要件提示の裏どり） | ✅ Done | 2026-05-13 |
 
 ### 9.2 ヒアリング

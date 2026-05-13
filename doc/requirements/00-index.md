@@ -6,14 +6,14 @@ PoC完了後の要件定義フェーズに向けた資料。
 > 🌟 **まずここから**: [requirements-document-structure.md](requirements-document-structure.md) が要件定義フェーズの **SSOT (Single Source of Truth)**。
 > §0 ナラティブ（要件定義の語る順序）／§8 ドキュメント間の依存関係と読み順／§9 ドキュメント状態ダッシュボード が全体把握の入口。
 >
-> 📣 **顧客向け要件定義提示**: [proposal-overview.md](proposal-overview.md)（FR/NFR と 1:1 対応、サブセクション単位でベースライン提示 + TBD/要確認）
+> 📣 **顧客向け要件定義提示**: [proposal/00-index.md](proposal/00-index.md)（フォルダ化済、章ごとにファイル分割、FR/NFR と 1:1 対応、サブセクション単位でベースライン提示 + TBD/要確認）
 
 ## ドキュメント一覧
 
 | ドキュメント | 内容 |
 |------------|------|
 | **[requirements-document-structure.md](requirements-document-structure.md)** ⭐ | **要件定義 SSOT**：ナラティブ・体系・依存関係・状態ダッシュボード・ID 体系ルール |
-| **[proposal-overview.md](proposal-overview.md)** 📣 | **顧客向け要件定義 提示版**：FR/NFR と 1:1 対応で要件ベースライン提示（骨格作成済、サブセクション単位で合意取り中） |
+| **[proposal/](proposal/00-index.md)** 📣 | **顧客向け要件定義 提示版**（フォルダ化）：FR/NFR と 1:1 対応で要件ベースライン提示。proposal/00-index.md が SSOT、章ごとに 02-auth.md / 03-federation.md / ... と分割 |
 | [poc-summary-evaluation.md](poc-summary-evaluation.md) | **社内** PoC 総括評価：成果・既存ドキュメント評価・不足箇所分析（要件提示の裏どり資料） |
 | [requirements-hearing-strategy.md](requirements-hearing-strategy.md) | 要件定義ヒアリング戦略：確認事項・ステークホルダー・進め方 |
 | [platform-selection-decision.md](platform-selection-decision.md) | プラットフォーム選定判断書（評価基準 / 候補 / スコアリングフレーム）— ドラフト |
