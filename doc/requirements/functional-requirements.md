@@ -1,6 +1,6 @@
 # 機能要件一覧（functional-requirements.md）
 
-> 最終更新: 2026-05-08
+> 最終更新: 2026-05-13（Cognito 2024-11 仕様変更反映 / Phase 9 反映 / 実装実態と整合）
 > 対象: 共有認証基盤（Cognito / Keycloak 比較）
 > 関連: [auth-patterns.md](../common/auth-patterns.md)、[ADR-014](../adr/014-auth-patterns-scope.md)
 
@@ -42,9 +42,9 @@
 | FR-AUTH-006 | Device Code Flow | TBD | ❌ 非対応 | ✅ ネイティブ対応 | ❌ | 🔴 |
 | FR-AUTH-007 | mTLS Client Authentication（RFC 8705） | Could | ❌ 非対応 | ✅ FAPI Profile | ❌ | 🔴 |
 | FR-AUTH-008 | ROPC（Password Grant） | Won't | ✅（非推奨） | ✅（非推奨） | — | ✅ 不採用 |
-| FR-AUTH-009 | パスワードポリシー（最小長・複雑性） | Must | ✅ User Pool 設定 | ✅ Realm Policy | ⚠ デフォルトのみ | 🟡 |
-| FR-AUTH-010 | パスワード履歴 | Should | ⚠ 限定的 | ✅ N 履歴設定可 | ❌ | 🔴 |
-| FR-AUTH-011 | アカウントロック（連続失敗） | Must | ⚠ Advanced Security 必要 | ✅ Realm 設定 | ❌ | 🟡 |
+| FR-AUTH-009 | パスワードポリシー（最小長・複雑性） | Must | ✅ User Pool 設定 | ✅ Realm Policy | ✅ Cognito 明示設定済（min 8 + 大小数字必須） | ✅ |
+| FR-AUTH-010 | パスワード履歴 | Should | ❌ 非対応（`passwordHistoryLength` 相当なし） | ✅ N 履歴設定可 | ❌ | 🔴 |
+| FR-AUTH-011 | アカウントロック（連続失敗） | Must | ⚠ Plus ティア（$0.02/MAU 追加）必要 | ✅ Realm 設定 | ✅ Phase 7（realm-export.json `bruteForceProtected: true, failureFactor: 5`） | 🟡 |
 | FR-AUTH-012 | パスワード有効期限 | Should | ✅ 設定可 | ✅ 設定可 | ❌ | 🟡 |
 | FR-AUTH-013 | セルフサービスパスワードリセット | Must | ✅ Forgot Password | ✅ Forgot Password | ❌ | 🟡 |
 | FR-AUTH-014 | 初期パスワード強制変更 | Should | ✅ Required Action | ✅ Required Action | ❌ | 🟡 |
@@ -81,11 +81,11 @@
 | ID | 要件 | 優先度 | Cognito | Keycloak | PoC | 状態 |
 |----|------|:----:|:------:|:------:|:---:|:---:|
 | FR-MFA-001 | TOTP（Google Authenticator 等） | Must | ✅ | ✅ | ✅ Phase 1,7 | ✅ |
-| FR-MFA-002 | WebAuthn / FIDO2 | Should | ❌ 非対応 | ✅ | ❌ | 🔴 |
+| FR-MFA-002 | WebAuthn / FIDO2（Passkeys） | Should | ✅ ネイティブ対応（Essentials+ ティア、2024-11〜） | ✅ | ❌ 未検証 | 🟡 |
 | FR-MFA-003 | SMS OTP | Could | ✅（追加課金） | ⚠ プラグイン | ❌ | 🔴 |
 | FR-MFA-004 | メール OTP | Could | ✅ | ✅ | ❌ | 🔴 |
 | FR-MFA-005 | バックアップコード | Should | ❌ | ✅ | ❌ | 🟡 |
-| FR-MFA-006 | 条件付き MFA（IP / リスクベース） | Should | ⚠ Advanced Security | ✅ Conditional Flow | ✅ Phase 7（Keycloak） | 🟡 |
+| FR-MFA-006 | 条件付き MFA（IP / リスクベース） | Should | ⚠ Plus ティア（$0.02/MAU 追加）必要（リスクベース適応認証） | ✅ Conditional Flow | ✅ Phase 7（Keycloak） | 🟡 |
 | FR-MFA-007 | MFA 強制 / 任意の切替（ロール単位） | Must | ⚠ User 単位のみ | ✅ Flow 単位制御可 | ✅ Phase 7 | 🟡 |
 | FR-MFA-008 | 端末記憶（Trusted Device） | Could | ✅ Remember Device | ⚠ 設定要 | ❌ | 🔴 |
 | FR-MFA-009 | 管理者の MFA 強制 | Must | ✅ | ✅ | ❌ | 🟡 |
@@ -117,14 +117,14 @@
 
 | ID | 要件 | 優先度 | Cognito | Keycloak | PoC | 状態 |
 |----|------|:----:|:------:|:------:|:---:|:---:|
-| FR-AUTHZ-001 | JWT クレームベース認可 | Must | ✅ | ✅ | ✅ Phase 3,8 | ✅ |
-| FR-AUTHZ-002 | tenant_id によるテナント分離 | Must | ✅ Pre Token Lambda | ✅ Protocol Mapper | ✅ Phase 8 | ✅ |
-| FR-AUTHZ-003 | roles クレームによるロール認可 | Must | ✅ Pre Token Lambda | ✅ Protocol Mapper（Realm Role） | ✅ Phase 8 | ✅ |
+| FR-AUTHZ-001 | JWT クレームベース認可 | Must | ✅ | ✅ | ✅ Phase 3,8,9 | ✅ |
+| FR-AUTHZ-002 | tenant_id によるテナント分離 | Must | ✅ Pre Token Lambda | ✅ Protocol Mapper | ✅ Phase 8（Cognito）/ Phase 9（Keycloak）※DR Cognito は Pre Token Lambda 未設定 | ✅ |
+| FR-AUTHZ-003 | roles クレームによるロール認可 | Must | ✅ Pre Token Lambda | ✅ Protocol Mapper（Realm Role） | ✅ Phase 8（Cognito）/ Phase 9（Keycloak） | ✅ |
 | FR-AUTHZ-004 | ロール階層（継承） | Should | ⚠ アプリ側実装 | ✅ Composite Role | ✅ Phase 8（アプリ側） | 🟡 |
 | FR-AUTHZ-005 | scope ベース認可（M2M） | Must | ✅ Resource Server scope | ✅ Client Scope | ❌ | 🟡 |
-| FR-AUTHZ-006 | カスタムクレーム注入（任意属性） | Must | ✅ Pre Token Generation Lambda V2 | ✅ Protocol Mapper（宣言的） | ✅ Phase 8 | ✅ |
-| FR-AUTHZ-007 | API Gateway 認可統合（Lambda Authorizer） | Must | ✅ | ✅ | ✅ Phase 3 | ✅ |
-| FR-AUTHZ-008 | マルチイシュア対応（複数 User Pool / Realm） | Must | ✅ | ✅ | ✅ Phase 4,5 | ✅ |
+| FR-AUTHZ-006 | カスタムクレーム注入（任意属性） | Must | ✅ Pre Token Generation Lambda V2 | ✅ Protocol Mapper（宣言的） | ✅ Phase 8（Cognito）/ Phase 9（Keycloak） | ✅ |
+| FR-AUTHZ-007 | API Gateway 認可統合（Lambda Authorizer） | Must | ✅ | ✅ | ✅ Phase 3 / VPC 版 Phase 9 | ✅ |
+| FR-AUTHZ-008 | マルチイシュア対応（複数 User Pool / Realm） | Must | ✅ | ✅ | ✅ Phase 4,5,9（4 イシュア: central/local/dr/keycloak） | ✅ |
 | FR-AUTHZ-009 | リソースレベル認可（UMA 2.0 / Fine-grained） | Could | ❌ 非対応 | ✅ Authorization Services | ❌ | 🔴 |
 | FR-AUTHZ-010 | 動的属性ベース認可（ABAC） | Could | ⚠ Lambda 側実装 | ✅ Policy Enforcer | ❌ | 🔴 |
 
@@ -195,14 +195,15 @@
 
 | 要件 ID | 内容 |
 |--------|------|
-| FR-AUTH-005 | Token Exchange |
+| FR-AUTH-005 | Token Exchange（RFC 8693） |
 | FR-AUTH-006 | Device Code Flow |
-| FR-AUTH-007 | mTLS |
+| FR-AUTH-007 | mTLS（RFC 8705） |
 | FR-FED-006 | SAML IdP として発行 |
 | FR-FED-007 | LDAP 直接連携 |
 | FR-AUTHZ-009 | UMA 2.0 / Fine-grained |
 | FR-SSO-007 | Back-Channel Logout |
-| FR-MFA-002 | WebAuthn / FIDO2 |
+
+※ **FR-MFA-002 WebAuthn / FIDO2 は Cognito も対応**（2024-11〜、Essentials+ ティア）。「Keycloak 必須要因」ではない。
 
 ### 9.2 ヒアリングで早期確定すべき項目（🔴 TBD）
 

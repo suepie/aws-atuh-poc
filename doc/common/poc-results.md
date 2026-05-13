@@ -1,6 +1,6 @@
-# PoC 検証結果サマリー（Phase 1〜7）
+# PoC 検証結果サマリー（Phase 1〜9）
 
-**最終更新**: 2026-03-30
+**最終更新**: 2026-05-13（Phase 9 反映 / DR Cognito Pre Token Lambda 欠落 / realm-export 不完全性を追記）
 
 ---
 
@@ -447,8 +447,11 @@ Backend Lambda は **完全に同じコード・同じ認可ロジック**。プ
 | カテゴリ | 課題 | 優先度 |
 |---------|------|--------|
 | 認証 | Entra ID / Okta での実地検証 | 高 |
+| **認可 / DR** | **DR Cognito（大阪）の Pre Token Lambda 未設定** — infra/dr-osaka/cognito.tf に `lambda_config` がないため、フェイルオーバー時に `tenant_id` / `roles` クレームが Access Token に注入されない。Phase 8/9 の認可シナリオが DR では動作しない | **高** |
+| **運用 / Keycloak** | **realm-export.json が Phase 7-9 設定を含まない** — TOTP MFA / Identity Brokering / Conditional OTP / Phase 9 Protocol Mapper が Admin Console 設定のままで Git 管理外。`import-realm` で再構築すると消える | **高** |
 | 認可 | 行レベルデータ分離（DynamoDB/RDS の tenant_id 条件）| 中 |
 | DR | Route 53 フェイルオーバー（自動切替） | 中 |
 | 本番移行 | CloudFront + WAF 実装（現在は設計書のみ）| 中 |
 | 本番移行 | Split-horizon DNS（カスタムドメイン + Route 53 PHZ）| 中 |
-| コスト | **顧客のMAU規模確認（損益分岐点17.5万MAU）** | **最高** |
+| コスト | **顧客の MAU 規模確認（損益分岐 17.5 万 MAU、Plus ティア利用時は 7.5 万 MAU）** | **最高** |
+| 認証 | Cognito Plus ティア機能（Passkeys / リスクベース MFA / アカウントロック）の実機検証 | 中 |

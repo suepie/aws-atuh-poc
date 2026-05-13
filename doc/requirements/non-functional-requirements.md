@@ -1,6 +1,6 @@
 # 非機能要件一覧（non-functional-requirements.md）
 
-> 最終更新: 2026-05-08
+> 最終更新: 2026-05-13（Cognito 2024-11 仕様変更反映 / Plus ティア追加課金 / Rate Limit 注記）
 > 対象: 共有認証基盤（Cognito / Keycloak 比較）
 > 関連: [keycloak-network-architecture.md](../common/keycloak-network-architecture.md)、[ADR-006](../adr/006-cognito-vs-keycloak-cost-breakeven.md)
 
@@ -48,7 +48,7 @@
 | ID | 要件 | 推奨値 | Cognito | Keycloak | 状態 |
 |----|------|------|--------|----------|:---:|
 | NFR-PERF-001 | 認証応答時間（P50 / P95 / P99） | (D) **P95 < 1s, P99 < 2s** | ✅ AWS 内 | ⚠ ECS スペック次第（PoC: 数百 ms 観測） | 🟡 |
-| NFR-PERF-002 | 同時認証リクエスト処理能力 | (TBD) N req/s | ✅ AWS スケーラブル | ⚠ ECS Auto Scaling 設計 | 🔴 |
+| NFR-PERF-002 | 同時認証リクエスト処理能力 | (TBD) N req/s | ⚠ AWS スケーラブル（ただし一部 API に Account-level rate limit あり：`InitiateAuth` / `AdminInitiateAuth` 等。Service Quotas で要事前確認） | ⚠ ECS Auto Scaling 設計 | 🔴 |
 | NFR-PERF-003 | Lambda Authorizer 応答時間 | (D) **キャッシュ HIT < 10ms / MISS < 100ms** | ✅ Phase 3 計測（15-60ms） | ✅ 同 Lambda（同性能） | ✅ |
 | NFR-PERF-004 | JWT 検証スループット | (D) **>1,000 req/s** | ✅ Lambda 並列 | ✅ Lambda 並列 | ✅ |
 | NFR-PERF-005 | JWKS キャッシュ TTL | (D) **1 時間（Lambda 内）** | ✅ | ✅ | ✅ |
@@ -89,7 +89,7 @@
 | NFR-SEC-007 | Refresh Token Rotation | (D) **有効化** | ⚠ デフォルト OFF（要設定） | ✅ デフォルト ON | 🟡 |
 | NFR-SEC-008 | トークン失効（Revocation） | (D) **対応必須** | ⚠ Refresh Token のみ | ✅ Token Revocation | 🟡 |
 | NFR-SEC-009 | パスワード保管アルゴリズム | (D) **PBKDF2 / bcrypt / Argon2** | ✅ AWS 内部 | ✅ PBKDF2-SHA512（デフォルト） | ✅ |
-| NFR-SEC-010 | ブルートフォース対策 | (D) **連続失敗で一時ロック** | ⚠ Advanced Security | ✅ Realm Settings | 🟡 |
+| NFR-SEC-010 | ブルートフォース対策 | (D) **連続失敗で一時ロック** | ⚠ Plus ティア（$0.02/MAU 追加）必要（2024-12〜 Advanced Security は Plus に統合） | ✅ Realm Settings | 🟡 |
 | NFR-SEC-011 | WAF 適用 | (D) **AWS WAF（CloudFront）** | ✅ | ⚠ ADR-013 で計画 | 🟡 |
 | NFR-SEC-012 | DDoS 対策 | (D) **Shield Standard** | ✅ AWS 標準 | ✅ AWS 標準 | ✅ |
 | NFR-SEC-013 | ペネトレーションテスト | (TBD) 年 N 回 | — | — | 🔴 |
@@ -169,10 +169,12 @@
 | NFR-COST-001 | 初期構築費 | — | $5,000 | $30,000 | $30,000 + ライセンス | ✅ |
 | NFR-COST-002 | 月額固定インフラ費 | — | $0 | ~$987（Option B + ADR-012）| ~$987 | ✅ |
 | NFR-COST-003 | MAU あたりコスト（連携） | — | $0.015 / MAU | $0 | $0 | ✅ |
+| NFR-COST-003-PLUS | **Cognito Plus ティア追加課金**（FR-AUTH-011 / FR-MFA-002 / FR-MFA-006 のいずれか Must の場合）| — | **+$0.02 / MAU**（無料枠なし、2024-12〜） | — | — | 🟡 |
 | NFR-COST-004 | DR 追加月額 | — | $0.50 + MAU | $890 | $890 + RHBK サブスク | ✅ |
 | NFR-COST-005 | 運用人件費 | (D) | ~$0 | ~$1,680/月 | ~$840/月（半減想定） | 🟡 |
 | NFR-COST-006 | RHBK サブスクリプション | (TBD) | — | — | $5,000〜30,000/年/ノード | 🔴 |
-| NFR-COST-007 | 損益分岐 MAU | — | — | **175,000** ([ADR-006](../adr/006-cognito-vs-keycloak-cost-breakeven.md)) | **〜600,000**（RHBK 採用時） | ✅ |
+| NFR-COST-007 | 損益分岐 MAU（連携のみ）| — | — | **175,000** ([ADR-006](../adr/006-cognito-vs-keycloak-cost-breakeven.md)) | **〜600,000**（RHBK 採用時） | ✅ |
+| NFR-COST-007-PLUS | 損益分岐 MAU（**Plus ティア利用時** $0.035/MAU）| — | — | **〜75,000**（[ADR-006](../adr/006-cognito-vs-keycloak-cost-breakeven.md) §「Plus ティア採用時」） | — | ✅ |
 | NFR-COST-008 | 3 年 TCO（10 万 MAU 想定） | — | $54K | $124K | $200K+ | ✅ |
 | NFR-COST-009 | 3 年 TCO（50 万 MAU 想定） | — | $270K | $124K | $200K+ | ✅ |
 

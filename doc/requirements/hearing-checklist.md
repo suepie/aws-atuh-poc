@@ -1,6 +1,6 @@
 # ヒアリング項目チェックリスト（Single Source of Truth）
 
-> 最終更新: 2026-05-08
+> 最終更新: 2026-05-13（Cognito 2024-11 WebAuthn 対応反映）
 > 目的: 全 TBD 項目を Phase 別に一覧化し、ヒアリング進捗を一元管理
 
 ---
@@ -102,7 +102,7 @@
 |---|:----:|------|--------|---------|---------|------|:---:|
 | B-501 | 🟡 | MFA 必須範囲 | FR-MFA-007 | 全ユーザー / 管理者のみ / 条件付き? | 適用範囲 | | ⏳ |
 | B-502 | 🟡 | MFA 方式 | FR-MFA-001〜004 | TOTP / WebAuthn / SMS のどれを許可? | 方式リスト | | ⏳ |
-| B-503 | 🟡 | **WebAuthn / FIDO2** | FR-MFA-002 | パスキー対応の必要性? | Yes/No | | ⏳ |
+| B-503 | 🟡 | **WebAuthn / FIDO2（Passkeys）** | FR-MFA-002 | パスキー対応の必要性?（**Cognito も 2024-11〜対応**、Essentials+ ティア必要）| Yes/No | | ⏳ |
 | B-504 | 🟡 | Back-Channel Logout | FR-SSO-007 | 全クライアント連動ログアウト要件? | Yes/No | | ⏳ |
 | B-505 | 🟢 | 端末記憶 | FR-MFA-008 | Trusted Device 対応? | Yes/No | | ⏳ |
 
