@@ -45,16 +45,28 @@
 
 ## 2. NFR-PERF（性能）
 
+NFR-PERF は性質の異なる 2 つの観点を含む。
+
+- **§2.1 応答時間 / レイテンシ**（NFR-PERF-001, 003, 004, 005, 008）— 1 リクエストあたりの速さ
+- **§2.2 スループット / スケール耐性**（NFR-PERF-002, 006, 007）— 並列・ピーク・レート制限
+
+### 2.1 応答時間 / レイテンシ
+
 | ID | 要件 | 推奨値 | Cognito | Keycloak | 状態 |
 |----|------|------|--------|----------|:---:|
 | NFR-PERF-001 | 認証応答時間（P50 / P95 / P99） | (D) **P95 < 1s, P99 < 2s** | ✅ AWS 内 | ⚠ ECS スペック次第（PoC: 数百 ms 観測） | 🟡 |
-| NFR-PERF-002 | 同時認証リクエスト処理能力 | (TBD) N req/s | ⚠ AWS スケーラブル（ただし一部 API に Account-level rate limit あり：`InitiateAuth` / `AdminInitiateAuth` 等。Service Quotas で要事前確認） | ⚠ ECS Auto Scaling 設計 | 🔴 |
 | NFR-PERF-003 | Lambda Authorizer 応答時間 | (D) **キャッシュ HIT < 10ms / MISS < 100ms** | ✅ Phase 3 計測（15-60ms） | ✅ 同 Lambda（同性能） | ✅ |
 | NFR-PERF-004 | JWT 検証スループット | (D) **>1,000 req/s** | ✅ Lambda 並列 | ✅ Lambda 並列 | ✅ |
 | NFR-PERF-005 | JWKS キャッシュ TTL | (D) **1 時間（Lambda 内）** | ✅ | ✅ | ✅ |
+| NFR-PERF-008 | DB 応答時間（Keycloak のみ） | (D) **P95 < 50ms** | — | ⚠ RDS チューニング | 🟡 |
+
+### 2.2 スループット / スケール耐性
+
+| ID | 要件 | 推奨値 | Cognito | Keycloak | 状態 |
+|----|------|------|--------|----------|:---:|
+| NFR-PERF-002 | 同時認証リクエスト処理能力 | (TBD) N req/s | ⚠ AWS スケーラブル（ただし一部 API に Account-level rate limit あり：`InitiateAuth` / `AdminInitiateAuth` 等。Service Quotas で要事前確認） | ⚠ ECS Auto Scaling 設計 | 🔴 |
 | NFR-PERF-006 | API Gateway スロットリング | (TBD) 顧客別 / 全体 | ✅ Cognito API Rate Limit 別途 | — | 🔴 |
 | NFR-PERF-007 | 認証ピーク時間帯への耐性 | (D) **始業時 N 倍想定** | ✅ AWS 自動スケール | ⚠ ECS 事前スケールアウト設計 | 🟡 |
-| NFR-PERF-008 | DB 応答時間（Keycloak のみ） | (D) **P95 < 50ms** | — | ⚠ RDS チューニング | 🟡 |
 
 **ヒアリング論点**: NFR-PERF-002（スループット）と NFR-PERF-007（ピーク時間帯）。MAU から逆算する。
 
@@ -78,29 +90,55 @@
 
 ## 4. NFR-SEC（セキュリティ）
 
+NFR-SEC は性質の異なる 4 つの観点を含む。
+
+- **§4.1 暗号化・鍵管理**（NFR-SEC-001, 002, 003, 009, 015）— 通信・データ・パスワード・シークレットの保護
+- **§4.2 トークン・セッション**（NFR-SEC-004〜008, 020）— トークン TTL / Rotation / Revocation / セッション固定
+- **§4.3 攻撃対策**（NFR-SEC-010, 010-2, 012, 013, 014）— ブルートフォース / 侵害クレデンシャル / DDoS / 脆弱性
+- **§4.4 ネットワーク・境界制御**（NFR-SEC-011, 016〜019）— WAF / Private Subnet / 管理画面アクセス / JWKS 保護 / 内部通信
+
+### 4.1 暗号化・鍵管理
+
 | ID | 要件 | 推奨値 | Cognito | Keycloak | 状態 |
 |----|------|------|--------|----------|:---:|
 | NFR-SEC-001 | 通信暗号化 | (D) **TLS 1.2+** | ✅ AWS 強制 | ⚠ ACM + ALB 設定要（PoC は HTTP） | 🟡 |
 | NFR-SEC-002 | データ暗号化（at-rest） | (D) **AES-256（KMS）** | ✅ 自動 | ✅ RDS storage_encrypted=true | ✅ |
 | NFR-SEC-003 | トークン署名アルゴリズム | (D) **RS256** | ✅ | ✅（ES256 も可） | ✅ |
+| NFR-SEC-009 | パスワード保管アルゴリズム | (D) **PBKDF2 / bcrypt / Argon2** | ✅ AWS 内部 | ✅ PBKDF2-SHA512（デフォルト） | ✅ |
+| NFR-SEC-015 | シークレット管理 | (D) **AWS Secrets Manager** | ✅ | ✅ | ✅ |
+
+### 4.2 トークン・セッション
+
+| ID | 要件 | 推奨値 | Cognito | Keycloak | 状態 |
+|----|------|------|--------|----------|:---:|
 | NFR-SEC-004 | Access Token TTL | (D) **15〜60 分** | ✅ App Client 設定 | ✅ Realm 設定 | 🟡 |
 | NFR-SEC-005 | Refresh Token TTL | (D) **30 日** | ✅ | ✅ | 🟡 |
 | NFR-SEC-006 | ID Token TTL | (D) **15 分** | ✅ | ✅ | 🟡 |
 | NFR-SEC-007 | Refresh Token Rotation | (D) **有効化** | ⚠ デフォルト OFF（要設定） | ✅ デフォルト ON | 🟡 |
 | NFR-SEC-008 | トークン失効（Revocation） | (D) **対応必須** | ⚠ Refresh Token のみ | ✅ Token Revocation | 🟡 |
-| NFR-SEC-009 | パスワード保管アルゴリズム | (D) **PBKDF2 / bcrypt / Argon2** | ✅ AWS 内部 | ✅ PBKDF2-SHA512（デフォルト） | ✅ |
+| NFR-SEC-020 | セッション固定攻撃対策 | (D) **必須** | ✅ | ✅ | ✅ |
+
+> **クロスリファレンス**: FR-SSO §4.3 セッション管理（FR-SSO-008〜010）と一緒に検討する。
+
+### 4.3 攻撃対策
+
+| ID | 要件 | 推奨値 | Cognito | Keycloak | 状態 |
+|----|------|------|--------|----------|:---:|
 | NFR-SEC-010 | ブルートフォース対策 | (D) **連続失敗で一時ロック** | **2 段階**: ⚠ 全ティア標準 BF 保護（パラメータ調整不可） / ✅ **Plus ティア**（+$0.02/MAU）で詳細設定可（リスクベース）。詳細: [ADR-016](../adr/016-cognito-feature-tier-selection.md) | ✅ Realm Settings | 🟡 |
 | NFR-SEC-010-2 | **侵害クレデンシャル検出**（Compromised Credentials Detection / Have I Been Pwned 相当）| (TBD) | ⚠ **Plus ティア**（+$0.02/MAU）必要 | ⚠ プラグイン / カスタム要件 | 🔴 |
-| NFR-SEC-011 | WAF 適用 | (D) **AWS WAF（CloudFront）** | ✅ | ⚠ ADR-013 で計画 | 🟡 |
 | NFR-SEC-012 | DDoS 対策 | (D) **Shield Standard** | ✅ AWS 標準 | ✅ AWS 標準 | ✅ |
 | NFR-SEC-013 | ペネトレーションテスト | (TBD) 年 N 回 | — | — | 🔴 |
 | NFR-SEC-014 | 脆弱性スキャン | (D) **ECR Image Scan + Inspector** | — | ✅ ECR Scan | 🟡 |
-| NFR-SEC-015 | シークレット管理 | (D) **AWS Secrets Manager** | ✅ | ✅ | ✅ |
+
+### 4.4 ネットワーク・境界制御
+
+| ID | 要件 | 推奨値 | Cognito | Keycloak | 状態 |
+|----|------|------|--------|----------|:---:|
+| NFR-SEC-011 | WAF 適用 | (D) **AWS WAF（CloudFront）** | ✅ | ⚠ ADR-013 で計画 | 🟡 |
 | NFR-SEC-016 | ネットワーク分離（Private Subnet） | (D) **必須** | ✅ AWS 透過 | ✅ Phase Option B 移行済 | ✅ |
 | NFR-SEC-017 | 管理画面アクセス制御 | (D) **IP 制限 + VPN/Bastion** | ✅ IAM | ⚠ ADR-011 で計画（N2） | 🟡 |
 | NFR-SEC-018 | JWKS エンドポイント保護 | (D) **公開 + WAF レート制限** | ✅ 公開 | ✅ Phase ADR-012 | ✅ |
 | NFR-SEC-019 | 内部通信の認証（Lambda → Keycloak） | (D) **VPC 内完結** | ✅ Cognito VPCE | ✅ Internal ALB（ADR-012） | ✅ |
-| NFR-SEC-020 | セッション固定攻撃対策 | (D) **必須** | ✅ | ✅ | ✅ |
 
 **詳細**: [keycloak-network-architecture.md](../common/keycloak-network-architecture.md)、[jwks-public-exposure.md](../common/jwks-public-exposure.md)
 
@@ -125,18 +163,36 @@
 
 ## 6. NFR-OPS（運用性）
 
+NFR-OPS は性質の異なる 3 つの観点を含む。
+
+- **§6.1 監視・ロギング**（NFR-OPS-001〜004）— 平常時の可視化と障害検知
+- **§6.2 デプロイ・パッチ**（NFR-OPS-005, 006, 007, 010）— 変更・更新の運用プロセス
+- **§6.3 体制・運用 SLA**（NFR-OPS-008, 009, 011）— 人手で運用する部分の取り決め
+
+### 6.1 監視・ロギング
+
 | ID | 要件 | 推奨値 | Cognito | Keycloak | 状態 |
 |----|------|------|--------|----------|:---:|
 | NFR-OPS-001 | 監視・メトリクス | (D) **CloudWatch Metrics + Dashboard** | ✅ | ✅ Keycloak Metrics + CloudWatch | 🟡 |
 | NFR-OPS-002 | アラート通知 | (D) **CloudWatch Alarm + SNS** | ✅ | ✅ | 🟡 |
 | NFR-OPS-003 | ログ保存期間 | (TBD) **N ヶ月 / N 年** | ✅ CloudTrail + CloudWatch | ✅ Event Log + CloudWatch | 🔴 |
 | NFR-OPS-004 | ログ検索性 | (D) **CloudWatch Insights / S3 + Athena** | ✅ | ⚠ Event Listener 自前 | 🟡 |
+
+### 6.2 デプロイ・パッチ
+
+| ID | 要件 | 推奨値 | Cognito | Keycloak | 状態 |
+|----|------|------|--------|----------|:---:|
 | NFR-OPS-005 | バージョンアップ方針 | (TBD) **N ヶ月毎 / LTS のみ** | ✅ AWS 透過 | ⚠ 手動（Docker image 更新） | 🔴 |
 | NFR-OPS-006 | パッチ適用（CVE 対応） | (D) **緊急 N 日以内、定例 N 週間以内** | ✅ AWS 自動 | ⚠ 手動（CVE 監視 + Image 更新） | 🟡 |
 | NFR-OPS-007 | 設定変更プロセス | (D) **IaC（Terraform）+ レビュー** | ✅ | ⚠ Realm は別管理（Admin Console / API） | 🟡 |
+| NFR-OPS-010 | デプロイ自動化（CI/CD） | (D) **必須** | ✅ Terraform | ✅ Terraform + Docker | 🟡 |
+
+### 6.3 体制・運用 SLA
+
+| ID | 要件 | 推奨値 | Cognito | Keycloak | 状態 |
+|----|------|------|--------|----------|:---:|
 | NFR-OPS-008 | インシデント対応体制 | (TBD) **24/7 / 営業時間のみ** | ✅ AWS Premium Support | ⚠ 自前 or RHBK Premium | 🔴 |
 | NFR-OPS-009 | 運用工数（人月） | (D) **Cognito: 1 人月 / Keycloak: 21 時間/月** | ✅ ほぼ不要 | ⚠ 月 N 時間（[ADR-006](../adr/006-cognito-vs-keycloak-cost-breakeven.md)） | 🟡 |
-| NFR-OPS-010 | デプロイ自動化（CI/CD） | (D) **必須** | ✅ Terraform | ✅ Terraform + Docker | 🟡 |
 | NFR-OPS-011 | テナント追加の運用 SLA | (TBD) **N 営業日以内** | ✅ | ✅ | 🔴 |
 
 **ヒアリング論点**: NFR-OPS-008（24/7 サポート）が **RHBK 採用判断**（[ADR-015](../adr/015-rhbk-validation-deferred.md)）の決め手の 1 つ。
@@ -145,18 +201,36 @@
 
 ## 7. NFR-COMPLIANCE（コンプライアンス）
 
+NFR-COMPLIANCE は性質の異なる 3 つの観点を含む。
+
+- **§7.1 規制・法令対応**（NFR-COMP-001, 002, 008）— 個人情報保護法 / GDPR / データ所在地など、地域・業界の法的要件
+- **§7.2 業界認定・監査**（NFR-COMP-003〜007, 010）— SOC 2 / ISO 27001 / PCI DSS / FIPS / 監査ログ保存
+- **§7.3 データガバナンス**（NFR-COMP-009, 011）— データ主体権利・暗号鍵ローテーション
+
+### 7.1 規制・法令対応
+
 | ID | 要件 | 推奨値 | Cognito | Keycloak | 状態 |
 |----|------|------|--------|----------|:---:|
 | NFR-COMP-001 | 個人情報保護法対応 | (D) **必須** | ✅ | ✅ | 🟡 |
 | NFR-COMP-002 | GDPR / CCPA（海外展開時） | (TBD) | ✅ | ✅ | 🔴 |
+| NFR-COMP-008 | データ所在地（リージョン制限） | (TBD) **国内 / 特定リージョン** | ✅ リージョン選択 | ✅ リージョン選択 | 🔴 |
+
+### 7.2 業界認定・監査
+
+| ID | 要件 | 推奨値 | Cognito | Keycloak | 状態 |
+|----|------|------|--------|----------|:---:|
 | NFR-COMP-003 | SOC 2 Type II | (TBD) | ✅ AWS 認定 | ⚠ 自前運用責任 | 🔴 |
 | NFR-COMP-004 | ISO 27001 | (TBD) | ✅ AWS 認定 | ⚠ 自前運用責任 | 🔴 |
 | NFR-COMP-005 | PCI DSS（金融） | (TBD) | ✅ AWS 認定 | ⚠ 自前 | 🔴 |
 | NFR-COMP-006 | FIPS 140-2 認定 | (TBD) | ⚠ FIPS Endpoint 利用 | ⚠ **RHBK 必須** | 🔴 |
 | NFR-COMP-007 | 監査ログ保存期間（法令要件） | (TBD) **業種次第（〜10 年）** | ✅ S3 ライフサイクル | ✅ S3 ライフサイクル | 🔴 |
-| NFR-COMP-008 | データ所在地（リージョン制限） | (TBD) **国内 / 特定リージョン** | ✅ リージョン選択 | ✅ リージョン選択 | 🔴 |
-| NFR-COMP-009 | 個人データ削除権（GDPR Right to Erasure） | (TBD) | ✅ AdminDeleteUser | ✅ Cascade Delete | 🟡 |
 | NFR-COMP-010 | アクセス監査の追跡可能性 | (D) **全認証イベント記録** | ✅ CloudTrail | ✅ Event Listener | 🟡 |
+
+### 7.3 データガバナンス
+
+| ID | 要件 | 推奨値 | Cognito | Keycloak | 状態 |
+|----|------|------|--------|----------|:---:|
+| NFR-COMP-009 | 個人データ削除権（GDPR Right to Erasure） | (TBD) | ✅ AdminDeleteUser | ✅ Cascade Delete | 🟡 |
 | NFR-COMP-011 | 暗号鍵のローテーション | (D) **年 1 回以上** | ✅ KMS 自動 | ⚠ Realm Key Rotation 設定 | 🟡 |
 
 **ヒアリング論点**: NFR-COMP-006（FIPS）が **RHBK 必要要因**。NFR-COMP-008（データ所在地）が **リージョン設計の決め手**。

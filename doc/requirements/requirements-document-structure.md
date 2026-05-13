@@ -52,9 +52,9 @@ Broker パターン採用の根拠は ① と ② から導出される（独立
 doc/requirements/
 ├── 00-index.md                          ← 本フォルダのインデックス
 │
-├── [報告・総括]
-│   ├── poc-summary-evaluation.md        ← PoC 総括評価（作成済み）
-│   └── poc-presentation.md              ← PoC 報告プレゼン資料（ステークホルダー向け要約）
+├── [顧客向け要件定義提示・社内総括]
+│   ├── proposal-overview.md             ← 顧客向け要件定義 提示版（骨格作成済、サブセクションごとに合意取り）
+│   └── poc-summary-evaluation.md        ← 社内 PoC 総括評価（作成済、要件提示の裏どり資料）
 │
 ├── [ヒアリング]
 │   ├── requirements-hearing-strategy.md ← ヒアリング戦略（作成済み）
@@ -78,21 +78,25 @@ doc/requirements/
 
 ## 2. 各ドキュメントの概要と作成順序
 
-### Phase 1: PoC 報告（Week 1 前半）
+### Phase 1: 顧客向け要件定義提示・社内総括（Week 1 前半）
 
 | # | ドキュメント | 目的 | ページ数目安 | 状態 |
 |---|------------|------|-------------|------|
-| 1 | poc-summary-evaluation.md | PoC 成果の総括・不足箇所の特定 | 10-15 | ✅ 作成済み |
-| 2 | poc-presentation.md | ステークホルダー向け報告資料 | 5-8 | 📋 作成予定 |
+| 1 | proposal-overview.md | **顧客向け要件定義 提示版**（FR/NFR と 1:1 対応で要件ベースライン提示） | 12-15 | 🚧 骨格作成済（サブセクションごとに合意取り） |
+| 2 | poc-summary-evaluation.md | **社内** PoC 成果総括（要件提示の裏どり資料、顧客には直接出さない） | 10-15 | ✅ 作成済み |
 
-**poc-presentation.md の構成案**:
-1. PoC の目的と背景（1 ページ）
-2. 検証した認証パターン（2 ページ: 図中心）
-3. Cognito vs Keycloak 比較結果（1 ページ: 表）
-4. コスト比較（1 ページ: グラフ）
-5. 主要な技術的知見（1 ページ）
-6. 要件定義で確認すべき事項（1 ページ）
-7. 推奨ロードマップ（1 ページ）
+**proposal-overview.md の構成**（[proposal-overview.md](proposal-overview.md) 参照）:
+- §0 はじめに（目的・読み方）
+- §1 要件ベースラインの全体像（5 ステップ + FR/NFR 対応表）
+- §2〜§9 機能要件のベースライン提示（FR-AUTH/FED/MFA/SSO/AUTHZ/USER/ADMIN/INT と 1:1）
+- §10 アーキテクチャ（Identity Broker）
+- §11 実装プラットフォーム（Cognito / Keycloak）
+- §12 非機能要件（NFR と 1:1）
+- §13 TBD / 要確認 事項サマリー
+- §14 想定スケジュール
+- §15 参考：弊社内の事前検証について（PoC は控えめに）
+
+**各サブセクション**: "**ベースライン**" + "**TBD / 要確認**" の対構造。詳細マトリクスは functional-requirements.md / non-functional-requirements.md へリンク委譲。
 
 ### Phase 2: ヒアリング実施（Week 1-3）
 
@@ -233,18 +237,20 @@ doc/requirements/
 
 機能要件の **実体（ID 一覧・優先度・PoC 状況）は [functional-requirements.md](functional-requirements.md) を一次ソース**とする。本セクションでは構成原則のみを示す。
 
-### 4.1 カテゴリ体系
+### 4.1 カテゴリ体系（FR）
 
-| カテゴリ | 接頭辞 | 範囲 | 備考 |
+各カテゴリは性質ごとにサブセクション化されている（[functional-requirements.md](functional-requirements.md) 参照）。
+
+| § | カテゴリ | 接頭辞 | サブセクション |
 |---|---|---|---|
-| 認証 | `FR-AUTH-*` | 認証フロー（§1.1）+ パスワード・ローカルユーザー管理（§1.2） | ID は連続。サブセクションで性質分け |
-| フェデレーション | `FR-FED-*` | 外部 IdP 連携、JIT、属性マッピング、マルチ IdP 運用 | Broker パターンの中核 |
-| MFA | `FR-MFA-*` | 多要素認証（TOTP / WebAuthn / SMS / 条件付き等） | [ADR-009](../adr/009-mfa-responsibility-by-idp.md) と連動 |
-| SSO・ログアウト | `FR-SSO-*` | クライアント間 SSO、各種ログアウト | RFC 8606 等 |
-| 認可 | `FR-AUTHZ-*` | クレーム認可、テナント分離、scope、UMA 等 | [authz-architecture-design.md](../common/authz-architecture-design.md) |
-| ユーザー管理 | `FR-USER-*` | CRUD、SCIM、セルフサービス、ロール割当 | |
-| 管理機能 | `FR-ADMIN-*` | 管理コンソール、テナント管理、監査 | |
-| 外部統合 | `FR-INT-*` | OIDC/SAML 準拠、Webhook、Terraform | |
+| 1 | 認証 | `FR-AUTH-*` | §1.1 認証フロー / §1.2 パスワード・ローカル管理 |
+| 2 | フェデレーション | `FR-FED-*` | §2.1 IdP 接続種別 / §2.2 ユーザー処理 / §2.3 マルチテナント運用 |
+| 3 | MFA | `FR-MFA-*` | §3.1 MFA 要素 / §3.2 適用ポリシー |
+| 4 | SSO・ログアウト | `FR-SSO-*` | §4.1 SSO / §4.2 ログアウト / §4.3 セッション管理 |
+| 5 | 認可 | `FR-AUTHZ-*` | §5.1 クレームベース基本認可 / §5.2 細粒度認可 |
+| 6 | ユーザー管理 | `FR-USER-*` | §6.1 CRUD / §6.2 属性・ロール / §6.3 セルフサービス / §6.4 プロビジョニング |
+| 7 | 管理機能 | `FR-ADMIN-*` | §7.1 基盤設定管理 / §7.2 監査 / §7.3 委譲・カスタマイズ |
+| 8 | 外部統合 | `FR-INT-*` | §8.1 プロトコル準拠 / §8.2 ログ・監視 / §8.3 API・IaC・Webhook |
 
 ### 4.2 表項目の必須カラム
 
@@ -266,19 +272,21 @@ functional-requirements.md の各表は以下のカラムを必ず持つ:
 
 非機能要件の **実体は [non-functional-requirements.md](non-functional-requirements.md) を一次ソース**とする。本セクションでは構成原則のみを示す。
 
-### 5.1 カテゴリ体系
+### 5.1 カテゴリ体系（NFR）
 
-| カテゴリ | 接頭辞 | 範囲 |
-|---|---|---|
-| 可用性 | `NFR-AVL-*` | SLA、メンテ窓 |
-| 性能 | `NFR-PERF-*` | 応答時間、スループット、レイテンシ |
-| 拡張性 | `NFR-SCL-*` | MAU 上限、IdP 追加リードタイム |
-| セキュリティ | `NFR-SEC-*` | 暗号化、監査ログ、ブルートフォース対策 |
-| DR / BCP | `NFR-DR-*` | RTO / RPO、フェイルオーバー方式 |
-| 運用 | `NFR-OPS-*` | 監視、ログ、バックアップ、バージョンアップ |
-| 法務 / コンプラ | `NFR-COMPLIANCE-*` | FIPS、データ所在、業界規制 |
-| コスト | `NFR-COST-*` | 月額・年額目標、Cognito ティア追加課金 |
-| 移行性 | `NFR-MIG-*` | 既存システム互換、段階的移行 |
+性質が混在するカテゴリはサブセクション化されている（[non-functional-requirements.md](non-functional-requirements.md) 参照）。
+
+| § | カテゴリ | 接頭辞 | サブセクション |
+|---|---|---|---|
+| 1 | 可用性 | `NFR-AVL-*` | （フラット）|
+| 2 | 性能 | `NFR-PERF-*` | §2.1 応答時間 / §2.2 スループット |
+| 3 | 拡張性 | `NFR-SCL-*` | （フラット）|
+| 4 | セキュリティ | `NFR-SEC-*` | §4.1 暗号化・鍵管理 / §4.2 トークン・セッション / §4.3 攻撃対策 / §4.4 ネットワーク・境界制御 |
+| 5 | DR / BCP | `NFR-DR-*` | （フラット）|
+| 6 | 運用 | `NFR-OPS-*` | §6.1 監視・ロギング / §6.2 デプロイ・パッチ / §6.3 体制・運用 SLA |
+| 7 | 法務 / コンプラ | `NFR-COMP-*` | §7.1 規制・法令対応 / §7.2 業界認定・監査 / §7.3 データガバナンス |
+| 8 | コスト | `NFR-COST-*` | （フラット）|
+| 9 | 移行性 | `NFR-MIG-*` | （フラット）|
 
 ### 5.2 表項目の必須カラム
 
@@ -333,10 +341,11 @@ functional-requirements.md の各表は以下のカラムを必ず持つ:
 Week 0 (現在):
   ✅ poc-summary-evaluation.md
   ✅ requirements-hearing-strategy.md
-  ✅ requirements-document-structure.md（本ドキュメント）
+  ✅ requirements-document-structure.md（本ドキュメント、SSOT 化）
+  🚧 proposal-overview.md（顧客向け要件定義 提示版、骨格作成済）
 
 Week 1:
-  📋 poc-presentation.md（報告プレゼン）
+  📋 proposal-overview.md サブセクションごとに合意取り＆中身埋め
   📋 hearing-phase-a.md（事業要件ヒアリング実施後）
 
 Week 2:
@@ -429,12 +438,12 @@ flowchart LR
 
 > 各ドキュメントの作成・更新状況を一元管理。状態は実際の作成状況に応じて更新する。
 
-### 9.1 報告・総括
+### 9.1 顧客向け要件定義提示・社内総括
 
 | ドキュメント | 役割 | 状態 | 最終更新 |
 |---|---|:---:|---|
-| [poc-summary-evaluation.md](poc-summary-evaluation.md) | PoC 成果総括・不足箇所分析 | ✅ Done | 2026-05-13 |
-| poc-presentation.md | ステークホルダー向け報告資料 | 📋 未着手 | — |
+| **[proposal-overview.md](proposal-overview.md)** ⭐ | **顧客向け要件定義 提示版**（FR/NFR と 1:1 対応で要件ベースライン提示） | 🚧 骨格のみ（サブセクション順に合意取り中） | 2026-05-13 |
+| [poc-summary-evaluation.md](poc-summary-evaluation.md) | **社内** PoC 成果総括・不足箇所分析（要件提示の裏どり） | ✅ Done | 2026-05-13 |
 
 ### 9.2 ヒアリング
 
@@ -453,8 +462,8 @@ flowchart LR
 |---|---|:---:|---|
 | **requirements-document-structure.md（本 SSOT）** | 構成・ナラティブ・状態 | 🔄 SSOT 化済（継続更新） | 2026-05-13 |
 | [requirements-process-plan.md](requirements-process-plan.md) | 4 段階プロセス・終了基準 | ✅ Done | 2026-05-08 |
-| [functional-requirements.md](functional-requirements.md) | 機能要件一覧（~75 件、FR-AUTH §1.1/§1.2 分割済） | 🔄 ヒアリング待ち（TBD 多数） | 2026-05-13 |
-| [non-functional-requirements.md](non-functional-requirements.md) | 非機能要件一覧（~75 件） | 🔄 ヒアリング待ち（TBD 多数） | 2026-05-13 |
+| [functional-requirements.md](functional-requirements.md) | 機能要件一覧（~75 件、全 8 カテゴリ サブセクション化済） | 🔄 ヒアリング待ち（TBD 多数） | 2026-05-13 |
+| [non-functional-requirements.md](non-functional-requirements.md) | 非機能要件一覧（~75 件、SEC/PERF/OPS/COMP サブセクション化済） | 🔄 ヒアリング待ち（TBD 多数） | 2026-05-13 |
 | [platform-selection-decision.md](platform-selection-decision.md) | Cognito / Keycloak 選定判断 | 🚧 ドラフト（評価基準のみ） | 2026-05-08 |
 | [rhbk-vendor-inquiry.md](rhbk-vendor-inquiry.md) | Red Hat 問い合わせ文面 | ✅ Done（送付待ち） | — |
 | requirements-spec.md | 要件定義書本体 | 📋 未着手 | — |
@@ -493,7 +502,19 @@ flowchart LR
 
 要件群の性質が同一カテゴリ内で分かれる場合、ID は連続のまま**サブセクションで分ける**（既存参照を破壊しない）。
 
-**実例**: FR-AUTH-001〜014 のうち、001〜008 は OAuth/OIDC フロー、009〜014 はパスワード・ローカル管理。意味は別物だが ADR / hearing checklist / NFR から既に番号参照されているため、IDは維持し functional-requirements.md §1.1 / §1.2 でサブセクション化（2026-05-13）。
+**実例**:
+- **FR-AUTH-001〜014**: 001〜008 は OAuth/OIDC フロー、009〜014 はパスワード・ローカル管理。意味は別物だが既に番号参照されているため、ID は維持し §1.1/§1.2 でサブセクション化（2026-05-13）。
+- **FR-FED §2.1/§2.2/§2.3**: IdP 接続種別 / ユーザー処理 / マルチテナント運用に分割（2026-05-13）。
+- **FR-MFA §3.1/§3.2**: MFA 要素 / 適用ポリシーに分割（2026-05-13）。
+- **FR-SSO §4.1/§4.2/§4.3**: SSO / ログアウト / セッション管理に分割（2026-05-13）。
+- **FR-AUTHZ §5.1/§5.2**: クレームベース基本認可 / 細粒度認可に分割（2026-05-13）。
+- **FR-USER §6.1〜§6.4**: CRUD / 属性・ロール / セルフサービス / プロビジョニングに分割（2026-05-13）。
+- **FR-ADMIN §7.1/§7.2/§7.3**: 基盤設定 / 監査 / 委譲・カスタマイズに分割（2026-05-13）。
+- **FR-INT §8.1/§8.2/§8.3**: プロトコル / ログ・監視 / API・IaC・Webhook に分割（2026-05-13）。
+- **NFR-PERF §2.1/§2.2**: 応答時間 / スループットに分割（2026-05-13）。
+- **NFR-SEC §4.1〜§4.4**: 暗号化 / トークン・セッション / 攻撃対策 / ネットワークに分割（2026-05-13）。
+- **NFR-OPS §6.1〜§6.3**: 監視 / デプロイ / 体制に分割（2026-05-13）。
+- **NFR-COMP §7.1〜§7.3**: 規制 / 業界認定 / データガバナンスに分割（2026-05-13）。
 
 ### 10.3 ドキュメント追加時の手順
 
