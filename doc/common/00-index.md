@@ -14,6 +14,7 @@ Cognito / Keycloak 横断の全体設計・比較・管理。
 | [jwks-public-exposure.md](jwks-public-exposure.md) | JWKSエンドポイント公開の設計判断：なぜ公開が必要で安全なのか |
 | [keycloak-network-architecture.md](keycloak-network-architecture.md) | Keycloak ネットワーク構成（実装実態）：IP 制限マトリクス・本番移行要件・CloudFront+WAF 完全形 |
 | [auth-patterns.md](auth-patterns.md) | 認証パターン総覧（SPA / SSR / M2M / Token Exchange / SAML 等）と Cognito vs Keycloak 対応詳細 |
+| [bff-implementation-notes.md](bff-implementation-notes.md) | **BFF パターン実装ノート（内部技術メモ）**：Cognito/Keycloak での Confidential Client 設定、Lambda BFF 構成、認証フロー詳細、コスト試算、段階移行プラン |
 | [system-design-patterns.md](system-design-patterns.md) | システム設計パターン 8 種（IdP × SPA/SSR × DR）：構成図・通信フロー・プロトコル・選定ガイド |
 | [user-types-and-auth.md](user-types-and-auth.md) | ユーザー種別 5 カテゴリ（Platform Admin / Tenant Admin / End User Fed / End User Local / External）と認証方式・JWT クレーム・5 経路集約構成図 |
 | [destroy-guide.md](destroy-guide.md) | 環境削除・残存リソース確認手順 |

@@ -67,10 +67,10 @@ flowchart LR
 | §5 | [05-sso.md](05-sso.md) | SSO（同一 IdP / クロス IdP） | [FR-SSO §4.1](../functional-requirements.md) | ✅ 記載済 |
 | §6 | [06-logout-session.md](06-logout-session.md) | ログアウト・セッション管理（4 レイヤー / ライフサイクル / Revocation） | [FR-SSO §4.2-4.3](../functional-requirements.md) | ✅ 記載済 |
 | §7 | [07-authz.md](07-authz.md) | 認可（基本 / 細粒度） | [FR-AUTHZ §5](../functional-requirements.md) | 📋 骨格のみ |
-| §8 | [08-user.md](08-user.md) | ユーザー管理（CRUD / 属性ロール / セルフサービス / プロビジョニング） | [FR-USER §6](../functional-requirements.md) | 📋 骨格のみ |
-| §9 | [09-admin.md](09-admin.md) | 管理機能（設定 / 監査 / 委譲） | [FR-ADMIN §7](../functional-requirements.md) | 📋 骨格のみ |
-| §10 | [10-integration.md](10-integration.md) | 外部統合（プロトコル / ログ / API） | [FR-INT §8](../functional-requirements.md) | 📋 骨格のみ |
-| §11 | [11-architecture.md](11-architecture.md) | アーキテクチャ — Identity Broker パターン | [identity-broker-multi-idp.md](../../common/identity-broker-multi-idp.md) | 📋 骨格のみ |
+| §8 | [08-user.md](08-user.md) | ユーザー管理（CRUD / 属性ロール / セルフサービス / プロビジョニング） | [FR-USER §6](../functional-requirements.md) | ✅ 記載済 |
+| §9 | [09-admin.md](09-admin.md) | 管理機能（設定 / 監査 / 委譲） | [FR-ADMIN §7](../functional-requirements.md) | ✅ 記載済 |
+| §10 | [10-integration.md](10-integration.md) | 外部統合（プロトコル / ログ / API） | [FR-INT §8](../functional-requirements.md) | ✅ 記載済 |
+| §11 | [11-architecture.md](11-architecture.md) | アーキテクチャ — Identity Broker パターン | [identity-broker-multi-idp.md](../../common/identity-broker-multi-idp.md) | ✅ 記載済 |
 | §12 | [12-platform.md](12-platform.md) | 実装プラットフォーム(Cognito / Keycloak / RHBK) | [platform-selection-decision.md](../platform-selection-decision.md) | 📋 骨格のみ |
 | §13 | [13-nfr.md](13-nfr.md) | 非機能要件(NFR 全 9 カテゴリ) | [non-functional-requirements.md](../non-functional-requirements.md) | 📋 骨格のみ |
 | §14 | [14-tbd-summary.md](14-tbd-summary.md) | TBD / 要確認 事項サマリー | [hearing-checklist.md](../hearing-checklist.md) | 📋 骨格のみ |

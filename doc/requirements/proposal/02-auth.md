@@ -8,6 +8,10 @@
 
 ## 2.1 認証フロー / Grant Type（→ FR-AUTH §1.1）
 
+> **このサブセクションで定めること**: 本基盤がサポートする OAuth 2.0 / OIDC の認証フロー（Grant Type）の範囲、クライアント種別ごとに採用するフローのマッピング。
+> **主な判断軸**: 御社のクライアント種別（SPA / SSR / Mobile / M2M）、SPA で BFF 採用可否、Token Exchange / Device Code / mTLS のオプション要否
+> **§2 全体との関係**: §2 のうち「**認証プロトコル層**」を確定する。パスワード管理ポリシー（§2.2）とは独立に判定可能
+
 ### ベースライン
 
 **クライアント種別ごとの推奨フロー**:
@@ -51,11 +55,86 @@
 
 **B. SPA の認証方式選定（影響：アーキテクチャ複雑性 vs セキュリティ強度）**
 
-- **BFF パターン採用**：セキュリティ最強。ただし BFF サーバーが必要 → 構成が一段複雑になる
-- **PKCE 直接採用**：従来通り、シンプル。ただし業界推奨レベルは下がる
-- 既存 SPA がある場合は段階移行（PKCE → BFF）の余地あり
+##### B-1. BFF パターン vs 従来の PKCE 直接 比較表
 
-→ 金融・医療・行政系なら BFF、社内ツール系なら PKCE 直接で十分というのが現場感覚
+| 観点 | 従来（PKCE 直接） | BFF パターン |
+|---|---|---|
+| **Access / Refresh Token 保管** | ブラウザ（メモリ / Storage）| BFF サーバー側（DB 暗号化）|
+| **ブラウザが持つもの** | Token そのもの | セッション ID（HttpOnly Cookie）|
+| **XSS による Token 漏洩** | ⚠ リスクあり（localStorage / メモリ盗難）| ✅ 防御（Cookie は JS 不可触）|
+| **Refresh Token 盗難リスク** | ⚠ 長期間なりすまし可能 | ✅ Refresh Token はサーバー側のみ |
+| **CSRF 攻撃** | ✅ Bearer ヘッダー方式で耐性 | ⚠ Cookie 認証で要対策（SameSite=Strict + CSRF トークン）|
+| **NIST AAL2 / AAL3 適合** | △ 条件付き | ✅ 整合 |
+| **業界推奨度（2026 IETF）** | △ レガシー扱い、低リスクのみ | ✅ **gold standard** |
+| **アーキテクチャ複雑度** | ✅ 単純（SPA + 認可サーバー）| ⚠ BFF サーバー + セッションストア追加 |
+| **必要なインフラ** | SPA ホスティングのみ | + Lambda or ECS + DynamoDB + KMS |
+| **月額コスト目安（10K MAU）** | $0〜数ドル | $20〜50（小規模 Lambda 構成）|
+| **実装言語の自由度** | SPA フレームワーク次第 | サーバー側で自由（Node/Python/Java 等）|
+| **既存 SPA からの移行コスト** | — | 中（認証部分のみ書き換え、段階移行可）|
+| **OAuth 2.1 整合（Confidential Client + PKCE）** | △ Public Client | ✅ Confidential Client |
+| **Cookie ドメイン制約** | なし（Bearer ヘッダー）| 同一サイト前提（推奨）|
+| **デバッグ性** | ブラウザツールで Token 直接確認可 | サーバー側ログ参照必要 |
+
+##### B-2. 採用判断のガイドライン
+
+```mermaid
+flowchart TB
+    Start["対象システムの<br/>セキュリティ要件評価"]
+    Q1{XSS リスク<br/>(third-party JS / WYSIWYG 等)}
+    Q2{扱うデータ機密性}
+    Q3{BFF 運用体制<br/>(Lambda/ECS 運用可)}
+    BFF["BFF 採用"]
+    PKCE["PKCE 直接<br/>+ XSS 対策強化<br/>(CSP / SRI / Sanitizer)"]
+    HYB["ハイブリッド<br/>(高機密パスのみ BFF)"]
+
+    Start --> Q1
+    Q1 -->|高 or 不明| BFF
+    Q1 -->|低| Q2
+    Q2 -->|金融 / 医療 / 個人情報多用| BFF
+    Q2 -->|社内ツール限定| Q3
+    Q2 -->|システム間で混在| HYB
+    Q3 -->|あり| BFF
+    Q3 -->|なし| PKCE
+
+    style BFF fill:#fff3e0
+    style HYB fill:#fff8e1
+    style PKCE fill:#e8f5e9
+```
+
+##### B-3. 本基盤としての方針案
+
+| 顧客 / システム種別 | 推奨方式 |
+|---|---|
+| 金融 / 医療 / 行政 / 個人情報多用 SaaS | **BFF 採用必須** |
+| B2B SaaS（一般業務） | **BFF 推奨**（北極星「絶対安全」と整合）|
+| 社内ツール / 機密性低 | PKCE 直接でも可（XSS 対策強化前提）|
+| AI Agent / CLI / Mobile | PKCE 直接（Device Code 含む、BFF 不要）|
+
+##### B-4. 段階移行・ハイブリッド運用について
+
+既存 SPA がある場合は **PKCE → BFF への段階移行が可能**。
+また、**システムごとに方式を選択（ハイブリッド運用）**も技術的に可能：
+
+- 共通認証基盤（Cognito User Pool / Keycloak Realm）に **SPA Client（Public）と BFF Client（Confidential）を両方登録**しておけば、システムごとにどちらを使うか自由選択
+- 例：「経費精算は PKCE 直接、人事システムは BFF」のような混在運用
+- SSO は両方で機能（同一 IdP 内 SSO セッションを共有）
+
+実装詳細・制約・運用上の注意点は内部技術メモ [`bff-implementation-notes.md`](../../common/bff-implementation-notes.md) 参照。
+
+---
+
+→ 金融・医療・行政系なら BFF、社内ツール系なら PKCE 直接で十分というのが現場感覚。**システム種別ごとに方式を分けるハイブリッド運用も可能**。
+
+##### B 補足: BFF パターンの実装可否（参考）
+
+BFF パターンを採用する場合の補足情報:
+
+- **両プラットフォームで実装可能**: Cognito / Keycloak のどちらも**認可サーバー側に Confidential Client を 1 つ追加するだけ**で対応可能（PoC からの差分は小）
+- **本基盤での標準実装**: AWS Lambda + API Gateway + DynamoDB（既存 PoC の Lambda Authorizer 構成と統一）。ECS Fargate / Lambda Function URL も選択肢
+- **既存リソースへの影響なし**: 既存の Lambda Authorizer / Backend Lambda は変更不要、BFF は「フロントとバックエンド API の間に挟む」追加レイヤー
+- **段階移行**: 既存 PKCE 直接 SPA と BFF 構成を並列稼働 → 段階的に移行可能
+
+→ 「採用するか / しないか」の方向性合意のみ本資料で扱い、**実装詳細・構成図・移行プランは内部技術メモ [`bff-implementation-notes.md`](../../common/bff-implementation-notes.md) に分離**。
 
 **C. オプションフローの要否（影響：プラットフォーム選定に直結）**
 
@@ -81,7 +160,11 @@
 
 ## 2.2 パスワード・ローカルユーザー管理（→ FR-AUTH §1.2）
 
-> 本サブセクションは「**どんな顧客パスワード要件にも対応可能**」という capability を示すためのもの。具体ポリシー値は §B 確認後に確定。
+> **このサブセクションで定めること**: 本基盤の**ローカルユーザー**（フェデユーザーではなくパスワードで認証するユーザー）に対するパスワード管理ポリシー（長さ・複雑性・履歴・ローテーション・侵害検出等）。
+> **主な判断軸**: 適用される規制（PCI DSS / FFIEC / 業界独自）、NIST SP 800-63B Rev 4 準拠の意思、侵害クレデンシャル検出の要否
+> **§2 全体との関係**: §2.1 はフェデユーザー含む全認証フロー、§2.2 はローカルユーザー固有のポリシー。フェデユーザーは [§3 フェデレーション](03-federation.md) で扱う
+
+「**どんな顧客パスワード要件にも対応可能**」という capability を示す。具体ポリシー値は §B 確認後に確定。
 
 ### 業界の現在地（2026 年時点の調査結果）
 
