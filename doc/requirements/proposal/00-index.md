@@ -21,9 +21,9 @@
 | 北極星の柱 | 解釈 | 反映先 |
 |---|---|---|
 | **絶対安全** | セキュリティ最優先（業界最新ベストプラクティス準拠） | 各章の "ベースライン" は OAuth 2.1 / NIST SP 800-63B Rev 4 等を参照 |
-| **どんなアプリでも** | 認証フロー・IdP・クライアント種別の網羅性 | [§2 認証](02-auth.md) / [§3 フェデレーション](03-federation.md) / [§10 Identity Broker](10-architecture.md) |
+| **どんなアプリでも** | 認証フロー・IdP・クライアント種別の網羅性 | [§2 認証](02-auth.md) / [§3 フェデレーション](03-federation.md) / [§11 Identity Broker](11-architecture.md) |
 | **効率よく認証** | 顧客追加・システム追加のフリクションレス | [§3.3 マルチテナント運用](03-federation.md#33-マルチテナント運用) / [§5 SSO](05-sso.md) |
-| **運用負荷・コスト最小** | マネージド優先、自前運用は限定 | [§11 プラットフォーム選定軸](11-platform.md) / [§12.6 運用](12-nfr.md#126-運用) / [§12.8 コスト](12-nfr.md#128-コスト) |
+| **運用負荷・コスト最小** | マネージド優先、自前運用は限定 | [§12 プラットフォーム選定軸](12-platform.md) / [§13.6 運用](13-nfr.md#136-運用) / [§13.8 コスト](13-nfr.md#138-コスト) |
 
 すべての要件は **AWS マルチアカウント前提**で **Cognito / Keycloak OSS / Keycloak RHBK のいずれでも構成可能**な設計を採用する。
 
@@ -62,19 +62,20 @@ flowchart LR
 | 章 | ファイル | 内容 | 一次ソース（詳細） | 状態 |
 |---|---|---|---|:---:|
 | §2 | [02-auth.md](02-auth.md) | 認証（認証フロー / パスワード） | [FR-AUTH §1](../functional-requirements.md) | ✅ 記載済 |
-| §3 | [03-federation.md](03-federation.md) | フェデレーション（IdP 接続 / ユーザー処理 / マルチテナント運用） | [FR-FED §2](../functional-requirements.md) | 🚧 §3.1, §3.2 記載済 |
-| §4 | [04-mfa.md](04-mfa.md) | MFA（要素 / 適用ポリシー） | [FR-MFA §3](../functional-requirements.md) | 📋 骨格のみ |
-| §5 | [05-sso.md](05-sso.md) | SSO・ログアウト（SSO / ログアウト / セッション） | [FR-SSO §4](../functional-requirements.md) | 📋 骨格のみ |
-| §6 | [06-authz.md](06-authz.md) | 認可（基本 / 細粒度） | [FR-AUTHZ §5](../functional-requirements.md) | 📋 骨格のみ |
-| §7 | [07-user.md](07-user.md) | ユーザー管理（CRUD / 属性ロール / セルフサービス / プロビジョニング） | [FR-USER §6](../functional-requirements.md) | 📋 骨格のみ |
-| §8 | [08-admin.md](08-admin.md) | 管理機能（設定 / 監査 / 委譲） | [FR-ADMIN §7](../functional-requirements.md) | 📋 骨格のみ |
-| §9 | [09-integration.md](09-integration.md) | 外部統合（プロトコル / ログ / API） | [FR-INT §8](../functional-requirements.md) | 📋 骨格のみ |
-| §10 | [10-architecture.md](10-architecture.md) | アーキテクチャ — Identity Broker パターン | [identity-broker-multi-idp.md](../../common/identity-broker-multi-idp.md) | 📋 骨格のみ |
-| §11 | [11-platform.md](11-platform.md) | 実装プラットフォーム（Cognito / Keycloak / RHBK） | [platform-selection-decision.md](../platform-selection-decision.md) | 📋 骨格のみ |
-| §12 | [12-nfr.md](12-nfr.md) | 非機能要件（NFR 全 9 カテゴリ） | [non-functional-requirements.md](../non-functional-requirements.md) | 📋 骨格のみ |
-| §13 | [13-tbd-summary.md](13-tbd-summary.md) | TBD / 要確認 事項サマリー | [hearing-checklist.md](../hearing-checklist.md) | 📋 骨格のみ |
-| §14 | [14-schedule.md](14-schedule.md) | 想定スケジュール | [requirements-process-plan.md](../requirements-process-plan.md) | 📋 骨格のみ |
-| §15 | [15-poc-note.md](15-poc-note.md) | 弊社内の事前検証について（PoC 控えめ） | [poc-summary-evaluation.md](../poc-summary-evaluation.md) | 📋 骨格のみ |
+| §3 | [03-federation.md](03-federation.md) | フェデレーション（IdP 接続 / ユーザー処理 / マルチテナント運用） | [FR-FED §2](../functional-requirements.md) | ✅ 記載済 |
+| §4 | [04-mfa.md](04-mfa.md) | MFA（要素 / 適用ポリシー） | [FR-MFA §3](../functional-requirements.md) | ✅ 記載済 |
+| §5 | [05-sso.md](05-sso.md) | SSO（同一 IdP / クロス IdP） | [FR-SSO §4.1](../functional-requirements.md) | ✅ 記載済 |
+| §6 | [06-logout-session.md](06-logout-session.md) | ログアウト・セッション管理（4 レイヤー / ライフサイクル / Revocation） | [FR-SSO §4.2-4.3](../functional-requirements.md) | ✅ 記載済 |
+| §7 | [07-authz.md](07-authz.md) | 認可（基本 / 細粒度） | [FR-AUTHZ §5](../functional-requirements.md) | 📋 骨格のみ |
+| §8 | [08-user.md](08-user.md) | ユーザー管理（CRUD / 属性ロール / セルフサービス / プロビジョニング） | [FR-USER §6](../functional-requirements.md) | 📋 骨格のみ |
+| §9 | [09-admin.md](09-admin.md) | 管理機能（設定 / 監査 / 委譲） | [FR-ADMIN §7](../functional-requirements.md) | 📋 骨格のみ |
+| §10 | [10-integration.md](10-integration.md) | 外部統合（プロトコル / ログ / API） | [FR-INT §8](../functional-requirements.md) | 📋 骨格のみ |
+| §11 | [11-architecture.md](11-architecture.md) | アーキテクチャ — Identity Broker パターン | [identity-broker-multi-idp.md](../../common/identity-broker-multi-idp.md) | 📋 骨格のみ |
+| §12 | [12-platform.md](12-platform.md) | 実装プラットフォーム(Cognito / Keycloak / RHBK) | [platform-selection-decision.md](../platform-selection-decision.md) | 📋 骨格のみ |
+| §13 | [13-nfr.md](13-nfr.md) | 非機能要件(NFR 全 9 カテゴリ) | [non-functional-requirements.md](../non-functional-requirements.md) | 📋 骨格のみ |
+| §14 | [14-tbd-summary.md](14-tbd-summary.md) | TBD / 要確認 事項サマリー | [hearing-checklist.md](../hearing-checklist.md) | 📋 骨格のみ |
+| §15 | [15-schedule.md](15-schedule.md) | 想定スケジュール | [requirements-process-plan.md](../requirements-process-plan.md) | 📋 骨格のみ |
+| §16 | [16-poc-note.md](16-poc-note.md) | 弊社内の事前検証について(PoC 控えめ) | [poc-summary-evaluation.md](../poc-summary-evaluation.md) | 📋 骨格のみ |
 
 ---
 
@@ -82,7 +83,7 @@ flowchart LR
 
 （埋める：本資料合意 → ヒアリング → 要件定義書 → 設計 → 実装 の各マイルストーン）
 
-詳細: [14-schedule.md](14-schedule.md)
+詳細: [15-schedule.md](15-schedule.md)
 
 ---
 

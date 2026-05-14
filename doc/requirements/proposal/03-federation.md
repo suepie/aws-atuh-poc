@@ -33,7 +33,7 @@
 |---|---|
 | **絶対安全** | 業界標準（OIDC 1.0 / SAML 2.0）準拠の IdP のみを受け入れる。独自プロトコルは受け入れない |
 | **どんなアプリでも** | **OIDC または SAML が話せる IdP なら何でも接続可能**。Cognito / Keycloak 両方でグローバル主要 + 日本主要 IdP をカバー |
-| **効率よく認証** | Broker パターンで顧客追加でも各システム変更不要（[§10](10-architecture.md)）|
+| **効率よく認証** | Broker パターンで顧客追加でも各システム変更不要（[§11](11-architecture.md)）|
 | **運用負荷・コスト最小** | OIDC は Discovery 自動化、SAML は Metadata XML 投入で完結。両方 Terraform 管理可能 |
 
 ### 対応能力マトリクス（裏どり）
@@ -360,7 +360,7 @@ flowchart LR
 **Broker パターンの本質は「集約点が 1 つ」**:
 - 各バックエンドシステムが検証する issuer は 1 つだけ
 - テナントごとに Pool/Realm を分けると issuer が分散 → 各システムが N 個の issuer を検証する羽目に
-- B 案・C 案は **Broker パターンの恩恵を捨てる**ことになる（[§10](10-architecture.md) と整合しない）
+- B 案・C 案は **Broker パターンの恩恵を捨てる**ことになる（[§11](11-architecture.md) と整合しない）
 
 **スケールも十分**:
 - Keycloak: 10K IdPs まで性能劣化なしの実証あり
@@ -368,7 +368,7 @@ flowchart LR
 - 通常の B2B SaaS（顧客 100〜1000 社）なら A 案で完全カバー
 
 **テナント分離は別レイヤーで担保**:
-- 認可層（[§6](06-authz.md)）で `tenant_id` クレームベースのスコープ検証
+- 認可層（[§7](07-authz.md)）で `tenant_id` クレームベースのスコープ検証
 - バックエンドが「JWT.tenant_id != path.tenantId なら 403」を必ず実行
 - これで A 案でも完全分離を実現
 
@@ -398,7 +398,7 @@ flowchart LR
 ### 3.3.C マルチテナント環境での SSO 挙動
 
 「**SSO がテナントを跨ぐとどうなるか**」は顧客が必ず気にする論点。本セクションでは Cognito / Keycloak 共通の SSO **挙動シナリオ**を整理する。
-（SSO 機能の Cognito vs Keycloak 比較は [§5 SSO・ログアウト](05-sso.md) で詳述。本表は **multi-tenant 文脈に絞った挙動の整理**。）
+（SSO 機能の Cognito vs Keycloak 比較は [§5 SSO](05-sso.md) / [§6 ログアウト・セッション管理](06-logout-session.md) で詳述。本表は **multi-tenant 文脈に絞った挙動の整理**。）
 
 #### シナリオ A：同一テナント内 SSO（最も一般的）
 
@@ -465,7 +465,7 @@ sequenceDiagram
 
 #### SSO 挙動の比較（multi-tenant 文脈）
 
-「multi-tenant 運用に直接関わる SSO 挙動」だけに絞った Cognito vs Keycloak 比較。網羅的な機能比較は [§5 SSO](05-sso.md) を参照。
+「multi-tenant 運用に直接関わる SSO 挙動」だけに絞った Cognito vs Keycloak 比較。網羅的な機能比較は [§5 SSO](05-sso.md) / [§6 ログアウト・セッション管理](06-logout-session.md) を参照。
 
 | SSO 挙動 | Cognito | Keycloak (OSS / RHBK) | 備考 |
 |---|:---:|:---:|---|
@@ -475,7 +475,7 @@ sequenceDiagram
 | 同一 Broker への複数 IdP 並行 SSO | ✅ Pool に複数 IdP | ✅ Realm に複数 IdP | A 案の前提 |
 | Broker ログアウトで全テナントセッション破棄 | ✅ Global Sign-Out | ✅ Realm-level Logout | テナント境界で限定する場合は設計工夫が必要 |
 
-詳細な SSO 機能比較（Back-Channel Logout / Front-Channel Logout 等）は [§5 SSO・ログアウト](05-sso.md) を参照。
+詳細な SSO / ログアウト機能比較（Back-Channel Logout / Front-Channel Logout 等）は [§6 ログアウト・セッション管理](06-logout-session.md) を参照。
 
 ---
 

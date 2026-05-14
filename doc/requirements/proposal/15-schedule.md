@@ -1,4 +1,4 @@
-# §14 想定スケジュール
+# §15 想定スケジュール
 
 > 上位 SSOT: [00-index.md](00-index.md)
 > 詳細: [../requirements-process-plan.md §7](../requirements-process-plan.md)
@@ -6,7 +6,7 @@
 
 ---
 
-## 14.1 全体マイルストーン
+## 15.1 全体マイルストーン
 
 （埋める）
 
@@ -28,7 +28,7 @@ Week N+6 〜: 設計フェーズ
 
 詳細プロセス（4 段階）: [../requirements-process-plan.md §2](../requirements-process-plan.md)
 
-## 14.2 TBD / 要確認
+## 15.2 TBD / 要確認
 
 - 開始時期
 - 各 Phase の所要時間

@@ -1,4 +1,4 @@
-# §8 管理機能
+# §9 管理機能
 
 > 上位 SSOT: [00-index.md](00-index.md)
 > 詳細: [../functional-requirements.md §7 FR-ADMIN](../functional-requirements.md)
@@ -7,7 +7,7 @@
 
 ---
 
-## 8.1 基盤設定管理（→ FR-ADMIN §7.1）
+## 9.1 基盤設定管理（→ FR-ADMIN §7.1）
 
 ### ベースライン（仮）
 
@@ -19,7 +19,7 @@
 
 ---
 
-## 8.2 監査・可視性（→ FR-ADMIN §7.2）
+## 9.2 監査・可視性（→ FR-ADMIN §7.2）
 
 ### ベースライン（仮）
 
@@ -31,7 +31,7 @@ CloudTrail / Event Listener による監査ログ閲覧、設定変更履歴。
 
 ---
 
-## 8.3 権限委譲・カスタマイズ（→ FR-ADMIN §7.3）
+## 9.3 権限委譲・カスタマイズ（→ FR-ADMIN §7.3）
 
 ### ベースライン（仮）
 
