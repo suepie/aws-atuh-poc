@@ -1,6 +1,6 @@
 # 要件定義資料の構成案（SSOT）
 
-> 最終更新: 2026-05-13（SSOT 化：§0 ナラティブ / §8 依存関係 / §9 状態ダッシュボード / §10 ID 体系ルール を追加）
+> 最終更新: 2026-05-14（proposal/ を fr/ nfr/ common/ サブフォルダ化、§FR-X / §NFR-X / §C-X 番号体系、IPA 非機能要求グレード マッピング追加）
 > 目的: 要件定義フェーズで作成すべきドキュメント体系・作成順序・**語る順序（ナラティブ）**・状態の単一情報源
 > 位置付け: 本ドキュメントは要件定義フェーズの **SSOT (Single Source of Truth)**。プロセス（どう進めるか）は [requirements-process-plan.md](requirements-process-plan.md)、ヒアリング項目は [hearing-checklist.md](hearing-checklist.md) を参照。
 
@@ -68,11 +68,37 @@ doc/requirements/
 ├── 00-index.md                          ← 本フォルダのインデックス
 │
 ├── [顧客向け要件定義提示・社内総括]
-│   ├── proposal/                        ← 顧客向け要件定義 提示版（フォルダ化、章ごとにファイル分割）
+│   ├── proposal/                        ← 顧客向け要件定義 提示版（fr/ nfr/ common/ にサブフォルダ化）
 │   │   ├── 00-index.md                  ← proposal SSOT（北極星・5 ステップ・章ナビ）
-│   │   ├── 02-auth.md                   ← §2 認証
-│   │   ├── 03-federation.md             ← §3 フェデレーション（§3.2 はサブ・サブ分割済）
-│   │   ├── 04-mfa.md 〜 16-poc-note.md  ← §4〜§16
+│   │   ├── fr/                          ← 機能要件 §FR-1 〜 §FR-9
+│   │   │   ├── 00-index.md
+│   │   │   ├── 01-auth.md               ← §FR-1 認証
+│   │   │   ├── 02-federation.md         ← §FR-2 フェデレーション
+│   │   │   ├── 03-mfa.md                ← §FR-3 MFA
+│   │   │   ├── 04-sso.md                ← §FR-4 SSO
+│   │   │   ├── 05-logout-session.md     ← §FR-5 ログアウト・セッション
+│   │   │   ├── 06-authz.md              ← §FR-6 認可
+│   │   │   ├── 07-user.md               ← §FR-7 ユーザー管理
+│   │   │   ├── 08-admin.md              ← §FR-8 管理機能
+│   │   │   └── 09-integration.md        ← §FR-9 外部統合
+│   │   ├── nfr/                         ← 非機能要件 §NFR-1 〜 §NFR-9（IPA 非機能要求グレード マッピング付き）
+│   │   │   ├── 00-index.md              ← NFR 索引 + IPA 6 大項目マッピング
+│   │   │   ├── 01-availability.md       ← §NFR-1 可用性 (IPA A.)
+│   │   │   ├── 02-performance.md        ← §NFR-2 性能 (IPA B.)
+│   │   │   ├── 03-scalability.md        ← §NFR-3 拡張性 (IPA B.)
+│   │   │   ├── 04-security.md           ← §NFR-4 セキュリティ (IPA E.)
+│   │   │   ├── 05-dr.md                 ← §NFR-5 DR (IPA A. 災害対策)
+│   │   │   ├── 06-operations.md         ← §NFR-6 運用 (IPA C.)
+│   │   │   ├── 07-compliance.md         ← §NFR-7 コンプラ (IPA E + C 独立)
+│   │   │   ├── 08-cost.md               ← §NFR-8 コスト (IPA 範囲外)
+│   │   │   └── 09-migration.md          ← §NFR-9 移行性 (IPA D.)
+│   │   └── common/                      ← 横断章 §C-1 〜 §C-5
+│   │       ├── 00-index.md
+│   │       ├── 01-architecture.md       ← §C-1 Identity Broker アーキ
+│   │       ├── 02-platform.md           ← §C-2 プラットフォーム選定
+│   │       ├── 03-tbd-summary.md        ← §C-3 TBD サマリー
+│   │       ├── 04-schedule.md           ← §C-4 スケジュール
+│   │       └── 05-poc-note.md           ← §C-5 PoC 補足
 │   └── poc-summary-evaluation.md        ← 社内 PoC 総括評価（作成済、要件提示の裏どり資料）
 │
 ├── [ヒアリング]
@@ -101,35 +127,61 @@ doc/requirements/
 
 | # | ドキュメント | 目的 | 状態 |
 |---|------------|------|------|
-| 1 | proposal/（フォルダ）| **顧客向け要件定義 提示版**（章ごとにファイル分割、FR/NFR と 1:1 対応で要件ベースライン提示） | 🚧 §2 / §3.1 / §3.2 記載済、他は骨格のみ |
+| 1 | proposal/（フォルダ）| **顧客向け要件定義 提示版**（fr/ nfr/ common/ サブフォルダ化、FR/NFR と 1:1 対応で要件ベースライン提示） | 🚧 FR 全章記載済、NFR 全章骨格＋IPA マッピング済、common 骨格 |
 | 2 | poc-summary-evaluation.md | **社内** PoC 成果総括（要件提示の裏どり資料、顧客には直接出さない） | ✅ 作成済み |
 
 **proposal/ の構成**（[proposal/00-index.md](proposal/00-index.md) 参照）:
-- 00-index.md = SSOT（はじめに・北極星・5 ステップ・章ナビ）
-- 02-auth.md = §2 認証（§2.1 認証フロー / §2.2 パスワード）
-- 03-federation.md = §3 フェデレーション（§3.1 IdP 接続 / §3.2.1 JIT / §3.2.2 属性マッピング / §3.2.3 MFA 重複回避 / §3.3 マルチテナント運用）
-- 04-mfa.md = §4 MFA（§4.1 要素 / §4.2 適用ポリシー）
-- **05-sso.md = §5 SSO**（§5.1 同一 IdP / §5.2 クロス IdP）
-- **06-logout-session.md = §6 ログアウト・セッション管理**（§6.1 ログアウト 4 レイヤー / §6.2 ライフサイクル / §6.3 Revocation）
-- 07-authz.md = §7 認可（§7.1 基本 / §7.2 細粒度）
-- 08-user.md = §8 ユーザー管理（§8.1〜§8.4）
-- 09-admin.md = §9 管理機能（§9.1〜§9.3）
-- 10-integration.md = §10 外部統合（§10.1〜§10.3）
-- 11-architecture.md = §11 Identity Broker
-- 12-platform.md = §12 実装プラットフォーム
-- 13-nfr.md = §13 非機能要件（§13.1〜§13.9）
-- 14-tbd-summary.md = §14 TBD まとめ
-- 15-schedule.md = §15 スケジュール
-- 16-poc-note.md = §16 PoC 控えめ
 
-**注**: 旧 §5 SSO・ログアウト を §5 SSO と §6 ログアウト・セッション管理 に分割（2026-05-13）。FR-SSO/LOGOUT カテゴリは ID 体系維持。
+- **00-index.md** = SSOT（はじめに・北極星・5 ステップ・章ナビ）
+- **fr/** 配下（§FR-1 〜 §FR-9、FR カタログ §1〜§8 と対応）:
+  - fr/00-index.md = FR 章一覧
+  - fr/01-auth.md = §FR-1 認証（§1.1 認証フロー / §1.2 パスワード）
+  - fr/02-federation.md = §FR-2 フェデレーション（§2.1 IdP / §2.2.1-3 ユーザー処理 / §2.3 マルチテナント）
+  - fr/03-mfa.md = §FR-3 MFA（§3.1 要素 / §3.2 適用ポリシー）
+  - fr/04-sso.md = §FR-4 SSO（§4.1 同一 IdP / クロス IdP）
+  - fr/05-logout-session.md = §FR-5 ログアウト・セッション管理（§4.2 ログアウト / §4.3 セッション / Revocation）
+  - fr/06-authz.md = §FR-6 認可（§5.1 JWT クレーム / §5.2 4 パターン）
+  - fr/07-user.md = §FR-7 ユーザー管理（§6.1 CRUD / §6.2 属性ロール / §6.3 セルフサービス / §6.4 プロビジョニング）
+  - fr/08-admin.md = §FR-8 管理機能（§7.1 設定 / §7.2 監査 / §7.3 委譲・カスタマイズ）
+  - fr/09-integration.md = §FR-9 外部統合（§8.1 プロトコル / §8.2 ログ・監視 / §8.3 API）
+- **nfr/** 配下（§NFR-1 〜 §NFR-9、IPA 非機能要求グレード 2018 の 6 大項目にマッピング）:
+  - nfr/00-index.md = NFR 索引 + IPA マッピング表
+  - nfr/01-availability.md = §NFR-1 可用性（IPA **A.**）
+  - nfr/02-performance.md = §NFR-2 性能（IPA **B.**）
+  - nfr/03-scalability.md = §NFR-3 拡張性（IPA **B.**）
+  - nfr/04-security.md = §NFR-4 セキュリティ（IPA **E.**）
+  - nfr/05-dr.md = §NFR-5 DR（IPA **A.** 災害対策）
+  - nfr/06-operations.md = §NFR-6 運用（IPA **C.**）
+  - nfr/07-compliance.md = §NFR-7 コンプライアンス（IPA **E + C**、独立章）
+  - nfr/08-cost.md = §NFR-8 コスト（IPA 範囲外、独立章）
+  - nfr/09-migration.md = §NFR-9 移行性（IPA **D.**）
+- **common/** 配下（§C-1 〜 §C-5、横断章）:
+  - common/00-index.md = 横断章一覧
+  - common/01-architecture.md = §C-1 Identity Broker
+  - common/02-platform.md = §C-2 実装プラットフォーム
+  - common/03-tbd-summary.md = §C-3 TBD まとめ
+  - common/04-schedule.md = §C-4 スケジュール
+  - common/05-poc-note.md = §C-5 PoC 補足
+
+**注**:
+- 2026-05-14 に proposal/ を **fr/ nfr/ common/** のサブフォルダ構造に再編。章番号は **§FR-X / §NFR-X / §C-X** の 3 体系に統一（連番はフォルダ内独立）。FR カタログ（functional-requirements.md）の §1〜§8 は不変。
+- IPA グレードの **F. システム環境・エコロジー** はクラウド前提で独自要件にならないため省略。
+- 2026-05-13 の旧 §5 SSO・ログアウト → §FR-4 SSO + §FR-5 ログアウト分割を継承。FR-SSO/LOGOUT カタログ ID は維持。
 
 **各サブセクション**: "**ベースライン**" + "**TBD / 要確認**" の対構造。詳細マトリクスは functional-requirements.md / non-functional-requirements.md へリンク委譲。
 
-**各章の冒頭規約（§X.0 前提と背景）**: proposal/ 配下の各章（§2〜§16）は冒頭に **§X.0「前提と背景」**を必ず置く。構成：
+**各章の冒頭規約（§X.0 前提と背景）**: proposal/ 配下の各章（§FR-X / §NFR-X / §C-X）は冒頭に **§X.0「前提と背景」**を必ず置く。構成：
 1. **用語整理** — 本章で扱う概念の定義（共通認証基盤の文脈で）
 2. **なぜここ（§X）で決めるか** — 他章との関係を mermaid で図化
-3. **本章で扱うサブセクションの一覧**
+3. **§X.0.A 本基盤のスタンス** — 北極星 4 軸への立場明示（推奨）
+4. **本章で扱うサブセクションの一覧**
+
+NFR 章は加えて **IPA グレードの中項目とのマッピング表**を §X.0 内に置く。
+
+**各サブセクション規約**（lead-in 3 行）:
+1. **このサブセクションで定めること** — 何を決めるか
+2. **主な判断軸** — 何を基準に決めるか
+3. **§X 全体との関係** — 上位章の中での位置づけ
 
 理由：顧客は認証技術の専門家ではないため、各章でいきなり要件案を出すと「なぜそれを決める必要があるのか」が伝わらず合意取りが空回りする。事前に共通理解を作ってから本論に入る。
 
@@ -376,8 +428,8 @@ functional-requirements.md の各表は以下のカラムを必ず持つ:
 Week 0 (現在):
   ✅ poc-summary-evaluation.md
   ✅ requirements-hearing-strategy.md
-  ✅ requirements-document-structure.md（本ドキュメント、SSOT 化）
-  🚧 proposal/（顧客向け要件定義 提示版、章ごとファイル化、§2/§3.1/§3.2 記載済）
+  ✅ requirements-document-structure.md（本ドキュメント、SSOT 化、proposal/ サブフォルダ反映）
+  🚧 proposal/（fr/ §FR-1〜§FR-9 全章記載済、nfr/ §NFR-1〜§NFR-9 骨格＋IPA マッピング、common/ §C-1〜§C-5 骨格）
 
 Week 1:
   📋 proposal/ 各章のサブセクションごとに合意取り＆中身埋め
@@ -477,7 +529,7 @@ flowchart LR
 
 | ドキュメント | 役割 | 状態 | 最終更新 |
 |---|---|:---:|---|
-| **[proposal/](proposal/00-index.md)** ⭐ | **顧客向け要件定義 提示版**（フォルダ化、章ごとファイル分割、FR/NFR と 1:1 対応）| 🚧 §2 / §3 / §4 / §5 / §6 記載済、§7〜§16 骨格のみ | 2026-05-13 |
+| **[proposal/](proposal/00-index.md)** ⭐ | **顧客向け要件定義 提示版**（fr/ nfr/ common/ サブフォルダ化、FR/NFR と 1:1 対応、IPA グレード マッピング付き）| 🚧 FR 全章記載済 / NFR 全章 IPA マッピング骨格済 / common 骨格 | 2026-05-14 |
 | [poc-summary-evaluation.md](poc-summary-evaluation.md) | **社内** PoC 成果総括・不足箇所分析（要件提示の裏どり） | ✅ Done | 2026-05-13 |
 
 ### 9.2 ヒアリング

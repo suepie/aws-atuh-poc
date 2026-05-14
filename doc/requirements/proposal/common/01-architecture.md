@@ -1,11 +1,11 @@
-# §11 アーキテクチャ — Identity Broker パターン
+# §C-1 アーキテクチャ — Identity Broker パターン
 
 > 上位 SSOT: [00-index.md](00-index.md)
-> 詳細: [../../common/identity-broker-multi-idp.md](../../common/identity-broker-multi-idp.md)
+> 詳細: [../../../common/identity-broker-multi-idp.md](../../../common/identity-broker-multi-idp.md)
 
 ---
 
-## §11.0 前提と背景
+## §C-1.0 前提と背景
 
 ### 用語整理
 
@@ -18,17 +18,17 @@
 | **Federation Hub** | Identity Broker の別称(Microsoft / KuppingerCole 用語) |
 | **Identity Fabric** | KuppingerCole 提唱の新世代 IAM 統合概念。Broker を内包したより広い枠組み |
 
-### なぜここ(§11)で決めるか
+### なぜここ(§C-1)で決めるか
 
 ```mermaid
 flowchart LR
-    S3["§3 フェデレーション<br/>(IdP接続・処理・運用)"]
-    S5["§5 SSO"]
-    S6["§6 ログアウト"]
-    S7["§7 認可"]
-    S10["§10 外部統合"]
-    S11["§11 アーキテクチャ ← イマココ<br/>全体構造の確定"]
-    S12["§12 プラットフォーム<br/>(Cognito / Keycloak 選定)"]
+    S3["§FR-2 フェデレーション<br/>(IdP接続・処理・運用)"]
+    S5["§FR-4 SSO"]
+    S6["§FR-5 ログアウト"]
+    S7["§FR-6 認可"]
+    S10["§FR-9 外部統合"]
+    S11["§C-1 アーキテクチャ ← イマココ<br/>全体構造の確定"]
+    S12["§C-2 プラットフォーム<br/>(Cognito / Keycloak 選定)"]
 
     S3 --> S11
     S5 --> S11
@@ -40,12 +40,12 @@ flowchart LR
     style S11 fill:#fff3e0,stroke:#e65100
 ```
 
-§2-§10 で「**個別の機能・運用方針**」を確定してきた。§11 は **それらを束ねた "アーキテクチャ全体像"** を確定する。
-§11 の方向性が決まれば、§12 「**どのプラットフォームで実装するか**」が判断可能になる。
+§FR-1-§FR-9 で「**個別の機能・運用方針**」を確定してきた。§C-1 は **それらを束ねた "アーキテクチャ全体像"** を確定する。
+§C-1 の方向性が決まれば、§C-2 「**どのプラットフォームで実装するか**」が判断可能になる。
 
-### §11.0.A 本基盤のアーキテクチャスタンス
+### §C-1.0.A 本基盤のアーキテクチャスタンス
 
-> **Identity Broker パターン(Hub-and-Spoke 型)を採用する。これは選択というより、§3 で示した要件から構造的に導かれる必然である。**
+> **Identity Broker パターン(Hub-and-Spoke 型)を採用する。これは選択というより、§FR-2 で示した要件から構造的に導かれる必然である。**
 
 ```mermaid
 flowchart TB
@@ -104,25 +104,25 @@ flowchart TB
 
 | サブセクション | 内容 |
 |---|---|
-| §11.1 Broker パターン採用根拠 | なぜ Broker か、要件からの構造的導出、業界根拠 |
-| §11.2 全体アーキテクチャ | 構成要素・データフロー・各章との対応 |
-| §11.3 採用しない代替パターン | Point-to-Point / Mesh / Identity Fabric / BYOI の位置付け |
+| §C-1.1 Broker パターン採用根拠 | なぜ Broker か、要件からの構造的導出、業界根拠 |
+| §C-1.2 全体アーキテクチャ | 構成要素・データフロー・各章との対応 |
+| §C-1.3 採用しない代替パターン | Point-to-Point / Mesh / Identity Fabric / BYOI の位置付け |
 
 ---
 
-## §11.1 Broker パターン採用根拠
+## §C-1.1 Broker パターン採用根拠
 
-> **このサブセクションで定めること**: なぜ Identity Broker パターンを採用するかの **論理的導出**(§3 で確定した要件から自動的に決まる)と業界根拠。
-> **主な判断軸**: §3 の要件確定状況(マルチ IdP 要否 / 統一クレーム要否 / 顧客追加で各システム変更不要要否)
-> **§11 全体との関係**: §11.0.A のスタンスを「**要件 → 帰結**」のロジックで裏付ける
+> **このサブセクションで定めること**: なぜ Identity Broker パターンを採用するかの **論理的導出**(§FR-2 で確定した要件から自動的に決まる)と業界根拠。
+> **主な判断軸**: §FR-2 の要件確定状況(マルチ IdP 要否 / 統一クレーム要否 / 顧客追加で各システム変更不要要否)
+> **§C-1 全体との関係**: §C-1.0.A のスタンスを「**要件 → 帰結**」のロジックで裏付ける
 
-### §3 の要件から Broker パターンが自動導出される
+### §FR-2 の要件から Broker パターンが自動導出される
 
 ```mermaid
 flowchart LR
-    R1["§3.1<br/>複数 IdP 受け入れ"] --> D1["集約点が必要"]
-    R2["§3.2<br/>属性の統一形式 JWT"] --> D2["属性変換層が必要"]
-    R3["§3.3.1<br/>顧客追加で<br/>各システム変更不要"] --> D3["issuer 集約が必要"]
+    R1["§FR-2.1<br/>複数 IdP 受け入れ"] --> D1["集約点が必要"]
+    R2["§FR-2.2<br/>属性の統一形式 JWT"] --> D2["属性変換層が必要"]
+    R3["§FR-2.3.1<br/>顧客追加で<br/>各システム変更不要"] --> D3["issuer 集約が必要"]
 
     D1 --> Conclusion["Identity Broker<br/>(Hub-and-Spoke)<br/>パターン"]
     D2 --> Conclusion
@@ -133,14 +133,14 @@ flowchart LR
 
 ### 要件と帰結の対応表
 
-| §3 の要件 | 帰結 |
+| §FR-2 の要件 | 帰結 |
 |---|---|
-| §3.1 FR-FED-001〜007 が Must(複数 IdP 受け入れ) | **集約点が必要** = Hub |
-| §3.2.2 FR-FED-009 が Must(属性正規化) | **変換層が必要** = Hub 内属性マッピング |
-| §3.3.1 FR-FED-010 が Must(複数 IdP 並行運用) | **単一 issuer で発行** = Hub が JWT 発行 |
-| §3.3.2 FR-FED-011 が Must(顧客追加で各システム変更不要) | **アプリの依存先は Hub のみ** = Hub-and-Spoke 不可避 |
+| §FR-2.1 FR-FED-001〜007 が Must(複数 IdP 受け入れ) | **集約点が必要** = Hub |
+| §FR-2.2.2 FR-FED-009 が Must(属性正規化) | **変換層が必要** = Hub 内属性マッピング |
+| §FR-2.3.1 FR-FED-010 が Must(複数 IdP 並行運用) | **単一 issuer で発行** = Hub が JWT 発行 |
+| §FR-2.3.2 FR-FED-011 が Must(顧客追加で各システム変更不要) | **アプリの依存先は Hub のみ** = Hub-and-Spoke 不可避 |
 
-→ §3 の Must 要件が決まれば、Broker パターン採用は **構造的に必然**(選択肢ではない)。
+→ §FR-2 の Must 要件が決まれば、Broker パターン採用は **構造的に必然**(選択肢ではない)。
 
 ### 業界の現在地(業界根拠)
 
@@ -155,7 +155,7 @@ flowchart LR
 |---|---|
 | **絶対安全** | 信頼境界が明確(Hub のみが発行する JWT を信頼)、各システムは Broker JWT のみ検証 |
 | **どんなアプリでも** | 統一クレーム形式により**どんなバックエンドでも同じ方法で検証可能** |
-| **効率よく** | 顧客追加で各システム変更不要、IdP 接続 < 1 営業日([§3.3.2](03-federation.md#332-顧客追加オンボーディング--fr-fed-011)) |
+| **効率よく** | 顧客追加で各システム変更不要、IdP 接続 < 1 営業日([§FR-2.3.2](../fr/02-federation.md#332-顧客追加オンボーディング--fr-fed-011)) |
 | **運用負荷・コスト最小** | 統合点 60% 削減(業界調査)、テスト範囲は Broker のみ |
 
 ### ベースライン
@@ -163,8 +163,8 @@ flowchart LR
 | 項目 | ベースライン |
 |---|---|
 | アーキテクチャパターン | **Identity Broker(Hub-and-Spoke)採用** — Must |
-| Hub の物理実装 | Cognito User Pool または Keycloak Realm([§12](12-platform.md) で選定) |
-| マルチテナント方式 | **単一 Pool/Realm + 複数 IdP**([§3.3.A](03-federation.md#33a-アーキテクチャ判断単一-poolrealm--複数-idp-を採用) で根拠) |
+| Hub の物理実装 | Cognito User Pool または Keycloak Realm([§C-2](02-platform.md) で選定) |
+| マルチテナント方式 | **単一 Pool/Realm + 複数 IdP**([§FR-2.3.A](../fr/02-federation.md#33a-アーキテクチャ判断単一-poolrealm--複数-idp-を採用) で根拠) |
 | 業界整合性 | Microsoft / KuppingerCole / AWS / OSS いずれの設計指針とも整合 |
 
 ### TBD / 要確認
@@ -177,11 +177,11 @@ flowchart LR
 
 ---
 
-## §11.2 全体アーキテクチャ
+## §C-1.2 全体アーキテクチャ
 
 > **このサブセクションで定めること**: Broker パターンを採用した本基盤の **全体構成図・データフロー・構成要素**の整理。各章で個別に扱った内容を 1 つの絵に統合。
 > **主な判断軸**: 構成要素の網羅性、データフローの正確性、運用主体の明示
-> **§11 全体との関係**: §11.1 の採用根拠を**実装イメージ**として可視化。§12 プラットフォーム選定の前提となる絵
+> **§C-1 全体との関係**: §C-1.1 の採用根拠を**実装イメージ**として可視化。§C-2 プラットフォーム選定の前提となる絵
 
 ### 全体構成図
 
@@ -254,7 +254,7 @@ sequenceDiagram
     I->>U: ログイン画面
     U->>I: 認証情報 + MFA
     I->>H: 認証成功 + アサーション
-    Note over H: §3.2.2 属性マッピング<br/>tid → tenant_id<br/>group → roles
+    Note over H: §FR-2.2.2 属性マッピング<br/>tid → tenant_id<br/>group → roles
     H->>S: 統一 JWT 発行<br/>(sub, tenant_id, email)
     S->>A: Bearer JWT
     A->>H: JWKS で公開鍵取得(キャッシュ)
@@ -266,21 +266,21 @@ sequenceDiagram
 
 | 構成要素 | 関連章 |
 |---|---|
-| 認証層(Authorization Server) | [§2 認証](02-auth.md), [§4 MFA](04-mfa.md), [§5 SSO](05-sso.md), [§6 ログアウト](06-logout-session.md) |
-| フェデレーション層 | [§3 フェデレーション](03-federation.md) |
-| トークン層(JWT / JWKS) | [§7 認可](07-authz.md), [§10.1 プロトコル](10-integration.md#101-プロトコル準拠--fr-int-81) |
-| 管理層 | [§8 ユーザー管理](08-user.md), [§9 管理機能](09-admin.md), [§10.3 API・IaC](10-integration.md#103-apiiacwebhook--fr-int-83) |
-| 監査層 | [§9.2 監査](09-admin.md#92-監査可視性--fr-admin-72), [§10.2 ログ・SIEM](10-integration.md#102-ログ監視--fr-int-82) |
+| 認証層(Authorization Server) | [§FR-1 認証](../fr/01-auth.md), [§FR-3 MFA](../fr/03-mfa.md), [§FR-4 SSO](../fr/04-sso.md), [§FR-5 ログアウト](../fr/05-logout-session.md) |
+| フェデレーション層 | [§FR-2 フェデレーション](../fr/02-federation.md) |
+| トークン層(JWT / JWKS) | [§FR-6 認可](../fr/06-authz.md), [§FR-9.1 プロトコル](../fr/09-integration.md#101-プロトコル準拠--fr-int-81) |
+| 管理層 | [§FR-7 ユーザー管理](../fr/07-user.md), [§FR-8 管理機能](../fr/08-admin.md), [§FR-9.3 API・IaC](../fr/09-integration.md#103-apiiacwebhook--fr-int-83) |
+| 監査層 | [§FR-8.2 監査](../fr/08-admin.md#92-監査可視性--fr-admin-72), [§FR-9.2 ログ・SIEM](../fr/09-integration.md#102-ログ監視--fr-int-82) |
 
 ---
 
-## §11.3 採用しない代替パターン
+## §C-1.3 採用しない代替パターン
 
 > **このサブセクションで定めること**: 検討した代替パターン(Point-to-Point / Mesh / Identity Fabric / BYOI)と、**なぜ採用しないか**の整理。
 > **主な判断軸**: 各代替パターンの本プロジェクト要件への適合度
-> **§11 全体との関係**: §11.1 の Broker 採用判断を、**代替案を排除した結果**として補強
+> **§C-1 全体との関係**: §C-1.1 の Broker 採用判断を、**代替案を排除した結果**として補強
 
-### 代替パターン 4 つの位置付け
+### 代替パターン 5 つの位置付け
 
 | パターン | 位置付け | 採用判断 |
 |---|---|:---:|
@@ -288,6 +288,7 @@ sequenceDiagram
 | **② Federation Mesh** | 複数 Broker が相互信頼するメッシュ | △ **将来オプション**(大学連合 GakuNin / 政府間連邦の規模が必要) |
 | **③ Identity Fabric**(KuppingerCole) | Broker + IGA / PAM / AM を統合した上位概念 | △ **将来発展形**(本基盤の Broker 採用後、段階的拡張可能) |
 | **④ BYOI**(Bring Your Own Identity) | B2B SaaS で顧客が自社 IdP を持ち込む要件呼称 | ✅ **本基盤で実現**(Broker パターンが BYOI の実装手段) |
+| **⑤ 各アプリ独自ローカル認証** | 各アプリが独自 Login UI + ユーザー DB + パスワード管理を持つ。共通基盤は OAuth/OIDC で連携する外部 IdP としてのみ動作 | ❌ **却下**(Broker パターン崩壊、SSO 不可、品質差、コンプライアンス重複。詳細: [§FR-1.2.0](../fr/01-auth.md#220-ローカルユーザー認証の主体--11-アーキテクチャと連動)) |
 
 ### 各代替パターンとの関係
 
@@ -343,9 +344,22 @@ flowchart TB
 - 実装手段としての Broker パターンとイコール
 - 本基盤は BYOI の標準実装と言える
 
+**⑤ 各アプリ独自ローカル認証(却下)**
+- 各アプリが独自 Login UI + ユーザー DB + パスワード管理を持つ
+- 共通基盤は外部 IdP として OAuth/OIDC で連携のみ
+- 却下理由:
+  - **Broker パターンの本質崩壊**: 集約点が消え、issuer が各アプリに分散
+  - **SSO 不可能**: 同じユーザーがアプリ A と B で別認証セッション
+  - **セキュリティの品質差**: パスワードハッシュ・MFA・侵害検出が各アプリで個別実装 → 最弱アプリが全体の天井
+  - **コンプライアンス対応重複**: GDPR / SOC 2 / ISO 27001 を全アプリで個別対応必要
+  - **退職時 deprovision 漏れリスク**: 基盤 1 回 → 全アプリ反映、にならない
+  - **コスト**: 認証 UI / DB / バックエンドを N アプリ分実装
+- 詳細評価と却下理由: [§FR-1.2.0 ローカルユーザー認証の主体](../fr/01-auth.md#220-ローカルユーザー認証の主体--11-アーキテクチャと連動)
+- ただし **既存システム移行期間中の暫定運用（C 案ハイブリッド）は例外的に許容**（§FR-1.2.0 参照）
+
 ---
 
-## §11.4 TBD / 要確認
+## §C-1.4 TBD / 要確認
 
 | 確認項目 | 回答例 |
 |---|---|
@@ -357,7 +371,7 @@ flowchart TB
 
 ---
 
-### 参考資料(§11 全体)
+### 参考資料(§C-1 全体)
 
 #### Broker パターン業界根拠
 
@@ -375,5 +389,5 @@ flowchart TB
 
 #### 内部ドキュメント
 
-- [identity-broker-multi-idp.md](../../common/identity-broker-multi-idp.md): Broker パターン詳細
-- [§3.3.A アーキテクチャ判断](03-federation.md#33a-アーキテクチャ判断単一-poolrealm--複数-idp-を採用): 単一 Pool/Realm + 複数 IdP の根拠
+- [identity-broker-multi-idp.md](../../../common/identity-broker-multi-idp.md): Broker パターン詳細
+- [§FR-2.3.A アーキテクチャ判断](../fr/02-federation.md#33a-アーキテクチャ判断単一-poolrealm--複数-idp-を採用): 単一 Pool/Realm + 複数 IdP の根拠

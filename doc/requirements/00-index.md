@@ -13,7 +13,7 @@ PoC完了後の要件定義フェーズに向けた資料。
 | ドキュメント | 内容 |
 |------------|------|
 | **[requirements-document-structure.md](requirements-document-structure.md)** ⭐ | **要件定義 SSOT**：ナラティブ・体系・依存関係・状態ダッシュボード・ID 体系ルール |
-| **[proposal/](proposal/00-index.md)** 📣 | **顧客向け要件定義 提示版**（フォルダ化）：FR/NFR と 1:1 対応で要件ベースライン提示。proposal/00-index.md が SSOT、章ごとに 02-auth.md / 03-federation.md / ... と分割 |
+| **[proposal/](proposal/00-index.md)** 📣 | **顧客向け要件定義 提示版**：FR/NFR と 1:1 対応で要件ベースライン提示。proposal/00-index.md が SSOT、配下を fr/（§FR-1〜§FR-9）/ nfr/（§NFR-1〜§NFR-9、IPA グレード対応）/ common/（§C-1〜§C-5）に三分割 |
 | [poc-summary-evaluation.md](poc-summary-evaluation.md) | **社内** PoC 総括評価：成果・既存ドキュメント評価・不足箇所分析（要件提示の裏どり資料） |
 | [requirements-hearing-strategy.md](requirements-hearing-strategy.md) | 要件定義ヒアリング戦略：確認事項・ステークホルダー・進め方 |
 | [platform-selection-decision.md](platform-selection-decision.md) | プラットフォーム選定判断書（評価基準 / 候補 / スコアリングフレーム）— ドラフト |

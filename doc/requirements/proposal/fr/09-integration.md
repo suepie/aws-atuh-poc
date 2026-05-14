@@ -1,12 +1,12 @@
-# §10 外部統合
+# §FR-9 外部統合
 
 > 上位 SSOT: [00-index.md](00-index.md)
-> 詳細: [../functional-requirements.md §8 FR-INT](../functional-requirements.md)
+> 詳細: [../../functional-requirements.md §8 FR-INT](../../functional-requirements.md)
 > カバー範囲: FR-INT §8.1 プロトコル / §8.2 ログ・監視 / §8.3 API・IaC・Webhook
 
 ---
 
-## §10.0 前提と背景
+## §FR-9.0 前提と背景
 
 ### 用語整理
 
@@ -20,14 +20,14 @@
 | **Webhook** | イベント発生時に基盤側から外部 URL へ HTTP POST する通知方式 |
 | **IaC**（Infrastructure as Code）| Terraform 等で基盤設定をコード化、バージョン管理 |
 
-### なぜここ（§10）で決めるか
+### なぜここ（§FR-9）で決めるか
 
 ```mermaid
 flowchart LR
-    S7["§7 認可<br/>(JWT)"]
-    S8["§8 ユーザー管理"]
-    S9["§9 管理機能"]
-    S10["§10 外部統合 ← イマココ<br/>基盤と外界のインターフェース"]
+    S7["§FR-6 認可<br/>(JWT)"]
+    S8["§FR-7 ユーザー管理"]
+    S9["§FR-8 管理機能"]
+    S10["§FR-9 外部統合 ← イマココ<br/>基盤と外界のインターフェース"]
     Ext1["バックエンドAPI"]
     Ext2["SIEM<br/>(Splunk等)"]
     Ext3["業務システム<br/>(Webhook受信)"]
@@ -44,10 +44,10 @@ flowchart LR
     style S10 fill:#fff3e0,stroke:#e65100
 ```
 
-§2-§9 までは「**基盤の内部機能**」だった。§10 は「**基盤と外界のインターフェース**」。
+§FR-1-§FR-8 までは「**基盤の内部機能**」だった。§FR-9 は「**基盤と外界のインターフェース**」。
 標準プロトコル準拠 + ログ出力 + API/Webhook が、基盤を **本当に "繋ぎ込める" もの**にする。
 
-### §10.0.A 本基盤の外部統合スタンス
+### §FR-9.0.A 本基盤の外部統合スタンス
 
 > **業界標準プロトコル / 標準データスキーマに徹底準拠する。独自プロトコル・独自スキーマは作らない。これにより、不特定多数のシステム・SIEM・ツールと "繋ぎ込み" が容易になる。**
 
@@ -96,17 +96,17 @@ flowchart LR
 
 | サブセクション | 内容 | 関連 FR |
 |---|---|---|
-| §10.1 プロトコル準拠 | OIDC / OAuth / SAML / JWKS / API Gateway 統合 | FR-INT-001〜004, 007 |
-| §10.2 ログ・監視 | 監査ログ外部出力 / SIEM 連携 / OCSF | FR-INT-008, 009 |
-| §10.3 API・IaC・Webhook | Admin REST API / Terraform / イベント通知 | FR-INT-005, 006, 010 |
+| §FR-9.1 プロトコル準拠 | OIDC / OAuth / SAML / JWKS / API Gateway 統合 | FR-INT-001〜004, 007 |
+| §FR-9.2 ログ・監視 | 監査ログ外部出力 / SIEM 連携 / OCSF | FR-INT-008, 009 |
+| §FR-9.3 API・IaC・Webhook | Admin REST API / Terraform / イベント通知 | FR-INT-005, 006, 010 |
 
 ---
 
-## §10.1 プロトコル準拠（→ FR-INT §8.1）
+## §FR-9.1 プロトコル準拠（→ FR-INT §8.1）
 
 > **このサブセクションで定めること**: 本基盤が標準サポートする認証・認可プロトコル（OIDC / OAuth 2.0 / SAML 2.0 / JWKS）の範囲、および外部アプリ・API Gateway が本基盤と "繋ぎ込み" する際の技術的接点。
 > **主な判断軸**: 業界標準への準拠度、VPC 内完結の要否、SAML サポートの要否
-> **§10.0 との関係**: §10.0.A で示した「**業界標準に徹底準拠**」スタンスを、具体プロトコル単位で確定する
+> **§FR-9.0 との関係**: §FR-9.0.A で示した「**業界標準に徹底準拠**」スタンスを、具体プロトコル単位で確定する
 
 ### 業界の現在地
 
@@ -135,7 +135,7 @@ flowchart LR
 | OIDC 1.0 / OAuth 2.0 標準準拠 | ✅ | ✅ | ✅ |
 | OIDC Discovery（`.well-known/openid-configuration`） | ✅ | ✅ | ✅ |
 | JWKS 公開エンドポイント | ✅ AWS パブリック | ✅ ALB 経由 / VPC Endpoint | ✅ Phase 3, 9 |
-| **VPC 内 JWKS**（プライベート化）| ✅ Cognito VPCE 経由 | ✅ Internal ALB（[ADR-012](../../adr/012-vpc-lambda-authorizer-internal-jwks.md)）| ✅ Phase 9 |
+| **VPC 内 JWKS**（プライベート化）| ✅ Cognito VPCE 経由 | ✅ Internal ALB（[ADR-012](../../../adr/012-vpc-lambda-authorizer-internal-jwks.md)）| ✅ Phase 9 |
 | 鍵自動ローテーション | ✅ AWS 透過 | ✅ Realm Key Rotation 設定 | — |
 | SAML 2.0 メタデータ | ✅ | ✅ | ❌ 未検証 |
 | API Gateway / Lambda Authorizer 統合 | ✅ | ✅ | ✅ Phase 3 / VPC 版 Phase 9 |
@@ -147,10 +147,10 @@ flowchart LR
 | OIDC 1.0 標準準拠 | **Must** |
 | JWKS 公開エンドポイント | **Must**（API Gateway 等のバックエンドが検証に使う）|
 | OIDC Discovery | **Must**（クライアント自動構成）|
-| VPC 内 JWKS 経路 | **Should**（[Phase 9 で検証済](../../adr/012-vpc-lambda-authorizer-internal-jwks.md)、本番では推奨）|
+| VPC 内 JWKS 経路 | **Should**（[Phase 9 で検証済](../../../adr/012-vpc-lambda-authorizer-internal-jwks.md)、本番では推奨）|
 | 鍵ローテーション | **自動**（Cognito 透過、Keycloak は設定）|
-| SAML 2.0 メタデータ | Should（SAML 顧客向け、[§3.1](03-federation.md#31-idp-接続種別--fr-fed-21) と連動）|
-| TLS 通信 | **Must**（TLS 1.2+、[§13.4 セキュリティ](13-nfr.md)）|
+| SAML 2.0 メタデータ | Should（SAML 顧客向け、[§FR-2.1](02-federation.md#31-idp-接続種別--fr-fed-21) と連動）|
+| TLS 通信 | **Must**（TLS 1.2+、[§NFR-4 セキュリティ](../nfr/00-index.md)）|
 
 ### TBD / 要確認
 
@@ -162,11 +162,11 @@ flowchart LR
 
 ---
 
-## §10.2 ログ・監視（→ FR-INT §8.2）
+## §FR-9.2 ログ・監視（→ FR-INT §8.2）
 
 > **このサブセクションで定めること**: 認証・管理イベントを外部のログ基盤（CloudWatch / S3 / SIEM）にどう流すか、どのスキーマで標準化するか。
 > **主な判断軸**: SIEM 採用有無、OCSF 準拠の要否、ログ保存先・形式
-> **§10.0 との関係**: 「**標準データスキーマ**」を OCSF として具体化。[§9.2 監査・可視性](09-admin.md#92-監査可視性--fr-admin-72) で扱う「基盤側のログ生成」を、ここで「外部への流し方」として接続
+> **§FR-9.0 との関係**: 「**標準データスキーマ**」を OCSF として具体化。[§FR-8.2 監査・可視性](08-admin.md#92-監査可視性--fr-admin-72) で扱う「基盤側のログ生成」を、ここで「外部への流し方」として接続
 
 ### 業界の現在地
 
@@ -174,7 +174,7 @@ flowchart LR
 - 2022 年発表、AWS / Splunk / IBM / Palo Alto / CrowdStrike が backing
 - **ベンダーニュートラル**な統一スキーマ → SIEM 切替時の移行コスト最小化
 - Datadog Observability Pipelines が OCSF 変換を標準提供
-- "Write detection rules once, apply across sources"（[§9.2 監査](09-admin.md#92-監査可視性--fr-admin-72) と連動）
+- "Write detection rules once, apply across sources"（[§FR-8.2 監査](08-admin.md#92-監査可視性--fr-admin-72) と連動）
 
 **主要 SIEM の対応状況**:
 
@@ -210,10 +210,10 @@ flowchart LR
 
 | 項目 | ベースライン |
 |---|---|
-| 認証イベントログ | **Must**（[§9.2 監査](09-admin.md#92-監査可視性--fr-admin-72) と統一）|
+| 認証イベントログ | **Must**（[§FR-8.2 監査](08-admin.md#92-監査可視性--fr-admin-72) と統一）|
 | 外部出力先 | **CloudWatch を必ず**、追加で S3 / Kinesis / SIEM 任意 |
 | ログ形式 | プラットフォーム標準（CloudTrail JSON / Event Listener JSON）+ **OCSF 変換オプション**（Datadog Pipelines / Security Lake）|
-| 保存期間 | [§13.7 コンプラ](13-nfr.md) に従う |
+| 保存期間 | [§NFR-7 コンプラ](../nfr/00-index.md) に従う |
 | SIEM 連携 | Should（顧客既存 SIEM 次第）|
 | OCSF 採用 | **Should**（将来の SIEM 切替自由度確保）|
 
@@ -228,11 +228,11 @@ flowchart LR
 
 ---
 
-## §10.3 API・IaC・Webhook（→ FR-INT §8.3）
+## §FR-9.3 API・IaC・Webhook（→ FR-INT §8.3）
 
 > **このサブセクションで定めること**: 本基盤を外部から **プログラマブルに操作・自動化**するためのインターフェース（管理 REST API・Terraform IaC・Webhook イベント通知）。
 > **主な判断軸**: 自動化したい範囲（オンボーディング・連鎖処理）、Webhook 受信側システムの有無、IaC ツール選定
-> **§10.0 との関係**: 「**繋ぎ込み**」の運用自動化レイヤー。[§9.1 基盤設定管理](09-admin.md#91-基盤設定管理--fr-admin-71) の IaC 方針と整合
+> **§FR-9.0 との関係**: 「**繋ぎ込み**」の運用自動化レイヤー。[§FR-8.1 基盤設定管理](08-admin.md#91-基盤設定管理--fr-admin-71) の IaC 方針と整合
 
 ### 業界の現在地
 
@@ -279,7 +279,7 @@ flowchart LR
 | 項目 | ベースライン |
 |---|---|
 | Admin REST API | **Must**（プラットフォーム標準提供）|
-| Terraform IaC | **Must**（[§9.1 基盤設定管理](09-admin.md#91-基盤設定管理--fr-admin-71) と統一）|
+| Terraform IaC | **Must**（[§FR-8.1 基盤設定管理](08-admin.md#91-基盤設定管理--fr-admin-71) と統一）|
 | Webhook イベント通知 | **Should**（顧客アプリ要件次第）|
 | Webhook 設計 | **HMAC 署名 + idempotency + 指数バックオフ + DLQ**（業界標準パターン）|
 | 通知イベント例 | `user.created` / `user.deleted` / `user.disabled` / `mfa.enrolled` / `session.revoked` |
@@ -297,7 +297,7 @@ flowchart LR
 
 ---
 
-### 参考資料（§10 全体）
+### 参考資料（§FR-9 全体）
 
 #### プロトコル
 

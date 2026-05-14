@@ -1,7 +1,7 @@
 # BFF パターン実装ノート（内部技術メモ）
 
 > 最終更新: 2026-05-14
-> 位置付け: **内部技術メモ**。顧客向け説明は [proposal/02-auth.md §2.1](../requirements/proposal/02-auth.md) に最小限のみ記載
+> 位置付け: **内部技術メモ**。顧客向け説明は [proposal/fr/01-auth.md §FR-1.1](../requirements/proposal/fr/01-auth.md) に最小限のみ記載
 > 関連: [auth-patterns.md §2.1](auth-patterns.md)、[authz-architecture-design.md](authz-architecture-design.md)、[architecture.md](architecture.md)、[ADR-014](../adr/014-auth-patterns-scope.md)
 
 ---
@@ -817,13 +817,13 @@ Cognito の場合の代替実装：
 
 → **Cognito で本格的な ACR step-up を実装するのは工数が大きい**。要件として MFA レベル差が必須なら、Keycloak 採用または既存システムは諦めて全 AAL3 統一の判断もあり得る。
 
-##### 11.2.6.7 proposal §4 との整合
+##### 11.2.6.7 proposal §FR-3 との整合
 
-ハイブリッド運用での MFA レベル差対応は、以下の proposal §4 内容と整合する設計の延長：
+ハイブリッド運用での MFA レベル差対応は、以下の proposal §FR-3 内容と整合する設計の延長：
 
-- [proposal §4.0 用語整理](../requirements/proposal/04-mfa.md): AAL1/2/3 の定義
-- [proposal §4.2 MFA 適用ポリシー](../requirements/proposal/04-mfa.md): 条件付き MFA / ロール単位強制
-- [proposal §3.2.3 MFA 重複回避](../requirements/proposal/03-federation.md): 外部 IdP の `amr` クレーム尊重
+- [proposal §FR-3.0 用語整理](../requirements/proposal/fr/03-mfa.md): AAL1/2/3 の定義
+- [proposal §FR-3.2 MFA 適用ポリシー](../requirements/proposal/fr/03-mfa.md): 条件付き MFA / ロール単位強制
+- [proposal §FR-2.2.3 MFA 重複回避](../requirements/proposal/fr/02-federation.md): 外部 IdP の `amr` クレーム尊重
 
 → フェデユーザーの MFA 重複回避（外部 IdP の `amr` 信頼）と、ハイブリッド運用の MFA step-up（自基盤の `amr` 検査 + `acr_values` 要求）は**同じ `amr`/`acr` 仕組みを使う**。実装の一貫性が保てる。
 
@@ -834,7 +834,7 @@ Cognito の場合の代替実装：
 | 全システム同じ MFA レベル要求（一般的な企業内）| **A. 統一 MFA** |
 | 一般システム + 高セキュ システム混在（金融の一部画面、決済等）| **B. ACR step-up MFA**（Keycloak 推奨）|
 | 既存 Cognito 構成で MFA レベル差を急ぎ実装 | C. `prompt=login` 強制（暫定対応）|
-| 完全に別 MFA セッションにしたい（システム間完全分離）| Pool/Realm 分離（B 案: テナント別分離、[§3.3.A](../requirements/proposal/03-federation.md) 参照）|
+| 完全に別 MFA セッションにしたい（システム間完全分離）| Pool/Realm 分離（B 案: テナント別分離、[§FR-2.3.A](../requirements/proposal/fr/02-federation.md) 参照）|
 
 #### 11.2.7 採用判断の指針
 

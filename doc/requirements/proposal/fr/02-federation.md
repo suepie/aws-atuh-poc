@@ -1,16 +1,16 @@
-# §3 フェデレーション / 外部 IdP 連携
+# §FR-2 フェデレーション / 外部 IdP 連携
 
 > 上位 SSOT: [00-index.md](00-index.md)
-> 詳細: [../functional-requirements.md §2 FR-FED](../functional-requirements.md)、[../../common/identity-broker-multi-idp.md](../../common/identity-broker-multi-idp.md)
+> 詳細: [../../functional-requirements.md §2 FR-FED](../../functional-requirements.md)、[../../../common/identity-broker-multi-idp.md](../../../common/identity-broker-multi-idp.md)
 > カバー範囲: FR-FED §2.1 IdP 接続種別 / §2.2 ユーザー処理（§2.2.1 JIT / §2.2.2 属性マッピング / §2.2.3 MFA 重複回避）/ §2.3 マルチテナント運用
 
 ---
 
-## 3.1 IdP 接続種別（→ FR-FED §2.1）
+## §FR-2.1 IdP 接続種別（→ FR-FED §2.1）
 
 > **このサブセクションで定めること**: 本基盤が外部 IdP として**受け入れ可能なプロトコル**（OIDC / SAML 2.0 / LDAP）と、想定する**主要 IdP 製品**（Entra ID / Okta / HENNGE One 等）の接続実績。
 > **主な判断軸**: 御社・御社顧客の IdP 構成、SAML IdP 発行モード / LDAP 直接連携の要否（Keycloak 必須化に直結）
-> **§3 全体との関係**: §3.1 = 接続「できる範囲」、§3.2 = 受け入れたユーザーの「処理」、§3.3 = 「並行運用」
+> **§FR-2 全体との関係**: §FR-2.1 = 接続「できる範囲」、§FR-2.2 = 受け入れたユーザーの「処理」、§FR-2.3 = 「並行運用」
 
 「**どんな顧客 IdP でも接続可能**」という capability を示す。具体接続先は §B 確認後に確定。
 
@@ -37,7 +37,7 @@
 |---|---|
 | **絶対安全** | 業界標準（OIDC 1.0 / SAML 2.0）準拠の IdP のみを受け入れる。独自プロトコルは受け入れない |
 | **どんなアプリでも** | **OIDC または SAML が話せる IdP なら何でも接続可能**。Cognito / Keycloak 両方でグローバル主要 + 日本主要 IdP をカバー |
-| **効率よく認証** | Broker パターンで顧客追加でも各システム変更不要（[§11](11-architecture.md)）|
+| **効率よく認証** | Broker パターンで顧客追加でも各システム変更不要（[§1](../common/01-architecture.md)）|
 | **運用負荷・コスト最小** | OIDC は Discovery 自動化、SAML は Metadata XML 投入で完結。両方 Terraform 管理可能 |
 
 ### 対応能力マトリクス（裏どり）
@@ -142,19 +142,19 @@
 
 ---
 
-## 3.2 フェデレーションユーザー処理（→ FR-FED §2.2）
+## §FR-2.2 フェデレーションユーザー処理（→ FR-FED §2.2）
 
 > **このサブセクションで定めること**: 外部 IdP で認証されたユーザーを本基盤がどう受け入れ・正規化するか（JIT プロビ・属性マッピング・MFA 重複回避）。Broker パターンの「**属性変換層**」の中核。
 > **主な判断軸**: SCIM 併用の必要性、属性命名規則、外部 IdP の MFA 主張をどこまで信頼するか
-> **§3 全体との関係**: §3.1 で「接続できる IdP」を決め、§3.2 で「接続後の処理」を決め、§3.3 で「並行運用」を扱う。
+> **§FR-2 全体との関係**: §FR-2.1 で「接続できる IdP」を決め、§FR-2.2 で「接続後の処理」を決め、§FR-2.3 で「並行運用」を扱う。
 
 3 つの性質（プロビ / マッピング / MFA）に分けて記載。
 
-### 3.2.1 JIT プロビジョニング（→ FR-FED-008）
+### §FR-2.2.1 JIT プロビジョニング（→ FR-FED-008）
 
 > **このサブ・サブセクションで定めること**: 外部 IdP 経由で初めてログインしたユーザーを基盤側で自動作成する方式（JIT）と、SCIM 2.0 との併用方針。
 > **主な判断軸**: 退職時の即時 deprovision 要件、SCIM 連携の必要性、デフォルト権限レベル
-> **§3.2 内の位置付け**: 3 つのユーザー処理のうち「**初回作成**」を扱う。属性は §3.2.2、MFA は §3.2.3
+> **§FR-2.2 内の位置付け**: 3 つのユーザー処理のうち「**初回作成**」を扱う。属性は §FR-2.2.2、MFA は §FR-2.2.3
 
 #### 業界の現在地
 
@@ -207,11 +207,11 @@
 
 ---
 
-### 3.2.2 属性マッピング / クレーム変換（→ FR-FED-009）
+### §FR-2.2.2 属性マッピング / クレーム変換（→ FR-FED-009）
 
 > **このサブ・サブセクションで定めること**: 各 IdP が返す多様な属性名・形式を本基盤の統一クレーム形式（`sub` / `tenant_id` / `roles` 等）に正規化する仕組み。
 > **主な判断軸**: 各システムが JWT に必要とする属性、IdP ごとのクレーム命名差異、Access Token への注入範囲
-> **§3.2 内の位置付け**: 「**属性正規化**」を扱う。JIT は §3.2.1、MFA は §3.2.3。基盤発行クレーム全体像は [§7.1](07-authz.md#71-認証基盤が発行する-jwt-クレーム--fr-authz-51) と整合
+> **§FR-2.2 内の位置付け**: 「**属性正規化**」を扱う。JIT は §FR-2.2.1、MFA は §FR-2.2.3。基盤発行クレーム全体像は [§FR-6.1](06-authz.md#71-認証基盤が発行する-jwt-クレーム--fr-authz-51) と整合
 
 #### 業界の現在地
 
@@ -267,11 +267,11 @@
 
 ---
 
-### 3.2.3 MFA 重複回避（→ FR-FED-012）
+### §FR-2.2.3 MFA 重複回避（→ FR-FED-012）
 
 > **このサブ・サブセクションで定めること**: 外部 IdP で既に MFA 済みのユーザーに、本基盤側で MFA を**再要求しない**ためのポリシーと実装方式。
 > **主な判断軸**: 外部 IdP の MFA 主張（AuthnContext / `amr` クレーム）をどこまで信頼するか、ロール別の例外要件
-> **§3.2 内の位置付け**: 「**MFA 整合**」を扱う。MFA 全般は [§4 MFA](04-mfa.md)、本サブセクションは「フェデユーザーに対する MFA」のみ
+> **§FR-2.2 内の位置付け**: 「**MFA 整合**」を扱う。MFA 全般は [§FR-3 MFA](03-mfa.md)、本サブセクションは「フェデユーザーに対する MFA」のみ
 
 #### 業界の現在地
 
@@ -287,7 +287,7 @@
 |---|---|
 | **絶対安全** | 外部 IdP の MFA 主張（AuthnContext / `amr`）を検証して信頼。信頼しない外部 IdP は接続しない |
 | **どんなアプリでも** | OIDC / SAML 標準の MFA assertion を尊重 |
-| **効率よく** | フェデユーザーは MFA を再要求しない（[ADR-009](../../adr/009-mfa-responsibility-by-idp.md)）|
+| **効率よく** | フェデユーザーは MFA を再要求しない（[ADR-009](../../../adr/009-mfa-responsibility-by-idp.md)）|
 | **運用負荷・コスト最小** | Keycloak は Conditional OTP（標準フロー）で完結、Cognito は Lambda で実装 |
 
 #### 対応能力マトリクス
@@ -303,7 +303,7 @@
 
 | 項目 | ベースライン |
 |---|---|
-| 基本方針 | **外部 IdP で MFA 済みのユーザーには Broker 側で再要求しない**（[ADR-009](../../adr/009-mfa-responsibility-by-idp.md)）|
+| 基本方針 | **外部 IdP で MFA 済みのユーザーには Broker 側で再要求しない**（[ADR-009](../../../adr/009-mfa-responsibility-by-idp.md)）|
 | 実現方式（Cognito） | Pre Token Lambda + Conditional MFA で `amr` クレーム検査（個別実装）|
 | 実現方式（Keycloak） | Conditional OTP（Authentication Flow 標準）|
 | 信頼境界 | 外部 IdP の MFA 主張（AuthnContext / `amr`）を信頼。信頼しない外部 IdP は接続しない |
@@ -319,7 +319,7 @@
 
 ---
 
-### 参考資料（§3.2 全体）
+### 参考資料（§FR-2.2 全体）
 
 - [JIT Provisioning Best Practices - Security Boulevard](https://securityboulevard.com/2026/03/how-to-implement-just-in-time-jit-user-provisioning-with-sso-and-scim/)
 - [OIDC and SAML Integration for Multi-Tenant - SSOJet](https://ssojet.com/enterprise-ready/oidc-and-saml-integration-multi-tenant-architectures)
@@ -331,11 +331,11 @@
 
 ---
 
-## 3.3 マルチテナント運用（→ FR-FED §2.3）
+## §FR-2.3 マルチテナント運用（→ FR-FED §2.3）
 
-> 本サブセクションは「**N 社の顧客 IdP を並行運用する全体運用設計**」を示すためのもの。§3.1 / §3.2 が "できる" の話なら、§3.3 は "どう運用するか" の話。
+> 本サブセクションは「**N 社の顧客 IdP を並行運用する全体運用設計**」を示すためのもの。§FR-2.1 / §FR-2.2 が "できる" の話なら、§FR-2.3 は "どう運用するか" の話。
 
-### 3.3.0 マルチテナント運用とは何か（前提と背景）
+### §FR-2.3.0 マルチテナント運用とは何か（前提と背景）
 
 #### 用語整理
 
@@ -345,14 +345,14 @@
 | **マルチテナント運用** | 1 つの認証基盤で**複数のテナントを並行ホスト**する運用形態 |
 | **テナント境界** | データ / 権限 / セッション の分離線。基盤が必ず守る不変条件 |
 
-#### なぜここ（§3.3）で決めるか
+#### なぜここ（§FR-2.3）で決めるか
 
 ```mermaid
 flowchart LR
-    S31["§3.1<br/>IdP 接続種別<br/>(できる)"]
-    S32["§3.2<br/>ユーザー処理<br/>(ミクロ視点)"]
-    S33["§3.3 ← イマココ<br/>マルチテナント運用<br/>(マクロ視点)"]
-    S10["§10<br/>Broker<br/>アーキテクチャ"]
+    S31["§FR-2.1<br/>IdP 接続種別<br/>(できる)"]
+    S32["§FR-2.2<br/>ユーザー処理<br/>(ミクロ視点)"]
+    S33["§FR-2.3 ← イマココ<br/>マルチテナント運用<br/>(マクロ視点)"]
+    S10["§FR-9<br/>Broker<br/>アーキテクチャ"]
 
     S31 --> S33
     S32 --> S33
@@ -361,11 +361,11 @@ flowchart LR
     style S33 fill:#fff3e0,stroke:#e65100
 ```
 
-§3.1 / §3.2 は「**できる**」の話。§3.3 は「**どう運用するか**」の話。スケール・運用フロー・UX を確定させる。
+§FR-2.1 / §FR-2.2 は「**できる**」の話。§FR-2.3 は「**どう運用するか**」の話。スケール・運用フロー・UX を確定させる。
 
 ---
 
-### 3.3.A アーキテクチャ判断：単一 Pool/Realm + 複数 IdP を採用
+### §FR-2.3.A アーキテクチャ判断：単一 Pool/Realm + 複数 IdP を採用
 
 #### 3 つの選択肢のトレードオフ
 
@@ -380,7 +380,7 @@ flowchart LR
 **Broker パターンの本質は「集約点が 1 つ」**:
 - 各バックエンドシステムが検証する issuer は 1 つだけ
 - テナントごとに Pool/Realm を分けると issuer が分散 → 各システムが N 個の issuer を検証する羽目に
-- B 案・C 案は **Broker パターンの恩恵を捨てる**ことになる（[§11](11-architecture.md) と整合しない）
+- B 案・C 案は **Broker パターンの恩恵を捨てる**ことになる（[§1](../common/01-architecture.md) と整合しない）
 
 **スケールも十分**:
 - Keycloak: 10K IdPs まで性能劣化なしの実証あり
@@ -388,7 +388,7 @@ flowchart LR
 - 通常の B2B SaaS（顧客 100〜1000 社）なら A 案で完全カバー
 
 **テナント分離は別レイヤーで担保**:
-- 認可層（[§7](07-authz.md)）で `tenant_id` クレームベースのスコープ検証
+- 認可層（[§FR-6](06-authz.md)）で `tenant_id` クレームベースのスコープ検証
 - バックエンドが「JWT.tenant_id != path.tenantId なら 403」を必ず実行
 - これで A 案でも完全分離を実現
 
@@ -404,7 +404,7 @@ flowchart LR
 
 ---
 
-### 3.3.B 我々のスタンス（北極星に基づく）
+### §FR-2.3.B 我々のスタンス（北極星に基づく）
 
 | 北極星の柱 | マルチテナント運用での実現 |
 |---|---|
@@ -415,10 +415,10 @@ flowchart LR
 
 ---
 
-### 3.3.C マルチテナント環境での SSO 挙動
+### §FR-2.3.C マルチテナント環境での SSO 挙動
 
 「**SSO がテナントを跨ぐとどうなるか**」は顧客が必ず気にする論点。本セクションでは Cognito / Keycloak 共通の SSO **挙動シナリオ**を整理する。
-（SSO 機能の Cognito vs Keycloak 比較は [§5 SSO](05-sso.md) / [§6 ログアウト・セッション管理](06-logout-session.md) で詳述。本表は **multi-tenant 文脈に絞った挙動の整理**。）
+（SSO 機能の Cognito vs Keycloak 比較は [§FR-4 SSO](04-sso.md) / [§FR-5 ログアウト・セッション管理](05-logout-session.md) で詳述。本表は **multi-tenant 文脈に絞った挙動の整理**。）
 
 #### シナリオ A：同一テナント内 SSO（最も一般的）
 
@@ -485,7 +485,7 @@ sequenceDiagram
 
 #### SSO 挙動の比較（multi-tenant 文脈）
 
-「multi-tenant 運用に直接関わる SSO 挙動」だけに絞った Cognito vs Keycloak 比較。網羅的な機能比較は [§5 SSO](05-sso.md) / [§6 ログアウト・セッション管理](06-logout-session.md) を参照。
+「multi-tenant 運用に直接関わる SSO 挙動」だけに絞った Cognito vs Keycloak 比較。網羅的な機能比較は [§FR-4 SSO](04-sso.md) / [§FR-5 ログアウト・セッション管理](05-logout-session.md) を参照。
 
 | SSO 挙動 | Cognito | Keycloak (OSS / RHBK) | 備考 |
 |---|:---:|:---:|---|
@@ -495,21 +495,21 @@ sequenceDiagram
 | 同一 Broker への複数 IdP 並行 SSO | ✅ Pool に複数 IdP | ✅ Realm に複数 IdP | A 案の前提 |
 | Broker ログアウトで全テナントセッション破棄 | ✅ Global Sign-Out | ✅ Realm-level Logout | テナント境界で限定する場合は設計工夫が必要 |
 
-詳細な SSO / ログアウト機能比較（Back-Channel Logout / Front-Channel Logout 等）は [§6 ログアウト・セッション管理](06-logout-session.md) を参照。
+詳細な SSO / ログアウト機能比較（Back-Channel Logout / Front-Channel Logout 等）は [§FR-5 ログアウト・セッション管理](05-logout-session.md) を参照。
 
 ---
 
-### 3.3.1 複数 IdP 並行運用（→ FR-FED-010）
+### §FR-2.3.1 複数 IdP 並行運用（→ FR-FED-010）
 
 > **このサブ・サブセクションで定めること**: 1 つの認証基盤に N 社の外部 IdP を同時登録して並行運用する技術構成（単一 Pool/Realm + 複数 IdP）と、テナント分離の方式。
 > **主な判断軸**: 想定顧客企業数、テナント分離の粒度（クレームベース vs 物理分離）、1 ユーザー複数テナント所属の可能性
-> **§3.3 内の位置付け**: §3.3.A アーキテクチャ判断（採用方針）を**具体実装**として確定。§3.3.2 オンボーディング・§3.3.3 UX と組合せて全体運用が完成
+> **§FR-2.3 内の位置付け**: §FR-2.3.A アーキテクチャ判断（採用方針）を**具体実装**として確定。§FR-2.3.2 オンボーディング・§FR-2.3.3 UX と組合せて全体運用が完成
 
 #### ベースライン
 
 - **単一 Cognito User Pool / 単一 Keycloak Realm** に複数の外部 IdP を並行登録（A 案、3.3.A で根拠提示）
 - 各ユーザーは `tenant_id` クレームで所属顧客企業を識別
-- JWT には `tenant_id` / `roles` / `email` を統一形式で注入（[§3.2.2](#322-属性マッピング--クレーム変換--fr-fed-009) と連動）
+- JWT には `tenant_id` / `roles` / `email` を統一形式で注入（[§FR-2.2.2](#322-属性マッピング--クレーム変換--fr-fed-009) と連動）
 - バックエンド API は `tenant_id` でテナントスコープ検証（cross-tenant アクセス遮断）
 
 #### 対応能力
@@ -531,11 +531,11 @@ sequenceDiagram
 
 ---
 
-### 3.3.2 顧客追加オンボーディング（→ FR-FED-011）
+### §FR-2.3.2 顧客追加オンボーディング（→ FR-FED-011）
 
 > **このサブ・サブセクションで定めること**: 新規顧客企業の IdP を本基盤に接続する**運用フロー**（誰が・どんな手順で・どのくらいの時間で）と自動化方針。
 > **主な判断軸**: オンボーディング主体（弊社運用 / 顧客企業セルフサービス）、目標リードタイム、SCIM 連携の必要性
-> **§3.3 内の位置付け**: §3.3.1 の並行運用を**「持続的に拡張」**する運用面。IaC 自動化により [§9.1 基盤設定管理](09-admin.md#91-基盤設定管理--fr-admin-71) と整合
+> **§FR-2.3 内の位置付け**: §FR-2.3.1 の並行運用を**「持続的に拡張」**する運用面。IaC 自動化により [§FR-8.1 基盤設定管理](08-admin.md#91-基盤設定管理--fr-admin-71) と整合
 
 #### ベースライン
 
@@ -577,11 +577,11 @@ flowchart LR
 
 ---
 
-### 3.3.3 ログイン画面で IdP 選択 UX / Home Realm Discovery（→ FR-FED-013）
+### §FR-2.3.3 ログイン画面で IdP 選択 UX / Home Realm Discovery（→ FR-FED-013）
 
 > **このサブ・サブセクションで定めること**: ユーザーがログイン画面に来た時、**どの IdP に振り分けるか**の UX 設計（メールドメイン HRD / IdP セレクター / 組織固有 URL）。
 > **主な判断軸**: 推奨 UX パターン、メールドメイン → IdP 解決ルール、複数テナント所属時の選択 UI、ブランディング要件
-> **§3.3 内の位置付け**: §3.3.1 並行運用・§3.3.2 オンボーディングを**エンドユーザー体験**として完成させる UX 層
+> **§FR-2.3 内の位置付け**: §FR-2.3.1 並行運用・§FR-2.3.2 オンボーディングを**エンドユーザー体験**として完成させる UX 層
 
 #### 3 案併記（要件次第で選定）
 
@@ -589,7 +589,7 @@ flowchart LR
 |---|:---:|---|---|
 | **A. メールドメインベース HRD**（推奨）| ◎ ユーザーは email だけ入れれば OK | 基盤側にドメイン → IdP マッピングテーブル | Auth0、Entra ID、Notion |
 | B. IdP セレクター | ○ ボタン選択 | Keycloak 標準 / Cognito Hosted UI カスタム | Google、多くの SaaS |
-| C. 組織固有ログイン URL | ◎ ブランディング両立 | Custom Domain（[§3.1](#31-idp-接続種別-fr-fed-21)）+ ルーティング | Slack、Figma |
+| C. 組織固有ログイン URL | ◎ ブランディング両立 | Custom Domain（[§FR-2.1](#31-idp-接続種別-fr-fed-21)）+ ルーティング | Slack、Figma |
 
 #### A 案（メールドメイン HRD）のフロー
 
@@ -633,7 +633,7 @@ sequenceDiagram
 
 ---
 
-### 参考資料（§3.3 全体）
+### 参考資料（§FR-2.3 全体）
 
 - [Keycloak Multi-Tenancy Options - Phase Two](https://phasetwo.io/blog/multi-tenancy-options-keycloak/)
 - [Keycloak Scalability of IdPs - GitHub Issue](https://github.com/keycloak/keycloak/issues/30084)

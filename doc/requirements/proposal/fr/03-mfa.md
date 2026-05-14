@@ -1,12 +1,12 @@
-# §4 MFA（多要素認証）
+# §FR-3 MFA（多要素認証）
 
 > 上位 SSOT: [00-index.md](00-index.md)
-> 詳細: [../functional-requirements.md §3 FR-MFA](../functional-requirements.md)、[../../adr/009-mfa-responsibility-by-idp.md](../../adr/009-mfa-responsibility-by-idp.md)
+> 詳細: [../../functional-requirements.md §3 FR-MFA](../../functional-requirements.md)、[../../../adr/009-mfa-responsibility-by-idp.md](../../../adr/009-mfa-responsibility-by-idp.md)
 > カバー範囲: FR-MFA §3.1 要素 / §3.2 適用ポリシー
 
 ---
 
-## §4.0 前提と背景
+## §FR-3.0 前提と背景
 
 ### 用語整理
 
@@ -18,15 +18,15 @@
 | **適用ポリシー** | MFA を「誰に・いつ・どんな条件で」要求するかのルール |
 | **アダプティブ MFA** | ユーザーの行動・コンテキスト（IP / 地理 / デバイス）からリスクを動的判定し、必要な時だけ MFA を要求 |
 
-### なぜここ（§4）で決めるか
+### なぜここ（§FR-3）で決めるか
 
 ```mermaid
 flowchart LR
-    S2["§2 認証<br/>(基本フロー)"]
-    S3["§3 フェデレーション<br/>(外部 IdP)"]
-    S4["§4 MFA ← イマココ<br/>北極星「絶対安全」の核心"]
-    S5["§5 SSO<br/>(セッション)"]
-    S323["§3.2.3<br/>MFA 重複回避<br/>(フェデユーザー)"]
+    S2["§FR-1 認証<br/>(基本フロー)"]
+    S3["§FR-2 フェデレーション<br/>(外部 IdP)"]
+    S4["§FR-3 MFA ← イマココ<br/>北極星「絶対安全」の核心"]
+    S5["§FR-4 SSO<br/>(セッション)"]
+    S323["§FR-2.2.3<br/>MFA 重複回避<br/>(フェデユーザー)"]
 
     S2 --> S4
     S3 --> S4
@@ -48,7 +48,7 @@ flowchart LR
 | MFA 要素の一貫性 | アプリごとに別実装 → UX バラバラ | **基盤側で統一**、全システムで同じ MFA |
 | 顧客企業のポリシー対応 | 各アプリで個別対応必要 | **基盤側のポリシー設定で一元化** |
 | Passkey / WebAuthn 対応 | アプリごとに WebAuthn 実装 → 重い | **基盤側で標準提供**、アプリは JWT を信じるだけ |
-| フェデユーザーの MFA 重複回避 | 各アプリで個別判定 | **基盤側で `amr` クレームを検査して一元判定**（[§3.2.3](03-federation.md#323-mfa-重複回避--fr-fed-012)）|
+| フェデユーザーの MFA 重複回避 | 各アプリで個別判定 | **基盤側で `amr` クレームを検査して一元判定**（[§FR-2.2.3](02-federation.md#323-mfa-重複回避--fr-fed-012)）|
 | MFA 適用ポリシー変更 | 全アプリ改修が必要 | **基盤側設定のみで反映** |
 
 → 共通認証基盤で MFA を中央集約することが、北極星「**絶対安全・どんなアプリでも・効率よく・運用負荷低**」を全て満たす唯一の道。
@@ -57,16 +57,16 @@ flowchart LR
 
 | サブセクション | 内容 | 関連 FR |
 |---|---|---|
-| §4.1 MFA 要素 | どんな MFA 手段（TOTP / Passkey / SMS / Email / ハードウェアキー）を提供できるか | FR-MFA-001〜005 |
-| §4.2 MFA 適用ポリシー | いつ・誰に・どんな条件で MFA を要求するか | FR-MFA-006〜009 |
+| §FR-3.1 MFA 要素 | どんな MFA 手段（TOTP / Passkey / SMS / Email / ハードウェアキー）を提供できるか | FR-MFA-001〜005 |
+| §FR-3.2 MFA 適用ポリシー | いつ・誰に・どんな条件で MFA を要求するか | FR-MFA-006〜009 |
 
 ---
 
-## §4.1 MFA 要素（→ FR-MFA §3.1）
+## §FR-3.1 MFA 要素（→ FR-MFA §3.1）
 
 > **このサブセクションで定めること**: 本基盤がサポートする MFA 認証手段（TOTP / WebAuthn・Passkeys / SMS OTP / Email OTP / バックアップコード / ハードウェアキー）の範囲と推奨度。
 > **主な判断軸**: 目標 NIST AAL レベル、Passkeys を Must とするか、SMS / Email OTP の必要性、ハードウェアキー対応
-> **§4 全体との関係**: §4.1 = 「**何で MFA するか**」、§4.2 = 「**いつ・誰に MFA を要求するか**」
+> **§FR-3 全体との関係**: §FR-3.1 = 「**何で MFA するか**」、§FR-3.2 = 「**いつ・誰に MFA を要求するか**」
 
 ### 業界の現在地（2026 年時点の調査結果）
 
@@ -145,11 +145,11 @@ flowchart LR
 
 ---
 
-## §4.2 MFA 適用ポリシー（→ FR-MFA §3.2）
+## §FR-3.2 MFA 適用ポリシー（→ FR-MFA §3.2）
 
 > **このサブセクションで定めること**: MFA を**いつ・誰に・どんな条件で要求するか**（ロール単位 / リスクベース / 端末記憶 / 管理者強制 / フェデユーザー重複回避）。
 > **主な判断軸**: MFA 強制の粒度、条件付き MFA（リスクベース）の要否、端末記憶の有効期間、ロール別ポリシー
-> **§4 全体との関係**: §4.1 で「何で MFA するか」を決め、§4.2 で「**いつ要求するか**」を決める。フェデユーザー MFA 重複回避は [§3.2.3](03-federation.md#323-mfa-重複回避--fr-fed-012) と連動
+> **§FR-3 全体との関係**: §FR-3.1 で「何で MFA するか」を決め、§FR-3.2 で「**いつ要求するか**」を決める。フェデユーザー MFA 重複回避は [§FR-2.2.3](02-federation.md#323-mfa-重複回避--fr-fed-012) と連動
 
 ### 業界の現在地
 
@@ -164,7 +164,7 @@ flowchart LR
 | 北極星の柱 | MFA ポリシーでの実現 |
 |---|---|
 | **絶対安全** | ロール単位での MFA 強制、条件付き MFA でリスク評価 |
-| **どんなアプリでも** | フェデユーザーは外部 IdP の MFA を尊重（[§3.2.3](03-federation.md#323-mfa-重複回避--fr-fed-012)）|
+| **どんなアプリでも** | フェデユーザーは外部 IdP の MFA を尊重（[§FR-2.2.3](02-federation.md#323-mfa-重複回避--fr-fed-012)）|
 | **効率よく** | リスクスコアが低ければ MFA スキップ、UX 良好 |
 | **運用負荷・コスト最小** | Cognito Plus は AI ベース自動判定、Keycloak は宣言的フロー |
 
@@ -177,7 +177,7 @@ flowchart LR
 | **条件付き MFA（リスクベース、IP / 地理 / デバイス）**| ❌ | ✅ **Adaptive Authentication**（risk score）| ✅ Conditional Flow（カスタムロジック）| Cognito Plus は AI 駆動、Keycloak は宣言的 |
 | **端末記憶（Trusted Device、N 日 MFA スキップ）**| ✅ Remember Device | ✅ Remember Device | ⚠ 設定要 | Cognito が標準 |
 | **管理者 MFA 強制** | ✅ | ✅ | ✅ | 両方標準 |
-| **フェデユーザー MFA 重複回避** | ⚠ Pre Token Lambda 個別実装 | ⚠ 同上 | ✅ Conditional OTP（標準）| **[§3.2.3](03-federation.md#323-mfa-重複回避--fr-fed-012) 参照** |
+| **フェデユーザー MFA 重複回避** | ⚠ Pre Token Lambda 個別実装 | ⚠ 同上 | ✅ Conditional OTP（標準）| **[§FR-2.2.3](02-federation.md#323-mfa-重複回避--fr-fed-012) 参照** |
 | **MFA 失敗時の動作**（一定回数でロック）| ✅ Lockout 設定 | ✅ | ✅ Brute Force Detection | 両方標準 |
 | **AI / 行動バイオメトリクス** | ❌ | ⚠ ContextData 経由で外部連携 | ❌ | 将来トレンド |
 
@@ -189,8 +189,8 @@ flowchart LR
 | 条件付き MFA | **有効**（リスクスコア >= 中で MFA 要求）| Cognito Plus or Keycloak Conditional Flow |
 | 端末記憶 | 有効、**30 日**スキップ | 0〜90 日 |
 | 管理者 MFA | **強制**（Must）| 設定不可（常時 ON）|
-| フェデユーザー MFA | **外部 IdP に委譲**（重複回避、[§3.2.3](03-federation.md#323-mfa-重複回避--fr-fed-012)）| 信頼するか個別判断 |
-| MFA 失敗時ロック | 5 回失敗で 30 分（[§2.2 アカウントロック](02-auth.md#22-パスワードローカルユーザー管理-fr-auth-12)と統一）| 任意 |
+| フェデユーザー MFA | **外部 IdP に委譲**（重複回避、[§FR-2.2.3](02-federation.md#323-mfa-重複回避--fr-fed-012)）| 信頼するか個別判断 |
+| MFA 失敗時ロック | 5 回失敗で 30 分（[§FR-1.2 アカウントロック](01-auth.md#22-パスワードローカルユーザー管理-fr-auth-12)と統一）| 任意 |
 
 ### 適用フロー例
 
@@ -229,7 +229,7 @@ flowchart TD
 
 ---
 
-### 参考資料（§4 全体）
+### 参考資料（§FR-3 全体）
 
 - [NIST SP 800-63B Rev 4 公式](https://pages.nist.gov/800-63-4/sp800-63b.html)
 - [NIST SP 800-63B-4 (PDF)](https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-63B-4.pdf)
