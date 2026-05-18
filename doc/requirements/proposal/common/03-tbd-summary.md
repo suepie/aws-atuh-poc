@@ -38,6 +38,9 @@
 | 6 | [§NFR-7.1 規制](../nfr/07-compliance.md) | **適用地域・データ所在地制約** | GDPR / ISMAP 等で構成変化 | — |
 | 7 | [§FR-3.1 MFA 要素](../fr/03-mfa.md) | **Passkey / WebAuthn 必須か** | Cognito Plus または Keycloak で対応、Lite/Essentials は不可 | — |
 | 8 | [§NFR-4.3 攻撃対策](../nfr/04-security.md) | **侵害クレデンシャル検出 Must か** | Cognito Plus または Keycloak+HIBP 必須 | — |
+| 9 | [§FR-1.2.0.0 利用者カテゴリ](../fr/01-auth.md#fr-1200-ローカルユーザーとは何か--利用者カテゴリ別の分析) | **ローカルユーザー範囲シナリオ**（α 全カテゴリ / β 管理者+IdP なし顧客 / **γ 管理者のみ（推奨）** / δ Break Glass のみ）| ローカルユーザー数規模 → 運用負荷・MFA 対象・侵害検出対象範囲・コスト全般に波及 | [§FR-1.2.0.B](../fr/01-auth.md), [§NFR-3.1](../nfr/03-scalability.md), [§NFR-6.5](../nfr/06-operations.md) |
+| 10 | [§FR-1.2.0.0 利用者カテゴリ](../fr/01-auth.md#fr-1200-ローカルユーザーとは何か--利用者カテゴリ別の分析) | **想定顧客の IdP 普及率**（90%+ → γ 採用可、50-90% → β、<50% → α 必要）| 上記シナリオ #9 の判定根拠 | — |
+| 11 | [§FR-1.2.0.0 P-1 認証](../fr/01-auth.md#fr-1200-ローカルユーザーとは何か--利用者カテゴリ別の分析) | **基盤運用管理者の認証方式**（弊社内 IdP 連携 + Break Glass / 完全ローカル） | 弊社内 IdP を §FR-2 で接続対象に追加するか | [§FR-2.1](../fr/02-federation.md), [§NFR-4.5](../nfr/04-security.md) |
 
 ---
 

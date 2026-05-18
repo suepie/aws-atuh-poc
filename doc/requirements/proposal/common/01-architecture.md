@@ -49,14 +49,18 @@ flowchart LR
 
 ```mermaid
 flowchart TB
-    subgraph Customers["顧客企業の IdP 群(Spoke)"]
+    subgraph CustomerIdP["顧客企業の IdP 群(Spoke - 一般従業員 P-3/P-4 用)"]
         C1["Acme<br/>Entra ID"]
         C2["Globex<br/>Okta"]
         C3["HENNGE<br/>顧客"]
         C4["AD 直結<br/>顧客"]
     end
 
-    Hub["共通認証基盤<br/>(Hub = Identity Broker)<br/>属性正規化 + 統一 JWT 発行"]
+    subgraph InternalIdP["弊社内 IdP (基盤運用管理者 P-1 用)"]
+        I1["弊社<br/>Entra ID 等"]
+    end
+
+    Hub["共通認証基盤<br/>(Hub = Identity Broker)<br/>属性正規化 + 統一 JWT 発行<br/>+ Break Glass 用<br/>最小ローカル管理者"]
 
     subgraph Apps["各バックエンドシステム(RP)"]
         A1["経費精算"]
@@ -69,13 +73,20 @@ flowchart TB
     C2 -->|OIDC| Hub
     C3 -->|SAML| Hub
     C4 -->|LDAP| Hub
+    I1 -->|OIDC<br/>(基盤運用者用)| Hub
     Hub -->|統一 JWT| A1
     Hub -->|統一 JWT| A2
     Hub -->|統一 JWT| A3
     Hub -->|統一 JWT| A4
 
     style Hub fill:#fff3e0,stroke:#e65100
+    style InternalIdP fill:#f3e5f5,stroke:#7b1fa2
 ```
+
+> **利用者カテゴリの位置付け**（[§FR-1.2.0.0](../fr/01-auth.md#fr-1200-ローカルユーザーとは何か--利用者カテゴリ別の分析) と整合）:
+> - **顧客 IdP 群（Spoke）**: 顧客の一般従業員（P-3）+ テナント管理者（P-2、顧客 IdP あり時）の認証
+> - **弊社内 IdP**: 基盤運用管理者（P-1）の認証。**γ シナリオ採用時に Must**
+> - **共通基盤内最小ローカル**: Break Glass 用ローカル管理者（数名）+ IdP なし顧客分（シナリオ β / α 時の P-2/P-4）
 
 #### このスタンスの業界根拠
 
