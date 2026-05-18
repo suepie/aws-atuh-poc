@@ -465,8 +465,8 @@ flowchart LR
     end
 
     HR -->|SCIM 自動同期| AdminAPI
-    Dev -->|テナント管理者 Token<br/>(Admin REST API)| AdminAPI
-    CI -->|Client Credentials Token<br/>(Admin REST API)| AdminAPI
+    Dev -->|"テナント管理者 Token<br/>(Admin REST API)"| AdminAPI
+    CI -->|"Client Credentials Token<br/>(Admin REST API)"| AdminAPI
     User -->|セルフサービス| SelfUI
     AdminAPI --> IDP
     SelfUI --> IDP

@@ -303,10 +303,10 @@ flowchart LR
     AppEnd -->|HTTPS 認証| AuthHosted
     AppEnd -->|セルフサービス| AuthHosted
     AppLambda -->|Token 取得| AppSM
-    AppLambda -->|JWT 検証<br/>(VPCE)| AuthJWKS
-    AppLambda -->|管理操作<br/>(Bearer Token)| AuthAdmin
+    AppLambda -->|"JWT 検証<br/>(VPCE)"| AuthJWKS
+    AppLambda -->|"管理操作<br/>(Bearer Token)"| AuthAdmin
     AppCI -->|Token 取得| AppSM
-    AppCI -->|Provisioning<br/>(Bearer Token)| AuthAdmin
+    AppCI -->|"Provisioning<br/>(Bearer Token)"| AuthAdmin
 
     style Auth fill:#fff3e0,stroke:#e65100
     style App fill:#e3f2fd,stroke:#1565c0

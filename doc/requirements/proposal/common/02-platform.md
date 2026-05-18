@@ -74,6 +74,8 @@ flowchart LR
 > **主な判断軸**: 各プラットフォームの性質（マネージド vs 自己ホスト）、ライセンス、サポートライフサイクル、エコシステム   
 > **§C-2 全体との関係**: §C-2.2 以降の選定論点を判断する **共通土台**
 
+> 💡 **本番想定構成図 / マルチアカウント連携 / Auto Scaling / DR / 月額コスト試算** の詳細は内部技術メモ [`platform-architecture-patterns.md`](../../../common/platform-architecture-patterns.md) を参照。**3 プラットフォームそれぞれの mermaid 構成図と選定ガイドが含まれる**（最新化対象）。
+
 ### 3 候補の基本特性
 
 | 観点 | AWS Cognito | Keycloak OSS | Keycloak RHBK |
