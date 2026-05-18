@@ -1,7 +1,7 @@
 # §FR-3 MFA（多要素認証）
 
-> 上位 SSOT: [00-index.md](00-index.md)
-> 詳細: [../../functional-requirements.md §3 FR-MFA](../../functional-requirements.md)、[../../../adr/009-mfa-responsibility-by-idp.md](../../../adr/009-mfa-responsibility-by-idp.md)
+> 上位 SSOT: [00-index.md](00-index.md)   
+> 詳細: [../../functional-requirements.md §3 FR-MFA](../../functional-requirements.md)、[../../../adr/009-mfa-responsibility-by-idp.md](../../../adr/009-mfa-responsibility-by-idp.md)   
 > カバー範囲: FR-MFA §3.1 要素 / §3.2 適用ポリシー
 
 ---
@@ -68,8 +68,8 @@ flowchart LR
 
 ## §FR-3.1 MFA 要素（→ FR-MFA §3.1）
 
-> **このサブセクションで定めること**: 本基盤がサポートする MFA 認証手段（TOTP / WebAuthn・Passkeys / SMS OTP / Email OTP / バックアップコード / ハードウェアキー）の範囲と推奨度。
-> **主な判断軸**: 目標 NIST AAL レベル、Passkeys を Must とするか、SMS / Email OTP の必要性、ハードウェアキー対応
+> **このサブセクションで定めること**: 本基盤がサポートする MFA 認証手段（TOTP / WebAuthn・Passkeys / SMS OTP / Email OTP / バックアップコード / ハードウェアキー）の範囲と推奨度。   
+> **主な判断軸**: 目標 NIST AAL レベル、Passkeys を Must とするか、SMS / Email OTP の必要性、ハードウェアキー対応   
 > **§FR-3 全体との関係**: §FR-3.1 = 「**何で MFA するか**」、§FR-3.2 = 「**いつ・誰に MFA を要求するか**」
 
 ### 業界の現在地（2026 年時点の調査結果）
@@ -151,8 +151,8 @@ flowchart LR
 
 ## §FR-3.2 MFA 適用ポリシー（→ FR-MFA §3.2）
 
-> **このサブセクションで定めること**: MFA を**いつ・誰に・どんな条件で要求するか**（ロール単位 / リスクベース / 端末記憶 / 管理者強制 / フェデユーザー重複回避）。
-> **主な判断軸**: MFA 強制の粒度、条件付き MFA（リスクベース）の要否、端末記憶の有効期間、ロール別ポリシー
+> **このサブセクションで定めること**: MFA を**いつ・誰に・どんな条件で要求するか**（ロール単位 / リスクベース / 端末記憶 / 管理者強制 / フェデユーザー重複回避）。   
+> **主な判断軸**: MFA 強制の粒度、条件付き MFA（リスクベース）の要否、端末記憶の有効期間、ロール別ポリシー   
 > **§FR-3 全体との関係**: §FR-3.1 で「何で MFA するか」を決め、§FR-3.2 で「**いつ要求するか**」を決める。フェデユーザー MFA 重複回避は [§FR-2.2.3](02-federation.md#323-mfa-重複回避--fr-fed-012) と連動
 
 ### 業界の現在地
@@ -233,6 +233,83 @@ flowchart TD
 
 ---
 
+## §FR-3.3 ステップアップ認証（RFC 9470）
+
+> **このサブセクションで定めること**: 業務操作の機密度に応じて**動的に認証強度を引き上げる**仕組み（OAuth 2.0 Step Up Authentication Challenge Protocol、RFC 9470）の採用方針と実装方式。
+> **主な判断軸**: 高セキュ操作（決済 / 管理画面 / 大量データダウンロード等）で「現在の AAL では不足」と判定して追加 MFA を要求する設計が必要か
+> **§FR-3 全体との関係**: §FR-3.1 = 「どの MFA 手段を備えるか」、§FR-3.2 = 「いつ MFA を要求するか（適用ポリシー）」、§FR-3.3 = 「**操作ごとに段階的に認証強度を引き上げるか**」
+
+### 業界の現在地
+
+**RFC 9470（2023 公開）**：OAuth 2.0 Step Up Authentication Challenge Protocol
+
+| 仕様 | 内容 |
+|---|---|
+| エラーコード | `insufficient_user_authentication`（HTTP 401）|
+| `acr_values` パラメータ | リソースサーバーが「要求する最低 ACR 値」を返す（例: `aal3`）|
+| `max_age` パラメータ | 「最終認証からの最大経過秒数」を返す（例: `300` = 5 分以内に再認証必須）|
+| クライアントの動作 | チャレンジ受領後、`authorize` リクエストで `acr_values` / `max_age` を指定して再認証 |
+
+**典型シナリオ**:
+- 通常画面: パスワード + TOTP（AAL2）でログイン
+- 決済画面アクセス → API が `acr_values=aal3` を要求
+- → 認可サーバーが追加で Passkey を要求
+- → 完了後、AAL3 セッションで決済処理続行
+
+**業界実装状況（2026）**:
+- **Keycloak**: Step-up Authentication 標準対応（Authentication Flow + LoA Condition で宣言的実装）
+- **Duende IdentityServer**: 標準サポート
+- **Auth0**: ACR Step-up が標準機能
+- **Cognito**: ネイティブ非対応（Custom Auth Challenge Lambda で自前実装が必要）
+
+### 我々のスタンス（基本方針に基づく）
+
+| 基本方針の柱 | ステップアップ認証での実現 |
+|---|---|
+| **絶対安全** | 重要操作時に動的に AAL を引き上げ、漏洩セッション利用攻撃を遮断 |
+| **どんなアプリでも** | RFC 9470 標準準拠で、各アプリは `WWW-Authenticate` ヘッダーを返すだけ |
+| **効率よく** | 通常時は AAL2 で UX 維持、重要操作時のみ追加 MFA |
+| **運用負荷・コスト最小** | Keycloak は宣言的フロー、Cognito は Lambda 実装 |
+
+### 対応能力マトリクス
+
+| 機能 | Cognito | Keycloak (OSS/RHBK) |
+|---|:---:|:---:|
+| `acr_values` 標準対応 | ⚠ User Pool で公式サポート限定的 | ✅ ネイティブ対応 |
+| RFC 9470 サポート | ⚠ Custom Auth Challenge Lambda で自前実装 | ✅ **Authentication Flow + LoA Condition** で宣言的 |
+| `max_age` パラメータ | ✅ | ✅ |
+| `acr` クレーム発行 | ⚠ Pre Token Lambda で注入 | ✅ 標準 |
+| `amr` クレーム発行 | ✅ | ✅ |
+
+### ベースライン
+
+| 項目 | ベースライン |
+|---|---|
+| ステップアップ採用判断 | 高セキュ操作（決済 / 管理画面 / 個人情報大量出力 等）が業務にあれば **Should** |
+| 標準 AAL | AAL2（TOTP）|
+| ステップアップ後 AAL | AAL3（Passkey / WebAuthn）|
+| max_age（重要操作の再認証猶予）| 5 分（300 秒）|
+| 実現方式 | Keycloak: Authentication Flow + LoA Condition / Cognito: Custom Auth Challenge Lambda |
+
+### ハイブリッド運用との関係
+
+[`bff-implementation-notes.md §11.2.6`](../../../common/bff-implementation-notes.md) で扱う **BFF ハイブリッド運用（一部システムのみ BFF）における ACR step-up MFA** は、本サブセクション (§FR-3.3) の RFC 9470 実装と**同一の仕組み**。
+
+- 通常アプリ（PKCE / AAL2）でログイン
+- 高セキュ システム（BFF / AAL3 要求）に遷移時、RFC 9470 で追加 MFA を要求
+- SSO セッションを AAL3 に**昇格**
+
+### TBD / 要確認
+
+| 確認項目 | 回答例 |
+|---|---|
+| 高セキュ操作の有無 | 決済 / 管理画面 / 大量データダウンロード / なし |
+| ステップアップ採用の要否 | Must / Should / Could / 不要 |
+| ステップアップで要求する MFA 手段 | Passkey / TOTP / SMS OTP |
+| プラットフォーム選定への影響 | RFC 9470 Must / 宣言的実装を希望 → **Keycloak** |
+
+---
+
 ### 参考資料（§FR-3 全体）
 
 - [NIST SP 800-63B Rev 4 公式](https://pages.nist.gov/800-63-4/sp800-63b.html)
@@ -242,3 +319,10 @@ flowchart TD
 - [SMS OTP 世界的禁止動向](https://mojoauth.com/blog/6-reasons-sms-otp-is-being-banned-worldwide-and-what-to-deploy-instead)
 - [Cognito Adaptive Authentication 公式](https://docs.aws.amazon.com/cognito/latest/developerguide/cognito-user-pool-settings-adaptive-authentication.html)
 - [Microsoft Entra Passkeys 2026 Update](https://en.ittrip.xyz/microsoft-365/entra-passkeys-fido2-2026)
+
+#### ステップアップ認証
+
+- [RFC 9470 - OAuth 2.0 Step Up Authentication Challenge Protocol](https://datatracker.ietf.org/doc/html/rfc9470)
+- [RFC 9470 解説 - Authlete](https://www.authlete.com/developers/stepup_authn/)
+- [Step-up Authentication with Keycloak](https://medium.com/@ahmedmohamedelahmar/step-up-authentication-with-keycloak-9906ba819964)
+- [Cognito Custom Auth Challenge Lambda Triggers](https://docs.aws.amazon.com/cognito/latest/developerguide/user-pool-lambda-challenge.html)

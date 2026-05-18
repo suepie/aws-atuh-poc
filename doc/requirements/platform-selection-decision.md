@@ -218,18 +218,18 @@ Q: C3 商用サポートが必須要件か？
 
 > 確定後に記入。テンプレート例:
 >
-> 「**第一推奨: Pn**（合計スコア XX）」
-> 「**第二推奨: Pm**（合計スコア YY）」
+> 「**第一推奨: Pn**（合計スコア XX）」   
+> 「**第二推奨: Pm**（合計スコア YY）」   
 > 「**理由**: ...」
 
 ### 5.2 採用条件
 
 > 第一推奨案を採用するために満たすべき条件を列挙する:
 >
-> - [ ] Red Hat 商用サポートの正式契約（Q1 / Q7 完了）
-> - [ ] HTTPS / カスタムドメイン化（[ADR-011](../adr/011-auth-frontend-network-design.md)）
-> - [ ] start-dev → start --optimized 化（[ADR-008](../adr/008-keycloak-start-dev-for-poc.md) の解消）
-> - [ ] DR 構成の確定（Hot / Warm / Cold）
+> - [ ] Red Hat 商用サポートの正式契約（Q1 / Q7 完了）   
+> - [ ] HTTPS / カスタムドメイン化（[ADR-011](../adr/011-auth-frontend-network-design.md)）   
+> - [ ] start-dev → start --optimized 化（[ADR-008](../adr/008-keycloak-start-dev-for-poc.md) の解消）   
+> - [ ] DR 構成の確定（Hot / Warm / Cold）   
 > - [ ] 移行戦略の合意（[migration-strategy.md](migration-strategy.md)（未作成））
 
 ### 5.3 棄却した案とその理由

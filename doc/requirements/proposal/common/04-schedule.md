@@ -1,7 +1,7 @@
 # §C-4 想定スケジュール
 
-> 上位 SSOT: [00-index.md](00-index.md)
-> 詳細プロセス: [../../requirements-process-plan.md](../../requirements-process-plan.md)（4 段階プロセスの実装可能性評価フレーム・終了基準）
+> 上位 SSOT: [00-index.md](00-index.md)   
+> 詳細プロセス: [../../requirements-process-plan.md](../../requirements-process-plan.md)（4 段階プロセスの実装可能性評価フレーム・終了基準）   
 > ヒアリング戦略: [../../requirements-hearing-strategy.md](../../requirements-hearing-strategy.md)
 
 ---

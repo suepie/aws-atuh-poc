@@ -1,6 +1,6 @@
 # 機能要件一覧（functional-requirements.md）
 
-> 対象: 共有認証基盤（Cognito / Keycloak 比較）
+> 対象: 共有認証基盤（Cognito / Keycloak 比較）   
 > 関連: [auth-patterns.md](../common/auth-patterns.md)、[ADR-014](../adr/014-auth-patterns-scope.md)
 
 ---
@@ -57,7 +57,7 @@ FR-AUTH は性質の異なる 2 つの観点を含む。
 
 ローカル IdP モード（Broker 自体にユーザー DB を持つ運用）でのみ適用。フェデレーションユーザーは外部 IdP のポリシーに従う。
 
-> **Cognito ティア依存の機能**: FR-AUTH-010 / FR-AUTH-011 は Cognito のティア選定（Lite / Essentials / Plus）に依存する。詳細マトリクスは [ADR-016](../adr/016-cognito-feature-tier-selection.md) 参照。
+> **Cognito ティア依存の機能**: FR-AUTH-010 / FR-AUTH-011 は Cognito のティア選定（Lite / Essentials / Plus）に依存する。詳細マトリクスは [ADR-016](../adr/016-cognito-feature-tier-selection.md) 参照。   
 > なお Cognito Essentials ティアはフェデレーション課金が Lite と同額（$0.015/MAU）のため、FR-AUTH-010 / FR-MFA-002 を採用しても**フェデレーション利用なら追加コストは発生しない**。
 
 | ID | 要件 | 優先度 | Cognito | Keycloak | PoC | 状態 |

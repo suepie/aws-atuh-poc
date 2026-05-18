@@ -1,6 +1,6 @@
 # 非機能要件一覧（non-functional-requirements.md）
 
-> 対象: 共有認証基盤（Cognito / Keycloak 比較）
+> 対象: 共有認証基盤（Cognito / Keycloak 比較）   
 > 関連: [keycloak-network-architecture.md](../common/keycloak-network-architecture.md)、[ADR-006](../adr/006-cognito-vs-keycloak-cost-breakeven.md)
 
 ---

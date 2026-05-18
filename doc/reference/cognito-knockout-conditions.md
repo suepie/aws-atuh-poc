@@ -1,6 +1,6 @@
 # Cognito のノックアウト条件（採用不可・大幅制約条件の網羅）
 
-> 出典: AWS 公式ドキュメント（[Quotas](https://docs.aws.amazon.com/cognito/latest/developerguide/quotas.html), [FAQs](https://aws.amazon.com/cognito/faqs/)）+ 本 PoC 内検証 + 既存ドキュメント
+> 出典: AWS 公式ドキュメント（[Quotas](https://docs.aws.amazon.com/cognito/latest/developerguide/quotas.html), [FAQs](https://aws.amazon.com/cognito/faqs/)）+ 本 PoC 内検証 + 既存ドキュメント   
 > 関連: [auth-patterns.md](../common/auth-patterns.md)、[ADR-014](../adr/014-auth-patterns-scope.md)、[ADR-007](../adr/007-osaka-auth0-idp-limitation.md)
 
 ---

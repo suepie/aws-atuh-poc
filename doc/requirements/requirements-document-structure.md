@@ -1,6 +1,6 @@
 # 要件定義資料の構成案（SSOT）
 
-> 目的: 要件定義フェーズで作成すべきドキュメント体系・作成順序・**語る順序（ナラティブ）**・状態の単一情報源
+> 目的: 要件定義フェーズで作成すべきドキュメント体系・作成順序・**語る順序（ナラティブ）**・状態の単一情報源   
 > 位置付け: 本ドキュメントは要件定義フェーズの **SSOT (Single Source of Truth)**。プロセス（どう進めるか）は [requirements-process-plan.md](requirements-process-plan.md)、ヒアリング項目は [hearing-checklist.md](hearing-checklist.md) を参照。
 
 ---

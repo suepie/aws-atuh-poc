@@ -1,7 +1,7 @@
 # 共有認証基盤 要件定義 提示版（SSOT）
 
-> ステータス: 🚧 サブセクションごとに合意取り中
-> 対象読者: 顧客（要件定義 初期合意フェーズ）
+> ステータス: 🚧 サブセクションごとに合意取り中   
+> 対象読者: 顧客（要件定義 初期合意フェーズ）   
 > 上位 SSOT: [../requirements-document-structure.md](../requirements-document-structure.md)
 
 ---

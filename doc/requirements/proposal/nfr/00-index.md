@@ -1,7 +1,7 @@
 # 非機能要件（NFR）— インデックス + IPA マッピング
 
-> 上位 SSOT: [../00-index.md](../00-index.md)
-> 詳細: [../../non-functional-requirements.md](../../non-functional-requirements.md)
+> 上位 SSOT: [../00-index.md](../00-index.md)   
+> 詳細: [../../non-functional-requirements.md](../../non-functional-requirements.md)   
 > 関連: [IPA 非機能要求グレード 2018](https://www.ipa.go.jp/archive/digital/iot-en-ci/jyouryuu/hikinou/index.html)
 
 ---

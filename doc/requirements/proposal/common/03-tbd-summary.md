@@ -1,7 +1,7 @@
 # §C-3 TBD / 要確認 事項サマリー
 
-> 上位 SSOT: [00-index.md](00-index.md)
-> 詳細: [../../hearing-checklist.md](../../hearing-checklist.md)
+> 上位 SSOT: [00-index.md](00-index.md)   
+> 詳細: [../../hearing-checklist.md](../../hearing-checklist.md)   
 > 関連: [requirements-process-plan.md](../../requirements-process-plan.md)
 
 ---

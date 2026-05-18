@@ -1,6 +1,6 @@
 # 認証パターン総覧と Cognito / Keycloak 対応マトリクス
 
-> 対象: 共有認証基盤の利用シナリオ全体
+> 対象: 共有認証基盤の利用シナリオ全体   
 > 関連: [ADR-014](../adr/014-auth-patterns-scope.md)（採用パターン範囲の判断）
 
 PoC 現状は **SPA + Authorization Code + PKCE** のみ検証済。本ドキュメントでは、共有認証基盤として想定される全認証パターンを整理し、Cognito / Keycloak それぞれでの実現方法・制約・ネットワーク要件をまとめる。

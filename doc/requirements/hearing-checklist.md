@@ -1,7 +1,7 @@
 # ヒアリング項目チェックリスト（Single Source of Truth）
 
-> 目的: 全 TBD 項目を Phase 別に一覧化し、ヒアリング進捗を一元管理
-> 上位 SSOT: [requirements-document-structure.md](requirements-document-structure.md)
+> 目的: 全 TBD 項目を Phase 別に一覧化し、ヒアリング進捗を一元管理   
+> 上位 SSOT: [requirements-document-structure.md](requirements-document-structure.md)   
 > 顧客提示版との対応: [proposal/00-index.md](proposal/00-index.md)（`proposal/fr/`, `proposal/nfr/`, `proposal/common/` 配下の各章と本表は `proposal §` 列で対応）
 
 ---
@@ -28,10 +28,10 @@
 | Phase | 項目数 | 🔥 最優先 | 🟡 重要 | 🟢 通常 | 状態 |
 |-------|:----:|:------:|:----:|:----:|:---:|
 | A. 事業要件 | 14 | 5 | 6 | 3 | ⏳ |
-| B. 技術要件 | 59 | 11 | 32 | 16 | ⏳ |
-| C. 運用・セキュリティ要件 | 35 | 12 | 18 | 5 | ⏳ |
+| B. 技術要件 | 60 | 11 | 33 | 16 | ⏳ |
+| C. 運用・セキュリティ要件 | 37 | 12 | 19 | 6 | ⏳ |
 | D. 最終判断 | 6 | 6 | 0 | 0 | ⏳ |
-| **合計** | **114** | **34** | **56** | **24** | — |
+| **合計** | **117** | **34** | **58** | **25** | — |
 
 **プラットフォーム選定への影響度が高い項目（🔥 最優先 34 件）を Stage 1 前半で先行確認**することで、ADR-014 / ADR-015 / ADR-016 / ADR-017 を早期確定できる。
 
@@ -72,6 +72,7 @@
 | B-106 | 🔥 | **mTLS** | FR-AUTH-007 | §FR-1.1 | FAPI 準拠 / 高セキュリティ M2M の必要性? | Yes/No | | ⏳ |
 | B-107 | 🟡 | ネイティブモバイル | FR-AUTH 全般 | §FR-1.1 | iOS / Android アプリの有無? | Yes/No + 件数 | | ⏳ |
 | B-108 | 🟡 | **SPA 認証方式（BFF vs PKCE 直接）** | FR-AUTH-002 | §FR-1.1 | IETF/Curity/Duende が 2025 年から **BFF を gold standard** として推奨。BFF パターン採用か PKCE 直接か? | BFF / PKCE 直接 / 段階移行 | | ⏳ |
+| **B-109** | 🟡 | **DPoP（RFC 9449、Sender-Constrained Tokens）** | FR-AUTH-015 想定 | §FR-1.1 | mTLS の代替として DPoP 採用要否?（FAPI 2.0 準拠 / Open Banking / 高セキュリティ API。**Yes → Keycloak 必須**、Cognito 標準非対応）| Yes/No | | ⏳ |
 
 ### B-2. IdP 接続種別（→ FR-FED §2.1 / proposal §FR-2.1）
 
@@ -201,6 +202,8 @@
 | C-213 | 🟢 | **MFA 要素の登録個数制限** | FR-MFA 全般 | §FR-3.1 | 1 ユーザーあたりの MFA 要素登録個数?（業界推奨：複数許可）| 1 / 複数 | | ⏳ |
 | C-214 | 🟡 | **条件付き MFA の判定軸** | FR-MFA-006 | §FR-3.2 | リスクベース MFA の判定軸?（IP / 地理 / デバイス / 時間帯 / 行動パターン）| 判定軸リスト | | ⏳ |
 | C-215 | 🟢 | **端末記憶の有効期間** | FR-MFA-008 | §FR-3.2 | Trusted Device の MFA スキップ期間?（業界デフォルト: 30 日、範囲 0〜90 日）| 日数 | | ⏳ |
+| **C-216** | 🟡 | **ステップアップ認証（RFC 9470）の要否** | FR-MFA 全般 / FR-AUTHZ | §FR-3.3 | 高セキュ操作（決済 / 管理画面 / 大量データ出力等）で**動的に AAL を引き上げる**仕組みが必要か?（RFC 9470。Yes → 宣言的実装なら Keycloak、Cognito は Lambda 自前実装）| Yes/No + 対象操作 | | ⏳ |
+| **C-217** | 🟢 | **CAEP / 継続的アクセス評価（将来発展）** | FR-SSO-010 / NFR-SEC | §FR-5.4 | リアルタイム deprovision / デバイス侵害時の即時遮断 / リスクシグナル伝播が必要か?（**現時点 Cognito/Keycloak とも未対応**、将来発展経路として位置付け）| 必須 / 将来検討 / 不要 | | ⏳ |
 
 ### C-3. 運用体制（🔥 RHBK サポート要否決定 / proposal §C-2, §NFR-6）
 
@@ -233,7 +236,7 @@
 ```mermaid
 flowchart TB
     Start[ヒアリング開始]
-    Q1{B-104〜106 / B-202 / B-203 / B-504 / B-704<br/>のいずれか Yes?}
+    Q1{B-104〜106 / B-109 / B-202 / B-203 / B-504 / B-704 / C-216<br/>のいずれか Yes?}
     Q2{C-201 FIPS 必須?}
     Q3{C-301 24/7 サポート必須?}
     KC[Keycloak 確定]
@@ -257,9 +260,13 @@ flowchart TB
     style OSS fill:#e8f5e9
 ```
 
-**早期に B-104〜106 / B-202 / B-203 / B-504 / B-704 / C-201 / C-301 を確認できれば、プラットフォーム選定の見通しが立つ**。
+**早期に B-104〜106 / B-109 / B-202 / B-203 / B-504 / B-704 / C-216 / C-201 / C-301 を確認できれば、プラットフォーム選定の見通しが立つ**。
 
-※ B-504（Back-Channel Logout）と B-704（Access Token Revocation）も Keycloak 必須要因として追加（proposal §FR-5 で詳述）。
+※ Keycloak 必須要因に以下を追加（proposal §FR-1.1 / §FR-3.3 / §FR-5 で詳述）:
+- B-109（DPoP / RFC 9449、FAPI 2.0 準拠）
+- B-504（Back-Channel Logout、確実なログアウト伝播）
+- B-704（Access Token Revocation、即時無効化）
+- C-216（ステップアップ認証 / RFC 9470、宣言的実装）
 
 ## 補足: Cognito ティア選定の判定フロー（[ADR-016](../adr/016-cognito-feature-tier-selection.md)）
 
@@ -344,6 +351,7 @@ C-210（NIST AAL レベル）が確定すれば、C-211 / C-206-2 / C-206-3 / B-
 
 | 日付 | 内容 |
 |---|---|
+| 2026-05-18 | 業界最新動向 3 項目を補完: B-109（DPoP / RFC 9449）、C-216（ステップアップ認証 / RFC 9470）、C-217（CAEP / 継続的アクセス評価）。proposal §FR-1.1 / §FR-3.3 / §FR-5.4 と整合 |
 | 2026-05-15 | proposal 章番号体系を §FR-X / §NFR-X / §C-X に全面リナンバリング（proposal フォルダが fr/ nfr/ common/ に再編されたことに伴う） |
 | 2026-05-14 | C-204-5 追加（既存システムで独自ローカル認証を持つアプリの有無、§2.2.0 / §11.3 連動）|
 | 2026-05-14 | proposal §4 / §5 / §6 章拡充・章リナンバリング反映、23 項目補完（B-606〜B-612, B-701〜B-706, B-801〜B-803, C-206-3, C-210〜C-215）|

@@ -1,7 +1,7 @@
 # §C-5 参考：弊社内の事前検証について
 
-> 上位 SSOT: [00-index.md](00-index.md)
-> 内部資料: [../../poc-summary-evaluation.md](../../poc-summary-evaluation.md)
+> 上位 SSOT: [00-index.md](00-index.md)   
+> 内部資料: [../../poc-summary-evaluation.md](../../poc-summary-evaluation.md)   
 > 位置付け: **顧客向けには控えめ提示**（PoC 報告書ではない）。詳細は内部資料に委譲。
 
 ---

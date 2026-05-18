@@ -1,7 +1,7 @@
 # §NFR-4 セキュリティ
 
-> 上位 SSOT: [../00-index.md](../00-index.md) / [00-index.md](00-index.md)
-> 詳細: [../../non-functional-requirements.md §4 NFR-SEC](../../non-functional-requirements.md)
+> 上位 SSOT: [../00-index.md](../00-index.md) / [00-index.md](00-index.md)   
+> 詳細: [../../non-functional-requirements.md §4 NFR-SEC](../../non-functional-requirements.md)   
 > **IPA 非機能要求グレード対応**: **E. セキュリティ** — 認証 / アクセス制限 / データ秘匿 / 不正追跡・監査 / マルウェア対策 / Web 対策
 
 ---
@@ -87,8 +87,8 @@ flowchart LR
 
 ## §NFR-4.1 暗号化・鍵管理
 
-> **このサブセクションで定めること**: 通信・データ・パスワード・シークレットの暗号化方式と鍵管理。
-> **主な判断軸**: TLS バージョン、ハッシュアルゴリズム、KMS 鍵ローテーション
+> **このサブセクションで定めること**: 通信・データ・パスワード・シークレットの暗号化方式と鍵管理。   
+> **主な判断軸**: TLS バージョン、ハッシュアルゴリズム、KMS 鍵ローテーション   
 > **§NFR-4 全体との関係**: 多層防御の最下層（情報保護の物理的基盤）
 
 ### 業界の現在地
@@ -123,8 +123,8 @@ flowchart LR
 
 ## §NFR-4.2 トークン・セッション
 
-> **このサブセクションで定めること**: アクセストークン / リフレッシュトークン / ID トークンの TTL、Refresh Token Rotation の方針。
-> **主な判断軸**: NIST AAL 整合（24h / 1h）、漏洩時被害最小化
+> **このサブセクションで定めること**: アクセストークン / リフレッシュトークン / ID トークンの TTL、Refresh Token Rotation の方針。   
+> **主な判断軸**: NIST AAL 整合（24h / 1h）、漏洩時被害最小化   
 > **§NFR-4 全体との関係**: [§FR-5 ログアウト・セッション管理](../fr/05-logout-session.md) と整合
 
 ### 業界の現在地
@@ -164,8 +164,8 @@ flowchart LR
 
 ## §NFR-4.3 攻撃対策
 
-> **このサブセクションで定めること**: ブルートフォース / 侵害クレデンシャル / DDoS / 脆弱性に対する防御策。
-> **主な判断軸**: NIST Rev 4 必須要件（侵害クレデンシャル検出）、業界規制
+> **このサブセクションで定めること**: ブルートフォース / 侵害クレデンシャル / DDoS / 脆弱性に対する防御策。   
+> **主な判断軸**: NIST Rev 4 必須要件（侵害クレデンシャル検出）、業界規制   
 > **§NFR-4 全体との関係**: 認証基盤に対する直接攻撃を防ぐ
 
 ### 業界の現在地
@@ -206,8 +206,8 @@ flowchart LR
 
 ## §NFR-4.4 ネットワーク・境界制御
 
-> **このサブセクションで定めること**: ネットワークレベルでの保護（WAF / Private Subnet / 管理画面アクセス / 内部通信）。
-> **主な判断軸**: ネットワーク分離の深さ、管理画面の保護
+> **このサブセクションで定めること**: ネットワークレベルでの保護（WAF / Private Subnet / 管理画面アクセス / 内部通信）。   
+> **主な判断軸**: ネットワーク分離の深さ、管理画面の保護   
 > **§NFR-4 全体との関係**: 多層防御の最外層
 
 ### 業界の現在地
@@ -244,6 +244,92 @@ flowchart LR
 |---|---|
 | 管理者アクセス経路 | VPN / Bastion / IP 制限 |
 | JWKS 公開要否 | 公開（推奨）/ VPC 内完結（厳格セキュリティ）|
+
+---
+
+## §NFR-4.5 クロスアカウント IAM 設計（共通基盤 ↔ アプリ）
+
+> **このサブセクションで定めること**: 共通基盤専用 AWS アカウントとアプリ AWS アカウント間の **IAM 信頼関係 / アクセス権限分離 / Service Credentials の保管方針**。   
+> **主な判断軸**: 最小権限原則、人の操作と機械の操作の分離、Service Credential の保護   
+> **§NFR-4 全体との関係**: §NFR-4.4 ネットワーク境界制御 と対をなす **論理境界制御**。[§FR-1.2.0.B](../fr/01-auth.md) Layer 1-4 と [§NFR-6.4 構成変更プロセス](06-operations.md) の前提
+
+### 業界の現在地
+
+- **AWS Multi-Account Strategy 公式ガイド** (2020-2026): Identity を **専用アカウント** に集約、各ワークロードは別アカウント、cross-account IAM Role で必要最小限の信頼関係
+- **AWS IAM Identity Center** (旧 SSO): 全アカウントへの人間アクセスを一元化、ABAC（属性ベース）で権限制御
+- **NIST SP 800-204 Microservices Security**: 「Service identities should be distinct from human identities」（人と機械を分離）
+- **OAuth 2.0 Client Credentials Grant**: 機械間認証の業界標準。AWS IAM とは独立した認証チャネル
+
+### 共通基盤アカウント側の IAM 設計
+
+| アクセス主体 | 認証手段 | 権限スコープ | 用途 |
+|---|---|---|---|
+| **共通基盤運用チーム（人）** | AWS IAM Identity Center → 管理者 Role | 共通基盤アカウント全体 | 構成変更、緊急対応 |
+| **共通基盤運用チーム CI/CD** | AWS IAM Role（OIDC Federation from GitHub Actions） | Terraform Apply に必要な範囲 | [§NFR-6.4](06-operations.md) の構成変更適用 |
+| **アプリ運用チーム（人）** | **AWS IAM 権限なし** | — | 操作は OAuth 経由（下記） |
+| **アプリ運用チーム（OAuth）** | 共通基盤発行の OAuth Client（Layer 3 委譲管理者）| 自テナント内 Admin REST API のみ | [§NFR-6.5](06-operations.md) C-1〜C-4 |
+| **アプリ CI/CD（機械）** | 共通基盤発行の OAuth Client（Layer 4 Service Credentials）| Admin REST API 限定スコープ | SCIM / 自動 provisioning |
+| **アプリのバックエンド（機械）** | JWKS 検証のみ（認証不要、公開鍵で検証）| JWT 検証 | JWT 受取・検証 |
+| **エンドユーザー（人）** | 共通基盤の Hosted UI / Account Console | セルフサービス範囲 | パスワードリセット / MFA 設定 |
+| **監査人 / 外部監査** | AWS IAM Identity Center → Read-Only Role | 監査ログのみ | コンプライアンス監査 |
+
+### アプリアカウント側の Service Credential 管理
+
+| 項目 | 推奨デフォルト |
+|---|---|
+| Service Credentials 保管 | **AWS Secrets Manager**（自動ローテーション設定）|
+| Token 取得経路 | アプリ → Secrets Manager → Client Credentials Grant → 共通基盤 |
+| Token キャッシュ | Lambda Layer / ECS サイドカーで取得 + キャッシュ（TTL 内）|
+| Rotation 頻度 | **3 ヶ月**（Secrets Manager 自動）|
+| Audit 可視性 | アプリアカウント側で CloudTrail（Secrets Manager 使用ログ）|
+
+### クロスアカウント通信の経路設計
+
+```mermaid
+flowchart LR
+    subgraph App["アプリアカウント"]
+        AppEnd[エンドユーザー]
+        AppLambda[Lambda /<br/>バックエンド]
+        AppSM[Secrets<br/>Manager]
+        AppCI[CI/CD]
+    end
+
+    subgraph Auth["共通基盤アカウント"]
+        AuthHosted[Hosted UI /<br/>Account Console]
+        AuthAdmin[Admin REST API<br/>OAuth で保護]
+        AuthJWKS[JWKS Endpoint<br/>VPC PrivateLink]
+    end
+
+    AppEnd -->|HTTPS 認証| AuthHosted
+    AppEnd -->|セルフサービス| AuthHosted
+    AppLambda -->|Token 取得| AppSM
+    AppLambda -->|JWT 検証<br/>(VPCE)| AuthJWKS
+    AppLambda -->|管理操作<br/>(Bearer Token)| AuthAdmin
+    AppCI -->|Token 取得| AppSM
+    AppCI -->|Provisioning<br/>(Bearer Token)| AuthAdmin
+
+    style Auth fill:#fff3e0,stroke:#e65100
+    style App fill:#e3f2fd,stroke:#1565c0
+```
+
+### ベースライン
+
+| 項目 | 推奨デフォルト |
+|---|---|
+| アプリ運用チームへの AWS IAM 権限 | **付与しない**（OAuth で運用）|
+| Service Credentials | 共通基盤発行、アプリ側 Secrets Manager 保管、3 ヶ月で自動 Rotation |
+| 構成変更時のクロスアカウント IAM | Terraform 実行 Role に必要最小限の Trust Relationship |
+| 監査ログのクロスアカウント参照 | Security Lake / 集約 S3 経由、Read-Only Role |
+| VPC 間通信 | **VPC PrivateLink**（JWKS / Admin API いずれもインターネット経由しない選択肢を提供）|
+
+### TBD / 要確認
+
+| 確認項目 | 回答例 |
+|---|---|
+| アプリ運用チームへの AWS IAM 付与方針 | 付与しない（推奨）/ 緊急時のみ Break Glass Role |
+| Service Credentials の Rotation 頻度 | 1 ヶ月 / 3 ヶ月 / 半年 |
+| JWKS / Admin API の経路 | パブリック / VPC PrivateLink 必須 |
+| 監査人の権限スコープ | 全ログ / 自社分のみ |
 
 ---
 

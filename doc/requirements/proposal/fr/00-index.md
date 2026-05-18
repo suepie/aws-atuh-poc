@@ -1,6 +1,6 @@
 # 機能要件（FR）章一覧
 
-> 上位 SSOT: [../00-index.md](../00-index.md)
+> 上位 SSOT: [../00-index.md](../00-index.md)   
 > 詳細マトリクス: [../../functional-requirements.md](../../functional-requirements.md)（FR-AUTH/FED/MFA/SSO/AUTHZ/USER/ADMIN/INT）
 
 ---

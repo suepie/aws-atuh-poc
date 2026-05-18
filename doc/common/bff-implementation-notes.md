@@ -1,6 +1,6 @@
 # BFF パターン実装ノート（内部技術メモ）
 
-> 位置付け: **内部技術メモ**。顧客向け説明は [proposal/fr/01-auth.md §FR-1.1](../requirements/proposal/fr/01-auth.md) に最小限のみ記載
+> 位置付け: **内部技術メモ**。顧客向け説明は [proposal/fr/01-auth.md §FR-1.1](../requirements/proposal/fr/01-auth.md) に最小限のみ記載   
 > 関連: [auth-patterns.md §2.1](auth-patterns.md)、[authz-architecture-design.md](authz-architecture-design.md)、[architecture.md](architecture.md)、[ADR-014](../adr/014-auth-patterns-scope.md)
 
 ---

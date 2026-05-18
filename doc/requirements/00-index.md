@@ -3,7 +3,7 @@
 PoC完了後の要件定義フェーズに向けた資料。
 報告・調整・ヒアリングの基盤となるドキュメント群。
 
-> 🌟 **まずここから**: [requirements-document-structure.md](requirements-document-structure.md) が要件定義フェーズの **SSOT (Single Source of Truth)**。
+> 🌟 **まずここから**: [requirements-document-structure.md](requirements-document-structure.md) が要件定義フェーズの **SSOT (Single Source of Truth)**。   
 > §0 ナラティブ（要件定義の語る順序）／§8 ドキュメント間の依存関係と読み順／§9 ドキュメント状態ダッシュボード が全体把握の入口。
 >
 > 📣 **顧客向け要件定義提示**: [proposal/00-index.md](proposal/00-index.md)（フォルダ化済、章ごとにファイル分割、FR/NFR と 1:1 対応、サブセクション単位でベースライン提示 + TBD/要確認）

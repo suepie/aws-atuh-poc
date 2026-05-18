@@ -1,6 +1,6 @@
 # システム設計パターン集
 
-> 対象: 共有認証基盤を利用する 8 つの代表的システム構成
+> 対象: 共有認証基盤を利用する 8 つの代表的システム構成   
 > 関連: [keycloak-network-architecture.md](keycloak-network-architecture.md)、[auth-patterns.md](auth-patterns.md)
 
 ---
