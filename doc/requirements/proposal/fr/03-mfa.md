@@ -24,7 +24,7 @@
 flowchart LR
     S2["§FR-1 認証<br/>(基本フロー)"]
     S3["§FR-2 フェデレーション<br/>(外部 IdP)"]
-    S4["§FR-3 MFA ← イマココ<br/>北極星「絶対安全」の核心"]
+    S4["§FR-3 MFA ← イマココ<br/>基本方針「絶対安全」の核心"]
     S5["§FR-4 SSO<br/>(セッション)"]
     S323["§FR-2.2.3<br/>MFA 重複回避<br/>(フェデユーザー)"]
 
@@ -36,7 +36,7 @@ flowchart LR
     style S4 fill:#fff3e0,stroke:#e65100
 ```
 
-**MFA は北極星 4 軸の「絶対安全」を実現する最重要要素**。理由：
+**MFA は基本方針 4 軸の「絶対安全」を実現する最重要要素**。理由：
 - パスワード単独突破が依然として攻撃ベクター 1 位
 - NIST SP 800-63B Rev 4 で AAL2 以上では MFA 必須化
 - B2B SaaS では侵害被害が顧客全社に波及するため、MFA を疎かにできない
@@ -51,7 +51,11 @@ flowchart LR
 | フェデユーザーの MFA 重複回避 | 各アプリで個別判定 | **基盤側で `amr` クレームを検査して一元判定**（[§FR-2.2.3](02-federation.md#323-mfa-重複回避--fr-fed-012)）|
 | MFA 適用ポリシー変更 | 全アプリ改修が必要 | **基盤側設定のみで反映** |
 
-→ 共通認証基盤で MFA を中央集約することが、北極星「**絶対安全・どんなアプリでも・効率よく・運用負荷低**」を全て満たす唯一の道。
+→ 共通認証基盤で MFA を中央集約することが、基本方針「**絶対安全・どんなアプリでも・効率よく・運用負荷低**」を全て満たす唯一の道。
+
+### §FR-3.0.A 本基盤の MFA スタンス
+
+> **NIST SP 800-63B Rev 4 の AAL2（MFA 必須）以上に準拠する。Phishing-resistant な Passkey / WebAuthn を第一選択とし、TOTP / SMS / Email / ハードウェアキーも要件次第で対応。フェデユーザーは外部 IdP の `amr` クレームを検査して MFA 重複回避（[§FR-2.2.3](02-federation.md)）。**
 
 ### 本章で扱うサブセクション
 
@@ -98,9 +102,9 @@ flowchart LR
 
 → NIST も「downgrade（弱体扱い）」、CISA も「phishing-resistant に非該当」と分類。**今後の新規実装では非推奨**。レガシー互換目的のみ。
 
-### 我々のスタンス（北極星に基づく）
+### 我々のスタンス（基本方針に基づく）
 
-| 北極星の柱 | MFA 要素での実現 |
+| 基本方針の柱 | MFA 要素での実現 |
 |---|---|
 | **絶対安全** | **Passkeys（phishing-resistant）を強く推奨**。NIST AAL2/AAL3 整合、業界 87% 採用 |
 | **どんなアプリでも** | TOTP / WebAuthn / SMS / Email / バックアップ すべてサポート可能、顧客選択 |
@@ -159,9 +163,9 @@ flowchart LR
 - 2026 トレンド：AI 駆動、行動バイオメトリクス、継続的認証
 - 市場規模：$2.98B by 2030（CAGR 15.5%）
 
-### 我々のスタンス（北極星に基づく）
+### 我々のスタンス（基本方針に基づく）
 
-| 北極星の柱 | MFA ポリシーでの実現 |
+| 基本方針の柱 | MFA ポリシーでの実現 |
 |---|---|
 | **絶対安全** | ロール単位での MFA 強制、条件付き MFA でリスク評価 |
 | **どんなアプリでも** | フェデユーザーは外部 IdP の MFA を尊重（[§FR-2.2.3](02-federation.md#323-mfa-重複回避--fr-fed-012)）|
@@ -197,7 +201,7 @@ flowchart LR
 ```mermaid
 flowchart TD
     Login[ユーザーログイン試行] --> CheckFed{フェデ<br/>ユーザー?}
-    CheckFed -- Yes --> CheckExtMFA{外部 IdP で<br/>MFA 済み<br/>(amr claim)?}
+    CheckFed -- Yes --> CheckExtMFA{"外部 IdP で<br/>MFA 済み<br/>(amr claim)?"}
     CheckExtMFA -- Yes --> Success[認証成功<br/>MFA スキップ]
     CheckExtMFA -- No --> RequireMFA
     CheckFed -- No --> CheckRole{ロール = 管理者?}

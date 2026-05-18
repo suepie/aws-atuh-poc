@@ -1,6 +1,5 @@
 # 機能要件一覧（functional-requirements.md）
 
-> 最終更新: 2026-05-13（Cognito 2024-11 仕様変更反映 / Phase 9 反映 / 実装実態と整合）
 > 対象: 共有認証基盤（Cognito / Keycloak 比較）
 > 関連: [auth-patterns.md](../common/auth-patterns.md)、[ADR-014](../adr/014-auth-patterns-scope.md)
 

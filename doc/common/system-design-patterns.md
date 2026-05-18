@@ -1,6 +1,5 @@
 # システム設計パターン集
 
-> 最終更新: 2026-05-08
 > 対象: 共有認証基盤を利用する 8 つの代表的システム構成
 > 関連: [keycloak-network-architecture.md](keycloak-network-architecture.md)、[auth-patterns.md](auth-patterns.md)
 

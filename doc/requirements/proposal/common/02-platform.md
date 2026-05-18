@@ -349,7 +349,7 @@ flowchart LR
 flowchart TD
     Start[開始：要件確定済]
 
-    Q1{§C-2.2.A Keycloak<br/>必須要件のいずれか Must?<br/>(A-1〜A-11)}
+    Q1{"§C-2.2.A Keycloak<br/>必須要件のいずれか Must?<br/>(A-1〜A-11)"}
     Q1 -->|Yes| Q2[Keycloak 確定]
     Q1 -->|No| Q3{§C-2.3 規模<br/>< 17.5 万 MAU?}
 

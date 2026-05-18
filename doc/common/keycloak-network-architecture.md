@@ -1,6 +1,5 @@
 # Keycloak ネットワーク構成（実装実態ベース）
 
-> 最終更新: 2026-04-21（Option B: カスタム VPC + VPC Endpoint 方式へ移行）
 > 対象: PoC の Keycloak 環境（infra/keycloak/ 配下）
 
 PoC 実装（Terraform コード）から導出した、**現実のネットワーク構成・IP 制限の実態**をまとめる。

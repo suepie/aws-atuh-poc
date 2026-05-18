@@ -1,6 +1,5 @@
 # 非機能要件一覧（non-functional-requirements.md）
 
-> 最終更新: 2026-05-13（Cognito 2024-11 仕様変更反映 / Plus ティア追加課金 / Rate Limit 注記）
 > 対象: 共有認証基盤（Cognito / Keycloak 比較）
 > 関連: [keycloak-network-architecture.md](../common/keycloak-network-architecture.md)、[ADR-006](../adr/006-cognito-vs-keycloak-cost-breakeven.md)
 

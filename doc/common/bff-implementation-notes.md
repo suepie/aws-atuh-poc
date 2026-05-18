@@ -1,6 +1,5 @@
 # BFF パターン実装ノート（内部技術メモ）
 
-> 最終更新: 2026-05-14
 > 位置付け: **内部技術メモ**。顧客向け説明は [proposal/fr/01-auth.md §FR-1.1](../requirements/proposal/fr/01-auth.md) に最小限のみ記載
 > 関連: [auth-patterns.md §2.1](auth-patterns.md)、[authz-architecture-design.md](authz-architecture-design.md)、[architecture.md](architecture.md)、[ADR-014](../adr/014-auth-patterns-scope.md)
 
@@ -556,7 +555,7 @@ flowchart TB
 | 顧客タイプ | 推奨 |
 |---|---|
 | 金融 / 医療 / 行政 / 個人情報多用 SaaS | **BFF 採用必須** |
-| B2B SaaS（一般業務） | **BFF 推奨**（北極星「絶対安全」と整合）|
+| B2B SaaS（一般業務） | **BFF 推奨**（基本方針「絶対安全」と整合）|
 | 社内ツール / 機密性低 | PKCE 直接でも可、ただし XSS 対策強化 |
 | AI Agent / CLI / Mobile | PKCE 直接（Device Code 含む、BFF 不要）|
 

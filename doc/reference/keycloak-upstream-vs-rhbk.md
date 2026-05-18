@@ -1,6 +1,5 @@
 # Keycloak: Upstream（OSS版）vs Red Hat build of Keycloak（RHBK）
 
-> 最終更新: 2026-04-24
 > 対象: 共有認証基盤の本番ディストリビューション選定検討
 
 ---

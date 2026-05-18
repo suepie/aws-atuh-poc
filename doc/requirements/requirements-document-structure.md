@@ -1,6 +1,5 @@
 # 要件定義資料の構成案（SSOT）
 
-> 最終更新: 2026-05-14（proposal/ を fr/ nfr/ common/ サブフォルダ化、§FR-X / §NFR-X / §C-X 番号体系、IPA 非機能要求グレード マッピング追加）
 > 目的: 要件定義フェーズで作成すべきドキュメント体系・作成順序・**語る順序（ナラティブ）**・状態の単一情報源
 > 位置付け: 本ドキュメントは要件定義フェーズの **SSOT (Single Source of Truth)**。プロセス（どう進めるか）は [requirements-process-plan.md](requirements-process-plan.md)、ヒアリング項目は [hearing-checklist.md](hearing-checklist.md) を参照。
 
@@ -8,11 +7,11 @@
 
 ## 0. 要件定義の語る順序（ナラティブ）
 
-### 0.1 本基盤の北極星（全要件のトーン判断基準）
+### 0.1 本基盤の基本方針（全要件のトーン判断基準）
 
 本基盤は **「絶対安全に、どんなアプリでも、効率よく認証し、運用負荷やコストがかからない」共通認証基盤** を目指す。すべての要件は次の 4 軸で評価する：
 
-| 北極星の柱 | 解釈 |
+| 基本方針の柱 | 解釈 |
 |---|---|
 | **絶対安全** | セキュリティ最優先（OAuth 2.1 / NIST SP 800-63B Rev 4 / 業界最新ベストプラクティス準拠）|
 | **どんなアプリでも** | 認証フロー・IdP・クライアント種別の網羅性 |
@@ -69,7 +68,7 @@ doc/requirements/
 │
 ├── [顧客向け要件定義提示・社内総括]
 │   ├── proposal/                        ← 顧客向け要件定義 提示版（fr/ nfr/ common/ にサブフォルダ化）
-│   │   ├── 00-index.md                  ← proposal SSOT（北極星・5 ステップ・章ナビ）
+│   │   ├── 00-index.md                  ← proposal SSOT（基本方針・5 ステップ・章ナビ）
 │   │   ├── fr/                          ← 機能要件 §FR-1 〜 §FR-9
 │   │   │   ├── 00-index.md
 │   │   │   ├── 01-auth.md               ← §FR-1 認証
@@ -132,7 +131,7 @@ doc/requirements/
 
 **proposal/ の構成**（[proposal/00-index.md](proposal/00-index.md) 参照）:
 
-- **00-index.md** = SSOT（はじめに・北極星・5 ステップ・章ナビ）
+- **00-index.md** = SSOT（はじめに・基本方針・5 ステップ・章ナビ）
 - **fr/** 配下（§FR-1 〜 §FR-9、FR カタログ §1〜§8 と対応）:
   - fr/00-index.md = FR 章一覧
   - fr/01-auth.md = §FR-1 認証（§1.1 認証フロー / §1.2 パスワード）
@@ -173,7 +172,7 @@ doc/requirements/
 **各章の冒頭規約（§X.0 前提と背景）**: proposal/ 配下の各章（§FR-X / §NFR-X / §C-X）は冒頭に **§X.0「前提と背景」**を必ず置く。構成：
 1. **用語整理** — 本章で扱う概念の定義（共通認証基盤の文脈で）
 2. **なぜここ（§X）で決めるか** — 他章との関係を mermaid で図化
-3. **§X.0.A 本基盤のスタンス** — 北極星 4 軸への立場明示（推奨）
+3. **§X.0.A 本基盤のスタンス** — 基本方針 4 軸への立場明示（推奨）
 4. **本章で扱うサブセクションの一覧**
 
 NFR 章は加えて **IPA グレードの中項目とのマッピング表**を §X.0 内に置く。
@@ -525,35 +524,37 @@ flowchart LR
 
 > 各ドキュメントの作成・更新状況を一元管理。状態は実際の作成状況に応じて更新する。
 
+> 「最終更新」列は git log で確認できるため省略。状態欄のみメンテナンスする。
+
 ### 9.1 顧客向け要件定義提示・社内総括
 
-| ドキュメント | 役割 | 状態 | 最終更新 |
-|---|---|:---:|---|
-| **[proposal/](proposal/00-index.md)** ⭐ | **顧客向け要件定義 提示版**（fr/ nfr/ common/ サブフォルダ化、FR/NFR と 1:1 対応、IPA グレード マッピング付き）| 🚧 FR 全章記載済 / NFR 全章 IPA マッピング骨格済 / common 骨格 | 2026-05-14 |
-| [poc-summary-evaluation.md](poc-summary-evaluation.md) | **社内** PoC 成果総括・不足箇所分析（要件提示の裏どり） | ✅ Done | 2026-05-13 |
+| ドキュメント | 役割 | 状態 |
+|---|---|:---:|
+| **[proposal/](proposal/00-index.md)** ⭐ | **顧客向け要件定義 提示版**（fr/ nfr/ common/ サブフォルダ化、FR/NFR と 1:1 対応、IPA グレード マッピング付き）| 🚧 FR 全章記載済 / NFR 全章 IPA マッピング骨格済 / common 骨格 |
+| [poc-summary-evaluation.md](poc-summary-evaluation.md) | **社内** PoC 成果総括・不足箇所分析（要件提示の裏どり） | ✅ Done |
 
 ### 9.2 ヒアリング
 
-| ドキュメント | 役割 | 状態 | 最終更新 |
-|---|---|:---:|---|
-| [requirements-hearing-strategy.md](requirements-hearing-strategy.md) | Phase A〜D の進め方 | ✅ Done | 2026-04-21 |
-| [hearing-checklist.md](hearing-checklist.md) | 全 67 項目の TBD 一覧 | ✅ Done | 2026-05-13 |
-| hearing-phase-a.md | 事業要件ヒアリング記録 | ⏳ 未実施 | — |
-| hearing-phase-b.md | 技術要件ヒアリング記録 | ⏳ 未実施 | — |
-| hearing-phase-c.md | 運用・セキュリティ要件記録 | ⏳ 未実施 | — |
-| hearing-phase-d.md | 最終判断会議記録 | ⏳ 未実施 | — |
+| ドキュメント | 役割 | 状態 |
+|---|---|:---:|
+| [requirements-hearing-strategy.md](requirements-hearing-strategy.md) | Phase A〜D の進め方 | ✅ Done |
+| [hearing-checklist.md](hearing-checklist.md) | 全 67 項目の TBD 一覧 | ✅ Done |
+| hearing-phase-a.md | 事業要件ヒアリング記録 | ⏳ 未実施 |
+| hearing-phase-b.md | 技術要件ヒアリング記録 | ⏳ 未実施 |
+| hearing-phase-c.md | 運用・セキュリティ要件記録 | ⏳ 未実施 |
+| hearing-phase-d.md | 最終判断会議記録 | ⏳ 未実施 |
 
 ### 9.3 要件定義書
 
-| ドキュメント | 役割 | 状態 | 最終更新 |
-|---|---|:---:|---|
-| **requirements-document-structure.md（本 SSOT）** | 構成・ナラティブ・状態 | 🔄 SSOT 化済（継続更新） | 2026-05-13 |
-| [requirements-process-plan.md](requirements-process-plan.md) | 4 段階プロセス・終了基準 | ✅ Done | 2026-05-08 |
-| [functional-requirements.md](functional-requirements.md) | 機能要件一覧（~75 件、全 8 カテゴリ サブセクション化済） | 🔄 ヒアリング待ち（TBD 多数） | 2026-05-13 |
-| [non-functional-requirements.md](non-functional-requirements.md) | 非機能要件一覧（~75 件、SEC/PERF/OPS/COMP サブセクション化済） | 🔄 ヒアリング待ち（TBD 多数） | 2026-05-13 |
-| [platform-selection-decision.md](platform-selection-decision.md) | Cognito / Keycloak 選定判断 | 🚧 ドラフト（評価基準のみ） | 2026-05-08 |
-| [rhbk-vendor-inquiry.md](rhbk-vendor-inquiry.md) | Red Hat 問い合わせ文面 | ✅ Done（送付待ち） | — |
-| requirements-spec.md | 要件定義書本体 | 📋 未着手 | — |
+| ドキュメント | 役割 | 状態 |
+|---|---|:---:|
+| **requirements-document-structure.md（本 SSOT）** | 構成・ナラティブ・状態 | 🔄 SSOT 化済（継続更新） |
+| [requirements-process-plan.md](requirements-process-plan.md) | 4 段階プロセス・終了基準 | ✅ Done |
+| [functional-requirements.md](functional-requirements.md) | 機能要件一覧（~75 件、全 8 カテゴリ サブセクション化済） | 🔄 ヒアリング待ち（TBD 多数） |
+| [non-functional-requirements.md](non-functional-requirements.md) | 非機能要件一覧（~75 件、SEC/PERF/OPS/COMP サブセクション化済） | 🔄 ヒアリング待ち（TBD 多数） |
+| [platform-selection-decision.md](platform-selection-decision.md) | Cognito / Keycloak 選定判断 | 🚧 ドラフト（評価基準のみ） |
+| [rhbk-vendor-inquiry.md](rhbk-vendor-inquiry.md) | Red Hat 問い合わせ文面 | ✅ Done（送付待ち） |
+| requirements-spec.md | 要件定義書本体 | 📋 未着手 |
 
 ### 9.4 付録
 

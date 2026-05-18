@@ -119,9 +119,9 @@ flowchart LR
 - 「**Multiple vendors and cloud providers support OIDC, reducing integration friction**」
 - 「**When multiple applications trust a shared identity provider, each relying party validates tokens independently using the JWKS, eliminating need to distribute shared secrets**」
 
-### 我々のスタンス（北極星に基づく）
+### 我々のスタンス（基本方針に基づく）
 
-| 北極星の柱 | プロトコル準拠での実現 |
+| 基本方針の柱 | プロトコル準拠での実現 |
 |---|---|
 | **絶対安全** | JWT 署名検証 + 鍵自動ローテーション（JWKS）、TLS 通信必須 |
 | **どんなアプリでも** | OIDC / SAML 準拠アプリ・SDK・Gateway なら全て接続可能 |
@@ -186,9 +186,9 @@ flowchart LR
 | Amazon Security Lake | ✅ ネイティブ | AWS マネージド |
 | CrowdStrike Falcon | ✅ | EDR 統合 |
 
-### 我々のスタンス（北極星に基づく）
+### 我々のスタンス（基本方針に基づく）
 
-| 北極星の柱 | ログ・監視での実現 |
+| 基本方針の柱 | ログ・監視での実現 |
 |---|---|
 | **絶対安全** | 全認証イベント記録、改ざん防止（CloudTrail / S3 immutable）|
 | **どんなアプリでも** | OCSF 準拠で SIEM 選定の自由度確保 |
@@ -253,9 +253,9 @@ flowchart LR
 - **同期 ACK + 非同期処理**（DLQ パターン）
 - 参考モデル：Stripe / GitHub / Shopify
 
-### 我々のスタンス（北極星に基づく）
+### 我々のスタンス（基本方針に基づく）
 
-| 北極星の柱 | API・IaC・Webhook での実現 |
+| 基本方針の柱 | API・IaC・Webhook での実現 |
 |---|---|
 | **絶対安全** | Webhook HMAC 署名必須、API は IAM/RBAC で保護 |
 | **どんなアプリでも** | 標準 REST API、Terraform、HTTP Webhook で任意連携 |
