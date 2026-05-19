@@ -192,13 +192,17 @@ flowchart LR
 
 #### A-8. FR-SSO-009 Access Token Revocation（RFC 7009）
 
+> **事実修正（2026-05 調査）**: 当初「Cognito は Access Token revoke 不可 / Keycloak は可」と記述したが、**事実は両者とも Access Token の個別 revoke は不可**。Refresh Token を revoke することで関連 Access Token を間接無効化する設計が両者共通。差は「外部リソースサーバーで revoke 反映する手段」にある。
+
 | 観点 | 内容 |
 |---|---|
-| **Cognito 状況** | ⚠ **Refresh Token のみ revoke 可**、Access Token は revoke 不可（自然失効を待つ）|
-| **代替手段** | (a) Access Token TTL を短く設定（5-15 分）→ 自然失効で吸収 / (b) Lambda + DynamoDB で jti blacklist 自前実装 |
-| **Keycloak** | ✅ RFC 7009 準拠の Token Revocation 標準対応 |
+| **Cognito 状況** | ⚠ `/oauth2/revoke` + `RevokeToken` API は **Refresh Token 対象**。Access Token は **`origin_jti` クレームを介して revoke 識別**。**外部リソースサーバー（Lambda Authorizer / API Gateway / 自前検証）は標準では revoke 情報を知らない**（公式: "Revoked tokens will still be valid if they are verified using any JWT library that verifies the signature and expiration"）|
+| **Cognito 代替手段** | (a) Access Token TTL を短く設定（5-15 分）→ 自然失効で吸収 / (b) `origin_jti` を Lambda Authorizer で revoke リスト照合（自前実装）/ (c) `AdminUserGlobalSignOut` で全 Token 強制無効化 |
+| **Keycloak 状況** | ⚠ `/protocol/openid-connect/revoke` は **RFC 7009 準拠（10.0.0+）だが Access Token 個別 revoke は不可**（公式: "Keycloak chose not to support invalidating individual access tokens"）。Refresh Token revoke で関連 Access Token を間接無効化 |
+| **Keycloak 代替手段** | (a) Access Token TTL を短く設定 / (b) **Token Introspection (`/introspect`) を外部リソースサーバーが都度問い合わせ**（標準提供、パフォーマンスコスト）/ (c) Logout API で全セッション破棄 |
+| **両者の差** | **構造は同じ、実装の手軽さで Keycloak 有利**（Introspection 標準提供 vs `origin_jti` 自前実装）|
 | **いつ必要** | 盗難時の**即時無効化**、退職時即時アクセス遮断、規制要件（即時 revocation 法定義務） |
-| **回避可能か** | 多くの場合 (a) の短 TTL で吸収可能。法定即時無効化が Must なら **Keycloak 必須** |
+| **回避可能か** | (a) の短 TTL で大半吸収可能（両者共通）。完全即時無効化が Must なら Keycloak の Introspection 経由 or Cognito の origin_jti 自前実装、どちらでも対応可だが Keycloak が楽 |
 
 #### A-9. FR-AUTHZ-009 UMA 2.0（User-Managed Access）
 
@@ -230,7 +234,35 @@ flowchart LR
 | **いつ必要** | 顧客企業の管理者が**自社テナント内のユーザー / ロール / MFA ポリシーを自律管理** |
 | **回避可能か** | 可能だが Cognito では実装 / テスト / セキュリティレビューの負担大。委譲 Must なら Keycloak 推奨 |
 
-→ **A-1〜A-11 のいずれかが Must なら Keycloak（OSS or RHBK）必須化**。完全 knockout（不可能）は A-4 SAML IdP モード / A-3 FAPI 完全準拠。それ以外は **代替手段あり**だが**運用負荷大**。
+#### A-12. クロス IdP SSO 信頼レベル制御（L3 検証ありき信頼）
+
+> **詳細**: [§FR-4.2 リスクと対策可否マトリクス](../fr/04-sso.md#リスクと対策可否マトリクス事実調査ベース2026-05-時点)
+
+外部 IdP の SSO セッションを「**どこまで・どう信頼するか**」の制御（L1 完全信頼 / L2 部分信頼 / L3 検証ありき / L4 不信任）。規制業種顧客（金融・医療・PCI DSS）で L3 が必須となる場合、プラットフォーム選定に直結:
+
+| 観点 | 内容 |
+|---|---|
+| **Cognito 状況** | ⚠ **`acr_values` 未サポート、`max_age` 未サポート**。`prompt=login` のみ 2025-05〜（Essentials+ + Managed Login のみ）|
+| **Cognito 代替手段** | (a) Custom Auth Challenge Lambda で AAL 判定を自前実装 / (b) Pre Token Lambda V2 で `auth_time` 検査して古ければエラー / (c) `prompt=login` で毎回再認証（UX 最悪）|
+| **Keycloak 状況** | ✅ **`acr_values` / `max_age` / ACR-to-LoA Mapping すべて標準対応**（26.x、ただし `max_age` に複数バグあり: Issue #32764, #33641, #46078）|
+| **Keycloak 代替手段** | (a) Realm/Client レベルで ACR to LoA 設定 / (b) Step-up Authentication フロー / (c) IdP brokering 時は「Pass max_age」設定必須 |
+| **いつ必要** | 金融機関の業務系、PCI DSS 対象、規制業種（医療・防衛）、「**重要操作前に必ず本基盤で再認証**」の業務要件 |
+| **回避可能か** | Cognito では Lambda 自前実装で部分対応可だが、AAL 判定とステップアップフローの組み合わせは複雑度高。**L3 を Must とする顧客が多いなら Keycloak が事実上必須** |
+
+リスク 5 項目への対策可否（[§FR-4.2 リスク表](../fr/04-sso.md#リスクと対策可否マトリクス事実調査ベース2026-05-時点) 参照）:
+
+| リスク | Cognito で完全対処 | Keycloak で完全対処 |
+|---|:---:|:---:|
+| IdP セッション乗っ取り | ❌（両者軽減のみ）| ❌ |
+| 退職処理遅延 | △ 短 TTL + 自前 | △ 短 TTL + Introspection |
+| `amr` 偽装 | ✅ 接続承認制 | ✅ 接続承認制 |
+| AAL 不整合 | ❌ Lambda 自前 | ✅ ACR to LoA 標準 |
+| 古い `auth_time` | ❌ 未対応 | ⚠ 標準だが 26.x バグ |
+| **合計（完全/標準対処）** | **1/5** | **2.5/5** |
+
+→ A-12 は **A-1〜A-11 と並ぶ Keycloak 必須化要因の 12 番目**。L3 検証ありき信頼が必須なら Keycloak へ。
+
+→ **A-1〜A-12 のいずれかが Must なら Keycloak（OSS or RHBK）必須化**。完全 knockout（不可能）は A-4 SAML IdP モード / A-3 FAPI 完全準拠。それ以外は **代替手段あり**だが**運用負荷大**。
 
 ### B. Cognito 優位点（Keycloak が弱い領域）
 
