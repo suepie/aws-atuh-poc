@@ -197,13 +197,84 @@ BFF パターンを採用する場合の補足情報:
 - **既存リソースへの影響なし**: 既存の Lambda Authorizer / Backend Lambda は変更不要、BFF は「フロントとバックエンド API の間に挟む」追加レイヤー
 - **段階移行**: 既存 PKCE 直接 SPA と BFF 構成を並列稼働 → 段階的に移行可能
 
+##### B 補足-2: BFF の AWS アカウント配置と Lambda Authorizer との違い
+
+> **よくある誤解**: 「**BFF は Lambda Authorizer のようなもの**」と捉えがちだが、**両者は別レイヤー**で組み合わせて使うのが標準。
+
+**配置先 AWS アカウント**:
+
+| コンポーネント | 配置先 AWS アカウント | 理由 |
+|---|---|---|
+| 認可サーバー（Cognito / Keycloak）| **共通基盤アカウント** | 全アプリ共通の認証 SaaS 的存在 |
+| JWKS Endpoint | **共通基盤アカウント** | 公開鍵配布、複数アプリから参照 |
+| **BFF**（Lambda / ECS）| **アプリ AWS アカウント** | アプリの SPA 専用セッション管理、アプリ実装の一部 |
+| **セッションストア**（DynamoDB / Redis）| **アプリ AWS アカウント** | session_id ↔ token のマッピング保管（KMS 暗号化）|
+| Lambda Authorizer | **アプリ AWS アカウント** | API Gateway の JWT 検証ゲート |
+| Backend Lambda / ECS | **アプリ AWS アカウント** | 業務ロジック |
+
+→ **BFF とセッションストアと Lambda Authorizer はすべてアプリ側 AWS アカウント**に配置。共通基盤アカウントは認可サーバー + JWKS のみ。
+
+**BFF と Lambda Authorizer の責務の違い**:
+
+| 観点 | BFF | Lambda Authorizer |
+|---|---|---|
+| **主機能** | OAuth フロー実行 + トークン保管 + **セッション Cookie 発行** | API Gateway 受付時の **JWT 署名検証 + 認可判定** |
+| **入力** | ブラウザからの HTTP リクエスト + **セッション Cookie** | API Gateway からの **JWT (Authorization ヘッダー)** |
+| **出力** | バックエンド API へのプロキシ + ブラウザへの応答 | API Gateway への **allow / deny ポリシー** |
+| **状態保持** | あり（**セッションストア / トークンキャッシュ**）| なし（リクエストごとに JWT 検証）|
+| **使用プロトコル** | OAuth 2.0 Client (Confidential) | JWT 検証（RFC 7519）|
+| **役割の例え** | **ブラウザ用フロントドア** | **API のセキュリティガード** |
+
+→ **BFF は Lambda Authorizer の代替ではなく追加レイヤー**。両方をアプリ側に置く構成が標準。
+
+**全体フロー（BFF + Lambda Authorizer の組み合わせ、クロスアカウント表現）**:
+
+```mermaid
+sequenceDiagram
+    participant User as エンドユーザー
+    participant SPA as SPA<br/>(ブラウザ)
+    participant BFF as BFF<br/>(アプリAWS)
+    participant Store as セッション<br/>ストア<br/>(アプリAWS)
+    participant Auth as 認可サーバー<br/>(共通基盤AWS)
+    participant APIGW as API Gateway<br/>(アプリAWS)
+    participant Authz as Lambda Authorizer<br/>(アプリAWS)
+    participant Backend as Backend Lambda<br/>(アプリAWS)
+
+    Note over User,Backend: ① ログインフロー
+    User->>SPA: アクセス
+    SPA->>BFF: /login
+    BFF->>Auth: Authorization Code + PKCE 認可リクエスト
+    Auth->>User: ログイン画面
+    User->>Auth: 認証情報 + MFA
+    Auth->>BFF: Authorization Code
+    BFF->>Auth: Code + PKCE verifier
+    Auth->>BFF: Access Token + Refresh Token + ID Token
+    BFF->>Store: トークンを KMS 暗号化保管
+    BFF->>SPA: HttpOnly Cookie (session_id)
+
+    Note over User,Backend: ② API 呼び出しフロー
+    User->>SPA: 業務操作
+    SPA->>BFF: /api/foo + session cookie
+    BFF->>Store: session_id → トークン取得
+    BFF->>APIGW: GET /foo + Authorization Bearer JWT
+    APIGW->>Authz: JWT 検証要求
+    Authz->>Auth: JWKS 取得 (キャッシュ済)
+    Authz->>APIGW: allow + 認可コンテキスト
+    APIGW->>Backend: GET /foo + コンテキスト
+    Backend->>APIGW: レスポンス
+    APIGW->>BFF: レスポンス
+    BFF->>SPA: レスポンス
+```
+
+→ **二重防御**: ブラウザは JWT に一切触れず（BFF が隠蔽）、API Gateway は JWT で守られる（Lambda Authorizer が検証）。**XSS 経由のトークン盗難リスクをほぼゼロ化**できる。
+
 → 「採用するか / しないか」の方向性合意のみ本資料で扱い、**実装詳細・構成図・移行プランは内部技術メモ [`bff-implementation-notes.md`](../../../common/bff-implementation-notes.md) に分離**。
 
 **C. オプションフローの要否（影響：プラットフォーム選定に直結）**
 
 | 要件 ID | フロー | 要否確認の問い | 影響 |
 |---|---|---|---|
-| FR-AUTH-005 | Token Exchange | マイクロサービス間でユーザー文脈を伝播させたい呼び出しがあるか | **Yes → Keycloak 必須**（Cognito 非対応）|
+| FR-AUTH-005 | Token Exchange | マイクロサービス間でユーザー文脈を伝播させたい呼び出しがあるか（詳細な業務質問・判定フローは **[§FR-6.3 マイクロサービス間トークンリレー](06-authz.md#fr-63-マイクロサービス間トークンリレー--ユーザー文脈伝播--fr-authz--fr-auth-005)** 参照）| **Yes → Keycloak 必須**（Cognito 非対応）|
 | FR-AUTH-006 | Device Code | CLI / IoT / Smart TV / AI Agent クライアントを認証する予定があるか | **Yes → Keycloak 必須** |
 | FR-AUTH-007 | mTLS | FAPI 準拠 / 金融取引 / 高セキュリティ M2M の要件があるか | **Yes → Keycloak 必須** |
 | FR-AUTH-015（新規想定）| **DPoP（RFC 9449）** | sender-constrained tokens / FAPI 2.0 準拠 / 高セキュリティ API があるか（mTLS の代替として）| **Yes → Keycloak 必須**（Keycloak 26.4 ネイティブ対応、Cognito は標準非対応）|

@@ -210,6 +210,19 @@ flowchart LR
 | LDAP / AD 直接連携が必要か | **Yes → Keycloak 必須**（Cognito 不可、FR-FED-007）|
 | 独自プロトコル IdP の有無 | ある場合は接続不可、ラッパー設計を要請 |
 
+**B'. SCIM Provisioning（プロビジョニング層、[§FR-7.4.0](07-user.md#fr-740-scim-の位置づけと本基盤のスタンス) と連動）**
+
+> 本基盤は SCIM 2.0 受信機能を実装する方針。顧客側の SCIM 対応状況を **顧客ごと**に確認する。
+
+| 確認項目 | 回答例 |
+|---|---|
+| **Q1: 顧客 IdP の SCIM Provisioning 対応** | Entra ID Premium P1+ / Okta（全プラン）/ Google Cloud Identity Premium / HENNGE One（要確認）/ 自社製（通常未対応）/ なし / 不明 |
+| **Q2: 顧客の SCIM 連携採用意思** | 採用希望 / 採用しない / 判断保留（顧客側で IdP 上位ライセンス + 連携設定が必要な旨を伝えた上で）|
+| **Q3（詳細）**: 顧客 HR システムと IdP の連携状況、入退社フローの現状 | 顧客内部の現状（Workday / SAP / 国産 HR 系 / なし 等）|
+| **Q4（Fallback）**: SCIM 不採用時、退職者 deprovisioning 責任を顧客側で持てるか | 顧客責任 / 弊社で定期バッチ運用希望 |
+
+→ Q1 / Q2 の答えで [§FR-7.4](07-user.md) のプロビジョニング運用方式が決まり、退職者対応 SLA（[§NFR-6.5 D-3](../nfr/06-operations.md)）にも影響。
+
 **C. Custom Domain**
 
 | 確認項目 | 回答例 |
@@ -489,6 +502,321 @@ flowchart LR
 | 1 顧客が極めて大規模（10 万 MAU 超）| 性能・コスト個別最適化 |
 
 → いずれもレアケース。**デフォルトは A 案**。
+
+---
+
+### §FR-2.3.A.1 何が分離・共有されているか — 論理分離の実態（顧客が必ず聞く論点）
+
+A 案（単一 Pool/Realm + 複数 IdP）を採用すると、**JIT で作成されるユーザーレコードが同一 Pool/Realm 内に同居**することになる。「**それでセキュリティは大丈夫なのか?**」という顧客からの懸念に答える。
+
+#### 同居の様子（実態）
+
+```mermaid
+flowchart LR
+    subgraph Acme["Acme 社の世界"]
+        AcmeIdP["Acme Entra ID<br/>パスワード/MFA はここ"]
+        AcmeAlice["alice@acme.com"]
+    end
+    subgraph Globex["Globex 社の世界"]
+        GlobexIdP["Globex Okta<br/>パスワード/MFA はここ"]
+        GlobexBob["bob@globex.com"]
+    end
+    subgraph Basis["共通認証基盤(単一 Pool/Realm)"]
+        Pool["JIT ユーザーレコード<br/>alice / bob 同居<br/>※ 論理分離 (tenant_id)"]
+    end
+
+    AcmeAlice -.OIDC.-> Pool
+    GlobexBob -.OIDC.-> Pool
+    AcmeIdP -.- AcmeAlice
+    GlobexIdP -.- GlobexBob
+
+    style Pool fill:#fff8e1
+```
+
+#### 何が分離・共有されているか（詳細マトリクス）
+
+| 要素 | 物理場所 | 分離方式 | テナント間で同居? |
+|---|---|---|:---:|
+| **パスワードハッシュ** | 各顧客 IdP（Entra/Okta）| 顧客 IdP 完全分離 | ❌ **同居しない（本基盤に来ない）**|
+| **MFA 設定**（TOTP/Passkey 秘密）| 各顧客 IdP | 顧客 IdP 完全分離 | ❌ 同居しない |
+| **認証アクション**（PW 検証 / MFA チャレンジ）| 各顧客 IdP で実行 | 顧客 IdP 完全分離 | ❌ 同居しない |
+| **JIT ユーザーレコード** | 本基盤 Pool/Realm | 論理分離（`custom:tenant_id` 属性 / `identities` クレーム）| ⚠ **同居（論理分離）**|
+| **メールアドレス / 表示名** | 本基盤側 | 論理分離 | ⚠ 同居 |
+| **Group / Role 割り当て** | 本基盤側 | テナント別ロール | ⚠ 同居 |
+| **発行する JWT** | 基盤発行 | `tenant_id` クレームで識別 | ✅ リクエストごとに分離 |
+| **SSO セッション Cookie** | 本基盤 | Pool 内共有、ただし JWT は別 | ⚠ Cookie 同居、JWT 分離 |
+| **業務データ** | 各アプリ DB | 共有 DB+`tenant_id` / DB 分離 / アカウント分離（[B-306](../../hearing-checklist.md)）| 設計次第 |
+| **IdP 接続設定** | 本基盤の Identity Provider 設定 | テナント別エントリ | ⚠ 同居（管理上分離）|
+
+#### 同居しているのは「公開可能な属性 + 論理分離タグ」のみ
+
+| 同居しているもの | 機密度 |
+|---|---|
+| email（公開情報、JWT で配布）| 低 |
+| 表示名 / 部署 / ロール | 低-中 |
+| ユーザー内部 ID（`sub` / UUID）| 公開 |
+| `tenant_id` / IdP リンク情報 | 低（識別タグ）|
+
+→ **認証クレデンシャル（パスワード・秘密鍵）は本基盤に存在しない**。これが業界標準で**論理分離が安全とされる最大の根拠**。
+
+#### 業界根拠（A 案論理分離の正当性）
+
+| 出典 | 主張 |
+|---|---|
+| **OWASP Multi-Tenant Security Cheat Sheet** | 「テナント境界は **`tenant_id` を全リクエストで強制**することで論理的に実現可。物理分離は規制要件時のみ」 |
+| **Microsoft Azure Architecture Center**（"Architectural Considerations for Identity in a Multitenant Solution"）| 「フェデレーション IdP 構成では、**ユーザーレコードの同居は標準。テナント境界は claim ベースで分離**」 |
+| **WorkOS B2B SaaS Multi-tenant Guide** | 「Slack / Notion / Linear など主要 B2B SaaS が単一 Pool + 論理分離で運用」 |
+| **Auth0 / Microsoft Entra External ID** | 単一 Tenant + Organization 機能で論理分離を標準採用 |
+| **Gartner 予測** | 2026 年までに新規デジタル製品の 75% 以上がマルチテナント論理分離をデフォルト採用 |
+
+#### A 案で残る攻撃面と対策
+
+論理分離は**正しく実装されていれば**物理分離と同等のセキュリティを実現可能。OWASP 観点での対策：
+
+| 攻撃ベクター | 対策 |
+|---|---|
+| **`tenant_id` クレーム改ざん** | 基盤側で**必ず注入**（Pre Token Lambda / Protocol Mapper、ユーザー自己申告 NG）+ JWT 署名検証 |
+| **JIT ユーザー作成時の混同**（Acme IdP が間違って Globex の email でユーザー作成）| First Broker Login Flow で既存ユーザーとの突合せ拒否、Identity Provider 単位の namespace 分離 |
+| **email 重複**（Acme と Globex で同じ email）| `tenant_id` + `email` 複合キーで識別、`Trust Email` 設定を慎重に |
+| **Cross-tenant IDOR** | リソース ID → tenant_id 解決 + JWT.tenant_id 一致確認（アプリ側責務、[§FR-6.1](06-authz.md) / [§FR-6.3](06-authz.md)）|
+| **Admin API での全ユーザー漏洩**（ListUsers）| Realm Admin / IAM Role でテナント別管理権限を分離 |
+| **キャッシュ汚染** | キャッシュキーに `tenant_id` プレフィックス必須 |
+
+詳細な実装方式は内部技術メモ [`identity-broker-multi-idp.md §10`](../../../common/identity-broker-multi-idp.md) 参照。
+
+#### 顧客への説明（推奨フレーズ）
+
+> 「**認証情報（パスワード・MFA）はお客様の IdP 側にあり、本基盤には決して送られません**。本基盤に保存されるのは、SSO 連携のために最小限必要な情報（メールアドレスとテナント所属タグ）のみで、これらは JWT に組み込んで各アプリに渡す前提の公開情報です。
+>
+> テナント間のアクセス分離は、JWT に必ず付与される `tenant_id` クレームを各アプリが検証することで実現します。これは Slack や Notion など主要 B2B SaaS で標準採用される設計で、OWASP・Microsoft Azure Architecture Center も推奨しています。
+>
+> 物理的にユーザーデータを完全分離したい場合（金融・医療など規制要件）は、お客様専用の Pool / Realm を別途用意することも可能です（B 案）。」
+
+#### TBD / 要確認
+
+| 確認項目 | 回答例 |
+|---|---|
+| 「ユーザーレコードが同居する」設計でセキュリティ要件を満たすか | はい（標準）/ いいえ（物理分離 = B 案）|
+| 物理分離が必要な特殊顧客の有無 | あり（業種名）/ なし |
+| Cross-tenant 攻撃対策の責務分担 | 基盤側で tenant_id 注入 / アプリ側で検証強制 |
+
+---
+
+### §FR-2.3.A.2 IdP なし顧客のローカルユーザー管理 — パスワードハッシュの同居問題
+
+§FR-2.3.A.1 では「フェデユーザー」（顧客 IdP 経由）の同居問題を扱った。本サブセクションは**「IdP を持たない顧客」のユーザー管理**を扱う。
+
+#### 問題の所在: パスワードハッシュも同居する
+
+```mermaid
+flowchart LR
+    subgraph IdPAri["IdP あり顧客 (Acme / Globex)"]
+        AcmeIdP["Acme Entra ID<br/>※ パスワードここ"]
+        AcmeUsers["Acme 社員"]
+    end
+    subgraph IdPNashi["⚠ IdP なし顧客 (DeltaCo)"]
+        DeltaUsers["DeltaCo 社員<br/>※ パスワードどこに?"]
+    end
+    subgraph Basis["共通認証基盤"]
+        Pool_Local["⚠ User Pool<br/>(ローカルユーザー DB<br/>+ パスワードハッシュ)"]
+    end
+
+    AcmeUsers -.OIDC.-> Pool_Local
+    AcmeIdP -.- AcmeUsers
+    DeltaUsers ==>|"パスワード保存"| Pool_Local
+
+    style Pool_Local fill:#fff8e1
+```
+
+→ **IdP なし顧客のユーザーをローカル管理すると、パスワードハッシュも本基盤側に保存される**。共通 Pool に集約すると、フェデユーザー以上に**強い「同居」状態**になる。
+
+| 顧客タイプ | パスワード保存先 | 本基盤での同居 |
+|---|---|---|
+| IdP あり顧客（Acme, Globex）| 顧客 IdP（Entra / Okta）| ユーザーレコードのみ同居 |
+| **IdP なし顧客**（DeltaCo）| **本基盤 User Pool**（PBKDF2/Argon2 ハッシュ）| **ユーザーレコード + パスワードハッシュ同居** |
+
+#### 4 つの選択肢
+
+```mermaid
+flowchart TB
+    Q["IdP なし顧客のユーザー管理"]
+    Q --> A["A. 共通 Pool に集約<br/>(ローカル管理)"]
+    Q --> B["B. 顧客別 Pool/Realm<br/>(物理分離)"]
+    Q --> C["C. 顧客向け Mini IdP<br/>(別 Realm + フェデ)"]
+    Q --> D["D. ハイブリッド<br/>(一般 A / 規制 B)"]
+
+    A --> ARes["⚠ ハッシュ同居<br/>運用 ◎<br/>業界標準"]
+    B --> BRes["✅ 物理分離<br/>運用 ❌ N 倍<br/>規制対応"]
+    C --> CRes["✅ 実質物理分離<br/>運用 △<br/>メイン基盤シンプル"]
+    D --> DRes["✅ 柔軟<br/>運用 ○<br/>**推奨**"]
+
+    style A fill:#fff8e1
+    style B fill:#e8f5e9
+    style C fill:#e3f2fd
+    style D fill:#fce4ec
+```
+
+#### 各選択肢の詳細
+
+##### A. 共通 Pool に集約（ローカル管理、論理分離）
+
+```mermaid
+flowchart LR
+    subgraph Pool["単一 User Pool"]
+        FedUsers["フェデユーザー<br/>(alice, bob)<br/>パスなし"]
+        LocalUsers["ローカルユーザー<br/>(DeltaCo の dave)<br/>**パスワードハッシュあり**"]
+    end
+    style Pool fill:#fff8e1
+```
+
+- **同居**: ユーザーレコード + **パスワードハッシュ**（DeltaCo 分）
+- **保存形式**: PBKDF2-SHA512 / Argon2id（業界標準ハッシュ）
+- **リスク**: Pool DB 全体漏洩時に全顧客のローカルユーザー分のハッシュ流出。**ただし強いハッシュ + salt で元パスワード復元困難**
+- **業界スタンス**: B2B SaaS で論理分離 + 強いハッシュ + 侵害検知で十分とされる（OWASP / WorkOS / Microsoft 標準）
+
+##### B. 顧客別 Pool / Realm（物理分離 = §FR-2.3.A の B 案）
+
+```mermaid
+flowchart LR
+    subgraph PoolA["Pool A (Acme 専用)"]
+        AcmeFed["Acme フェデユーザー"]
+    end
+    subgraph PoolD["Pool D (DeltaCo 専用)"]
+        DeltaLocal["DeltaCo ローカルユーザー<br/>+ パスワードハッシュ"]
+    end
+    subgraph PoolG["Pool G (Globex 専用)"]
+        GlobexFed["Globex フェデユーザー"]
+    end
+    style PoolD fill:#e8f5e9
+```
+
+- パスワードハッシュも**物理分離**（DeltaCo の Pool D のみに存在）
+- 運用工数が顧客数 N に比例（100 社抱えると Pool 100 個）
+- JWT issuer が分散 → 各アプリで複数 issuer 検証必要
+- Broker パターンの本質が崩壊
+
+##### C. 顧客専用 Mini IdP（別 Realm）+ メインからフェデ
+
+```mermaid
+flowchart LR
+    subgraph DeltaMini["DeltaCo 専用 Mini Realm<br/>(または別 Pool)"]
+        DeltaIdP["DeltaCo 用 IdP"]
+        DeltaUsers["DeltaCo 社員<br/>+ パスワードハッシュ"]
+    end
+    subgraph Basis["メイン共通基盤"]
+        MainPool["メイン Pool<br/>(フェデのみ同居)"]
+    end
+
+    DeltaIdP -.OIDC フェデ.-> MainPool
+    DeltaUsers -.- DeltaIdP
+
+    style DeltaMini fill:#e3f2fd
+    style Basis fill:#fff3e0
+```
+
+- 「**IdP を自前で用意**」する案 = 顧客専用に Mini Realm/Pool を立て、メインからは外部 IdP として接続
+- 物理分離の効果は B 案と同等（パスワードハッシュは Mini Realm のみ）
+- メイン共通基盤側はシンプル（メインから見れば「フェデのみ」になる）
+- 実装複雑度は B 案以上（2 段階の認証フロー）
+- 採用例: Auth0 / Okta が「Premium Tenant」として顧客専用テラスを提供するパターン
+
+##### D. ハイブリッド（一般 A + 規制 B / C）— **本基盤の推奨**
+
+```mermaid
+flowchart TB
+    subgraph MainPool["メイン共通 Pool"]
+        FedUsers["フェデユーザー<br/>(Acme, Globex 等)"]
+        LocalGen["一般ローカルユーザー<br/>(DeltaCo 等の小規模)<br/>+ ハッシュ"]
+    end
+    subgraph FinPool["金融顧客専用 Pool"]
+        FinLocal["金融顧客 ローカル<br/>+ ハッシュ"]
+    end
+    subgraph MedPool["医療顧客専用 Pool"]
+        MedLocal["医療顧客 ローカル<br/>+ ハッシュ"]
+    end
+
+    style MainPool fill:#fff8e1
+    style FinPool fill:#e8f5e9
+    style MedPool fill:#e8f5e9
+```
+
+- **一般顧客（IdP なし含む）**: 共通 Pool で論理分離
+- **規制顧客（金融 / 医療 / 政府）**: 専用 Pool で物理分離
+- 柔軟で運用工数も最小化
+- 業界実例: Auth0 / Microsoft Entra External ID 等が「**Standard Tenant + Premium Tenant**」パターン採用
+
+#### 比較表
+
+| 観点 | A. 共通 Pool | B. 顧客別 Pool | C. Mini IdP フェデ | D. ハイブリッド |
+|---|:---:|:---:|:---:|:---:|
+| パスワードハッシュの物理分離 | ❌ 同居 | ✅ 完全分離 | ✅ 完全分離 | ⚠ 部分分離 |
+| 同居規模 | 全顧客 | 顧客 1 社 | 顧客 1 社 | 一般顧客のみ |
+| 運用工数 | ◎ 1 つ | ❌ N 倍 | ❌ N 倍 + 階層 | ○ 数個 |
+| JWT issuer | 1 つ | N 個 | N + 1 個 | 数個 |
+| Broker パターン整合 | ✅ 完全 | ❌ 崩壊 | ⚠ 階層化 | ⚠ 部分崩壊 |
+| 規制対応（金融 / 医療）| ⚠ 要交渉 | ✅ | ✅ | ✅ 特殊顧客のみ |
+| **本基盤での採用判断** | ⚠ 一般顧客のみ | × 過剰 | △ 例外的 | ✅ **推奨** |
+
+#### 「Pool を分けたら物理的に別れているのか?」の直接回答
+
+**Yes、Pool/Realm を分けると物理的に別ストレージで分離されます**：
+
+| 観点 | 単一 Pool | 別 Pool 分離 |
+|---|---|---|
+| データストレージ | 同じテーブル / DB | 別テーブル / 別 DB（Cognito 別 User Pool / Keycloak 別 Realm = 別テーブル群）|
+| パスワードハッシュ | 同居 | 別物理保管 |
+| 暗号化キー | 共通 | 別 KMS キー設定可 |
+| 管理権限 | 共通 IAM Role / Realm Admin | Pool/Realm 別の Admin |
+| 障害影響範囲 | 全テナント | 該当テナントのみ |
+| GDPR Right to Erasure 等 | tenant_id レコード削除 | Pool 全体削除可、より厳密 |
+
+→ 「**自前 IdP として別 Pool/Realm を立てる**」 = 「**Pool を分ける**」 = **物理分離**として等価。
+
+#### 本基盤の推奨ベースライン
+
+**D 案ハイブリッド**を採用：
+
+| 顧客タイプ | 配置 | パスワード扱い |
+|---|---|---|
+| **IdP あり顧客**（Acme, Globex 等）| 共通 Pool | 顧客 IdP 側、本基盤に来ない |
+| **IdP なし 一般顧客**（標準セキュリティ要件） | **共通 Pool でローカル管理** | PBKDF2/Argon2 ハッシュ + `tenant_id` タグ |
+| **規制顧客**（金融 / 医療 / 政府）| **専用 Pool/Realm** | 物理分離 + 別 KMS キー |
+
+#### 共通 Pool でローカル管理する場合の必須セキュリティ要件
+
+A 案を採用する場合、以下を**標準実装**する：
+
+| 要件 | 実装 | 参照 |
+|---|---|---|
+| **強いハッシュ** | PBKDF2-SHA512 / Argon2id | Cognito 自動 / Keycloak 標準 |
+| **侵害クレデンシャル検出** | Cognito Plus（$0.02/MAU）or Keycloak + HIBP | [§FR-1.2 C-205-2](01-auth.md) |
+| **強いパスワードポリシー** | NIST SP 800-63B Rev 4 準拠 | [§FR-1.2](01-auth.md) |
+| **アカウントロック / ブルートフォース対策** | 連続失敗で一時ロック | [§FR-1.2 / C-205](01-auth.md) |
+| **MFA Must**（IdP なしユーザー）| Passkey 推奨 + TOTP | [§FR-3](03-mfa.md) |
+| **Pool DB 暗号化** | Cognito 自動 / Keycloak: Aurora storage_encrypted=true + KMS CMK | [§NFR-4](../nfr/04-security.md) |
+| **管理 API 制限** | `ListUsers` 等は IAM Role で制限、`tenant_id` フィルター必須 | §10.0.5 OWASP |
+| **監査ログ** | 全認証イベント（成功・失敗）を CloudTrail / Event Listener に永続化 | [§FR-8.2](08-admin.md) |
+
+→ これらを実装すれば、**ハッシュ同居でも実用上のセキュリティリスクは小さい**（業界標準）。
+
+#### 顧客への説明（推奨フレーズ）
+
+> 「IdP をお持ちでない顧客のユーザーは、本基盤側で**ローカル管理**します。パスワードは PBKDF2-SHA512（または Argon2）でハッシュ化して保存され、salt 付きで元パスワード復元は困難です。
+>
+> ハッシュ自体は他の一般顧客のものと**同じデータベースに格納**されますが、これは Slack / Notion / Linear など主要 B2B SaaS の標準的な構成です（OWASP 推奨）。**侵害クレデンシャル検出 / 強いパスワードポリシー / MFA / DB 暗号化**で実用上のリスクは抑えられます。
+>
+> 金融・医療・政府系など、**規制・契約で物理分離が必須**な場合は、お客様専用の User Pool を別途用意することも可能です（B 案 = 物理分離、コスト・運用工数増）。」
+
+#### TBD / 要確認
+
+| 確認項目 | 回答例 |
+|---|---|
+| IdP なし顧客のユーザー管理方針 | A 共通 Pool / B 専用 Pool / C 専用 Mini IdP / D ハイブリッド |
+| 規制顧客（金融 / 医療等）の有無 | あり（業種・顧客数）/ なし |
+| パスワードハッシュ同居を許容するか | はい（一般顧客で OK）/ いいえ（全顧客分離要）|
+| 専用 Pool/Realm を用意する顧客の判断基準 | 契約金額 / 規制要件 / セキュリティレベル |
+
+→ 実装方式の詳細（Cognito 別 Pool vs Keycloak 別 Realm の比較、運用工数）は内部技術メモ [`identity-broker-multi-idp.md §10`](../../../common/identity-broker-multi-idp.md) 参照。
 
 ---
 

@@ -347,6 +347,186 @@ flowchart LR
 
 ---
 
+## §FR-6.3 マイクロサービス間トークンリレー / ユーザー文脈伝播（→ FR-AUTHZ / FR-AUTH-005）
+
+> **このサブセクションで定めること**: マイクロサービス間呼び出しで「**誰の操作か**（エンドユーザーの認証コンテキスト）」をどう伝播するかの方式選定。
+> **主な判断軸**: マイクロサービス採用予定の有無、サービス間呼び出しでユーザー文脈を保つ業務要件、最小権限（scope 縮小）の必要性
+> **§FR-6 全体との関係**: §FR-6.1 = 「**基盤が発行するクレーム**」、§FR-6.2 = 「**各アプリでの判定方法**」、§FR-6.3 = 「**サービス間呼び出しでのクレーム継承**」
+
+### §FR-6.3.0 トークンリレーとは何か
+
+1 つのサービスが受け取ったトークン（ユーザーの認証情報）を、**そのサービスから別のサービスを呼び出す際に「引き渡す / 変換する」仕組み**。
+
+```mermaid
+flowchart LR
+    U["👤 ユーザー"]
+    F["フロント / SPA"]
+    GW["API Gateway"]
+    A["Service A<br/>(経費)"]
+    B["Service B<br/>(承認)"]
+    C["Service C<br/>(通知)"]
+
+    U -->|"Bearer JWT (User)"| F
+    F -->|"Bearer JWT (User)"| GW
+    GW -->|"JWT (User)"| A
+    A -.?.-> B
+    B -.?.-> C
+
+    style A fill:#fff3e0
+    style B fill:#fff3e0
+    style C fill:#fff3e0
+```
+
+→ **Service A から B / C を呼ぶときに「誰の権限で呼ぶか」「どう認証情報を引き渡すか」**が論点。
+
+### §FR-6.3.1 なぜ必要か（4 つの動機）
+
+| 動機 | 内容 |
+|---|---|
+| **A. 監査ログでエンドユーザー特定** | B / C のログで「Alice の操作」として記録できないと、SOC 2 / ISO 27001 のユーザー監査要件を満たせない |
+| **B. 各サービスで個別認可判定** | A は全社員可、B は管理者のみ等の差別化が必要。A の Service Account で B に入れると権限昇格脆弱性 |
+| **C. 最小権限原則** | 元 Token の scope = `expense:write notification:read` を、Service C 呼び出し時は `notification:read` のみに絞りたい |
+| **D. ユーザー代理操作（OBO）** | 顧客の Slack / Notion 等への代理投稿、`act` クレームで「A が Alice の代理」を明示 |
+
+### §FR-6.3.2 4 つの実装パターン
+
+| パターン | 仕組み | ユーザー文脈 | scope 縮小 | 監査 | Cognito | Keycloak |
+|---|---|:---:|:---:|:---:|:---:|:---:|
+| **1. 単純 Token Forward** | 受け取った JWT をそのまま転送 | ✅ | ❌ | ✅ | ✅ | ✅ |
+| **2. Token Exchange (RFC 8693)** | Service A が AS で OBO トークンに変換、`act` クレーム付与 | ✅ | ✅ | ✅ | ❌ **非対応** | ✅ ネイティブ |
+| **3. Service Account (M2M)** | A が自分の Client Credentials で B を呼ぶ | ❌ 消失 | ✅（別 client）| ❌ | ✅ | ✅ |
+| **4. Internal Passport / Custom** | API Gateway で外部 Token → 内部独自フォーマットに変換（Netflix パターン） | ✅（独自）| 任意 | ✅ | ✅（独自実装）| ✅（独自実装）|
+
+#### パターン 1: 単純 Token Forward
+
+```mermaid
+sequenceDiagram
+    User->>API Gateway: Bearer JWT (sub=alice, scope=A B C)
+    API Gateway->>Service A: Bearer JWT (sub=alice)
+    Service A->>Service B: Bearer JWT (sub=alice)
+    Service B->>Service C: Bearer JWT (sub=alice)
+```
+
+- 最もシンプル、すべてのサービスが同じ Token を見る
+- 全サービスが同じ Authorization Server を信頼する必要あり
+- scope を絞れない → Service C 乗っ取り時に全権限使われるリスク
+- → **小〜中規模 + 信頼境界が同一**なら採用可
+
+#### パターン 2: Token Exchange (RFC 8693)
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant A as Service A
+    participant AS as Authorization Server<br/>(Keycloak)
+    participant B as Service B
+
+    U->>A: Bearer JWT (sub=alice, scope=A)
+    A->>AS: POST /token<br/>grant_type=token-exchange<br/>subject_token=<元の JWT><br/>audience=service-b<br/>scope=B
+    AS->>A: 新 JWT (sub=alice, scope=B,<br/>act={sub:service-a})
+    A->>B: Bearer 新 JWT
+```
+
+- `act` クレームで「Service A が Alice の代理で呼んでいる」が明示される
+- 各サービスごとに適切な `scope` / `audience` で Token 取得可
+- **業界標準**（RFC 8693）、本プロジェクトの基本方針「**絶対安全**」と整合
+- **Cognito 非対応 → Keycloak 必須化要因**（[§FR-1.1 C](01-auth.md#fr-11-認証フロー--grant-type-fr-auth-11)）
+
+#### パターン 3: Service Account（ユーザー文脈消失）
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant A as Service A
+    participant AS as Authorization Server
+    participant B as Service B
+
+    U->>A: Bearer JWT (sub=alice)
+    A->>AS: POST /token<br/>grant_type=client_credentials
+    AS->>A: Bearer JWT (sub=service-a)
+    A->>B: Bearer JWT (sub=service-a)
+```
+
+- B から見ると「Service A が呼んでいる」としか分からない
+- **ユーザー文脈は失われる**（監査ログでユーザー特定不可）
+- **バッチ・定期ジョブ等、ユーザー文脈不要な処理向け**
+- ユーザー文脈が必要な場合は NG
+
+#### パターン 4: Internal Passport（Netflix パターン）
+
+- API Gateway で外部 Token → 社内独自フォーマット（Passport）に変換
+- 内部サービス間は社内専用署名で連鎖
+- 大規模・特殊要件向け、独自実装コスト大
+- **業界標準ではない**、本基盤ではほぼ採用しない
+
+### §FR-6.3.3 我々のスタンス（基本方針に基づく）
+
+| 基本方針の柱 | トークンリレーでの実現 |
+|---|---|
+| **絶対安全** | 監査要件・最小権限を満たす Token Exchange を**マイクロサービス採用時の標準**として推奨 |
+| **どんなアプリでも** | OAuth 2.0 標準準拠（パターン 1 or 2）。アプリ側は受け取った JWT を検証するだけ |
+| **効率よく** | パターン 2 採用なら宣言的に scope 縮小、複雑なロジックなし |
+| **運用負荷・コスト最小** | Keycloak ならネイティブ、Cognito なら単純転送 or M2M で代替 |
+
+### §FR-6.3.4 業務シナリオから採用パターンを導く判定フロー
+
+「トークンリレー要りますか?」と直接聞いても伝わらないため、**業務シナリオで確認する**。
+
+```mermaid
+flowchart TD
+    Q1{業務シナリオ<br/>マイクロサービス構成?}
+    Q1 -->|No / モノリス| End1["不要（パターン考慮不要）"]
+    Q1 -->|Yes| Q2{"サービス A から<br/>サービス B を内部で呼ぶか?<br/>(例: 経費→承認→通知)"}
+    Q2 -->|No| End1
+    Q2 -->|Yes| Q3{"B 側ログで<br/>『誰の操作か』を<br/>追跡する必要があるか?<br/>(SOC 2 / ISO 27001 監査)"}
+    Q3 -->|No / バッチ的処理| P3["パターン 3<br/>Service Account<br/>Cognito で OK"]
+    Q3 -->|Yes / ユーザー文脈必須| Q4{"各サービスで<br/>scope を絞りたいか?<br/>(最小権限要件)"}
+    Q4 -->|No / 同じ scope OK| P1["パターン 1<br/>単純 Token Forward<br/>Cognito で OK"]
+    Q4 -->|Yes / 最小権限 Must| P2["パターン 2<br/>Token Exchange<br/>**Keycloak 必須**"]
+
+    style P2 fill:#fce4ec
+    style P1 fill:#e8f5e9
+    style P3 fill:#e8f5e9
+    style End1 fill:#f5f5f5
+```
+
+### §FR-6.3.5 ベースライン
+
+| 項目 | ベースライン |
+|---|---|
+| マイクロサービス未採用 | **不要** |
+| マイクロサービス採用 + 信頼境界同一 + scope 縮小不要 | **パターン 1（単純 Token Forward）**を許容、Cognito でも対応可 |
+| マイクロサービス採用 + 監査要件 + 最小権限 Must | **パターン 2（Token Exchange、RFC 8693）**を推奨、**Keycloak 必須** |
+| バッチ・定期ジョブのみ（ユーザー文脈不要）| **パターン 3（Service Account）**で十分 |
+| 外部システム代理操作（OBO）| **パターン 2 必須**（`act` クレームで明示）|
+
+### §FR-6.3.6 TBD / 要確認
+
+「トークンリレー」を直接聞かず、以下の**業務質問**で判定する。
+
+| 業務質問 | 回答例 | 影響 |
+|---|---|---|
+| ① マイクロサービス構成を採用していますか / する予定ですか? | はい / いいえ / 段階移行中 | 全パターン議論の前提 |
+| ② サービス A が他のサービス B を内部で呼び出すパターンがありますか? | はい / いいえ + ユースケース | パターン検討必須化 |
+| ③ B 側のログで「**誰（エンドユーザー）の操作か**」を追跡する必要がありますか? | 必須（SOC 2 等）/ あれば嬉しい / 不要 | パターン 3 NG → 1 or 2 |
+| ④ 各サービスで個別に権限チェックしたいですか?（例: A は全員可、B は管理者のみ）| はい / いいえ | パターン 2 推奨 |
+| ⑤ サービス間呼び出しで**最小権限**にしたい要件はありますか?（scope 縮小）| Must / Should / 不要 | パターン 2 必須化 |
+| ⑥ **外部システム連携**（顧客の Slack / Notion 等）で「自社 SaaS が代理操作」しますか? | はい / いいえ | パターン 2（OBO）必須 |
+| ⑦ コンプライアンス要件で OAuth 2.0 標準準拠（RFC 8693）が要求されますか? | はい / いいえ | パターン 2 必須 |
+
+→ **③ ④ ⑤ ⑥ ⑦ のいずれかが Yes なら、Token Exchange が必要 → Keycloak 必須**（[ADR-014](../../../adr/014-auth-patterns-scope.md)）。
+
+### §FR-6.3.7 ヒアリング・要件定義での位置付け
+
+[hearing-checklist.md](../../hearing-checklist.md) の **B-104（Token Exchange）と B-304（トークンリレー）は表裏一体**：
+
+- **B-304** = 業務シナリオでの確認（本サブセクションの判定フロー）
+- **B-104** = 技術的結論（Token Exchange の要否、プラットフォーム選定への影響）
+
+ヒアリング順序: **B-304（業務質問） → B-104（技術判定） → プラットフォーム判定**。
+
+---
+
 ### 参考資料（§FR-6 全体）
 
 #### スタンスの業界根拠（§FR-6.0.A）
@@ -368,3 +548,16 @@ flowchart LR
 - [Amazon Verified Permissions 公式](https://aws.amazon.com/verified-permissions/)
 - [Keycloak Authorization Services 公式](https://www.keycloak.org/docs/latest/authorization_services/)
 - [Multi-tenant SaaS Access Control with AVP - AWS Blog](https://aws.amazon.com/blogs/security/saas-access-control-using-amazon-verified-permissions-with-a-per-tenant-policy-store/)
+
+#### マイクロサービス間トークンリレー（§FR-6.3）
+
+- [RFC 8693 - OAuth 2.0 Token Exchange](https://datatracker.ietf.org/doc/html/rfc8693)
+- [Token Exchange in OAuth: Why and How - Curity](https://curity.medium.com/token-exchange-in-oauth-why-and-how-to-implement-it-a7407367cb55)
+- [Delegation Patterns for OAuth 2.0 - Scott Brady](https://www.scottbrady.io/oauth/delegation-patterns-for-oauth-20)
+- [OAuth 2.0 Token Exchange: Impersonation & Delegation - ZITADEL](https://zitadel.com/docs/guides/integrate/token-exchange)
+- [RFC 8693 OAuth 2.0 Token Exchange - Authlete](https://www.authlete.com/developers/token_exchange/)
+- [Authentication in Microservices: Approaches and Techniques - Frontegg](https://frontegg.com/blog/authentication-in-microservices)
+- [Microservices Security - OWASP Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Microservices_Security_Cheat_Sheet.html)
+- [Best Practices for Authorization in Microservices - Oso](https://www.osohq.com/post/microservices-authorization-patterns)
+- [Netflix Edge Authentication Service - Netflix Tech Blog](https://netflixtechblog.com/edge-authentication-and-token-agnostic-identity-propagation-514e47e0b602)
+- [Keycloak Token Exchange 公式](https://www.keycloak.org/securing-apps/token-exchange)

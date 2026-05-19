@@ -400,6 +400,207 @@ flowchart LR
 
 ---
 
+## 5.A クォータ・スケール上限詳細
+
+> 調査日: 2026-05-18 / 顧客向けサマリ: [§NFR-3.1.A クォータ・スケール上限の実数](../requirements/proposal/nfr/03-scalability.md#nfr-31a-クォータスケール上限の実数顧客向けサマリ)
+
+「Broker パターン採用（[§C-1.1](../requirements/proposal/common/01-architecture.md#c-11-broker-パターン採用根拠)）」「物理分離レベル（[§C-1.4](../requirements/proposal/common/01-architecture.md#c-14-物理分離レベルと-broker-パターンの関係)）」を実装する際、**何が物理的に詰まるか**の一次資料。NFR 章への根拠データとしても流用。
+
+### 5.A.1 Cognito User Pools クォータ
+
+公式: [Quotas in Amazon Cognito](https://docs.aws.amazon.com/cognito/latest/developerguide/limits.html)（2026-05 時点）
+
+#### リソース上限
+
+| 項目 | 既定 | 緩和後最大 | Soft/Hard | Lite/Essentials/Plus 差 |
+|---|---:|---:|:---:|:---:|
+| **Users per user pool**（ローカル + フェデ JIT 含む） | **40,000,000** | "Contact your account team"（個別交渉） | Soft | 差なし |
+| **User pools per Region** | **1,000** | **10,000** | Soft | 差なし |
+| **Identity providers per user pool**（SAML + OIDC + Social 合算）| **300** | **1,000** | Soft | 差なし |
+| **App clients per user pool** | **1,000** | **10,000** | Soft | 差なし |
+| **Groups per user pool** | **10,000** | — | **Hard** | 差なし |
+| Groups per user | 100 | — | Hard | 差なし |
+| **Custom attributes per user pool** | **50** | — | **Hard** | 差なし |
+| Characters per attribute | 2,048 bytes | — | Hard | — |
+| Lambda triggers per user pool | 13 種別 × 各 1 個 | — | Hard | Pre Token Gen v2/v3 は Essentials+ 限定 |
+| Identities linked to a user（外部 ID 連結数）| 5 | — | Hard | 差なし |
+| Resource servers per user pool | 25 | 300 | Soft | 差なし |
+| Callback / Logout URLs per app client | 100 / 100 | — | Hard | 差なし |
+| Scopes per app client / resource server | 50 / 100 | — | Hard | 差なし |
+| Passkey/WebAuthn authenticators per user | 20 | — | Hard | Essentials+ で利用可 |
+| Managed Login branding styles per pool | 20 | — | Hard | Essentials+ 限定 |
+
+#### API レート上限（カテゴリ別、リージョン × AWS アカウント単位）
+
+| カテゴリ | 既定 RPS | Adjustable | 主な API |
+|---|---:|:---:|---|
+| **UserAuthentication** | **120** | **Yes** | `InitiateAuth`, `RespondToAuthChallenge`（`Admin*` 系は 3× 別枠 = 360）|
+| UserCreation | 50 | Yes | `SignUp`, `AdminCreateUser` |
+| **UserFederation** | **25** | Yes | OIDC/SAML IdP コールバック |
+| **UserAccountRecovery** | **30** | **No (Hard)** | `ForgotPassword` 系 |
+| UserRead | 120 | Yes | `GetUser` 等 |
+| UserToken | 120 | Yes | トークン管理 |
+| **UserUpdate** | **25** | **No (Hard)** | 属性・グループ変更 |
+| **UserList** | **30** | **No (Hard)** | `ListUsers` 等 |
+| UserResourceRead | 50 | Yes | デバイス・グループメンバー参照 |
+| UserResourceUpdate | 25 | **No (Hard)** | デバイス・グループ更新 |
+| UserPoolRead/Update | 15/15 | **No (Hard)** | プール設定（プール単位 5 RPS）|
+| UserPoolResourceRead/Update | 20/15 | **No (Hard)** | グループ・リソースサーバ（プール単位 5 RPS）|
+| UserPoolClientRead/Update | 15/15 | **No (Hard)** | App Client（プール単位 5 RPS）|
+| **ClientAuthentication** | **150** | **No (Hard)** | M2M（`client_credentials` grant）|
+| Read/Write user profile（per user）| **10 RPS / user** | Hard | `GetUser`, `UpdateUserAttributes` 等 |
+| **JWKS（`jwks.json`）** | **50,000** | **No (Hard)** | リージョン × アカウント合算 |
+| Managed Login ドメイン全体 | 500 | **No (Hard)** | ドメイン単位 |
+| Managed Login per app client | 300 | **No (Hard)** | ドメイン × App Client |
+| Managed Login per source IP | 300 | **No (Hard)** | 同一 IP → 同一ドメイン |
+
+#### Cognito 公式の MAU ベース計算例
+
+- **200 万 MAU 未満は既定クォータで運用可能**（公式 "Identify quota requirements" 明記）
+- 100 万 MAU = 8 時間稼働で平均 35 RPS、トークン更新込み 70 RPS、ピーク 3× → **UserAuthentication 200 RPS** を購入推奨
+
+#### ティア（Lite / Essentials / Plus）との関係
+
+公式 docs 上、**クォータ値はティア依存しない**。Plus は機能を追加するのみ:
+
+| 領域 | Lite | Essentials | Plus |
+|---|:---:|:---:|:---:|
+| Managed Login UI（ビジュアルエディタ）| × | ◯ | ◯ |
+| Passkey / Email OTP / 選択型認証 | × | ◯ | ◯ |
+| Pre Token Gen v2/v3、パスワード履歴 | × | ◯ | ◯ |
+| Threat protection / 適応認証 / 漏洩パスワード検出 / 活動ログ | × | × | **◯（Plus 限定）** |
+
+出典:
+- https://docs.aws.amazon.com/cognito/latest/developerguide/limits.html
+- https://docs.aws.amazon.com/cognito/latest/developerguide/cognito-sign-in-feature-plans.html
+- https://docs.aws.amazon.com/cognito/latest/developerguide/feature-plans-features-essentials.html
+- https://docs.aws.amazon.com/cognito/latest/developerguide/feature-plans-features-plus.html
+
+### 5.A.2 Keycloak 26.x スケール特性
+
+公式数値が明示されない項目が多く、**ベンチマーク + GitHub Discussion / Issue + コミュニティ実証**を一次根拠とする。
+
+#### リソース上限（公式 + コミュニティ実証）
+
+| 項目 | 公式記述 | 実用上の知見 | 出典 |
+|---|---|---|---|
+| **Realm 数 / クラスタ** | ハード制限なし | **26.4 で 1,000+ 運用可能**（`realmCache` 50 entries/realm 推奨）／ 最適化適用時は **3,000 Realm でも線形挙動**（Admin Console 50 秒）／ 17.x 等の旧版は 100-200 で破綻 | [Discussion #11074](https://github.com/keycloak/keycloak/discussions/11074), [Benchmark 26.4](https://www.keycloak.org/2025/10/keycloak-benchmark) |
+| **Users / Realm** | ハード制限なし | **数百万ユーザー実例あり**。ストレージ + DB スペックで決まる | [Discussion #15181](https://github.com/keycloak/keycloak/discussions/15181) |
+| Clients / Realm | ハード制限なし | 動的クライアント登録も同じ | Discussion #15181 |
+| Groups / Roles / IdPs / Realm | ハード制限なし | DB スケール依存 | — |
+| Realm cache 推奨サイズ | — | **Realm あたり 50 entries** を目安（1 Realm の標準消費 ~20 entries） | Benchmark 26.4 |
+| 26.x の Organization 機能 | — | 単一 Realm 内マルチテナント方式。Realm を増やさずに済む | Keycloak 26 リリースノート |
+
+#### CPU / メモリ サイジング計算式（Keycloak 26.6 公式）
+
+| 操作 | CPU 計算式 | 検証上限（単一ノード）|
+|---|---|---:|
+| パスワード ログイン | **1 vCPU で 15 logins/sec** | 300/sec |
+| クライアント認証情報 | **1 vCPU で 120 grants/sec** | 2,000/sec |
+| Refresh Token | **1 vCPU で 120 refresh/sec** | 435/sec |
+
+メモリ:
+- ベース 1,250 MB（10,000 キャッシュセッション含）
+- ヒープ比率 70% / 非ヒープ 300 MB
+- 計算式: `(必要メモリ - 300) ÷ 0.7`
+
+#### 計算例（公式・単一クラスタ）
+
+要件: ログイン 45/sec + Refresh 360/sec + Client Credentials 360/sec → **3 ポッド構成**
+
+| 項目 | 値 |
+|---|---|
+| Pod あたり CPU request | 3 vCPU |
+| Pod あたり CPU limit | 7.5 vCPU（150% スピーク余裕）|
+| Pod あたり Memory | 1,250 MB（request） / 1,360 MB（limit）|
+| DB | Aurora PostgreSQL `db.t4g.large` または `xlarge` |
+
+#### スケーリングベンチマーク（公式 26.4, 2025-10）
+
+- 最大検証: **2,000 logins/sec + 10,000 refresh/sec**
+- 必要 CPU: 74 vCPU（3 ポッド構成）
+- メモリ: 8 GB / ポッド
+- ユーザー数: 100,000（テスト時）
+
+#### 既知の劣化事例 / リグレッション
+
+| Issue / Discussion | 内容 |
+|---|---|
+| [#46605](https://github.com/keycloak/keycloak/issues/46605) | **26.5.4 startup regression**: 多 Realm 環境でマスター Realm 管理ロール合成が O(N²) に劣化 |
+| [#29978](https://github.com/keycloak/keycloak/issues/29978) | 600+ Realm で Admin UI ドロップダウンが約 6 分 |
+| [#18328](https://github.com/keycloak/keycloak/issues/18328) | 300+ Realm で Admin Console ロード 20+ 秒 |
+| [#20453](https://github.com/keycloak/keycloak/issues/20453) | 20.0.5 で Admin UI のテナント一覧が 1:47 かかる |
+| [#19793](https://github.com/keycloak/keycloak/issues/19793) | 400 Realm 作成後、Admin Console でデータロード不能 |
+| [Discussion #12332](https://github.com/keycloak/keycloak/discussions/12332) | 多 Realm 時の master Realm 上 client 評価コスト（root cause 議論）|
+
+出典:
+- https://www.keycloak.org/2025/10/keycloak-benchmark
+- https://www.keycloak.org/high-availability/multi-cluster/concepts-memory-and-cpu-sizing
+- https://github.com/keycloak/keycloak/discussions/11074
+- https://github.com/keycloak/keycloak/discussions/15181
+
+### 5.A.3 両者の「天井」対応関係
+
+| 軸 | Cognito | Keycloak 26.x |
+|---|---|---|
+| **顧客 IdP 接続数の天井** | 300（既定）/ 1,000（最大）/ Pool 単位 — Soft | ハード制限なし。実例ベースで 10K IdPs 報告（[Issue #30084](https://github.com/keycloak/keycloak/issues/30084)）|
+| **テナント分離パターン**：Pool/Realm 分離 | 1,000 Pool（既定）/ 10,000（最大）/ Region | 1,000-3,000 Realm（cache チューニング必須）|
+| **テナント分離パターン**：単一 Pool/Realm + tenant_id | 4,000 万 user / Pool まで吸収可 | 数百万 user / Realm、DB 限界まで |
+| **ユーザー総数の天井** | 4,000 万 / Pool（Soft, 個別緩和）| ハード制限なし。DB 性能次第 |
+| **認証 TPS の上限** | 120 RPS（Soft, 増額可。Admin 系 3× = 360）| 単一ノード 300/sec、3 ポッドで 2,000/sec、リソース追加で線形 |
+| **Refresh TPS の上限** | 120 RPS（Soft）| 単一ノード 435/sec、3 ポッドで 10,000/sec |
+| **M2M（Client Credentials）TPS** | **150 RPS（Hard、緩和不可）** | 単一ノード 2,000/sec、リソース追加で拡張可 |
+| **JWKS TPS** | 50,000 RPS（Hard、極めて高）| DB 非依存、ノードスケールで対応 |
+| **緩和不可な Hard リミット** | UserAccountRecovery 30 / UserList 30 / UserUpdate 25 / ClientAuthentication 150 RPS など多数 | なし（リソース追加で線形拡張）|
+| **DB / 永続化 SPOF** | なし（AWS 透過）| Aurora PostgreSQL がボトルネック |
+| **管理 UI スケール** | AWS Console（影響なし）| Realm 数増で **劣化リスク**、26.x 系でも cache チューニング必須 |
+
+### 5.A.4 NFR への示唆（要件定義に直結する 5 ポイント）
+
+1. **「顧客数で天井に当たる項目」が両者で異なる**
+   - **Cognito**: IdP 300（最大 1,000）が単一 Pool の "顧客 IdP 数" 天井 → **1,000 社級なら 1 Pool 設計は破綻**、Pool 分割（最大 10,000 / Region）に切り替え
+   - **Keycloak**: Realm 分離方式で **1,000-3,000 顧客**まで単一クラスタ（cache 必須）。Organization 機能の単一 Realm 多テナントなら制限なし
+   - **設計分岐点**: 100-300 顧客で Pool / Realm 分割を再検討すべき
+
+2. **「ユーザー総数で天井に当たる項目」**
+   - **Cognito**: 4,000 万 / Pool（Soft, 個別緩和）。**3,000 万を超えるなら Pool 分割設計を NFR に明記推奨**
+   - **Keycloak**: 数百万事例あり、DB スペック次第
+
+3. **Cognito の Hard リミットがボトルネック化**
+   - **M2M 150 RPS（緩和不可）**: マイクロサービス間呼出が高頻度なら破綻 → **JWT キャッシュ前提**で設計
+   - **UserList 30 RPS（緩和不可）**: 顧客一覧操作・バッチ運用に致命的 → **外部 DB / S3 エクスポート**前提
+   - **UserUpdate 25 RPS（緩和不可）**: ユーザー属性更新の頻度上限
+
+4. **Keycloak の "実用上の地雷"**
+   - **多 Realm 時のキャッシュチューニング必須**（デフォルトでは劣化）
+   - **Admin Console UI 性能は Realm 数の関数**で劣化（300 Realm で 20+ 秒事例）
+   - **26.5.4 にリグレッションあり**（Issue #46605）→ **バージョン固定戦略**が必要
+   - **DB（PostgreSQL）が SPOF**。Aurora 推奨
+
+5. **§C-1.4 の物理分離レベルとの対応**
+   - **L2（単一 Pool/Realm + tenant_id）**: Cognito 4,000 万 user / Keycloak 数百万 user → 圧倒的に余裕
+   - **L3（規制顧客のみ別 Pool/Realm）**: Cognito 10,000 Pool / Keycloak 1,000-3,000 Realm → 十分
+   - **L6（顧客ごと完全別基盤）**: 両者ともクォータ管理ではなく **AWS アカウント分離 / 別クラスタ**になり、本基盤の対象外（[§C-1.4](../requirements/proposal/common/01-architecture.md#c-14-物理分離レベルと-broker-パターンの関係)）
+
+### 5.A.5 出典 URL（一次資料）
+
+**Cognito**:
+- [Quotas in Amazon Cognito](https://docs.aws.amazon.com/cognito/latest/developerguide/limits.html)
+- [User pool feature plans](https://docs.aws.amazon.com/cognito/latest/developerguide/cognito-sign-in-feature-plans.html)
+- [Essentials plan features](https://docs.aws.amazon.com/cognito/latest/developerguide/feature-plans-features-essentials.html)
+- [Plus plan features](https://docs.aws.amazon.com/cognito/latest/developerguide/feature-plans-features-plus.html)
+- [User pool Lambda triggers](https://docs.aws.amazon.com/cognito/latest/developerguide/user-pool-lambda-triggers.html)
+
+**Keycloak**:
+- [Keycloak Performance Benchmarks (26.4, 2025-10)](https://www.keycloak.org/2025/10/keycloak-benchmark)
+- [Concepts for sizing CPU and memory resources (26.6)](https://www.keycloak.org/high-availability/multi-cluster/concepts-memory-and-cpu-sizing)
+- [Improved scalability over number of realms (Discussion #11074)](https://github.com/keycloak/keycloak/discussions/11074)
+- [Maximum user per realm? (Discussion #15181)](https://github.com/keycloak/keycloak/discussions/15181)
+- [26.5.4 startup regression with many realms (Issue #46605)](https://github.com/keycloak/keycloak/issues/46605)
+- [Admin UI slow performance loading 600+ realms (Issue #29978)](https://github.com/keycloak/keycloak/issues/29978)
+
+---
+
 ## 6. プラットフォーム選定との対応
 
 ### 6.1 選定判定フロー（[proposal §C-2.4](../requirements/proposal/common/02-platform.md) と整合）

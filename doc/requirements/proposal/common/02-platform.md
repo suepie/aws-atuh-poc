@@ -244,6 +244,23 @@ flowchart LR
 | **B-6. 無料 MAU 枠** | Cognito Lite/Essentials = **10,000 MAU 無料**。Keycloak = インフラ最小 $987/月 + 運用人件費 |
 | **B-7. SIEM 連携の容易さ** | Cognito = CloudWatch → Splunk/Datadog 標準コネクタ。Keycloak = Event Listener 自前転送 |
 
+### B'. SCIM 受信実装コストの差（プラットフォーム選定の補強材料）
+
+> 本基盤は **SCIM 2.0 受信機能を Must で実装** する方針（[§FR-7.4.0.A](../fr/07-user.md#fr-740-scim-の位置づけと本基盤のスタンス)）。プラットフォーム選定では「**SCIM 必須化要因**」には含めないが、初期実装コスト・維持コストに差があるため補強材料として整理:
+
+| 観点 | Cognito | Keycloak OSS | Keycloak RHBK |
+|---|---|---|---|
+| **SCIM サーバー実装** | ❌ ネイティブなし、**Lambda + API Gateway で自前実装**（SCIM 2.0 REST API 仕様準拠が必要） | ✅ **community プラグイン**あり | ⚠ community プラグイン（**RHBK 公式サポート対象外**）|
+| **初期実装コスト** | **$20-50k 相当**（2-4 週間）| **$5-15k 相当**（プラグイン導入 + 設定）| 同左 + Red Hat サポート外の責任分担調整 |
+| **CRUD エンドポイント** | Cognito Admin API へのアダプター実装が必要 | Keycloak Admin API に直結 | 同左 |
+| **スキーマ拡張** | Lambda 内で実装 | Realm 設定で標準対応 | 同左 |
+| **エラー処理 / リトライ** | API Gateway + DLQ + CloudWatch Alarms で構築 | プラグインに依存 | 同左 |
+| **維持コスト**（CVE / バージョンアップ）| 低（Cognito Admin API は AWS マネージド）| 中（プラグインの追従責任あり）| 中（RHBK 公式外なので自社責任）|
+| **AWS IAM Identity Center 連携経路**（オプション）| ✅ Identity Center → Cognito の同期構成も検討余地あり | △ 連携には追加実装 | 同左 |
+
+→ **SCIM 受信 Must 化は両プラットフォームで実装可能**。Cognito は Lambda 自作で対応、Keycloak はプラグイン採用。**Cognito のコスト劣位は他項目の優位（B-1〜B-7）で十分相殺可能**なため、SCIM 単独でプラットフォーム選定を逆転させる材料ではない。
+→ ただし [§NFR-3.1 MAU](../nfr/03-scalability.md) で**Keycloak 優位の規模感**になる場合は、SCIM 実装の容易さも Keycloak 採用判断の補強になる。
+
 ### C. 両プラットフォームで対応不可な要件はないか
 
 「**両者ノックアウト**」となる要件がないか、各章を再点検：

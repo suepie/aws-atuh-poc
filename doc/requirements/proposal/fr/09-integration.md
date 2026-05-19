@@ -234,6 +234,38 @@ flowchart LR
 > **主な判断軸**: 自動化したい範囲（オンボーディング・連鎖処理）、Webhook 受信側システムの有無、IaC ツール選定   
 > **§FR-9.0 との関係**: 「**繋ぎ込み**」の運用自動化レイヤー。[§FR-8.1 基盤設定管理](08-admin.md#91-基盤設定管理--fr-admin-71) の IaC 方針と整合
 
+### §FR-9.3.0 Webhook の役割と SCIM・JIT との違い
+
+> **論点**: 「SCIM があれば Webhook は不要では?」という疑問が出やすいが、**両者は方向が逆**で補完関係。Webhook は **基盤側のイベントをアプリ側にリアルタイム通知**するためのもの。
+
+#### 3 つのプロビジョニング / 通知機構の整理
+
+| 機能 | 方向 | 同期方式 | 主な用途 |
+|---|---|---|---|
+| **JIT プロビジョニング** | 外部 IdP → 基盤（pull）| reactive（ログイン時） | 認証情報の取り込み |
+| **SCIM**（[§FR-7.4.0](07-user.md#fr-740-scim-の位置づけと本基盤のスタンス)）| 外部 HR/IdP → 基盤（push）| proactive（CRUD イベント時）| **ユーザー情報の inbound 同期** |
+| **Webhook** | **基盤 → 外部アプリ（push）** | proactive（イベント発生時） | **基盤のイベントを外部に outbound 通知** |
+
+→ **SCIM と Webhook は方向が真逆**。SCIM があっても Webhook の代替にはならず、両者は同時採用が標準パターン。
+
+#### 典型ユースケース（Webhook が必要になる場面）
+
+| ユースケース | 通知イベント例 | 受信側 | 受信側の処理 |
+|---|---|---|---|
+| **アプリ DB の user ミラーリング** | `user.created` / `user.updated` / `user.deleted` | アプリ A バックエンド | 業務 DB の users テーブルに反映 |
+| **MFA 登録通知** | `mfa.enrolled` / `mfa.removed` | Slack / 管理者メール | 「新規 MFA 登録」通知 |
+| **侵害検出 → SOC エスカレーション** | `auth.compromised_credentials_detected` | SOC / PagerDuty | インシデント自動起票 |
+| **退職時のリソースクリーンアップ** | `user.deleted` | 各アプリ | ファイル所有権移譲・履歴匿名化 等 |
+| **不正ログイン検知** | `auth.failed_too_many` | アプリ側監視 / SIEM | リスク評価モデルに入力 |
+| **管理者操作監査** | `admin.action_performed` | 監査 SIEM / Splunk | リアルタイム監査ログ |
+| **セッション強制終了の伝播** | `session.revoked` | アプリ側セッションキャッシュ | ローカルセッションキャッシュ無効化 |
+
+→ いずれも **「アプリが基盤の状態変化を即座に知って連鎖処理したい」シナリオ**。これがない場合は Webhook 不要。
+
+#### §FR-9.3.0.A 本基盤の Webhook スタンス
+
+> **本基盤は Webhook 配信機構を実装する**（基盤側 capability）。一方で、**顧客アプリ側で Webhook を使うか / 使わないかは選択制**。[§FR-7.4.0 SCIM スタンス](07-user.md#fr-740-scim-の位置づけと本基盤のスタンス) と同じ「**基盤は対応、顧客は選択**」モデル。
+
 ### 業界の現在地
 
 **1. Admin REST API**:
@@ -280,20 +312,31 @@ flowchart LR
 |---|---|
 | Admin REST API | **Must**（プラットフォーム標準提供）|
 | Terraform IaC | **Must**（[§FR-8.1 基盤設定管理](08-admin.md#91-基盤設定管理--fr-admin-71) と統一）|
-| Webhook イベント通知 | **Should**（顧客アプリ要件次第）|
+| **Webhook 配信機構（共通基盤側実装）** | **Must**（§FR-9.3.0.A スタンス、SCIM と同じ「基盤は対応、顧客は選択」モデル）|
+| Webhook 利用（顧客アプリ側）| **Should**（顧客アプリの連鎖処理要件次第。不要ならポーリング / SCIM 同期で代替）|
 | Webhook 設計 | **HMAC 署名 + idempotency + 指数バックオフ + DLQ**（業界標準パターン）|
-| 通知イベント例 | `user.created` / `user.deleted` / `user.disabled` / `mfa.enrolled` / `session.revoked` |
+| 通知イベント例 | `user.created` / `user.deleted` / `user.disabled` / `mfa.enrolled` / `session.revoked` / `auth.compromised_credentials_detected` |
 | API 認可 | IAM（Cognito）/ Realm Admin Role（Keycloak）|
 
 ### TBD / 要確認
 
+**A. Webhook 関連**（[§FR-9.3.0](#fr-930-webhook-の役割と-scimjit-との違い) と連動。「アプリ側で基盤の状態変化を即座に知って連鎖処理したいか?」を聞くもの）
+
+| 確認項目 | 何を聞いているか | 回答例 |
+|---|---|---|
+| **Webhook 通知の要否** | アプリ側でリアルタイム連鎖処理（user.created 時の業務 DB 反映 / mfa 通知 / 侵害時の SOC エスカレーション等）が必要か | 必須（連鎖処理あり）/ 不要（JWT 受け取りだけで足りる）|
+| **通知したいイベント種別** | どのイベントカテゴリを配信したいか。受信側のスキーマ設計・流量試算に影響 | `user.*`（作成/削除/更新）/ `mfa.*`（登録/解除）/ `session.*`（ログイン/Revoke）/ `auth.*`（侵害検知等）/ all |
+| **Webhook 受信側** | 受信側の構成。HMAC 署名 / OAuth 認証 / retry 戦略の設計が変わる | 内製アプリ（Lambda / ECS）/ 外部 SaaS（Slack / Datadog 等）/ 両方 |
+| **Webhook が不要な場合の代替** | Webhook なしで Q1 のユースケースをどう実現するか | 定期 SCIM 同期 / アプリ側で API ポーリング / 連鎖処理は実装しない |
+| **重要イベントの SLA** | 侵害検知・退職 deprovisioning など critical イベントの配信 SLA | 即時（< 1 分）/ 数分以内 / ベストエフォート |
+
+**B. API・IaC 関連**
+
 | 確認項目 | 回答例 |
 |---|---|
-| Webhook 通知の要否 | 必須（連鎖処理あり）/ 不要 |
-| 通知したいイベント種別 | user.* / mfa.* / session.* / all |
-| Webhook 受信側 | 内製アプリ / 外部 SaaS（Slack 等） |
 | IaC ツール | Terraform / AWS CDK / Pulumi |
 | API 利用者 | 弊社運用 / 顧客テナント管理者 / 自動化スクリプト |
+| API レート制限要件 | 顧客テナントごとに別 / 全体共通 |
 
 ---
 

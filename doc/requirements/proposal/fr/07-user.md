@@ -299,6 +299,121 @@ flowchart LR
 > **主な判断軸**: SCIM 2.0 の必要性（**Cognito ネイティブ非対応 → Keycloak 必須化に直結**）、バルクインポート規模、退職時 deprovision SLA   
 > **§FR-7 全体との関係**: §FR-7.1 が個別操作、§FR-7.4 は**自動化・大量処理**。JIT は [§FR-2.2.1](02-federation.md#321-jit-プロビジョニング--fr-fed-008) と整合
 
+### §FR-7.4.0 SCIM の位置づけと本基盤のスタンス
+
+> **論点**: SCIM は **「ユーザー情報を別システムに自動同期する標準 API」** で、OIDC / SAML の**認証層とは別レイヤー**にあるプロビジョニング層のプロトコル。退職者 deprovisioning / 属性同期 / GDPR 削除権応答を自動化する用途で、エンタープライズ B2B SaaS の標準。
+
+#### SCIM とは（基本）
+
+| 観点 | 内容 |
+|---|---|
+| **正式名称** | System for Cross-domain Identity Management 2.0（RFC 7643 + RFC 7644） |
+| **役割** | ユーザー情報の CRUD を行う REST API 標準（POST/GET/PUT/PATCH/DELETE）|
+| **送受信関係** | クライアント（送信元: HR / IdP）→ サーバー（受信先: 本基盤）|
+| **典型データ** | userName / email / active / name / groups 等の標準スキーマ + 拡張 |
+
+#### OIDC / SAML との関係（直交する 2 層）
+
+| 層 | プロトコル | やること |
+|---|---|---|
+| **認証層** | OIDC / SAML | **いまログインしようとしているのは誰か** を確認 |
+| **プロビジョニング層** | **SCIM** | **そもそも誰がユーザーとして存在するか** を管理 |
+
+→ **OIDC + SCIM** は標準的な組み合わせ。「SCIM = SAML 専用」は誤解（Entra / Okta / Google はいずれも OIDC + SCIM をセット提供）。
+
+#### JIT との比較（プロビジョニング方式）
+
+| 方式 | やり方 | 強み | 弱み |
+|---|---|---|---|
+| **JIT** | OIDC/SAML 初回ログイン時に自動作成 | 事前準備不要 | **退職者の deprovisioning が困難** |
+| **SCIM** | HR/IdP が REST API で push 同期 | 事前作成・自動 deprovisioning・属性同期 | ソース側に SCIM 機能必要 |
+| **手動 / バルクインポート** | 管理者が UI / CSV で投入 | 簡単 | スケールしない |
+
+#### カテゴリ別の SCIM 成立性（[§FR-1.2.0.0](01-auth.md#fr-1200-ローカルユーザーとは何か--利用者カテゴリ別の分析) と連動）
+
+SCIM が機能するには **送信元（source of truth）** が必要:
+
+| カテゴリ | 想定される送信元 | SCIM 成立性 |
+|---|---|:---:|
+| **P-1 基盤運用管理者** | 弊社の HR / 弊社内 IdP | ✅ 成立 |
+| **P-2 テナント管理者** | 顧客 HR / 顧客 IdP | ✅ 成立 |
+| **P-3 IdP あり顧客従業員** | 顧客 HR / 顧客 IdP | ✅ **最も成立しやすい** |
+| **P-4 IdP なし顧客従業員** | 顧客の HR システムが SCIM 対応か? | ⚠ 顧客 IT 体制次第 |
+| **P-5 ゲスト** | 招待ベース、SCIM の概念外 | ❌ 不向き |
+| **P-6 B2C** | セルフサインアップ、SCIM の概念外 | ❌ 不向き |
+
+#### §FR-7.4.0.A 本基盤の SCIM スタンス
+
+> **本基盤は SCIM 2.0 受信機能（SCIM サーバー）を実装する**ことを基本方針とする（Must）。一方で **顧客側に SCIM クライアント機能の保有・採用を必須化しない**（Should）。顧客 IdP の SCIM 対応状況と採用意思に応じて、SCIM 連携 / JIT のみ / ハイブリッドを柔軟に選択できる構成を採る。
+
+```mermaid
+flowchart LR
+    subgraph Source["送信元（顧客側 / 弊社側）"]
+        HR[HR System]
+        IdP[顧客 IdP<br/>Entra / Okta]
+        InHR[弊社 HR]
+    end
+    subgraph Hub["共通基盤（受信側）★本基盤は実装する"]
+        SCIM[SCIM 2.0<br/>サーバー]
+        DB[(ユーザー DB)]
+        SCIM --> DB
+    end
+    HR -->|SCIM| SCIM
+    IdP -->|SCIM| SCIM
+    InHR -->|SCIM| SCIM
+
+    style Hub fill:#fff3e0
+```
+
+#### 「全部 SCIM 強制」ではなく「全部 SCIM 可能」アプローチ
+
+| アプローチ | 共通基盤側 | 顧客側 | 採用判断 |
+|---|---|---|:---:|
+| **A. 全顧客 SCIM 強制** | SCIM 実装必須 | 全顧客に SCIM 対応 IdP / 上位ライセンス強制 | ❌ 顧客取得幅が狭まる |
+| **B. SCIM 不採用、JIT のみ** | 実装不要 | なし | ⚠ GDPR / 退職 deprovisioning リスク |
+| **C. SCIM 受信実装 + 顧客選択**（**採用**） | **実装する** | 利用可否は顧客選択 | ✅ **柔軟性最大** |
+
+→ C 案採用により、**SCIM 対応顧客には自動化メリットを提供しつつ、SCIM 未対応顧客も取り込める**バランスを実現。
+
+#### 顧客への QA 4 段階フロー
+
+顧客の SCIM 採用可否を判定する標準質問:
+
+```mermaid
+flowchart TD
+    Q1{Q1. 顧客 IdP は<br/>SCIM Provisioning 対応?}
+    Q1 -->|Yes| Q2{Q2. SCIM 連携を希望?<br/>ライセンス・コスト認識付き}
+    Q1 -->|No / 不明| Fall1[フォールバック策<br/>JIT + deprovisioning 方針]
+
+    Q2 -->|Yes| OK[✅ SCIM 連携前提]
+    Q2 -->|No| Fall1
+    Q2 -->|判断保留| Q3[Q3. 詳細・深掘り]
+
+    Fall1 --> Q4{Q4. deprovisioning 責任を<br/>顧客側で持てるか?}
+    Q4 -->|Yes| Accept[✅ JIT のみ<br/>顧客責任で deprovisioning]
+    Q4 -->|No| Manual[✅ 弊社で定期バッチ運用]
+
+    style OK fill:#e8f5e9
+    style Accept fill:#fff8e1
+    style Manual fill:#fff8e1
+```
+
+| Q# | 質問 | 期待回答 |
+|:---:|---|---|
+| **Q1（基本）** | 顧客 IdP は SCIM 2.0 Provisioning に対応していますか?（Entra Premium P1+ / Okta 全プラン / Google Cloud Identity Premium 等は標準対応）| Yes / No / 不明 |
+| **Q2（採用意思）** | SCIM 連携を採用希望されますか?（顧客側で SCIM 設定 + IdP 上位ライセンスが必要）| 採用 / 採用しない / 保留 |
+| **Q3（詳細）** | 利用中の IdP 製品とライセンス / HR システムと IdP の連携状況 / 入退社フローの現状 | 製品名 + 詳細 |
+| **Q4（Fallback）** | SCIM 不採用の場合、退職者の deprovisioning 責任を顧客側で持てますか? | 顧客責任 / 弊社サポート希望 |
+
+#### 顧客の回答による運用パターン
+
+| 回答パターン | 共通基盤側の運用 | リスク |
+|---|---|---|
+| **Q1 Yes + Q2 採用** | SCIM 自動同期（推奨パターン）| 最小 |
+| **Q1 Yes + Q2 採用しない** | JIT のみ + **契約で deprovisioning 責任を顧客に明示** | 中（契約条件次第）|
+| **Q1 No（IdP 未対応）** | JIT のみ + **弊社による定期バッチ deprovisioning** を提案 | 中（弊社運用コスト微増）|
+| **Q1 No（IdP なし、ローカル）** | ローカル + 手動 + セルフサービス（[§FR-1.2.0.0](01-auth.md) β/α シナリオ）| 状況次第 |
+
 ### 業界の現在地
 
 **SCIM 2.0 が業界標準化（2026）**:
@@ -333,27 +448,48 @@ flowchart LR
 | 退職時の Deprovision | ⚠ 個別実装（SCIM ない）| ✅ SCIM 経由 | エンタープライズ要件で大差 |
 | 監査ログ（プロビ・デプロビ）| ✅ CloudTrail | ⚠ Event Listener | Cognito が楽 |
 
-→ **SCIM 2.0 必須なら Keycloak、JIT のみで OK なら Cognito も OK**
+→ **SCIM 2.0 受信機能は本基盤で実装（§FR-7.4.0.A スタンス）**。Cognito 採用時は Lambda 自前実装、Keycloak 採用時はプラグイン採用で対応。
 
 ### ベースライン
 
 | 項目 | ベースライン |
 |---|---|
 | JIT プロビジョニング | **Must**（[§FR-2.2.1](02-federation.md#321-jit-プロビジョニング--fr-fed-008)）|
-| SCIM 2.0 自動連携 | **Should**（エンタープライズ要件次第） |
-| バルクインポート | **Should**（初期移行用）|
+| **SCIM 2.0 受信機能（共通基盤側実装）** | **Must**（§FR-7.4.0.A スタンス、Cognito 採用時は Lambda 実装、Keycloak は plugin） |
+| SCIM 2.0 連携（顧客側）| **Should**（顧客の IdP 対応 / 採用意思次第）|
+| バルクインポート | **Should**（初期移行用 / SCIM 未対応顧客のフォールバック）|
 | 管理者強制操作 | **Must** |
-| 退職時 deprovision SLA | 即時〜24 時間 |
-| ハイブリッド方式 | **JIT（日常） + SCIM（大量変更）** が推奨 |
+| 退職時 deprovision SLA | 即時〜24 時間（SCIM 採用顧客）/ 24 時間〜7 日（JIT のみ顧客、定期バッチ前提） |
+| ハイブリッド方式 | **JIT（日常） + SCIM（大量変更 + deprovisioning）** が推奨 |
 
 ### TBD / 要確認
 
+**A. 共通基盤側の方針（弊社で決定する）**
+
 | 確認項目 | 回答例 |
 |---|---|
-| SCIM 2.0 の必要性 | 必須（顧客 IdP 側で SCIM 設定済み）/ 不要（JIT のみで OK）|
+| SCIM 受信機能の実装スコープ | **全カテゴリ受け入れ可能な汎用 SCIM サーバー**（推奨）/ 限定スコープ |
+| 認証方式（SCIM Token）| OAuth Bearer Token（顧客テナント別に発行）|
+| 監査ログ範囲 | 全 SCIM 操作（CRUD）を CloudWatch / Audit Log |
+| エラーハンドリング | 失敗時のリトライ / Dead Letter Queue / 顧客通知 |
+
+**B. 顧客個別の確認事項（[§FR-7.4.0](#fr-740-scim-の位置づけと本基盤のスタンス) Q1〜Q4）**
+
+| 確認項目 | 回答例 |
+|---|---|
+| **Q1: 顧客 IdP の SCIM Provisioning 対応** | Entra ID P1+ / Okta / Google Cloud Identity Premium / HENNGE One / 自社製 / なし / 不明 |
+| **Q2: SCIM 連携採用意思**（顧客側のライセンス・設定コストを認識した上で）| 採用希望 / 採用しない / 判断保留 |
+| **Q3（詳細）**: 顧客 HR と IdP の連携状況、入退社フロー | 顧客内部の現状 |
+| **Q4（Fallback）**: SCIM 不採用時の退職者 deprovisioning 責任所在 | 顧客責任 / 弊社で定期バッチ運用 |
+
+**C. 規模 / SLA 関連**
+
+| 確認項目 | 回答例 |
+|---|---|
 | バルクインポート規模 | 初期 N 件 / 月次 M 件 / 不要 |
 | 退職時 deprovision SLA | 即時 / 24 時間以内 / 7 日以内 |
-| プラットフォーム選定への影響 | **SCIM Must → Keycloak**（ネイティブ）／Cognito（要 Lambda 実装）|
+| 顧客全体での SCIM 採用見込み比率 | 90%+ / 50-90% / <50% |
+| プラットフォーム選定への影響 | **SCIM 受信実装 Must 化により Cognito でも Lambda 実装で対応可、ただし Keycloak がやや有利**（[§C-2.2](../common/02-platform.md)）|
 
 ---
 
