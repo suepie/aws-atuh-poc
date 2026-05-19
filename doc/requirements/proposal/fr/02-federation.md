@@ -308,6 +308,99 @@ flowchart LR
 
 ---
 
+### §FR-2.2.1.A 同一テナント内ユーザー重複の扱い
+
+> **このサブ・サブセクションで定めること**: 同一テナント内で同一人物が複数 IdP / ローカル経由で別レコード化する重複問題と、その統合（アカウントリンク）または独立扱いの設計判断。   
+> **主な判断軸**: 顧客が複数 IdP を持つか、IdP 切替計画があるか、ローカル + フェデ併存があるか、乗っ取りリスクを許容できるか   
+> **§FR-2.2 内の位置付け**: §FR-2.2.1 JIT 時の「**既存ユーザー検出と統合判断**」を扱う。クロステナント重複は [§FR-2.3.A.1](#fr-23a1-何が分離共有されているか--論理分離の実態顧客が必ず聞く論点) で扱う
+
+#### 問題の所在: 同一テナント内で重複が発生する 7 シナリオ
+
+| # | シナリオ | 発生原因 |
+|:---:|---|---|
+| 1 | 顧客が複数 IdP を持つ（例: Acme = Entra ID + HENNGE 併用） | 各 IdP からの `sub` が別 |
+| 2 | IdP 切り替え期間（例: Okta → Entra への移行中） | 旧 `sub` と新 `sub` が並存 |
+| 3 | ローカル + フェデの併存 | 先にローカル登録、後から IdP 接続で別レコード作成 |
+| 4 | SCIM プロビ + JIT 競合 | 事前 SCIM の `userName` ≠ JIT 時の `sub` |
+| 5 | 退職 → 再入社 | IdP 上は新規アカウントだが基盤側に旧履歴あり |
+| 6 | 複数役割の表現 | 1 人 = 複数組織コードで別レコード化 |
+| 7 | 手動登録 + 自動流入 | 管理者の `AdminCreateUser` vs JIT 流入で別レコード |
+
+#### 業界の現在地
+
+- 業界標準は「**同一人物 = 1 プロファイル + 複数 IdP リンク**」（Microsoft Entra / Auth0 / Okta などの実装）
+- リンク時の最大リスクは「**他人 email アサーション流入による乗っ取り**」
+- AWS Cognito 公式は `AdminLinkProviderForUser` を **"trusted IdPs only"** と警告
+- Keycloak は First Broker Login Flow で **Confirm Link / Email OTP / Re-auth** を標準フロー化
+
+#### 我々のスタンス（基本方針に基づく）
+
+| 基本方針の柱 | 同一テナント重複扱いでの実現 |
+|---|---|
+| **絶対安全** | 自動リンクは原則しない。**Email OTP 確認** または **既存パスワード再認証** を経たリンクのみ。Trust Email は IdP 単位で明示判断 |
+| **どんなアプリでも** | リンク後は単一 `sub` で見える（`identities` クレームで複数 IdP 可視化）|
+| **効率よく** | SCIM 連携時は事前リンク（運用負荷で重複検出が起きない設計）|
+| **運用負荷・コスト最小** | Keycloak は標準フロー、Cognito は Pre Sign-up Lambda + `AdminLinkProviderForUser` で実装 |
+
+#### 設計の三択
+
+| 案 | 設計方針 | メリット | デメリット | 採用例 |
+|:---:|---|---|---|---|
+| **A 統合（リンク）派** | 同一人物 → 1 プロファイル / 複数 IdP リンク | UX 一貫、データ重複なし、deprovision 一括 | リンクロジック誤動作で乗っ取りリスク | **Microsoft Entra / Auth0 / Okta（業界標準）** |
+| **B 独立（許可）派** | IdP 経由 = 別ユーザー、重複を許容 | 攻撃面狭い、認証経路ごとに独立 | UX 悪化、データ重複、ロール管理混乱 | レガシー設計、移行期に一時採用 |
+| **C ハイブリッド** | IdP 経由は独立、ローカルとは統合 | 規制業種で許容しやすい | 設計複雑、説明難 | 慎重派、規制業種 |
+
+→ **推奨ベースライン: A 統合（リンク）派 + Trust Email を IdP 単位で慎重制御 + Email OTP / 再認証確認**
+
+#### 対応能力マトリクス
+
+| 機能 | Cognito | Keycloak (OSS / RHBK) | 備考 |
+|---|:---:|:---:|---|
+| 同一プロファイルへの IdP リンク | ✅ `AdminLinkProviderForUser` API | ✅ First Broker Login Flow | 両方標準 |
+| リンク可能な IdP 数上限 | **5（Hard limit）**[^cognito-q08] | 制限なし | Cognito 制約に注意 |
+| 既存ユーザー検出時の確認フロー | ⚠ Pre Sign-up Lambda 自前実装 | ✅ Confirm Link / Email OTP / Re-auth 標準選択肢 | **Keycloak が圧倒的に楽** |
+| 管理 UI からのリンク操作 | ❌ **API のみ**（Console 不可） | ✅ Admin Console + Account Console | Keycloak UX 良 |
+| ユーザー自身による自己リンク | ❌ | ✅ Account Console 経由 | 同上 |
+| Trust Email の IdP 単位制御 | ⚠ 暗黙的 | ✅ 明示設定 | 同上 |
+| `identities` クレーム出力（複数 IdP 可視化）| ✅ ID Token | ✅ Federated Identities API | 両方標準 |
+
+[^cognito-q08]: [cognito-knockout-conditions.md Q-08](../../../reference/cognito-knockout-conditions.md) — Identities linked to a user は 5 Hard limit
+
+#### セキュリティ上の最大論点：アカウント乗っ取り対策
+
+| 攻撃ベクター | 対策 |
+|---|---|
+| **悪意ある（or 設定ミス）IdP からの他人 email アサーション流入**（攻撃者が自分の IdP アカウントに被害者 email を設定 → 自動リンクで被害者アカウント乗っ取り） | **Trust Email を自動 true にしない**（IdP 単位で明示判断）+ Email OTP 確認 |
+| **同名同 email の偶然衝突** | 突合せキーを email でなく **immutable な `sub` / `objectid` / 雇用 ID** にする |
+| **退職者の再入社時のリンク誤動作** | 退職者プロファイルは soft-delete + 管理者承認後リンク |
+| **JIT による自動レコード生成と既存ローカル衝突** | First Broker Login Flow / Pre Sign-up Lambda で確認フロー必須 |
+| **管理者通知なしのサイレント乗っ取り** | リンクイベントは監査ログ + 管理者通知（[§FR-8.2](08-admin.md) 監査）|
+
+#### ベースライン
+
+| 項目 | ベースライン |
+|---|---|
+| 重複扱い方針 | **A 統合（リンク）派** |
+| 自動リンクの条件 | **原則行わない**。Email OTP 確認 or 既存パスワード再認証を経た上でのみ |
+| Trust Email | **IdP 単位で明示設定**。デフォルト false（顧客 IdP は性善説で扱わない）|
+| 突合せキー | email（補助）+ **immutable な `sub` / 雇用 ID（プライマリ）** |
+| 管理者通知 | リンクイベントは監査ログ + 管理者通知（運用必須） |
+| IdP 切替時の連続性 | SCIM 同期で事前リンク、または管理者主導の手動マージ |
+| Cognito 採用時の制約 | 1 ユーザーあたり **5 IdP リンクまで（Hard）** — 多 IdP 顧客は Keycloak へ移行検討 |
+
+#### TBD / 要確認（[hearing-checklist.md](../../hearing-checklist.md) B-406〜B-410 と連動）
+
+| 確認項目 | 回答例 |
+|---|---|
+| 同一テナント内で同一人物が複数経路でアクセスする想定はあるか | あり / なし |
+| 想定経路 | 複数 IdP / ローカル + IdP / IdP 切替 / 退職再入社 / SCIM + JIT |
+| 重複検出時の挙動 | 自動リンク / Email OTP 確認 / 既存パスワード再認証 / エラー停止 |
+| 突合せキー | email / immutable sub / 雇用 ID / カスタム属性 |
+| リンクのトリガー | 管理者主導 / ユーザー主導 / 自動 |
+| IdP 切替計画の有無 | あり（時期）/ なし |
+
+---
+
 ### §FR-2.2.2 属性マッピング / クレーム変換（→ FR-FED-009）
 
 > **このサブ・サブセクションで定めること**: 各 IdP が返す多様な属性名・形式を本基盤の統一クレーム形式（`sub` / `tenant_id` / `roles` 等）に正規化する仕組み。   

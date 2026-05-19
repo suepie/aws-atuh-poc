@@ -37,7 +37,7 @@
 | K-04 | **Token Introspection（RFC 7662）** | ❌ 非対応（JWT 検証は自前で実施が前提） | ✅ `/protocol/openid-connect/token/introspect` で対応 | Opaque Token 対応の Resource Server で致命的 |
 | K-05 | **Dynamic Client Registration（RFC 7591）** | ❌ 非対応 | ✅ Realm Management API | 自動 Client 発行が必要な多テナント基盤で致命的 |
 | K-06 | **Pairwise Pseudonymous Identifier (PPID)** | ❌ 非対応（`sub` は固定の UUID） | ⚠ プラグイン対応 | プライバシー要件（GDPR 強化）で問題 |
-| K-07 | **OIDC Back-Channel Logout（RFC 8606）** | ❌ 非対応 | ✅ ネイティブ対応 | 複数アプリ間の確実なログアウト同期で致命的 |
+| K-07 | **OIDC Back-Channel Logout 1.0**（OpenID Foundation 仕様、RFC ではない） | ❌ **非対応（証跡: AWS 公式 [federation-endpoints](https://docs.aws.amazon.com/cognito/latest/developerguide/federation-endpoints.html) に backchannel_logout_endpoint なし、`/logout` は browser GET のみ [logout-endpoint](https://docs.aws.amazon.com/cognito/latest/developerguide/logout-endpoint.html)。Cognito Discovery JSON に `backchannel_logout_supported` 不在）** | ✅ ネイティブ対応 | 複数アプリ間の確実なログアウト同期で致命的 |
 | K-08 | **OIDC Front-Channel Logout（OIDC 仕様）** | ❌ 非対応 | ✅ 対応 | 一部のレガシー SP 連携で問題 |
 | K-09 | **Custom JWT Signing Key（BYO key）** | ❌ Cognito 管理の鍵のみ、ローテーションも AWS 管理 | ✅ Realm Key で BYO 可 | 顧客が鍵管理を要求する場合に致命的 |
 | K-10 | **JWT 署名アルゴリズム ES256 / EdDSA** | ❌ RS256 のみ対応 | ✅ RS256/ES256/PS256/EdDSA 等 | FAPI / 軽量モバイル要件で問題 |
@@ -286,11 +286,44 @@
 
 ## 10. 出典・参考
 
+### 個別 Knockout の証跡取得手順（再現可能なエビデンス）
+
+#### K-07: OIDC Back-Channel Logout 1.0 非対応の確認方法
+
+以下の 3 ステップで非対応を実機証明できる:
+
+**Step 1: 公式エンドポイント一覧で `backchannel_logout_endpoint` の不在を確認**
+- URL: <https://docs.aws.amazon.com/cognito/latest/developerguide/federation-endpoints.html>
+- 表に列挙されている 9 エンドポイントを確認: `/oauth2/authorize` / `/oauth2/token` / `/oauth2/userInfo` / `/oauth2/revoke` / `/.well-known/openid-configuration` / `/.well-known/jwks.json` / `/oauth2/idpresponse` / `/saml2/idpresponse` / `/saml2/logout`
+- → `backchannel_logout_endpoint` が**存在しない**ことを公式ドキュメントで確認
+
+**Step 2: `/logout` エンドポイントが browser GET 限定であることを確認**
+- URL: <https://docs.aws.amazon.com/cognito/latest/developerguide/logout-endpoint.html>
+- 引用: "The `/logout` endpoint only supports `HTTPS GET`. The user pool client typically makes this request through the system browser."
+- → server-to-server POST（Back-Channel Logout の必須要件）が不可
+
+**Step 3: 実機の Discovery JSON で `backchannel_logout_supported` 不在を確認**
+- 任意の Cognito User Pool で以下を実行:
+```bash
+curl https://cognito-idp.{REGION}.amazonaws.com/{USER_POOL_ID}/.well-known/openid-configuration | jq
+```
+- レスポンスに **`backchannel_logout_supported` / `backchannel_logout_session_supported` キーが存在しない** ことを確認
+- OIDC Back-Channel Logout 1.0 仕様（<https://openid.net/specs/openid-connect-backchannel-1_0.html>）§ 2.3 では、対応 OP は Discovery でこれらのメタデータを宣言することが必要
+
+→ Step 1-3 の組み合わせで、**Cognito が Back-Channel Logout 1.0 仕様に非対応であることを 3 重に確認可能**。
+
 ### 公式 AWS 一次ソース
 
 - **AWS Cognito Quotas（公式）**: <https://docs.aws.amazon.com/cognito/latest/developerguide/quotas.html>
 - **AWS Cognito FAQs**: <https://aws.amazon.com/cognito/faqs/>
 - **AWS Cognito Developer Guide**: <https://docs.aws.amazon.com/cognito/latest/developerguide/>
+- **AWS Cognito Federation Endpoints**: <https://docs.aws.amazon.com/cognito/latest/developerguide/federation-endpoints.html>（K-07 一次証跡）
+- **AWS Cognito Logout Endpoint**: <https://docs.aws.amazon.com/cognito/latest/developerguide/logout-endpoint.html>（K-07 一次証跡）
+
+### OIDC 仕様
+
+- **OpenID Connect Back-Channel Logout 1.0**: <https://openid.net/specs/openid-connect-backchannel-1_0.html>（K-07 仕様根拠）
+- **OpenID Connect RP-Initiated Logout 1.0**: <https://openid.net/specs/openid-connect-rpinitiated-1_0.html>（K-07 比較対象）
 
 ### 二次ソース
 

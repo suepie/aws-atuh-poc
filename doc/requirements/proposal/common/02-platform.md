@@ -443,7 +443,13 @@ flowchart TD
 - [Cognito 新ティア発表（Essentials/Plus 2024-11）](https://aws.amazon.com/about-aws/whats-new/2024/11/new-feature-tiers-essentials-plus-amazon-cognito/)
 - [Cognito Token Exchange 非対応 公式回答](https://repost.aws/questions/QUO3Q1dpQOTHKY9F6JVl3hEQ/does-aws-cognito-support-oauth-2-0-token-exchange-grant-type)
 - [Cognito Device Grant Flow サンプル実装](https://aws.amazon.com/blogs/security/implement-oauth-2-0-device-grant-flow-by-using-amazon-cognito-and-aws-lambda/)
-- [Cognito Back-Channel Logout 非対応 GitHub Discussion](https://github.com/keycloak/keycloak/discussions/30353)
+- **Cognito Back-Channel Logout 非対応の証跡**:
+  - [AWS Cognito Federation Endpoints（公式）](https://docs.aws.amazon.com/cognito/latest/developerguide/federation-endpoints.html) — 全エンドポイント一覧に backchannel_logout_endpoint なし（9 エンドポイントのみ）
+  - [AWS Cognito Logout Endpoint（公式）](https://docs.aws.amazon.com/cognito/latest/developerguide/logout-endpoint.html) — "The `/logout` endpoint only supports `HTTPS GET`. The user pool client typically makes this request through the system browser."（browser GET のみ、server-to-server 非対応）
+  - [OpenID Connect Back-Channel Logout 1.0 仕様](https://openid.net/specs/openid-connect-backchannel-1_0.html) — `backchannel_logout_supported` 等のメタデータが必要だが Cognito Discovery JSON に不在
+  - [rieckpil "OIDC Logout with AWS Cognito and Spring Security"](https://rieckpil.de/oidc-logout-with-aws-cognito-and-spring-security/) — "AWS Cognito doesn't implement the RP-Initiated Logout specification (yet). However, AWS Cognito offers a proprietary logout mechanism."
+  - [Keycloak Discussion #30353](https://github.com/keycloak/keycloak/discussions/30353) — Keycloak 連携で Cognito だけ back-channel logout が動かない（Entra/Okta は動く）コミュニティ報告
+  - [LocalStack Issue #12914](https://github.com/localstack/localstack/issues/12914) — Cognito Discovery が `end_session_endpoint`（RP-Initiated）のみ含み、back-channel 系は含まないことを確認
 - [Cognito mTLS サンプル](https://github.com/aws-samples/sample-cognito-user-mtls-idp)
 
 #### Keycloak / RHBK
