@@ -58,6 +58,61 @@ flowchart LR
 
 → フェデレーションを共通基盤に集約することが、**Broker パターン採用の本質的価値**。顧客追加のフリクションレス化と統一クレーム形式が同時に実現する。
 
+### §FR-2.0.B プロトコル組み合わせの全体像（受信側 × 発行側は独立）
+
+> **混同しやすいポイント**: 「OIDC で認証 + OAuth でトークン発行」という表現は、実は **OIDC = OAuth 2.0 + ID Token** で同一系統。プロトコルは「**受信側（顧客 IdP → 本基盤）**」と「**発行側（本基盤 → アプリ）**」の **2 つの独立した軸**で考える。
+
+#### 本基盤 = プロトコル変換装置（Identity Broker）
+
+```mermaid
+flowchart LR
+    subgraph Recv["受信側（多様、顧客次第）"]
+        R1[顧客 A: OIDC<br/>Entra ID]
+        R2[顧客 B: SAML 2.0<br/>HENNGE]
+        R3[顧客 C: LDAP<br/>オンプレ AD]
+    end
+
+    Hub[本基盤<br/>Identity Broker<br/>= プロトコル変換]
+
+    subgraph Issue["発行側（基本統一）"]
+        I1[アプリ全般<br/>OIDC + OAuth 2.0<br/>JWT]
+        I2[レガシー SAML SP アプリ<br/>SAML 2.0 IdP モード<br/>※B-202 Yes 時のみ追加]
+    end
+
+    R1 --> Hub --> I1
+    R2 --> Hub --> I1
+    R3 --> Hub --> I1
+    Hub -.オプション.-> I2
+
+    style Hub fill:#fff3e0
+    style I1 fill:#e8f5e9
+    style I2 fill:#fff8e1
+```
+
+→ **受信側は顧客次第で多様、発行側は基本的に OIDC + OAuth で統一**。これにより**各アプリは「JWT 検証だけ」で完結**できる（Broker パターンの本質）。
+
+#### 組み合わせマトリクス
+
+| 受信側プロトコル | 発行側プロトコル | 構成名 | 典型ケース | 本基盤の対応 |
+|---|---|---|---|:---:|
+| **OIDC** | **OIDC + OAuth 2.0** | 標準（現代的、推奨）| 新規構築、ほとんどの B2B SaaS | ✅ |
+| **SAML 2.0 SP** | **OIDC + OAuth 2.0** | **SAML→JWT フェデブリッジ** | 顧客 IdP が HENNGE / ADFS、アプリは現代的 | ✅ |
+| **LDAP** | **OIDC + OAuth 2.0** | AD→JWT 変換 | 顧客が AD 直結、アプリは JWT | ✅ Keycloak のみ |
+| OIDC | **SAML 2.0 IdP** | レガシー SAML SP 連携 | 顧客 IdP は OIDC、既存アプリが SAML SP-only | ✅ Keycloak のみ |
+| SAML 2.0 SP | **SAML 2.0 IdP** | フル SAML（古典 SSO）| 全体 SAML、稀 | ✅ Keycloak のみ |
+| LDAP | **SAML 2.0 IdP** | AD→SAML 出力 | 稀、規制業界の特殊系 | ✅ Keycloak のみ |
+
+#### OIDC と OAuth 2.0 の関係（よくある誤解）
+
+| 用語 | 関係 |
+|---|---|
+| **OAuth 2.0** | **認可フレームワーク**（Token 発行プロトコル、RFC 6749）|
+| **OIDC**（OpenID Connect 1.0）| **OAuth 2.0 + ID Token**（認証層を追加）|
+
+→ 「**OIDC で認証 + OAuth で発行**」は技術的に同じ系統（OIDC が OAuth を内包）。**SAML だけが完全に別系統**。
+→ **発行側は基本 OIDC + OAuth で統一**、**SAML IdP モードはオプション**（[B-202](../../hearing-script/02-idp-federation.md) Yes 時のみ追加）。
+→ 受信側 / 発行側で **意味 A の認可（Token 発行制御）**は本基盤の責務。**意味 B の認可（業務判定）**はアプリ側（[§FR-6.0.A](06-authz.md)）。
+
 ### 本章で扱うサブセクション
 
 | サブセクション | 内容 | 関連 FR |
@@ -1407,6 +1462,75 @@ flowchart LR
 | 対象アプリ規模 | Cognito: 20 アプリまで / Keycloak: 制限なし |
 | 業界実例 | **Auth0 Universal Login / Microsoft Entra App Registration / Okta Brands / Cognito Managed Login Branding** |
 | 採用シーン | アプリ間で全く異なるブランド体験を提供したい（経費精算 / 決済 / 人事 等）|
+
+###### パターン A' のカスタマイズ範囲の限界（重要）
+
+**「ロゴ・配色の差替」は両プラットフォームで可能**ですが、**配置・要素並び順・文言変更などの DOM 変更**には大きな制約があります。詳細は [branding-strategy-evidence.md §7.A カスタマイズレベル別マトリクス](../../../common/branding-strategy-evidence.md) を参照。
+
+| Lv | 内容 | Cognito Managed Login | Keycloak Theme |
+|:---:|---|:---:|:---:|
+| L1-L3 | 見た目・スペーシング・基本配置（事前選択肢） | ✅ | ✅ |
+| L4 | テキスト・文言変更 | **❌**（多言語のみ） | ✅ |
+| L5 | 要素追加・削除 | **❌** | ✅ |
+| L6 | 要素並び順変更 | **❌** | ✅ |
+| L7-L8 | HTML 構造完全自由 / カスタム JS | **❌** | ✅ |
+
+→ **L4-L8 が必要な場合の選択肢**:
+1. **Keycloak 採用**（パターン A' のまま、Theme で完全自由、SSO 維持）
+2. **Cognito Custom UI（SDK 経由）に切り替え**（自前ホスティング）
+3. **そのアプリ単独でアプリ側カスタム UI に寄せる**（共通基盤の運用負荷回避、ただし SSO 喪失のトレードオフ。詳細は [branding-strategy-evidence.md §7.B](../../../common/branding-strategy-evidence.md)）
+
+###### パターン A' の動作原理：URL 1 つで UI を振り分ける仕組み
+
+「Callback URL もログイン URL も 1 つなのに、どうやってアプリごとに違う画面を出しているのか?」という疑問への解説。
+
+**結論**: OAuth 標準の **`client_id` クエリパラメータで Client を識別**し、Client 設定から Branding / Theme を解決する仕組み。Cognito / Keycloak 共通の動作。
+
+```mermaid
+sequenceDiagram
+    participant Browser as 👤 ブラウザ
+    participant Hub as 🏢 共通認証基盤
+    participant Config as Client 設定
+    participant Theme as Theme/Branding<br/>リソース
+
+    Note over Browser: アプリ A（経費精算）からの遷移
+    Browser->>Hub: GET /auth?client_id=expense-app&...
+    Hub->>Config: client_id "expense-app" の設定取得
+    Config-->>Hub: Branding Style A / Theme A の参照
+    Hub->>Theme: Branding A / Theme A 読込
+    Theme-->>Hub: 経費精算用 UI リソース
+    Hub-->>Browser: HTML レスポンス<br/>(経費精算ブランド画面)
+
+    Note over Browser: アプリ B（決済管理）からの遷移
+    Browser->>Hub: GET /auth?client_id=payment-app&...
+    Hub->>Config: client_id "payment-app" の設定取得
+    Config-->>Hub: Branding Style B / Theme B の参照
+    Hub->>Theme: Branding B / Theme B 読込
+    Theme-->>Hub: 決済管理用 UI リソース
+    Hub-->>Browser: HTML レスポンス<br/>(決済管理ブランド画面)
+```
+
+**ポイント**:
+
+| 観点 | 内容 |
+|---|---|
+| **URL** | 同じ（`/auth` 等の認証エンドポイント） |
+| **Callback URL** | Client 設定の `redirectUris` で管理、複数アプリで共通 1 つでも OK |
+| **識別キー** | `client_id` クエリパラメータ（OAuth 2.0 標準仕様） |
+| **振り分けロジック** | 共通基盤が `client_id` から Client 設定を引き、紐づく Branding Style（Cognito）/ Theme（Keycloak）でレンダリング |
+
+**Cognito vs Keycloak の本質的差**:
+
+| 観点 | Cognito Managed Login | Keycloak Theme |
+|---|---|---|
+| **管理単位** | Branding Style（**JSON 設定**） | Theme（**ファイル群**） |
+| **HTML 編集** | ❌ 不可（設定の組み合わせのみ） | ✅ 完全自由（`.ftl` テンプレート）|
+| **継承機構** | ❌ なし | ✅ `parent` 指定で base / keycloak から継承可、差分のみ書く |
+| **管理単位の上限** | 20 Style / Pool（Hard）| 制限なし |
+| **デプロイ** | API 経由（`CreateManagedLoginBranding`）| ファイル配置（Git で管理可）|
+| **動的選択** | App Client 単位の静的割当 | Theme Selector SPI で動的選択可 |
+
+→ **「変更容易」の本質**: Keycloak は **ファイルベース + 階層継承** で、エンジニアが慣れた Git / PR フローで管理可能。Cognito Branding Editor の独自設定形式と異なり、HTML / CSS を直接編集できる。詳細は [branding-strategy-evidence.md §7.C](../../../common/branding-strategy-evidence.md) を参照。
 
 **パターン B: テナント別ロゴのみ動的注入（認証基盤側で顧客識別）**
 

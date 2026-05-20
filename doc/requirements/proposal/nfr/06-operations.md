@@ -254,6 +254,112 @@ flowchart LR
 | 緊急対応の権限 | on-call 単独 / 2 名必須 |
 | dev/staging/prod のアカウント分離方針 | 完全分離 / staging のみ共有 |
 
+### §NFR-6.4.A Branding Style 変更の PR ベース運用（パターン A' 採用時）
+
+> **このサブ・サブセクションで定めること**: [§FR-2.3.3.A パターン A'](../fr/02-federation.md#fr-233a-画面所在マトリクスとカスタマイズ-3-パターン) 採用時の「アプリ単位 Branding Style」変更を、**共通基盤本体のリリース変更なし**で各アプリチームが独立して進められる運用フロー設計。   
+> **主な判断軸**: アプリチームの自律性、共通基盤チームの介入最小化、変更履歴の監査追跡性   
+> **§NFR-6.4 内の位置付け**: 構成変更の中でも **「設定変更のみ・コード変更不要」** のカテゴリ。Cognito Branding Style / Keycloak Theme リソースのライフサイクルを定義
+
+#### 課題：共通基盤リリースへの依存懸念
+
+パターン A' 採用時、アプリ単位の Branding Style 変更（ロゴ差替、配色変更等）が「アプリリリース時に共通基盤側のリリースも必要」となると、**アプリチームの自律性が損なわれる**懸念があります。
+
+#### 解決設計：設定リポジトリ分離 + PR ベース運用
+
+```mermaid
+flowchart LR
+    subgraph AppTeam["アプリチーム"]
+        Developer["開発者"]
+    end
+    
+    subgraph BrandingRepo["Branding 設定リポジトリ<br/>(共通基盤本体とは別 Git Repo)"]
+        Config["branding/<br/>  app-expense/<br/>    style.json<br/>    logo.svg<br/>  app-payment/<br/>    style.json<br/>    logo.svg"]
+    end
+    
+    subgraph HubTeam["共通基盤チーム"]
+        Reviewer["レビュアー"]
+    end
+    
+    subgraph CICD["CI/CD"]
+        Terraform["Terraform Apply"]
+    end
+    
+    subgraph AuthBase["共通認証基盤"]
+        Cognito["Cognito Managed Login Branding<br/>または Keycloak Theme"]
+    end
+    
+    Developer -->|"❶ PR 提出<br/>(style.json / logo 更新)"| Config
+    Config -->|"❷ レビュー依頼"| Reviewer
+    Reviewer -->|"❸ Approve"| Config
+    Config -->|"❹ マージ → 自動 Apply"| Terraform
+    Terraform -->|"❺ Branding Style のみ更新<br/>(共通基盤コード不変)"| AuthBase
+    
+    style AppTeam fill:#e8f5e9
+    style HubTeam fill:#fff3e0
+    style AuthBase fill:#e3f2fd
+```
+
+#### 設計上のポイント
+
+| 項目 | 設計 |
+|---|---|
+| **リポジトリ分離** | 共通基盤本体（Terraform module / Lambda コード）と Branding 設定リポジトリを分離 |
+| **共通基盤コードは不変** | Branding Style の追加・更新で共通基盤本体に変更は入らない |
+| **PR の責務範囲** | アプリチーム = 自社アプリ用 Branding の中身を自由に PR / 共通基盤チーム = レビュー・承認のみ |
+| **デプロイ独立性** | Branding Style のみの変更は **共通基盤の通常リリースサイクルと無関係** にデプロイ可能 |
+| **変更履歴の監査** | Git の標準コミット履歴 = 監査ログとして追跡可能 |
+| **緊急対応** | Branding 不具合（ロゴ漏れ等）は専用 Fast Track（on-call 単独承認等）で迅速対応 |
+
+#### Terraform 実装サンプル
+
+```hcl
+# branding/app-expense/main.tf
+resource "aws_cognito_managed_login_branding" "expense" {
+  user_pool_id = data.aws_cognito_user_pool.main.id  # 共通基盤から参照
+  client_id    = data.aws_cognito_user_pool_client.expense.id
+
+  settings = jsonencode(jsondecode(file("${path.module}/style.json")))
+  assets   = [
+    for f in fileset("${path.module}/assets", "*") : {
+      category   = upper(replace(basename(f, ".svg"), "-", "_"))
+      color_mode = "LIGHT"
+      extension  = trimprefix(reverse(split(".", reverse(f)))[0], ".")
+      bytes      = filebase64("${path.module}/assets/${f}")
+    }
+  ]
+}
+```
+
+```hcl
+# branding/app-payment/main.tf
+resource "aws_cognito_managed_login_branding" "payment" {
+  user_pool_id = data.aws_cognito_user_pool.main.id
+  client_id    = data.aws_cognito_user_pool_client.payment.id
+  
+  settings = jsonencode(jsondecode(file("${path.module}/style.json")))
+  # 各アプリチームが独立して style.json と assets/ を管理
+}
+```
+
+#### 変更タイプ別 承認 SLA（推奨）
+
+| 変更タイプ | 承認者 | レビュー期間 | デプロイ方式 |
+|---|---|---|---|
+| **新規 Branding Style 作成**（アプリ追加時）| 共通基盤運用リード + アプリ責任者 | 2-3 営業日 | 通常デプロイ |
+| **既存 Branding Style 更新**（ロゴ差替 / 配色変更）| 共通基盤運用（1 名） | **1 営業日** | 通常デプロイ |
+| **緊急修正**（不適切なロゴ表示 / セキュリティ問題）| on-call エンジニア | **即時** | Fast Track（staging skip 可）|
+| **Branding Style 削除**（アプリ廃止）| 共通基盤運用リード | 2-3 営業日 | 通常デプロイ |
+
+#### TBD / 要確認
+
+| 確認項目 | 回答例 |
+|---|---|
+| Branding 設定リポジトリ分離の採用 | 採用 / 共通基盤本体と統合 |
+| アプリチームの PR 提出権限 | あり（外部 contributor）/ なし（共通基盤運用が代理）|
+| 緊急 Fast Track の権限保有者 | on-call 全員 / 特定メンバーのみ |
+| Branding 変更のテスト要件 | staging で必須 / 直接 prod 可（軽微な変更）|
+| 監査ログ保存期間 | Git 履歴 + CloudTrail（[§FR-9.2](../fr/09-integration.md)）|
+
 ---
 
 ## §NFR-6.5 運用ユースケース別 作業フロー

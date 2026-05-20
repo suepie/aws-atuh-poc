@@ -114,6 +114,96 @@ flowchart LR
 
 → 「最小限の正規化済みクレームを安全に発行する」までが基盤の仕事。**その先（業務ロジックに紐づく認可）は各アプリ**。
 
+### §FR-6.0.B 「認可」という言葉の 2 つの意味（よくある誤解と Token Exchange の位置づけ）
+
+> **誤解の典型**: 「認可はアプリ側だから、本基盤は Token 発行だけしてれば良い。Token Exchange も気にしなくて良いのでは?」
+> **実は逆**: 本基盤が **「正しい Token を正しい宛先に発行する」** 責務を果たさないと、**アプリ側で正しく認可判定ができなくなる**。
+
+#### 「認可」の 2 つの意味
+
+OAuth/OIDC 周辺で「認可」は 2 つの意味で使われ、混同されがちです:
+
+| 意味 | 何の話か | 担当 |
+|---|---|---|
+| **意味 A: 認可フレームワーク**（OAuth 2.0 そのもの）| **Token をどう発行するか**（フロー / プロトコル）| **本基盤**（Authorization Server）|
+| **意味 B: 認可判定**（リソース保護）| **alice は /expense/123 を編集できるか?** という業務判定 | **アプリ**（Resource Server）|
+
+→ **§FR-6.0.A の「認可はアプリ側」スタンスは意味 B のこと**。意味 A は本基盤がやらないと OAuth が成立しない。
+
+#### Cognito/Keycloak は「クレームを整えるだけ」か?
+
+**半分正しいが、もう少し正確には**:
+
+| 本基盤がやること | 認可判定か? |
+|---|---|
+| ユーザー認証（本人確認） | ❌ 認可ではなく**認証** |
+| クレーム発行（`sub` / `email` / `tenant_id` 等）| ❌ 認可判定ではない、**判定の材料を渡している** |
+| **Access Token の発行**（`aud` / `scope` / `exp` 付き）| ⚠ **意味 A の認可**（フロー制御）|
+| **どのクライアントに何の Token を出すか**（App Client 設定で制御）| ⚠ **意味 A の認可**（アクセス制御の入口）|
+| alice は /expense/123 を編集できるか? | ❌ **やらない**（アプリ側）|
+
+→ **本基盤は「アプリ側の認可判定の前提を作る」**。判定そのものはアプリだが、**正しい前提（適切な Token）がないとアプリ側で正しく判定できない**。
+
+#### Token Exchange が必要になるシナリオ（マイクロサービス OBO）
+
+```mermaid
+sequenceDiagram
+    participant Alice
+    participant SPA
+    participant Expense as expense-api
+    participant AS as 本基盤<br/>(Authorization Server)
+    participant Notif as notification-api
+
+    Alice->>SPA: 経費承認依頼
+    SPA->>Expense: POST /expense<br/>JWT (sub=alice, aud=expense-api)
+    Expense->>AS: Token Exchange Request<br/>「alice の Token を notification-api 用に」
+    AS->>Expense: 新 JWT (sub=alice, aud=notification-api, scope=notification:send)
+    Expense->>Notif: POST /notification<br/>新 JWT
+    Notif->>Notif: 検証 + 認可判定<br/>「alice は notification:send 権限あり」
+```
+
+**Token Exchange なしの代替策はすべて妥協を強いる**:
+
+| 代替策 | 問題 | アプリ側認可への影響 |
+|---|---|---|
+| **Token をパススルー** | `notification-api` が `aud=expense-api` の Token を受ける（本来拒否）| **`aud` チェックを甘くする必要** = アプリ側認可ルーズ化 |
+| **Client Credentials** | `sub=expense-api-service` に変わる、ユーザー文脈消失 | **「誰のリクエストか」が消える** = 監査不能、ユーザー単位認可不能 |
+| **アクセス禁止** | サービス間連携不能 | 業務成立せず |
+
+→ **Token Exchange があれば、アプリは「自分宛の正しい Token」を受け取って純粋に業務認可判定だけに集中できる**。
+→ これが「**認可はアプリ側だが、本基盤は『正しい Token』を渡す責務がある**」の意味。
+
+#### 「Token Exchange を気にすべきか」の判断フロー
+
+```mermaid
+flowchart TB
+    Q1{システムは<br/>マイクロサービス構成?}
+    Q1 -->|No モノリス| NoTE[Token Exchange 不要<br/>→ Cognito OK]
+    Q1 -->|Yes| Q2{サービス間で<br/>HTTP 呼び出しあり?}
+    Q2 -->|No| NoTE
+    Q2 -->|Yes| Q3{呼び出し先サービスで<br/>「誰のリクエストか」<br/>を知る必要ある?}
+    Q3 -->|No 監査もしない<br/>権限チェック不要| NoTE2[Client Credentials で十分<br/>→ Cognito OK]
+    Q3 -->|Yes 監査 / 個別認可 /<br/>監査ログにユーザー名| TE[Token Exchange 必須<br/>→ Keycloak 必須化]
+
+    style NoTE fill:#e8f5e9
+    style NoTE2 fill:#e8f5e9
+    style TE fill:#ffe0e0
+```
+
+**Yes になる典型ケース**:
+- 監査ログにユーザー名が必須（GDPR / SOC 2 / FFIEC 等）
+- サービス別に個別認可がある（notification-api が alice の通知設定を見て判定）
+- B2B SaaS でテナント別の細粒度認可（サービス間でも `tenant_id` を保持）
+- OAuth Scope の最小権限原則（notification 呼び出し時に expense scope は要らない）
+
+**No で済む典型ケース**:
+- モノリス（単一バックエンド）
+- マイクロサービスでも独立性が高く各サービスが直接ユーザー認証受ける
+- サービス間 = 設定値同期程度、ユーザー文脈不要
+- 監査がサービス単位で完結、ユーザー名は不要
+
+→ **Yes なら Cognito 候補から落ちる**（Token Exchange = K-01 Knockout、Keycloak 必須）。
+
 #### 本章で扱うサブセクション
 
 | サブセクション | 内容 | 関連 FR |

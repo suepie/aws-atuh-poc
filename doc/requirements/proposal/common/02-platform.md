@@ -263,7 +263,34 @@ flowchart LR
 
 → A-12 は **A-1〜A-11 と並ぶ Keycloak 必須化要因の 12 番目**。L3 検証ありき信頼が必須なら Keycloak へ。
 
-→ **A-1〜A-12 のいずれかが Must なら Keycloak（OSS or RHBK）必須化**。完全 knockout（不可能）は A-4 SAML IdP モード / A-3 FAPI 完全準拠。それ以外は **代替手段あり**だが**運用負荷大**。
+#### A-13. FR-ADMIN-012 ログイン画面の高度カスタマイズ（L4-L8）
+
+> **詳細**: [§FR-2.3.3.A](../fr/02-federation.md#fr-233a-画面所在マトリクスとカスタマイズ-3-パターン) パターン A' のカスタマイズ範囲の限界 / [branding-strategy-evidence.md §7.A](../../../common/branding-strategy-evidence.md) カスタマイズレベル別マトリクス
+
+A-11 でパターン A' を採用する場合、認証基盤側ログイン画面の **DOM 構造変更を含む高度カスタマイズ（L4-L8）** が必要かどうかでプラットフォーム選定に決定的影響。
+
+| 観点 | 内容 |
+|---|---|
+| **L1-L3（ロゴ・色・基本配置）**| ✅ Cognito Managed Login Branding（20 Style 上限 / Pool） / ✅ Keycloak Theme（制限なし）|
+| **L4（テキスト・文言変更）** | **❌ Cognito 不可**（公式: "You can't modify or localize text"、多言語パラメータのみ） / ✅ Keycloak `messages.properties` |
+| **L5（要素追加・削除）** | **❌ Cognito 不可** / ✅ Keycloak FreeMarker |
+| **L6（要素並び順変更）** | **❌ Cognito 不可** / ✅ Keycloak |
+| **L7（HTML 構造完全自由）** | **❌ Cognito 不可** / ✅ Keycloak `.ftl` テンプレート |
+| **L8（カスタム JS / 動的挙動）** | **❌ Cognito 不可** / ✅ Keycloak |
+| **代替手段（Cognito）** | (a) Custom UI（SDK 経由）自前実装 / (b) **User Pool 分離**（[§7.D](../../../common/branding-strategy-evidence.md) - SSO 喪失・Identity Broker 崩壊で原則回避）/ (c) アプリ側カスタム UI に寄せる（OAuth 2.1 非準拠許容） |
+| **Keycloak** | ✅ Theme（FreeMarker + CSS + `.properties`）で L1-L8 すべて対応、**SSO 維持・Identity Broker 維持** |
+| **いつ必要** | 「文言を独自に変更したい」「ログイン画面に利用規約同意チェックボックス追加」「フォームと外部 IdP ボタンの並び順変更」「完全に自社デザインの HTML」等 |
+| **回避可能か** | L4-L8 が顧客要件で Must なら Cognito 単独では困難。**Keycloak 採用が事実上必須**（[§7.D User Pool 分離の代償](../../../common/branding-strategy-evidence.md) 参照、Pool 分離は最終手段）|
+
+##### 「軽微な文言修正」も Cognito では実は不可
+
+「ロゴ・配色を超えた軽微な修正」と思われがちな**ボタン文言変更**（"ログイン" → "サインイン"）や**エラーメッセージ調整**も、Cognito Managed Login Branding では多言語パラメータ経由のみで、独自文言には変更不可。
+
+→ **Keycloak `messages.properties` で 1 行追加するだけ**で対応可能。これが Keycloak の「変更容易」の典型例（[§FR-2.3.3.A](../fr/02-federation.md#fr-233a-画面所在マトリクスとカスタマイズ-3-パターン) 動作原理 / [branding-strategy-evidence.md §7.C](../../../common/branding-strategy-evidence.md) Keycloak Theme の動作原理 参照）。
+
+→ A-13 は **A-1〜A-12 と並ぶ Keycloak 必須化要因の 13 番目**。L4-L8 カスタマイズが Must なら Keycloak へ。
+
+→ **A-1〜A-13 のいずれかが Must なら Keycloak（OSS or RHBK）必須化**。完全 knockout（不可能）は A-4 SAML IdP モード / A-3 FAPI 完全準拠。それ以外は **代替手段あり**だが**運用負荷大**。
 
 ### B. Cognito 優位点（Keycloak が弱い領域）
 
@@ -401,7 +428,7 @@ flowchart LR
 flowchart TD
     Start[開始：要件確定済]
 
-    Q1{"§C-2.2.A Keycloak<br/>必須要件のいずれか Must?<br/>(A-1〜A-11)"}
+    Q1{"§C-2.2.A Keycloak<br/>必須要件のいずれか Must?<br/>(A-1〜A-13)"}
     Q1 -->|Yes| Q2[Keycloak 確定]
     Q1 -->|No| Q3{§C-2.3 規模<br/>< 17.5 万 MAU?}
 
