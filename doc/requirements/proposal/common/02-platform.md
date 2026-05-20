@@ -164,11 +164,12 @@ flowchart LR
 
 | 観点 | 内容 |
 |---|---|
-| **Cognito 状況** | **ネイティブ非対応**（LDAP / AD への直接接続不可）|
-| **代替手段** | AD Connector + AD FS + SAML 2.0 federation（**3 段階の経由が必要**、構成が複雑）|
-| **Keycloak** | ✅ User Federation で**直接 LDAP / AD バインド**（ネイティブ機能）|
-| **いつ必要** | オンプレ AD があり、**IdP 層（ADFS / Entra ID）を経由したくない**場合（直接認証） |
-| **回避可能か** | AD FS を立てれば可能だが、運用コスト増。AD 直結が Must なら Keycloak 推奨 |
+| **Cognito 状況** | **ネイティブ非対応**（LDAP / AD への直接接続不可）。公式 federation 対応は Social / OIDC / SAML の 3 種のみ（[cognito-user-pools-identity-federation.html](https://docs.aws.amazon.com/cognito/latest/developerguide/cognito-user-pools-identity-federation.html)）。**AD Connector も Cognito 非対応**（[AD Connector 対応サービス公式](https://docs.aws.amazon.com/directoryservice/latest/admin-guide/ad_connector_manage_apps_services.html) は Chime / WorkSpaces / IAM Identity Center / AWS Console のみ）|
+| **代替手段** | **AD → AD FS → SAML → Cognito**（AWS 公式 [Security Blog 推奨パターン](https://aws.amazon.com/blogs/security/simplify-web-app-authentication-a-guide-to-ad-fs-federation-with-amazon-cognito-user-pools/)）、または **AD → Entra Connect → Entra ID → OIDC → Cognito**（クラウド経由）。**直結は不可、フェデブリッジ必須** |
+| **Keycloak** | ✅ User Federation で**直接 LDAP / AD バインド**（ネイティブ機能、AD FS / Entra 不要）|
+| **いつ必要** | オンプレ AD があり、**AD FS / Entra ID を経由したくない**場合（クラウド禁止規制 / 中堅企業の上位ライセンス回避 / レガシー直結維持）|
+| **回避可能か** | AD FS / Entra ID を立てれば可能だが、顧客側に**運用負荷 + ライセンスコスト**が発生。AD 直結 Must なら Keycloak 採用が現実解 |
+| **詳細証跡** | [reference/cognito-knockout-conditions.md §10 K-12 検証手順](../../../reference/cognito-knockout-conditions.md) の Step 1-4 で再現可能 |
 
 #### A-6. FR-MFA-007 ロール単位 MFA 制御
 
@@ -483,6 +484,11 @@ flowchart TD
   - [Keycloak Discussion #30353](https://github.com/keycloak/keycloak/discussions/30353) — Keycloak 連携で Cognito だけ back-channel logout が動かない（Entra/Okta は動く）コミュニティ報告
   - [LocalStack Issue #12914](https://github.com/localstack/localstack/issues/12914) — Cognito Discovery が `end_session_endpoint`（RP-Initiated）のみ含み、back-channel 系は含まないことを確認
 - [Cognito mTLS サンプル](https://github.com/aws-samples/sample-cognito-user-mtls-idp)
+- **Cognito LDAP / AD 直結 非対応の証跡**:
+  - [AWS Cognito User Pool sign-in with third party identity providers（公式）](https://docs.aws.amazon.com/cognito/latest/developerguide/cognito-user-pools-identity-federation.html) — サポート IdP 種別は **Social / OIDC / SAML のみ**、LDAP / AD 直結は不在
+  - [Configuring identity providers for your user pool（公式）](https://docs.aws.amazon.com/cognito/latest/developerguide/cognito-user-pools-identity-provider.html) — 設定手順章は **3 種類のみ**（Social IdP / OIDC IdP / SAML IdP）、AD / LDAP 設定手順は存在しない
+  - [AD Connector 対応サービス一覧（公式）](https://docs.aws.amazon.com/directoryservice/latest/admin-guide/ad_connector_manage_apps_services.html) — Chime / WorkSpaces / IAM Identity Center / AWS Management Console のみ列挙、**Cognito 不在**
+  - [AWS Security Blog: Simplify web app authentication: A guide to AD FS federation with Amazon Cognito user pools](https://aws.amazon.com/blogs/security/simplify-web-app-authentication-a-guide-to-ad-fs-federation-with-amazon-cognito-user-pools/) — AWS 公式が示す回避パターン（AD → AD FS → SAML → Cognito）
 
 #### Keycloak / RHBK
 

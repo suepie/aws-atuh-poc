@@ -871,6 +871,184 @@ resource "aws_lambda_function" "authorizer" {
 
 Lambda Authorizer 側（[lambda/authorizer/index.py](../../lambda/authorizer/index.py)）は `ALLOWED_ISSUERS` の各 issuer 設定で複数 client_id を許可するよう拡張（または `client_id` を配列で許可リスト化）。
 
+### 11.3 DPoP との併用パターン（多層防御）
+
+> **位置付け**: BFF と DPoP は補完関係（[§FR-1.1.A](../requirements/proposal/fr/01-auth.md)）。本セクションは両者を **併用する場合の実装パターン**を扱う技術詳細。
+
+#### 11.3.1 併用の動機
+
+BFF だけでは防げない領域:
+- **BFF → API 経路でのトークン盗難リプレイ**: BFF が漏洩 → 攻撃者がトークン取得 → 別の API エンドポイントへリプレイ
+- **複数 API へのトークン流用**: BFF が `aud=A` のトークンを `aud=B` の API に誤って送信
+- **金融グレード（FAPI 2.0）要件**: Sender-Constrained Token が仕様で必須
+
+→ **BFF + DPoP 併用**は、これらを多層防御するパターン。
+
+#### 11.3.2 アーキテクチャ図
+
+```mermaid
+flowchart LR
+    User["👤 ユーザー<br/>(ブラウザ)"]
+    SPA["📱 SPA"]
+    BFF["⚡ BFF Lambda"]
+    Hub["🏢 認可サーバー<br/>(Keycloak)"]
+    API1["⚙️ API 1<br/>(経費精算)"]
+    API2["⚙️ API 2<br/>(承認)"]
+
+    User -->|"❶ HttpOnly Cookie"| SPA
+    SPA -->|"❷ HTTPS"| BFF
+    BFF -->|"❸ Client Credentials +<br/>Authorization Code (PKCE)"| Hub
+    Hub -->|"❹ DPoP-bound<br/>Access Token<br/>(cnf.jkt)"| BFF
+    BFF -->|"❺ Bearer + DPoP Proof<br/>(BFF が秘密鍵保持)"| API1
+    BFF -->|"❺ Bearer + DPoP Proof<br/>(別 htu)"| API2
+
+    style BFF fill:#fff3e0,stroke:#e65100
+    style Hub fill:#e3f2fd,stroke:#1565c0
+```
+
+**ポイント**:
+- **DPoP 秘密鍵は BFF サーバー側で保管**（ブラウザに置かない）
+- ブラウザは HttpOnly Cookie のセッション ID のみ（XSS 完全防御）
+- BFF が API 呼び出しごとに DPoP Proof JWT を生成・署名
+- 各 API へのリプレイ攻撃は `htu`（URI）で防御
+
+#### 11.3.3 BFF 側の DPoP 実装
+
+```typescript
+// BFF Lambda の擬似コード
+import { generateKeyPair, exportJWK, SignJWT } from 'jose';
+
+// 起動時に鍵ペア生成（または KMS 等で永続化）
+const { privateKey, publicKey } = await generateKeyPair('ES256', { extractable: false });
+const publicJwk = await exportJWK(publicKey);
+
+async function callApi(accessToken: string, url: string, method: string) {
+  // DPoP Proof JWT 生成
+  const ath = base64url(sha256(accessToken));  // Access Token Hash
+  const dpopProof = await new SignJWT({
+    jti: crypto.randomUUID(),
+    htm: method,
+    htu: url,
+    iat: Math.floor(Date.now() / 1000),
+    ath: ath,
+  })
+    .setProtectedHeader({ typ: 'dpop+jwt', alg: 'ES256', jwk: publicJwk })
+    .sign(privateKey);
+
+  return fetch(url, {
+    method,
+    headers: {
+      'Authorization': `DPoP ${accessToken}`,  // Bearer ではなく DPoP
+      'DPoP': dpopProof,
+    },
+  });
+}
+```
+
+#### 11.3.4 認可サーバー側の設定（Keycloak）
+
+```
+Admin Console > Clients > [BFF Client]
+  > Advanced > Capability config
+    ☑ Require DPoP bound tokens
+  > Settings
+    ☑ OAuth 2.0 Mutual TLS Certificate Bound Access Tokens (Off)
+      ← mTLS と排他ではないが、DPoP 採用時は通常 Off
+```
+
+Token Endpoint レスポンス:
+```json
+{
+  "access_token": "eyJ...",
+  "token_type": "DPoP",  // ← Bearer ではなく DPoP
+  "expires_in": 300,
+  "refresh_token": "..."
+}
+```
+
+Access Token の `cnf` クレーム:
+```json
+{
+  "iss": "https://auth.example.com",
+  "sub": "user-123",
+  "aud": "expense-api",
+  "azp": "bff-client",
+  "exp": 1730003600,
+  "cnf": {
+    "jkt": "0ZcOCORZNYy-DWpqq30jZyJGHTN0d2HglBV3uiguA4I"
+  }
+}
+```
+
+#### 11.3.5 リソースサーバー側の検証
+
+Lambda Authorizer / API Gateway での検証ロジック追加:
+
+```python
+def verify_dpop_bound_token(access_token: str, dpop_proof: str, request_method: str, request_uri: str):
+    # 1. Access Token 検証（既存）
+    claims = verify_jwt_signature(access_token)
+    
+    # 2. cnf.jkt 取得
+    if 'cnf' not in claims or 'jkt' not in claims['cnf']:
+        raise InvalidToken("DPoP-bound token expected")
+    
+    expected_jkt = claims['cnf']['jkt']
+    
+    # 3. DPoP Proof JWT 検証
+    proof = decode_jwt(dpop_proof)
+    
+    # 4. proof の jwk thumbprint と access token の cnf.jkt が一致
+    actual_jkt = jwk_thumbprint(proof.header['jwk'])
+    if actual_jkt != expected_jkt:
+        raise InvalidToken("DPoP proof key mismatch")
+    
+    # 5. htm / htu 検証
+    if proof.claims['htm'] != request_method:
+        raise InvalidToken("DPoP htm mismatch")
+    if proof.claims['htu'] != request_uri:
+        raise InvalidToken("DPoP htu mismatch")
+    
+    # 6. ath（access token hash）検証
+    expected_ath = base64url(sha256(access_token))
+    if proof.claims['ath'] != expected_ath:
+        raise InvalidToken("DPoP ath mismatch")
+    
+    # 7. iat（時間窓）検証
+    if abs(time.time() - proof.claims['iat']) > 60:  # 60秒許容
+        raise InvalidToken("DPoP proof too old or future")
+    
+    # 8. jti リプレイ検証（Redis / DynamoDB キャッシュ）
+    if not cache_check_and_set(proof.claims['jti'], ttl=300):
+        raise InvalidToken("DPoP jti replayed")
+    
+    return claims
+```
+
+#### 11.3.6 採用判断
+
+| シナリオ | BFF + DPoP 併用の ROI |
+|---|:---:|
+| 一般 B2B SaaS（業務系）| ❌ オーバースペック（BFF だけで十分） |
+| 内部 API のみ呼び出し | ❌ BFF + 短 TTL Bearer で十分 |
+| 複数の公開 API に BFF からアクセス | ⚠ 検討価値あり（API 間リプレイ防御）|
+| **FAPI 2.0 準拠** | ✅ **強く推奨**（Sender-Constrained 必須）|
+| **金融・決済・規制業種** | ✅ **多層防御として推奨** |
+| **Open Banking API 提供** | ✅ 仕様要件 |
+
+#### 11.3.7 実装コスト感
+
+| 項目 | 工数感 |
+|---|---|
+| BFF への DPoP Proof 生成ロジック追加 | **中**（jose ライブラリで実装、100-200 行）|
+| 認可サーバー設定（Keycloak）| **軽**（Admin Console 1 スイッチ）|
+| リソースサーバー検証ロジック追加 | **中**（既存 Lambda Authorizer に 50-100 行追加）|
+| jti キャッシュ（Redis / DynamoDB）| **中**（既存セッションストレージ流用可）|
+| 時計同期（NTP）の検証 | 軽 |
+| **総工数感**（既存 BFF 基盤がある場合）| **2-4 人週程度** |
+
+→ **既存 BFF があれば追加実装は中程度**。スクラッチからだと BFF + DPoP セットで 3-6 人月。
+
 ---
 
 ## 12. プラットフォーム比較

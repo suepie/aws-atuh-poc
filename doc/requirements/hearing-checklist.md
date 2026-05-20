@@ -71,8 +71,8 @@
 | B-105 | 🔥 | **Device Code** | FR-AUTH-006 | §FR-1.1 | CLI / IoT / Smart TV / AI Agent 認証の必要性? | Yes/No | | ⏳ |
 | B-106 | 🔥 | **mTLS** | FR-AUTH-007 | §FR-1.1 | FAPI 準拠 / 高セキュリティ M2M の必要性? | Yes/No | | ⏳ |
 | B-107 | 🟡 | ネイティブモバイル | FR-AUTH 全般 | §FR-1.1 | iOS / Android アプリの有無? | Yes/No + 件数 | | ⏳ |
-| B-108 | 🟡 | **SPA 認証方式（BFF vs PKCE 直接）** | FR-AUTH-002 | §FR-1.1 | IETF/Curity/Duende が 2025 年から **BFF を gold standard** として推奨。BFF パターン採用か PKCE 直接か? | BFF / PKCE 直接 / 段階移行 | | ⏳ |
-| **B-109** | 🟡 | **DPoP（RFC 9449、Sender-Constrained Tokens）** | FR-AUTH-015 想定 | §FR-1.1 | mTLS の代替として DPoP 採用要否?（FAPI 2.0 準拠 / Open Banking / 高セキュリティ API。**Yes → Keycloak 必須**、Cognito 標準非対応）| Yes/No | | ⏳ |
+| B-108 | 🟡 | **SPA 認証方式（BFF vs PKCE 直接）**（XSS 耐性軸）| FR-AUTH-002 | §FR-1.1, §FR-1.1.A | IETF/Curity/Duende が 2025 年から **BFF を gold standard** として推奨。BFF パターン採用か PKCE 直接か?（**ブラウザ層 XSS 対策の軸**。B-109 DPoP とは別軸で両方検討必要、両者は補完関係 → §FR-1.1.A）| BFF / PKCE 直接 / 段階移行 | | ⏳ |
+| **B-109** | 🟡 | **DPoP（RFC 9449、Sender-Constrained Tokens）**（トークン使用全体軸）| FR-AUTH-015 想定 | §FR-1.1, §FR-1.1.A | mTLS の代替として DPoP 採用要否?（FAPI 2.0 準拠 / Open Banking / 高セキュリティ API。**Yes → Keycloak 必須**、Cognito 標準非対応）。**B-108 BFF とは別軸（M2M / モバイル / FAPI 2.0 含む全体防御）。BFF 採用でも DPoP が不要とは限らない → §FR-1.1.A** | Yes/No | | ⏳ |
 
 ### B-2. IdP 接続種別（→ FR-FED §2.1 / proposal §FR-2.1）
 

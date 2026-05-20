@@ -63,6 +63,7 @@ flowchart LR
 | サブセクション | 内容 | 関連 FR |
 |---|---|---|
 | §FR-1.1 認証フロー / Grant Type | OAuth 2.0 / OIDC のフロー範囲、クライアント種別ごとの推奨、SPA の BFF 採否 | FR-AUTH-001〜008 |
+| §FR-1.1.A BFF と DPoP の補完関係 | B-108（BFF）と B-109（DPoP）は別軸の対策、両者の脅威モデル比較、業界推奨、併用パターン | FR-AUTH-002 / FR-AUTH-015 想定 |
 | §FR-1.2.0 ローカルユーザー認証の主体 | **§FR-1.2.0.0 ローカルユーザーの定義**（利用者カテゴリ P-1〜P-6 / 範囲シナリオ α〜δ）+ 共通基盤集約 / 各アプリ独自 / ハイブリッドの選択 + §FR-1.2.0.B クロスアカウント運用モデル | — |
 | §FR-1.2 パスワード・ローカルユーザー管理 | パスワードポリシー、リセット、ロックアウト等 | FR-AUTH-009〜014 |
 
@@ -280,6 +281,101 @@ sequenceDiagram
 | FR-AUTH-015（新規想定）| **DPoP（RFC 9449）** | sender-constrained tokens / FAPI 2.0 準拠 / 高セキュリティ API があるか（mTLS の代替として）| **Yes → Keycloak 必須**（Keycloak 26.4 ネイティブ対応、Cognito は標準非対応）|
 
 これらが 1 つでも Yes なら、Cognito 単独では実現できないため、**Keycloak（または併用）が必須**になります。
+
+### §FR-1.1.A BFF と DPoP の補完関係
+
+> **このサブ・サブセクションで定めること**: BFF パターン（[B-108](../../hearing-checklist.md) で問う SPA 認証方式）と DPoP（[B-109](../../hearing-checklist.md) で問う Sender-Constrained Token）は **別軸の対策で補完関係**にあることを明示し、両者の対象範囲・推奨パターン・併用ケースを整理。   
+> **主な判断軸**: ブラウザ層 XSS 対策（BFF が強い）vs トークン使用全体の防御（DPoP が強い）、M2M / モバイル統合の要否、FAPI 2.0 準拠要否   
+> **§FR-1.1 内の位置付け**: B-108 と B-109 を**別軸として両方確認**するための背景整理
+
+#### よくある誤解：「BFF があれば DPoP は不要」
+
+```
+❌ 誤: BFF を採用すれば SPA のトークン盗難リスクは解消するので、DPoP は不要
+✅ 正: BFF と DPoP は守る対象が異なる。重なる部分もあるが、それぞれ独自の領域を持つ
+```
+
+#### 脅威モデル比較
+
+| 攻撃 | BFF | DPoP |
+|---|:---:|:---:|
+| **XSS で LocalStorage / メモリからトークン盗難** | ✅ 完全に防ぐ（ブラウザにトークン無し） | ⚠ 鍵保管次第（後述）|
+| **盗まれたトークンを別端末で使う**（Sender-Constrained）| △ 既に盗めないので問題化しない | ✅ **強力に防御** |
+| **異なる API エンドポイントへのリプレイ** | × 該当しない | ✅ `htm` / `htu` で防御 |
+| **M2M（サーバー間）のトークン盗難** | × **BFF はエンドユーザー向け、M2M は対象外** | ✅ M2M でも統一適用可 |
+| **モバイル端末紛失時の流用** | × 該当しない | ✅ Keystore / Secure Enclave で防御 |
+| **DPoP の秘密鍵自体が盗まれる**（XSS 経由）| × 該当しない | ⚠ WebCrypto non-extractable でも JS から `signMessage` 呼び出し可能 |
+| **BFF サーバー自体の侵害** | ⚠ 防御不可（インフラ層）| × 該当しない |
+| **IdP 側 SSO セッション乗っ取り**（外部 IdP Cookie 漏洩）| ❌ 防げない | ❌ 防げない |
+
+→ **BFF はブラウザ層の攻撃に強い、DPoP はトークン使用全体に強い**。
+
+#### DPoP の「隠れた弱点」：ブラウザでの鍵保管問題
+
+DPoP の秘密鍵をブラウザでどう保管するかで XSS 耐性が大きく変わる:
+
+| 保管方法 | XSS 耐性 | 備考 |
+|---|:---:|---|
+| `localStorage` / `sessionStorage` | ❌ 弱 | XSS で簡単に抜き取り可能 |
+| `IndexedDB` | ❌ 弱 | 同上 |
+| **WebCrypto API の non-extractable key**（推奨）| ⚠ **限定的に強い** | 鍵は取り出せないが、**XSS 攻撃者は JS から `signMessage()` を呼んで proof 作成可能** |
+| Service Worker 内に隔離 | △ 中 | ブラウザ実装依存 |
+
+→ **DPoP は「別端末への持ち出し」は完全防御するが、「当該ブラウザ上での悪用」は限定的**（[InfoQ: The DPoP Storage Paradox](https://www.infoq.com/articles/dpop-key-storage-unsolved-problem/)）。BFF の XSS 耐性は "根本的"、DPoP の XSS 耐性は "Sender-Constrained 領域に限定的"。
+
+#### 業界の見解（2026 時点）
+
+| 推奨元 | 立場 |
+|---|---|
+| **IETF OAuth Security BCP** | 両方推奨。**BFF を優先**、技術的に使えない場合 DPoP |
+| **IETF / Curity / Duende**（2025〜）| **BFF を gold standard** |
+| Auth0 / Okta / Microsoft | DPoP は「BFF の補完 / BFF 不可時の代替」 |
+| **FAPI 2.0**（金融グレード API）| **DPoP 必須**（または mTLS） |
+
+#### 推奨される使い分け
+
+| シナリオ | 推奨 | 理由 |
+|---|:---:|---|
+| **SPA 単独の B2B SaaS**（業務系一般）| **BFF** | 業界 gold standard、XSS 完全防御 |
+| **モバイル + SPA の混在** | **DPoP** | BFF は SPA 用、モバイル統一には DPoP |
+| **M2M（サーバー間連携）が中心** | **DPoP** または **mTLS** | BFF は M2M に該当しない |
+| **FAPI 2.0 準拠が必須**（金融）| **DPoP**（または mTLS）| 仕様で必須 |
+| **規制業種・最高セキュリティ** | **BFF + DPoP 併用** | 多層防御（BFF が SPA 隠蔽、BFF → API で DPoP）|
+| 一般業務系 + Sender-Constrained 不要 | **Bearer + 短 TTL** | 業界一般、コスト最適 |
+
+#### B-108 と B-109 の使い分け
+
+ヒアリング項目として:
+
+| ID | 何を聞いているか | 関係 |
+|---|---|---|
+| **B-108 SPA 認証方式（BFF vs PKCE 直接）** | XSS 耐性。SPA に絞った話 | 主にブラウザ層 |
+| **B-109 DPoP 採用要否** | Sender-Constrained Token 全般（M2M / モバイル含む）| トークン使用全体 |
+
+→ **両者は別軸で、両方確認すべき**。「BFF を採用するから DPoP は不要」とは限らない（M2M がある場合 / FAPI 2.0 必要な場合）。
+
+#### 実装負荷の比較
+
+| 観点 | BFF | DPoP |
+|---|---|---|
+| SPA / モバイル クライアント実装 | **軽**（Cookie + 通常 HTTP）| **中〜重**（鍵生成 + Proof 署名 + jti 管理）|
+| 認可サーバー設定 | 通常 OIDC（**軽**）| Keycloak: 軽（Admin Console 1 スイッチ）/ **Cognito: 不可** |
+| リソースサーバー検証 | JWT 検証のみ（**軽**）| JWT + Proof 検証 + jti キャッシュ（**中**）|
+| サーバーインフラ追加 | **BFF サーバー必須**（重） | **不要**（軽）|
+| ライブラリ成熟度 | **◎ 非常に成熟**（`oauth2-proxy` / `next-auth` 等）| △ 発展中（[oauth4webapi](https://github.com/panva/oauth4webapi) 等）|
+| 全体重心 | **サーバー側に重心** | **クライアント側に重心** |
+
+→ **総コストは同等程度**、ただし重心が違う。BFF はサーバーインフラ追加、DPoP はクライアント実装の複雑化。
+
+#### 本基盤での推奨方針
+
+| 段階 | 推奨 |
+|---|---|
+| **デフォルト** | SPA → BFF（[B-108](../../hearing-checklist.md)）、M2M / モバイル無しなら DPoP 不要 |
+| **モバイル / M2M / FAPI 2.0 が必要になった場合** | DPoP を追加検討（Keycloak 必須化） |
+| **金融・規制業種** | BFF + DPoP 併用（多層防御）|
+
+詳細実装パターンは [bff-implementation-notes.md §11.3](../../../common/bff-implementation-notes.md) 参照。
 
 ### 参考資料（業界動向の裏どり）
 

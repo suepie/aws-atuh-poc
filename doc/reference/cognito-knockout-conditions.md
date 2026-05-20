@@ -47,7 +47,7 @@
 | # | 項目 | Cognito 状態 | Keycloak 状態 | 影響 |
 |---|------|-----------|-----------|------|
 | K-11 | **SAML IdP として発行**（自前で SAML を吐く側） | ❌ Cognito は OIDC IdP のみ、SAML 発行不可 | ✅ Realm が SAML IdP として動作 | レガシー業務システム（SAML SP のみ）連携で致命的 |
-| K-12 | **LDAP / Active Directory 直接連携** | ❌ User Federation 機能なし。AD Connector 経由でも限定的 | ✅ User Storage SPI で対応 | オンプレ AD 直接利用要件で致命的 |
+| K-12 | **LDAP / Active Directory 直接連携** | ❌ **非対応**。User Federation 機能なし。**AD Connector も Cognito 非対応**（[AD Connector 対応サービス公式](https://docs.aws.amazon.com/directoryservice/latest/admin-guide/ad_connector_manage_apps_services.html) は Chime / WorkSpaces / IAM Identity Center / AWS Management Console のみ列挙、Cognito 不在）。代替: AD FS 経由 SAML フェデ or Entra ID 経由 OIDC が AWS 公式 [推奨パターン](https://aws.amazon.com/blogs/security/simplify-web-app-authentication-a-guide-to-ad-fs-federation-with-amazon-cognito-user-pools/) | ✅ User Storage SPI で対応 | オンプレ AD 直接利用要件で致命的 |
 | K-13 | **Kerberos / SPNEGO 認証** | ❌ 非対応 | ✅ Kerberos Brokering | Windows 統合認証で致命的 |
 
 ### 2.3 認可系
@@ -311,6 +311,31 @@ curl https://cognito-idp.{REGION}.amazonaws.com/{USER_POOL_ID}/.well-known/openi
 - OIDC Back-Channel Logout 1.0 仕様（<https://openid.net/specs/openid-connect-backchannel-1_0.html>）§ 2.3 では、対応 OP は Discovery でこれらのメタデータを宣言することが必要
 
 → Step 1-3 の組み合わせで、**Cognito が Back-Channel Logout 1.0 仕様に非対応であることを 3 重に確認可能**。
+
+#### K-12: LDAP / Active Directory 直接連携 非対応の確認方法
+
+**Step 1: Cognito の federation 公式ページで対応 IdP 種別を確認**
+- URL: <https://docs.aws.amazon.com/cognito/latest/developerguide/cognito-user-pools-identity-federation.html>
+- 引用: "The user pool manages the overhead of handling the tokens that are returned from social sign-in through Facebook, Google, Amazon, and Apple, and from OpenID Connect (OIDC) and SAML IdPs"
+- → サポート IdP は **Social / OIDC / SAML の 3 種のみ**、LDAP / AD 直結は不在
+
+**Step 2: Identity Provider 設定ページで対応プロトコルを確認**
+- URL: <https://docs.aws.amazon.com/cognito/latest/developerguide/cognito-user-pools-identity-provider.html>
+- 引用: "The supported identity provider options include social providers like Facebook, Google, and Amazon, as well as OpenID Connect (OIDC) and SAML 2.0 providers"
+- 設定手順章は **3 種のみ**: Set up user sign-in with a social IdP / OIDC IdP / SAML IdP
+- → LDAP / AD 設定手順が**存在しない**
+
+**Step 3: AD Connector の対応サービス一覧で Cognito 不在を確認**
+- URL: <https://docs.aws.amazon.com/directoryservice/latest/admin-guide/ad_connector_manage_apps_services.html>
+- 引用: "Some of the supported AWS applications and services include: Amazon Chime / Amazon WorkSpaces / IAM Identity Center / AWS Management Console"
+- → AD Connector の対応リストに **Amazon Cognito が不在**（User Pool / Identity Pool ともに）
+
+**Step 4: AWS 公式が推奨する代替パターンの確認**
+- URL: <https://aws.amazon.com/blogs/security/simplify-web-app-authentication-a-guide-to-ad-fs-federation-with-amazon-cognito-user-pools/>
+- AWS Security Blog が示す推奨パターン: **AD → AD FS → SAML → Cognito**（直結ではなく AD FS をフェデレーションブリッジとして使う）
+- 別パターン: AD → Entra Connect → Entra ID → OIDC → Cognito（クラウド経由）
+
+→ Step 1-4 の組み合わせで、**Cognito が LDAP / AD 直結に非対応であることを 4 重に確認可能**。回避には **AD FS / Entra ID 経由のフェデレーションが必須**。
 
 ### 公式 AWS 一次ソース
 
