@@ -1359,9 +1359,11 @@ flowchart LR
 | Client Theme Override | Client 単位で一部上書き | 限定的（Login Theme は Realm 設定が支配的）|
 | カスタム Theme（FreeMarker）| 動的にロゴ/色変更可（クエリ / Client 属性ベース）| 実装コスト高、Theme コードのメンテナンス必要 |
 
-##### 現実的な 3 つの設計パターン
+##### 現実的な 4 つの設計パターン
 
-**パターン A: 認証基盤は最小ブランディング、アプリ側で完全カスタマイズ**（**推奨・業界標準**）
+> 詳細な技術根拠・公式ソース引用は [branding-strategy-evidence.md](../../../common/branding-strategy-evidence.md) 参照。
+
+**パターン A: 認証基盤は最小ブランディング、アプリ側で完全カスタマイズ**（**シンプル・業界標準**）
 
 ```
 [認証基盤側]
@@ -1378,35 +1380,77 @@ flowchart LR
 | Cognito で実装可能 | ✅ 1 Theme で完結 |
 | Keycloak で実装可能 | ✅ 1 Realm + 標準 Theme |
 | URL 肥大化 | なし（共通 URL）|
-| 業界実例 | **Slack / Notion / Microsoft 365 / Auth0 標準** |
+| 業界実例 | **Slack / Notion / Microsoft 365 標準** |
 
-**パターン B: テナント別ロゴのみ動的注入**
+**パターン A': アプリ単位 Branding（認証基盤側） + テナント別差替（アプリ側）**（**新規・業界主流**）
+
+```
+[認証基盤側]
+- アプリ単位（client_id ベース）に Branding Style を割当
+  - 経費精算アプリ → 専用ロゴ・配色のログイン画面
+  - 決済管理アプリ → 別の専用ロゴ・配色のログイン画面
+- 認証画面で「どのアプリにログインするか」を視覚的に明示
+
+[アプリ側]
+- ランディング / ログイン後 / ログアウト後: tenant_id を JWT or query で解釈、完全カスタマイズ
+- パターン A と同じ責務（顧客別差替はアプリ側）
+```
+
+**ポイント**: **「ログイン画面はアプリ単位」「アプリ画面は顧客単位」の二重軸**。認証前は JWT がまだないため、認証基盤側は **`client_id` パラメータ**でアプリを識別して Branding 切替。認証後はアプリ側で **JWT `tenant_id` クレーム**で顧客識別。
 
 | 観点 | 評価 |
 |---|---|
-| Cognito | △ 20 顧客上限 |
-| Keycloak | ✅ カスタム Theme 実装で動的差替 |
-| 採用シーン | ログイン画面にも顧客ブランドを出したい中規模顧客 |
+| Cognito で実装可能 | ✅ App Client 単位 Managed Login Branding（**20 Style 上限**）、Essentials+ ティア必須 |
+| Keycloak で実装可能 | ✅ **Client 単位 Login Theme Override**（制限なし）、Theme Selector SPI で高度な動的選択も可 |
+| 必要ティア | Cognito: **Essentials または Plus** / Keycloak: 制約なし |
+| URL 肥大化 | なし（アプリ単位なので 5-10 / アプリで完結）|
+| 対象アプリ規模 | Cognito: 20 アプリまで / Keycloak: 制限なし |
+| 業界実例 | **Auth0 Universal Login / Microsoft Entra App Registration / Okta Brands / Cognito Managed Login Branding** |
+| 採用シーン | アプリ間で全く異なるブランド体験を提供したい（経費精算 / 決済 / 人事 等）|
 
-**パターン C: 完全テナント別ブランディング**（コスト高）
+**パターン B: テナント別ロゴのみ動的注入（認証基盤側で顧客識別）**
 
 | 観点 | 評価 |
 |---|---|
-| Cognito | ❌ 21 社目から不可 |
+| Cognito | △ 20 **顧客**上限（Branding Style 20 を顧客に割当）|
+| Keycloak | ✅ カスタム Theme + Theme Selector SPI で動的差替 |
+| 採用シーン | ログイン画面にも**顧客**ブランドを出したい中規模顧客（規制業種等）|
+
+**パターン C: 完全テナント別ブランディング**（コスト高、Enterprise プラン）
+
+| 観点 | 評価 |
+|---|---|
+| Cognito | ❌ 21 社目から不可（Pool 分離が必要）|
 | Keycloak | ⚠ Realm 分離が必須（[§C-1.4](../common/01-architecture.md#c-14-物理分離レベルと-broker-パターンの関係) L3 ハイブリッドへ移行）|
 | 採用シーン | 大口顧客 / Enterprise プラン専用 |
 
-##### 業界実例
+##### 4 パターン比較表（決定版）
+
+| 軸 | A | A' | B | C |
+|---|:---:|:---:|:---:|:---:|
+| **認証基盤側カスタマイズ単位** | ❌ 共通 | **✅ アプリ単位**（client_id）| ✅ テナント単位 | ✅ テナント単位（物理分離）|
+| **アプリ側カスタマイズ** | ✅ テナント単位 | ✅ テナント単位 | ✅ | ✅ |
+| **Cognito 制約** | なし | 20 Branding Style 上限 | 20 顧客上限 | Pool 分離（10,000 Pool 上限）|
+| **Keycloak 制約** | なし | なし | Realm 分離 or Theme | Realm 分離（数千上限）|
+| **必要ティア（Cognito）** | Lite OK | **Essentials+** | Essentials+ | Lite OK |
+| **URL allowlist 数** | 5-10 / アプリ | 5-10 / アプリ | 顧客数 × アプリ数 | 顧客数 × アプリ数 |
+| **対象スケール** | 制限なし | **アプリ 20 個まで** | 顧客 20 社まで | 大口顧客のみ |
+| **業界実例** | Slack / Notion | **Auth0 / Entra / Okta** | 規制業種 | 金融 |
+
+##### 業界実例（拡張版）
 
 | サービス | 認証基盤側 | アプリ側 | パターン |
 |---|---|---|---|
 | Slack | 共通（Slack ロゴ） | Workspace 別ブランディング | **A** |
 | Notion | 共通 | Workspace 別 | A |
-| Microsoft 365 | テナント別ロゴ表示可（Custom Branding） | 各 SaaS で完全カスタマイズ | A + 一部 B |
-| Auth0 Universal Login | テナント別カスタムページ可 | 自由 | B / C |
+| **Auth0 Universal Login** | **Application 単位 Branding Page** | 自由 | **A'** |
+| **Microsoft Entra ID** | **App Registration 単位ロゴ** | 各 SaaS でカスタマイズ | **A'** |
+| **Okta** | **Application 単位 + Brands** | 自由 | **A'** |
+| **AWS Cognito Managed Login** | **App Client 単位 Branding Style** | アプリ側 | **A'**（公式機能） |
+| Microsoft 365 | テナント別ロゴ表示可 | 各 SaaS でカスタマイズ | A + 一部 B |
 | AWS Console | 共通（AWS ロゴ） | 一部 IAM Identity Center で組織別 | A |
 
-→ **業界主流は パターン A**。
+→ **業界主流は A または A'**。「アプリ単位カスタマイズしたい」要望には A' で十分対応可能。
 
 ##### URL 肥大化問題との連動
 
@@ -1425,19 +1469,23 @@ flowchart LR
 | 項目 | 推奨 |
 |---|---|
 | **デフォルト** | **パターン A**（認証基盤は最小、アプリ側で完全カスタマイズ）|
+| **アプリ間で異なるブランド体験を提供したい場合** | **パターン A'**（認証基盤側でアプリ単位 Branding + アプリ側でテナント別差替、業界主流）|
 | 顧客から「ログイン画面に自社ロゴ」要望 | パターン B（Cognito は 20 顧客まで / Keycloak はカスタム Theme）|
 | 大口顧客の「完全専用」要望 | パターン C（[§C-1.4 L3 ハイブリッド](../common/01-architecture.md#c-14-物理分離レベルと-broker-パターンの関係)、Enterprise プラン化）|
 | `tenant_id` 改竄対策 | JWT クレームで検証（クエリパラメータは表示用のみ、authorize 判定には JWT を使う）|
-| **ヒアリング順序** | **[A-11 ブランディング基本方針](../../hearing-checklist.md)（🔥 最優先）で最初に合意取得**。パターン A 合意により B-612 / B-703-3 / B-208 / B-703-1 の 4 項目が自動決定 |
+| **認証前後の識別子の違い** | **認証前（ログイン画面）= `client_id` パラメータ**（OAuth 標準、A' で利用）/ **認証後（アプリ画面）= JWT クレーム `tenant_id`**（A / A' でアプリ側が利用）|
+| **ヒアリング順序** | **[A-11 ブランディング基本方針](../../hearing-checklist.md)（🔥 最優先）で最初に合意取得**。パターン A / A' 合意により B-612 / B-703-3 / B-208 / B-703-1 の 4 項目が自動決定 |
 
 ##### 顧客との対話：要望の翻訳表
 
 | 顧客要望の表現 | 真意の確認 | 対応 |
 |---|---|---|
-| 「テナントごとにブランディング」 | ログイン画面? アプリ内? 両方? | アプリ内のみなら **A** |
-| 「会社のロゴを出したい」 | どの画面で? | ログイン画面なら **B**、アプリ内のみなら **A** |
+| 「テナントごとにブランディング」 | ログイン画面? アプリ内? 両方? | アプリ内のみなら **A** / ログイン画面まで含むなら **B** |
+| 「会社のロゴを出したい」 | どの画面で? どの単位で? | ログイン画面で顧客ロゴ = **B** / アプリ内のみ = **A** / **アプリ単位のロゴ = A'** |
+| **「経費精算と決済で違うブランド体験にしたい」** | アプリ単位の差別化要望 | **パターン A'**（業界主流、Auth0/Entra/Okta 採用）|
 | 「完全に自社専用にしたい」 | 全画面? 目に触れる画面? | 全画面なら **C**（Enterprise プラン）|
 | 「迷わないようにしたい」 | UX 問題（B-601）| **A** + HRD で十分 |
+| 「アプリごとに異なるログイン画面のロゴ」 | システム識別子（client_id）ベースのカスタマイズ要望 | **パターン A'**（Cognito Branding Style / Keycloak Login Theme Override）|
 
 #### TBD / 要確認
 

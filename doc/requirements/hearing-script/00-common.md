@@ -49,14 +49,18 @@
 > **本項は [B-2 マスター表 B](02-idp-federation.md#マスター表-b-顧客企業の-idp-構成リスト旧-a-6--b-201b-207-統合) に統合されました**。Phase B で詳細記入していただきます。本 Phase A では **概算分布のみ** お答えいただければ十分です。
 
 新規ターゲット顧客の業界 / 企業規模 / Microsoft 365 利用率から、概算分布をご教示ください:
-- Microsoft Entra ID 系: 約 N%
-- Okta: 約 N%
-- SAML 系（HENNGE / GMO Trust Login / 自社 SAML 等）: 約 N%
-- Google Workspace: 約 N%
+- Microsoft Entra ID 系（Free / P1 / P2）: 約 N%
+- Okta / Auth0: 約 N%
+- Google Workspace（Standard / Cloud Identity Premium）: 約 N%
+- 国内 IDaaS（HENNGE / GMO Trust Login / Cloud Gate UNO 等）: 約 N%
+- **オンプレ AD / AD FS 系**（要確認: LDAP 直結 or AD FS 経由）: 約 N%
+- **OSS / 顧客自社運用系（Keycloak / ZITADEL / WSO2 等）**: 約 N%
+- **AWS Cognito（顧客自社、別 AWS アカウント）**: 約 N%
+- **その他大企業向け IDaaS（PingOne / IBM Verify / Oracle IDCS 等）**: 約 N%
 - 自社製 / IdP なし: 約 N%
 
 差し支えない範囲で代表顧客名も併せていただけますと幸いです。
-**目的**: SAML/LDAP 対応の優先度判断、Keycloak 必須化要因（LDAP 直接連携の有無等）の初期把握。**具体的な接続設計は B-2 マスター表で確定**します。
+**目的**: SAML/LDAP 対応の優先度判断、Keycloak 必須化要因（LDAP 直接連携の有無等）の初期把握。**具体的な接続設計は B-2 マスター表で確定**します。**OSS / 顧客自社 Cognito 等の「同じ製品同士のフェデ」も標準パターンで動作**するため、本基盤側プラットフォーム選定とは独立です。
 
 ---
 
@@ -93,20 +97,35 @@
 
 ### 【ブランディング基本方針合意】 (A-11, 🔥)
 
-本基盤のログイン UI カスタマイズ方針について、業界標準である **パターン A（認証基盤は最小ブランディング、アプリ側で完全カスタマイズ）** を採用することにご合意いただけますか。
+本基盤のサインイン / サインアウト両方の画面カスタマイズについて、以下の 4 パターンから選択肢をご検討いただけますでしょうか。
 
-パターン A の前提:
-- **認証基盤（Cognito / Keycloak）の画面**（ログイン / MFA / パスワードリセット等）は本基盤標準デザイン
-- **ログイン後のアプリ画面・ログアウト後のランディング等**は、各アプリで JWT クレーム（特に `tenant_id`）を解釈して動的にロゴ・配色・文言を差替
-- **Custom Domain** は共通 1 つ（例: `auth.example.com`）
-- **Callback / Logout URL** は共通 URL + クエリパラメータ（`?tenant=acme`）で識別
+**【パターン A】認証基盤は最小ブランディング、アプリ側で完全カスタマイズ**（シンプル・業界標準）
+- 認証基盤（Cognito / Keycloak）の画面（ログイン / MFA / パスワードリセット等）は本基盤標準デザイン
+- ログイン後のアプリ画面・ログアウト後のランディング等は、各アプリで JWT クレーム（`tenant_id`）を解釈して動的にロゴ・配色・文言を差替
+- Custom Domain は共通 1 つ、Callback / Logout URL は共通 URL + クエリパラメータ（`?tenant=acme`）で識別
+- **採用例**: Slack / Notion / Microsoft 365
+
+**【パターン A'】アプリ単位 Branding（認証基盤側）+ テナント別差替（アプリ側）**（業界主流、新規・推奨候補）
+- **認証基盤側**: アプリ単位（`client_id` ベース）に Branding Style を割り当て。経費精算アプリと決済管理アプリで**異なるロゴ・配色のログイン画面**を提供可能
+- **アプリ側**: テナント別差替はパターン A と同じ
+- **「ログイン画面はアプリ単位」「アプリ画面は顧客単位」の二重軸**
+- Cognito では Managed Login Branding Style（**20 Style 上限 / Pool、Essentials+ 必須**）、Keycloak では Client 単位 Login Theme Override（制限なし）
+- **採用例**: Auth0 Universal Login / Microsoft Entra App Registration / Okta Brands / AWS Cognito Managed Login（業界主流）
+
+**【パターン B】認証基盤画面にも貴社ロゴ表示**（テナント単位、Cognito 20 顧客上限あり）
+
+**【パターン C】完全専用デザイン**（Enterprise プラン相当、認証基盤を顧客別に分離）
 
 選択肢:
-- **合意（パターン A）** — Slack / Notion / Microsoft 365 / Auth0 採用、業界標準
-- **パターン B**: 認証基盤画面にも貴社ロゴ表示（Cognito 採用時は 20 顧客上限あり）
-- **パターン C**: 完全専用デザイン（Enterprise プラン相当、認証基盤を顧客別に分離）
+- **パターン A**: シンプルな業務系で十分な場合
+- **パターン A'**: **アプリ間で異なるブランド体験を提供したい場合**（業界主流、推奨）
+- **パターン B / C**: 顧客（テナント）単位のブランディングが必要な場合
 
-**目的**: 本基盤のブランディング方針の最重要合意。**パターン A 合意により、以下 4 項目（B-612 / B-703-3 / B-208 / B-703-1）の回答が自動的に決まり、ヒアリング工数を大幅に削減できます**。逆に B/C 採用時は Cognito 上限（Branding Style 20 顧客 / Custom Domain 4 / Region）への影響評価が必要となり、プラットフォーム選定（Keycloak への移行検討）に直結します。
+**目的**: 本基盤のブランディング方針の最重要合意。**A または A' 合意により、以下 4 項目（B-612 / B-703-3 / B-208 / B-703-1）の回答が自動的に決まり、ヒアリング工数を大幅に削減できます**。逆に B/C 採用時は Cognito 上限（Branding Style 20 顧客 / Custom Domain 4 / Region）への影響評価が必要となり、プラットフォーム選定（Keycloak への移行検討）に直結します。詳細根拠と公式ソース引用は [branding-strategy-evidence.md](../../common/branding-strategy-evidence.md) を参照ください。
+
+**【ご参考】認証前後で利用可能な識別子の違い**:
+- 認証前（ログイン画面）: **`client_id` パラメータ**（OAuth 標準、A' で利用）— JWT はまだ発行されていません
+- 認証後（アプリ画面）: **JWT クレーム `tenant_id`**（A / A' でアプリ側が利用）
 
 ---
 
