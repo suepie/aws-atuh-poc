@@ -65,6 +65,11 @@ OIDC / SAML 以外の独自プロトコルを使う IdP との接続が必要な
 
 ### 【Custom Domain 利用】 (B-208, 🟡)
 
-認証エンドポイントの URL に、顧客指定のドメイン（`auth.example.com` 等）を利用されますか。
-利用する場合は想定ドメイン、利用しない場合（プラットフォーム標準ドメイン）はその旨でお答えいただけますと幸いです。
-**目的**: Cognito Custom Domain 機能（ACM 証明書 + Route 53）、Keycloak の Hostname 設定の利用判断、CloudFront 統合の必要性確認に必要な情報です。
+> **※ [A-11](00-common.md) で「パターン A」を合意された場合、Custom Domain は共通 1 つ（例: `auth.example.com`）が標準動作となり、Cognito 4 Custom Domain / Region Hard Limit 問題を回避します。本質問は採用可否のみ確認、顧客別ドメイン戦略は A-11 で B/C 選択時に検討します。**
+
+認証エンドポイントの URL について、ご希望をご教示ください:
+- **共通 1 つの Custom Domain**（例: `auth.example.com`）= **A-11 パターン A 標準、推奨**
+- **なし**（プラットフォーム標準ドメイン、例: `xxx.auth.us-east-1.amazoncognito.com`）
+- **顧客別 Custom Domain**（`acme.auth.example.com` / `globex.auth.example.com` ...）= **Cognito 4 顧客上限、A-11 で B/C 採用時のみ**
+
+**目的**: Cognito Custom Domain 機能（ACM 証明書 + Route 53）、Keycloak の Hostname 設定の利用判断、CloudFront 統合の必要性確認に必要な情報です。**顧客別ドメイン戦略を採用する場合、Cognito では 4 顧客で上限到達**、それ以上は Keycloak 必須となります。
