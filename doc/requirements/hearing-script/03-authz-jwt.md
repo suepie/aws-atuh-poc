@@ -6,6 +6,80 @@
 
 ---
 
+## 用語の前提 — 「認可」という言葉の 2 つの意味（事前にすり合わせ）
+
+> **本セクションで扱う質問はすべて「意味 B の認可」と「意味 A の認可フロー」の関係を前提**としています。混同しやすいので、本論に入る前に整理させてください。
+
+OAuth / OIDC 周辺で「認可」は 2 つの意味で使われ、混同されがちです:
+
+| 意味 | 何の話か | 担当 |
+|---|---|---|
+| **意味 A: 認可フレームワーク**（OAuth 2.0 そのもの）| **Token をどう発行するか**（フロー / プロトコル）| **本基盤**（Authorization Server）|
+| **意味 B: 認可判定**（リソース保護）| **alice は /expense/123 を編集できるか?** という業務判定 | **御社の各アプリ**（Resource Server）|
+
+### 本基盤のスタンス（[§FR-6.0.A](../proposal/fr/06-authz.md) より）
+
+> **「認可は御社アプリ側」スタンス = 意味 B の認可は御社アプリの責務**。本基盤は「**認証 + 最小限のクレーム発行**」までを担当します。
+
+### よくある誤解とその訂正
+
+| 誤解 | 訂正 |
+|---|---|
+| 「認可はアプリ側だから、本基盤は Token 発行だけしてれば良い」 | **半分正解**。意味 B の判定はアプリ側だが、**意味 A の Token 発行制御**（aud / scope / 発行先）は本基盤が責任を持つ |
+| 「Cognito / Keycloak はクレームを整えるだけ」 | **半分正解**。認可判定（意味 B）はしないが、**「どの Token をどのアプリに、どんな権限で発行するか」を制御**している（意味 A）|
+| 「本基盤が Token Exchange できないとアプリ側で何が困るか分からない」 | **困る**。Token Exchange なしだとアプリ側で「`aud` チェックを甘くする」「ユーザー文脈を捨てる」等の妥協が必要 → **アプリ側認可がルーズ化** |
+
+### Token Exchange が必要になるシナリオ（マイクロサービス OBO）
+
+「**御社のシステムに『誰のリクエストか』を保持する必要のあるサービス間呼び出し**」がある場合、本基盤の **Token Exchange 機能（RFC 8693）が必須**になります。
+
+```mermaid
+sequenceDiagram
+    participant Alice
+    participant SPA
+    participant Expense as expense-api
+    participant AS as 本基盤<br/>(Authorization Server)
+    participant Notif as notification-api
+
+    Alice->>SPA: 経費承認依頼
+    SPA->>Expense: POST /expense<br/>JWT (sub=alice, aud=expense-api)
+    Expense->>AS: Token Exchange Request<br/>「alice の Token を notification-api 用に変換」
+    AS->>Expense: 新 JWT (sub=alice, aud=notification-api, scope=notification:send)
+    Expense->>Notif: POST /notification<br/>新 JWT
+    Notif->>Notif: 検証 + 認可判定<br/>「alice は notification:send 権限あり」
+```
+
+### Token Exchange なしの代替策（いずれも妥協を強いる）
+
+| 代替策 | 問題 | アプリ側認可への影響 |
+|---|---|---|
+| **Token をパススルー** | `notification-api` が `aud=expense-api` の Token を受ける（本来拒否）| **`aud` チェックを甘くする必要** = アプリ側認可ルーズ化 |
+| **Client Credentials** | `sub=expense-api-service` に変わる、ユーザー文脈消失 | **「誰のリクエストか」が消える** = 監査不能、ユーザー単位認可不能 |
+| **アクセス禁止** | サービス間連携不能 | 業務成立せず |
+
+→ Token Exchange があれば、アプリは「自分宛の正しい Token」を受け取って**純粋に業務認可判定だけに集中**できます。
+
+### Token Exchange を気にすべきかの判断フロー
+
+```mermaid
+flowchart TB
+    Q1{システムは<br/>マイクロサービス構成?}
+    Q1 -->|No モノリス| NoTE[Token Exchange 不要<br/>→ Cognito OK]
+    Q1 -->|Yes| Q2{サービス間で<br/>HTTP 呼び出しあり?}
+    Q2 -->|No| NoTE
+    Q2 -->|Yes| Q3{呼び出し先サービスで<br/>「誰のリクエストか」<br/>を知る必要ある?}
+    Q3 -->|No 監査もしない<br/>権限チェック不要| NoTE2[Client Credentials で十分<br/>→ Cognito OK]
+    Q3 -->|Yes 監査 / 個別認可 /<br/>監査ログにユーザー名| TE[Token Exchange 必須<br/>→ Keycloak 必須化]
+
+    style NoTE fill:#e8f5e9
+    style NoTE2 fill:#e8f5e9
+    style TE fill:#ffe0e0
+```
+
+→ **B-304 の質問はこの判断を引き出すための具体的な業務シナリオ確認**です。
+
+---
+
 ### 【必須クレーム】 (B-301, 🔥)
 
 各システム（アプリ）が JWT に必要とする属性をご教示ください。

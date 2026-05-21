@@ -113,6 +113,74 @@ flowchart LR
 → **発行側は基本 OIDC + OAuth で統一**、**SAML IdP モードはオプション**（[B-202](../../hearing-script/02-idp-federation.md) Yes 時のみ追加）。
 → 受信側 / 発行側で **意味 A の認可（Token 発行制御）**は本基盤の責務。**意味 B の認可（業務判定）**はアプリ側（[§FR-6.0.A](06-authz.md)）。
 
+### §FR-2.0.C 本基盤対応プロトコル一覧（早見表、12 プロトコル × 4 Tier）
+
+> **「結局どんなプロトコルに対応する基盤か?」への 1 枚回答**。Tier 1 〜 4 で分類した全プロトコルと、各プラットフォームの対応状況を集約。顧客説明・新規参入者キャッチアップに利用可能。
+
+#### Tier 1: 認証フェデレーション系（IdP 連携の中核 / 受信側）
+
+| プロトコル | 種類 | 方向 | 用途 | Cognito | Keycloak | 関連 |
+|---|---|---|---|:---:|:---:|---|
+| **OIDC 1.0** | 認証 + ID | **受信** (顧客 IdP) | フェデログイン受け入れ | ✅ | ✅ | §FR-2.1 |
+| **OIDC 1.0** | 認証 + ID | **発行** (アプリ向け) | 各アプリへ JWT 発行 | ✅ | ✅ | §FR-2.0.B |
+| **SAML 2.0 SP** | 認証 | **受信** (顧客 IdP) | SAML 顧客 IdP（HENNGE 等）からの受信 | ✅ | ✅ | §FR-2.1 |
+| **SAML 2.0 IdP** | 認証 | **発行** (アプリ向け) | 既存 SAML SP アプリへの発行 | ❌ **K-11** | ✅ | B-202 |
+| **LDAP / LDAPS** | ディレクトリ認証 | **受信** (顧客 AD) | 顧客 AD への直接バインド | ❌ **K-12** | ✅ | §FR-2.1 |
+| **Kerberos / SPNEGO** | チケット認証 | **受信** (顧客 AD) | Windows 統合認証 | ❌ **K-13** | ✅ | §FR-2.1 |
+
+#### Tier 2: OAuth 2.0/2.1 系（認可フロー / 発行側）
+
+| プロトコル | 種類 | 方向 | 用途 | Cognito | Keycloak | 関連 |
+|---|---|---|---|:---:|:---:|---|
+| **Authorization Code + PKCE** | Grant Type | **発行** (SPA/SSR/Mobile) | ブラウザ経由ログイン | ✅ | ✅ | §FR-1.1 |
+| **Client Credentials** | Grant Type | **発行** (M2M) | バッチ / マイクロサービス間 | ✅ | ✅ | §FR-1.1 |
+| **Device Code (RFC 8628)** | Grant Type | **発行** (CLI/IoT) | CLI / IoT / Smart TV / AI Agent | ❌ **K-02** | ✅ | §FR-1.1 |
+| **Token Exchange (RFC 8693)** | Grant Type | **発行** (OBO) | マイクロサービス間ユーザー文脈伝播 | ❌ **K-01** | ✅ | §FR-6.0.B |
+| **mTLS Client Auth (RFC 8705)** | クライアント認証 | **受信** (M2M) | FAPI 準拠 / 高セキュリティ M2M | ❌ **K-03** | ✅ | §FR-1.1 |
+| **DPoP (RFC 9449)** | トークン拘束 | **発行** (Sender-Constrained) | mTLS 代替 / Sender-Constrained Tokens | ❌ | ✅ | §FR-1.1 |
+
+#### Tier 3: MFA 認証要素プロトコル
+
+| プロトコル | 種類 | 方向 | 用途 | Cognito | Keycloak | 関連 |
+|---|---|---|---|:---:|:---:|---|
+| **WebAuthn / FIDO2 (Passkey)** | 認証要素 (Phishing-resistant) | 内部 | パスキー、ハードウェアキー | ✅ Essentials+ | ✅ | §FR-3.1 |
+| **TOTP (RFC 6238)** | 認証要素 | 内部 | Google Authenticator 等 | ✅ | ✅ | §FR-3.1 |
+| **SMS OTP** | 認証要素 (NIST 非推奨) | 内部 | レガシー互換 | ✅ | ✅ | §FR-3.1 |
+| **Email OTP** | 認証要素 (NIST 非推奨) | 内部 | 本人確認補助 | ✅ Essentials+ | ✅ | §FR-3.1 |
+
+#### Tier 4: 関連プロトコル（認証ではないが連携で必要）
+
+| プロトコル | 種類 | 方向 | 用途 | Cognito | Keycloak | 関連 |
+|---|---|---|---|:---:|:---:|---|
+| **SCIM 2.0 (RFC 7644)** | プロビジョニング | **受信** (HR/IdP) | ユーザー同期、退職者 deprovisioning | ❌ ネイティブ（Lambda 自前）| ⚠ プラグイン | §FR-7.4 |
+| **JWKS (RFC 7517)** | 鍵配布 | **発行** (アプリ向け) | 公開鍵の自動配布 | ✅ | ✅ | §FR-9.1 |
+| **OIDC Discovery** | メタデータ配布 | **発行** (アプリ向け) | `.well-known/openid-configuration` | ✅ | ✅ | §FR-9.1 |
+| **OIDC RP-Initiated Logout** | ログアウト | **発行** | ブラウザ経由ログアウト | ⚠ 独自実装 | ✅ | §FR-5.1 |
+| **OIDC Back-Channel Logout 1.0** | ログアウト | **発行** | サーバー間直接ログアウト通知 | ❌ **K-07** | ✅ | §FR-5.1 |
+| **Token Revocation (RFC 7009)** | トークン無効化 | **受信** | Access/Refresh Token 強制無効化 | ⚠ Refresh のみ | ✅ | §FR-5.3 |
+
+#### Tier 別の必要度
+
+| Tier | 必須度 | 採否判断 |
+|---|---|---|
+| **必須対応**（① OIDC 受信・発行 / OAuth Code+PKCE / Client Credentials / JWKS / Discovery）| 全顧客で使う | **Cognito / Keycloak どちらも対応** |
+| **Should**（② SAML SP / WebAuthn / TOTP / SCIM 受信）| 多くの顧客で必要 | **Cognito / Keycloak どちらも対応** |
+| **Conditional Must**（③ SAML IdP / LDAP / Device Code / Token Exchange / mTLS / DPoP / Back-Channel Logout / Kerberos / Access Token Revocation）| 顧客要件次第で必須化 | **1 つでも該当すれば Keycloak 必須化** |
+| **オプション・非推奨**（④ SMS OTP / Email OTP）| レガシー互換のみ | NIST 非推奨、新規実装では Passkey 推奨 |
+
+#### プラットフォーム別カバー率
+
+| プラットフォーム | 必須対応 (①) | Should (②) | Conditional Must (③) | 合計 |
+|---|:---:|:---:|:---:|---|
+| **Cognito Lite** | ✅ | ⚠ Passkey 不可 | ❌ ほぼ全部不可 | 基本機能のみ |
+| **Cognito Essentials** | ✅ | ✅ Passkey 可 | ❌ ③は不可 | 基本 + Passkey |
+| **Cognito Plus** | ✅ | ✅ + 侵害検出 | ❌ ③は不可 | 基本 + 高度な MFA |
+| **Keycloak OSS / RHBK** | ✅ | ✅ | ✅ **すべて対応** | **フルカバー** |
+
+→ **「結局どれに対応するか」= 上記 22 プロトコル**（重複含む方向別カウント）。そのうち **必須・Should は両プラットフォーム共通**、**Conditional Must の領域は顧客要件次第で Keycloak 必須化** という構造。
+
+→ Cognito 不可マーク（**K-XX**）の詳細は [reference/cognito-knockout-conditions.md](../../../reference/cognito-knockout-conditions.md) を参照。
+
 ### 本章で扱うサブセクション
 
 | サブセクション | 内容 | 関連 FR |
@@ -1414,7 +1482,38 @@ flowchart LR
 | Client Theme Override | Client 単位で一部上書き | 限定的（Login Theme は Realm 設定が支配的）|
 | カスタム Theme（FreeMarker）| 動的にロゴ/色変更可（クエリ / Client 属性ベース）| 実装コスト高、Theme コードのメンテナンス必要 |
 
-##### 現実的な 4 つの設計パターン
+##### 2 軸 × Yes/No でパターンが自動判定される構造
+
+ブランディングカスタマイズは **2 つの独立した軸** の組合せで考えると整理しやすい。両者は理論上独立しており、それぞれ Yes/No で答えればパターンが自動的に決まる。
+
+| 軸 | 質問 | 対応するカスタマイズ単位 | ヒアリング ID |
+|---|---|---|:---:|
+| **軸 1: アプリ別カスタマイズ** | アプリごとに認証基盤側のログイン画面を変えるか?（経費精算 vs 決済管理 等）| 認証基盤側で `client_id` ベースの Branding | [A-11](../../hearing-checklist.md) |
+| **軸 2: 顧客別カスタマイズ** | 顧客企業ごとに認証基盤側のログイン画面を変えるか?（Acme vs Globex 等）| 認証基盤側で `tenant_id` ベースの Branding | [A-11-α](../../hearing-checklist.md) |
+
+###### 2 軸の組合せから自動判定されるパターン
+
+| 軸 1（アプリ別）| 軸 2（顧客別）| 結果パターン | 採用シーン |
+|:---:|:---:|:---:|---|
+| ❌ No | ❌ No | **パターン A** | アプリ画面のみカスタマイズ（最シンプル、Slack/Notion 型）|
+| ✅ Yes | ❌ No | **パターン A'** | 経費精算 vs 決済等でアプリ間差別化（Auth0/Entra/Okta 型、業界主流）|
+| ❌ No | ✅ Yes 部分 | **パターン B** | 顧客別ブランディング（Cognito 20 上限、規制業種）|
+| ✅ Yes | ✅ Yes | A' × B 複合 | アプリ × 顧客の組合せ（Cognito ほぼ不可、Keycloak 必須）|
+| - | ✅ Yes 完全分離 | **パターン C** | Pool/Realm 分離、SSO 喪失リスクあり、Enterprise プラン |
+
+→ **顧客は軸 1 と軸 2 の Yes/No を独立に判断するだけでよい**。組合せから本基盤側がパターンを自動マッピング。
+
+###### ヒアリング推奨順序
+
+1. **A-11**（軸 1: アプリ別）を Yes/No で確認
+2. **A-11-α**（軸 2: 顧客別）を No / Yes 部分 / Yes 完全分離 のいずれかで確認
+3. 上表で自動判定されたパターン（A / A' / B / C）を顧客に提示・合意取得
+4. **A-11-2**（アプリ側実装責務）: 軸 1 = No または 軸 2 = No の場合に確認（アプリ側で顧客別差替する責務）
+5. **A-11-3**（カスタマイズレベル L1-L8）: 軸 1 = Yes または 軸 2 = Yes の場合に確認（認証基盤側カスタマイズの深度）
+
+→ 2 軸の合意取得により、**[B-612](../../hearing-checklist.md) / [B-703-3](../../hearing-checklist.md) / [B-208](../../hearing-checklist.md) / [B-703-1](../../hearing-checklist.md) の 4 項目が自動的に決まる**。
+
+##### 現実的な 4 つの設計パターン（2 軸の組合せ詳細）
 
 > 詳細な技術根拠・公式ソース引用は [branding-strategy-evidence.md](../../../common/branding-strategy-evidence.md) 参照。
 

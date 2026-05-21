@@ -43,6 +43,8 @@
 |:---:|---|---|
 | 5 | [proposal/fr/00-index.md](doc/requirements/proposal/fr/00-index.md) | 機能要件 9 章の構成と依存関係 |
 | 6 | [proposal/fr/01-auth.md](doc/requirements/proposal/fr/01-auth.md) 〜 [09-integration.md](doc/requirements/proposal/fr/09-integration.md) | 機能要件 §FR-1〜§FR-9（ベースライン + TBD を顧客と読み合わせる素材） |
+| 6a | **[proposal/fr/02-federation.md §FR-2.0.C](doc/requirements/proposal/fr/02-federation.md)** | **本基盤対応プロトコル一覧（12 プロトコル × 4 Tier 早見表）** — 「結局どのプロトコルに対応するか?」への 1 枚回答 |
+| 6b | **[proposal/fr/06-authz.md §FR-6.0.B](doc/requirements/proposal/fr/06-authz.md)** | **「認可」の 2 つの意味（A 認可フロー / B 認可判定）+ Token Exchange の位置づけ** — 「認可はアプリ側」スタンスの正確な意味 |
 | 7 | [proposal/nfr/00-index.md](doc/requirements/proposal/nfr/00-index.md) | 非機能要件 9 章（IPA 非機能要求グレード 2018 マッピング付き） |
 | 8 | [proposal/common/01-architecture.md](doc/requirements/proposal/common/01-architecture.md) | Identity Broker パターンの採用根拠 |
 | 9 | [proposal/common/02-platform.md](doc/requirements/proposal/common/02-platform.md) | Cognito / Keycloak / RHBK 選定の判定フロー |

@@ -103,6 +103,65 @@ flowchart LR
 
 ---
 
+## プロトコル組み合わせの全体像（受信側 × 発行側は独立に選べる）
+
+**混同しやすいポイント**: 「OIDC で認証 + OAuth でトークン発行」という表現は、実は **OIDC = OAuth 2.0 + ID Token** で同一系統です。プロトコルは「**受信側（顧客 IdP → 本基盤）**」と「**発行側（本基盤 → 御社の各アプリ）**」の **2 つの独立した軸** で考えます。
+
+### 本基盤 = プロトコル変換装置（Identity Broker）
+
+```mermaid
+flowchart LR
+    subgraph Recv["受信側（顧客次第で多様）"]
+        R1[御社 A: OIDC<br/>Entra ID]
+        R2[御社 B: SAML 2.0<br/>HENNGE]
+        R3[御社 C: LDAP<br/>オンプレ AD]
+    end
+
+    Hub[本基盤<br/>= Identity Broker<br/>プロトコル変換]
+
+    subgraph Issue["発行側（基本統一）"]
+        I1[アプリ全般<br/>OIDC + OAuth 2.0<br/>JWT]
+        I2[レガシー SAML SP アプリ<br/>SAML 2.0 IdP モード<br/>※B-202 Yes 時のみ追加]
+    end
+
+    R1 --> Hub --> I1
+    R2 --> Hub --> I1
+    R3 --> Hub --> I1
+    Hub -.オプション.-> I2
+
+    style Hub fill:#fff3e0
+    style I1 fill:#e8f5e9
+    style I2 fill:#fff8e1
+```
+
+→ **受信側は顧客次第で多様（OIDC / SAML / LDAP）、発行側は基本的に OIDC + OAuth で統一**。これにより**御社の各アプリは「JWT 検証だけ」で完結**できます。
+
+### 6 パターンの組み合わせマトリクス
+
+| 受信側プロトコル | 発行側プロトコル | 構成名 | 典型ケース | 本基盤対応 |
+|---|---|---|---|:---:|
+| **OIDC** | **OIDC + OAuth 2.0** | 標準（現代的、推奨）| 新規構築、ほとんどの B2B SaaS | ✅ |
+| **SAML 2.0 SP** | **OIDC + OAuth 2.0** | **SAML→JWT フェデブリッジ** | 顧客 IdP が HENNGE / ADFS、アプリは現代的 | ✅ |
+| **LDAP** | **OIDC + OAuth 2.0** | AD→JWT 変換 | 顧客が AD 直結、アプリは JWT | ✅ Keycloak のみ |
+| OIDC | **SAML 2.0 IdP** | レガシー SAML SP 連携 | 顧客 IdP は OIDC、既存アプリが SAML SP-only | ✅ Keycloak のみ |
+| SAML 2.0 SP | **SAML 2.0 IdP** | フル SAML（古典 SSO）| 全体 SAML、稀 | ✅ Keycloak のみ |
+| LDAP | **SAML 2.0 IdP** | AD→SAML 出力 | 稀、規制業界の特殊系 | ✅ Keycloak のみ |
+
+### OIDC と OAuth 2.0 の関係（よくある誤解）
+
+| 用語 | 関係 |
+|---|---|
+| **OAuth 2.0** | **認可フレームワーク**（Token 発行プロトコル、RFC 6749）|
+| **OIDC**（OpenID Connect 1.0）| **OAuth 2.0 + ID Token**（認証層を追加）|
+
+→ 「**OIDC で認証 + OAuth で発行**」は技術的に同じ系統（OIDC が OAuth を内包）。**SAML だけが完全に別系統**。
+
+→ **本基盤の発行側は基本 OIDC + OAuth で統一**、**SAML IdP モードはオプション**（B-202 Yes 時のみ追加）。
+
+→ **本基盤は「正しい Token を正しい宛先に発行する」**（**意味 A の認可** = Token 発行制御）を担当。**業務認可判定**（**意味 B の認可** = 「alice は X できるか?」）は各アプリ側の責務（[§FR-6.0.A スタンス](../proposal/fr/06-authz.md)）。詳細は [B-3 認可・JWT 要件](03-authz-jwt.md)。
+
+---
+
 ## マスター表 A: 弊社（事業者）の社内 IdP（旧 A-13 統合）
 
 > **目的**: P-1 基盤運用管理者（弊社運用チーム）の認証方式を確定。γ シナリオ採用時は **弊社内 IdP 連携 + Break Glass 用最小ローカル管理者** が標準（[§FR-1.2.0.0](../proposal/fr/01-auth.md#fr-1200-ローカルユーザーとは何か--利用者カテゴリ別の分析)）
