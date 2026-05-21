@@ -3,6 +3,9 @@
 各アプリの AWS アカウントで**標準として定めるべきルール**を整理する領域。
 共有認証基盤（[../requirements/](../requirements/00-index.md)）とは独立した別ドメインの取り組み。
 
+> 🌟 **まずここから**: [requirements-document-structure.md](requirements-document-structure.md) が API プラットフォーム標準 要件定義の **SSOT (Single Source of Truth)**。
+> §0 ナラティブ（6 ステップ）／§1 ドキュメント体系／§8 依存関係と読み順／§9 ダッシュボード が全体把握の入口。
+
 ---
 
 ## §0.0 背景・なぜここで定めるか
@@ -16,20 +19,28 @@
 
 ---
 
-## §0.1 スコープ（初期）
+## §0.1 スコープ（4 層モデル）
 
-各アプリの AWS アカウントで標準化する対象として、以下を扱う想定。
+調査の結果、API プラットフォーム標準は **4 層 + 横串** で整理するのが AWS 流儀。
 
-| # | テーマ | 内容（初期メモ） |
-|---|--------|----------------|
-| 1 | 公開範囲ルール | API の Public / Internal などの公開区分、適用条件、変更プロセス |
-| 2 | 流量制限・課金管理 | レート制御、利用者識別（API Key / 認証主体）、使用量計測、課金按分の方法 |
-| 3 | 監査アカウント Firewall Manager | 監査アカウントから配信される FW ルールの説明、各アプリ側での運用ルール |
-| 4 | 標準アーキテクチャ構成 | サーバレス系（API Gateway + Lambda 等）、コンテナ系（ECS）の標準構成 |
-| 5 | セキュリティ最低ライン | 死守すべきセキュリティ要件（認証・認可・暗号化・シークレット管理・等） |
-| 6 | ログのベストプラクティス | 構造化ログ、保存先、保管期間、トレース ID 連携、監査ログの扱い |
+```
+[公開境界層]      Who can reach the API?         Public / Internal / Partner / Private
+[認証認可層]      Who is the caller?              共有認証基盤 / API Key / mTLS / IAM
+[流量制御層]      How much can the caller use?    Throttle / Quota / 利用者識別 / 課金按分
+[実装ランタイム層] How is the API served?         Serverless（API GW + Lambda）/ Container（ECS）
+└横串：観測性（ログ・トレース・メトリクス）／コスト按分／ガードレール（監査アカウント FMS）
+```
 
-> 上記は要望段階の見出しであり、章立て・粒度・依存関係は今後 SSOT 文書（後続作成予定）で整理する。
+初期 6 テーマはこの 4 層に以下のようにマップされる：
+
+| 要望テーマ | 4 層モデルでの位置 | 章 |
+|---|---|---|
+| 公開範囲ルール（Public / Internal） | 公開境界層 | §FR-API-1 |
+| 流量制限・課金管理 | 流量制御層 | §FR-API-3 / §FR-API-4 |
+| 監査アカウント FMS | 横串：ガードレール | §FR-API-7 |
+| 標準アーキ（Serverless / ECS） | 実装ランタイム層 | §FR-API-5 / §FR-API-6 |
+| セキュリティ死守事項 | 横串（NFR） | §NFR-API-4 |
+| ログのベストプラクティス | 横串：観測性 | §FR-API-8 / §NFR-API-6 |
 
 ---
 
@@ -40,31 +51,45 @@
 | 対象 | 共有認証基盤の機能・非機能要件 | 各アプリの AWS アカウントで守る標準・ガードレール |
 | 構成形態 | 中央集権（共通アカウントに集約） | 分散標準（各アカウントに同じルールを適用） |
 | 主読者 | 共通基盤の運用者 + 接続アプリ開発者 | 各アプリの開発・運用担当者、プラットフォーム標準化推進者 |
-| 主成果物 | 要件定義書 + 顧客向け提示版 (proposal) | （TBD：要件定義書 + 各アプリ向けの標準ガイド） |
+| 中核ストーリー | プラットフォーム単一選定（Cognito vs Keycloak） | 2 系統並行カタログ（Serverless / Container）+ ガードレール配信 |
+| 主成果物 | 要件定義書 + 顧客向け提示版 (proposal) | 要件定義書 + 提示版 (proposal) + 選定基準書 + 参考実装 |
 
 ---
 
-## §0.3 ドキュメント構成（プレースホルダ）
-
-まずは作業場所のみ確保した段階。今後、認証側の体系（SSOT → FR/NFR → proposal → ヒアリング → 各種補助資料）を参考に骨格を組む。
+## §0.3 ドキュメント構成（現状）
 
 ```
 doc/api-platform/
-└── 00-index.md          ← このファイル（暫定）
+├── 00-index.md                           ← 本ファイル
+├── requirements-document-structure.md    ← SSOT（章立て・ナラティブ・進捗）🚧 ドラフト初版
+│
+├── (以下は順次着手)
+├── proposal/                             ← 関係者向け要件定義 提示版
+│   ├── fr/   (§FR-API-1 〜 §FR-API-8)
+│   ├── nfr/  (§NFR-API-1 〜 §NFR-API-9)
+│   └── common/ (§C-API-1 〜 §C-API-5)
+├── functional-requirements.md            ← 機能要件カタログ
+├── non-functional-requirements.md        ← 非機能要件カタログ
+├── runtime-pattern-decision.md           ← Serverless / Container 選定基準
+└── requirements-spec.md                  ← 要件定義書本体
 ```
 
-予定（決まったものから随時追加）：
-
-- 要件定義 SSOT（ナラティブ・章構成・依存関係）
-- 機能要件 / 非機能要件
-- 顧客向け提示版（proposal）
-- ヒアリング項目・戦略
-- 標準アーキテクチャ参照モデル（サーバレス / ECS）
-- ガードレール（Firewall Manager / セキュリティ最低ライン）
+詳細は [requirements-document-structure.md §1 ドキュメント体系の全体像](requirements-document-structure.md) を参照。
 
 ---
 
-## §0.4 関連リンク
+## §0.4 ドキュメント一覧
+
+| ドキュメント | 内容 | 状態 |
+|------------|------|:---:|
+| **[requirements-document-structure.md](requirements-document-structure.md)** ⭐ | **要件定義 SSOT**：ナラティブ・6 ステップ・章構成・依存関係・状態ダッシュボード | 🚧 ドラフト初版 |
+
+> 今後追加されるドキュメントは [requirements-document-structure.md §9 ダッシュボード](requirements-document-structure.md) を一次ソースとする。
+
+---
+
+## §0.5 関連リンク
 
 - [../00-index.md](../00-index.md) — doc/ 全体の入口
 - [../requirements/00-index.md](../requirements/00-index.md) — 認証基盤の要件定義（ドキュメント体系のお手本）
+- [../requirements/requirements-document-structure.md](../requirements/requirements-document-structure.md) — 認証側 SSOT（本書 SSOT の構造的雛形）
