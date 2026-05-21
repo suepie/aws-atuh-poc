@@ -107,7 +107,14 @@ flowchart LR
 
 **混同しやすいポイント**: 「OIDC で認証 + OAuth でトークン発行」という表現は、実は **OIDC = OAuth 2.0 + ID Token** で同一系統です。プロトコルは「**受信側（顧客 IdP → 本基盤）**」と「**発行側（本基盤 → 御社の各アプリ）**」の **2 つの独立した軸** で考えます。
 
-### 本基盤 = プロトコル変換装置（Identity Broker）
+### 本基盤 = アイデンティティ仲介 Hub（Identity Broker）
+
+> **注**: Identity Broker は「プロトコル変換」だけでなく、以下 5 つの機能を統合的に担う仲介装置です:
+> 1. **プロトコル変換**（SAML → OIDC 等）
+> 2. **属性正規化**（IdP ごとに違う `tid` / `org_id` 等を統一 `tenant_id` に）
+> 3. **Trust 集約**（御社の各アプリは Broker 1 つだけを信頼）
+> 4. **統一 JWT 発行**（受信側が何であれ同じフォーマット）
+> 5. **オーケストレーション**（JIT / MFA 重複回避 / SSO セッション / ログアウト伝播）
 
 ```mermaid
 flowchart LR
@@ -117,7 +124,7 @@ flowchart LR
         R3[御社 C: LDAP<br/>オンプレ AD]
     end
 
-    Hub[本基盤<br/>= Identity Broker<br/>プロトコル変換]
+    Hub["本基盤<br/>Identity Broker<br/>(プロトコル変換 +<br/>属性正規化 +<br/>Trust 集約 +<br/>統一 JWT 発行 +<br/>オーケストレーション)"]
 
     subgraph Issue["発行側（基本統一）"]
         I1[アプリ全般<br/>OIDC + OAuth 2.0<br/>JWT]
