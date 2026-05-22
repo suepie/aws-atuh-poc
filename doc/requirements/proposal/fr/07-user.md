@@ -366,7 +366,7 @@ flowchart LR
 | **デフォルト権限の付与タイミング** | **JIT 作成時に IdP アサーションの groups/roles 属性を読んで決定** | SCIM ペイロードの `groups` を読んで決定 |
 | **イベント通知（Webhook）の起動契機** | **JIT 作成イベント `user.created` を発火** | **SCIM 作成 / 更新 / 削除のたびに `user.*` イベント発火** |
 
-→ **JIT と SCIM は方向が真逆で、両方併用が標準**。SCIM が無くても JIT は動く（ログイン時自動作成）。逆に SCIM があっても JIT は無効化しない（IdP 側の SCIM 未対応ユーザーをカバー）。
+→ **JIT と SCIM は方向は同じ（外部 → 基盤）だが、起動契機・動作タイプが真逆**（JIT = reactive・ログイン契機 / SCIM = proactive・push 契機）であり、**両方併用が標準**。SCIM が無くても JIT は動く（ログイン時自動作成）。逆に SCIM があっても JIT は無効化しない（IdP 側の SCIM 未対応ユーザーをカバー）。なお **Webhook は方向自体が SCIM と真逆**（基盤 → 外部アプリ、[§FR-9.3.0](09-integration.md#fr-930-webhook-の役割と-scimjit-との違い)）であり、JIT/SCIM の代替ではなく補完関係にある。
 
 #### 本基盤での JIT / SCIM の使い分け（利用者カテゴリ別、[§FR-1.2.0.0](01-auth.md#fr-1200-ローカルユーザーとは何か--利用者カテゴリ別の分析) と連動）
 

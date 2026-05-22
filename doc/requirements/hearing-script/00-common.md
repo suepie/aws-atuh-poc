@@ -95,6 +95,36 @@
 
 ---
 
+### 【インフラ運用者カテゴリ確認】 (A-5-4, 🔥)
+
+A-5-2 / A-5-3 は **本基盤の認証経由で本基盤を利用するユーザー** の確認でしたが、本問は **本基盤のインフラそのものを操作する人**（本基盤の認証経由ではなく **AWS IAM 等で認証** する別系統の運用者）を確認します（[§FR-1.2.0.0](../proposal/fr/01-auth.md) Category B、[§NFR-6.4](../proposal/nfr/06-operations.md) 連動）。
+
+該当する運用者カテゴリと想定人数をご教示ください。複数該当する場合は全てお選びいただけますと幸いです:
+
+- **I-1 AWS インフラ運用者**（Cognito / Lambda / VPC / API Gateway / DynamoDB 等を AWS Console / CLI / Terraform で直接操作）
+  - 認証経路: **AWS IAM**（IAM Identity Center / IAM ユーザー / IAM Role）、**MFA 必須**
+  - 想定人数: ?名
+
+- **I-2 Keycloak / RHBK 運用者**（EKS / ECS / OpenShift 上の Keycloak を `kubectl` / `oc` / Helm で運用、Bastion 経由）
+  - 認証経路: AWS IAM + kubectl auth / OpenShift OIDC、SSH キー
+  - 想定人数: ?名（Cognito 採用時は I-1 のみで完結し、本カテゴリは不要）
+
+- **I-3 監視・SRE 担当**（CloudWatch / Datadog / Grafana / Splunk でアラート受信・ダッシュボード閲覧）
+  - 認証経路: AWS IAM / Datadog SSO / Grafana OAuth、**Read-Only 推奨**
+  - 想定人数: ?名
+
+- **I-4 セキュリティ監査者**（CloudTrail / Cognito 監査ログ / Keycloak Event Listener 出力を SIEM 経由で閲覧）
+  - 認証経路: AWS IAM / SIEM 認証、**Read-Only 強制**
+  - 想定人数: ?名
+
+- **I-5 ベンダー / SI サポート担当**（Red Hat Support / AWS Support / 外部 SI ベンダー、緊急対応・設計支援等の一時的アクセス）
+  - 認証経路: サポートチケット経由 / **IAM Role の STS 一時付与**、期間限定（24-72h）
+  - 想定対応シーン: ?
+
+**目的**: 本基盤の運用設計の網羅性確保。各カテゴリの認証経路・MFA 要件・最小権限ポリシー設計、Bastion / Privileged Access Management の必要性、緊急対応プロセス（[§NFR-6.4 構成変更プロセス](../proposal/nfr/06-operations.md)）の設計に直結します。**本基盤の認証経由ではない（AWS IAM 等の別系統）**ため、Cognito / Keycloak の設計には直接影響しませんが、**運用設計と監査ログ要件で必須の整理**となります。「I-X の運用者が不在」の場合、それは「外部ベンダーに丸投げ」or「自社運用なし」を意味するため、サポート契約（C-301）との整合性を確認します。
+
+---
+
 ### 【顧客企業の IdP 種別の分布】 (A-6, 🟡)
 
 > **本項は [B-2 マスター表 B](02-idp-federation.md#マスター表-b-顧客企業の-idp-構成リスト旧-a-6--b-201b-207-統合) に統合されました**。Phase B で詳細記入していただきます。本 Phase A では **概算分布のみ** お答えいただければ十分です。

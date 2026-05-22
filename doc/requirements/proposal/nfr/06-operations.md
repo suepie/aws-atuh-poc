@@ -183,6 +183,57 @@ flowchart LR
 > **主な判断軸**: 申請の軽量化（チケット vs Git PR）、レビュー責任の所在、緊急変更時の例外ルート   
 > **§NFR-6 全体との関係**: クロスアカウント境界による運用摩擦を最小化する制度設計。[§FR-1.2.0.B Layer 1-4](../fr/01-auth.md) の "Configuration 変更系の摩擦" を実装手順で具体化
 
+### インフラ運用者カテゴリ（I-1〜I-5）の責務分担
+
+本基盤の **インフラを操作する人** は、[§FR-1.2.0.0 Category B](../fr/01-auth.md#fr-1200-ローカルユーザーとは何か--利用者カテゴリ別の分析) で I-1〜I-5 の 5 カテゴリに分類されます。**これらは本基盤の認証経由ではなく AWS IAM / kubectl auth 等で認証** する別系統の運用者で、本サブセクション（§NFR-6.4）の構成変更プロセスを実行する主体です。
+
+#### 5 カテゴリの責務マトリクス
+
+| ID | カテゴリ | 主な担当作業 | 認証経路 | 権限 | 想定アクセス頻度 |
+|:---:|---|---|---|---|---|
+| **I-1** | AWS インフラ運用者 | Cognito User Pool / Lambda / VPC / API Gateway / DynamoDB の操作（Console / CLI / Terraform） | **AWS IAM**（IAM Identity Center / IAM ユーザー / IAM Role）、**MFA 必須** | 担当領域のみ最小権限 | 日次〜週次 |
+| **I-2** | Keycloak / RHBK 運用者 | EKS / ECS / OpenShift 上の Keycloak を `kubectl` / `oc` / Helm で運用、SSH / Bastion 経由のコンテナアクセス | AWS IAM + kubectl auth / OpenShift OIDC、SSH キー（CA 署名推奨）| Realm Admin / Cluster Admin（必要時のみ） | 週次〜月次 |
+| **I-3** | 監視・SRE 担当 | CloudWatch / Datadog / Grafana / Splunk でアラート受信・ダッシュボード閲覧、障害一次対応 | AWS IAM / Datadog SSO / Grafana OAuth | **Read-Only 推奨** + 一部 Run Book Action | 常時オンコール |
+| **I-4** | セキュリティ監査者 | CloudTrail / Cognito 監査ログ / Keycloak Event Listener 出力 / SIEM 経由で閲覧、コンプラ監査・インシデント調査 | AWS IAM / SIEM 認証 | **Read-Only 強制**（書き込み不可）| 月次〜四半期、有事は随時 |
+| **I-5** | ベンダー / SI サポート | Red Hat Support / AWS Support / 外部 SI ベンダー（緊急対応・設計支援等の一時的アクセス）| サポートチケット経由 / **IAM Role の STS 一時付与**（24-72h）| 案件単位の限定権限 | 必要時のみ |
+
+#### 各カテゴリの構成変更プロセスへの関与
+
+| 構成変更タイプ | 主担当 | レビュー / 監査 |
+|---|---|---|
+| **App Client 追加・削除**（新規アプリ立ち上げ）| I-1（AWS インフラ運用者）| I-3 監視 + I-4 監査 |
+| **IdP 追加・削除**（新規顧客オンボーディング）| I-1（Cognito 採用時）/ I-1 + I-2（Keycloak 採用時）| I-4 監査 |
+| **クレーム / 属性スキーマ追加**（アプリ認可要件追加）| I-1（Pre Token Lambda）/ I-2（Keycloak Protocol Mapper）| I-3 + I-4 |
+| **Realm / User Pool 設定変更**（PW ポリシー / セッション TTL 等）| I-1 + I-2 | I-4 監査必須 |
+| **緊急対応**（侵害対応 / 障害時）| I-3 一次対応 → I-1 / I-2 二次対応 + I-5 ベンダー支援（必要時）| 事後 I-4 監査必須 |
+| **新規ベンダー支援**（Red Hat / AWS Support コンサル等）| I-5（STS 一時付与）| I-1 が STS 発行・取消 |
+
+#### 認証・アクセス管理の設計指針（I-1〜I-5 共通）
+
+| 項目 | 指針 |
+|---|---|
+| **認証方式** | **AWS IAM Identity Center 統一**（個別 IAM ユーザー禁止）、SAML / SCIM で社内 IdP 連携 |
+| **MFA** | I-1 / I-2 / I-4 / I-5 は **MFA 必須**、I-3 は推奨（Datadog 等の SSO 側でも MFA）|
+| **権限ポリシー** | **最小権限原則**、Permission Boundary 適用、定期レビュー（半期） |
+| **特権アクセス** | I-2 の Cluster Admin / I-4 / I-5 は **Privileged Access Management（PAM）** 推奨、操作セッション録画 |
+| **アクセスログ** | 全カテゴリの操作を CloudTrail / kubernetes audit log / SIEM 集約、保存期間は [C-203 監査ログ保存期間](../../hearing-checklist.md) で確定 |
+| **ベンダーアクセス（I-5）** | **STS AssumeRole で 24-72h 限定**、操作後セッションログ確認必須 |
+| **退職 / 異動時** | IAM Identity Center 経由で即時遮断、Permission Boundary も無効化 |
+
+#### ヒアリング項目（A-5-4）との連動
+
+[A-5-4 インフラ運用者カテゴリ確認](../../hearing-checklist.md) で各カテゴリの **存在 + 想定人数** を確認することで、以下が決まる:
+
+- **PAM（Privileged Access Management）導入の要否**: I-2 / I-4 / I-5 が多いなら必須
+- **IAM Identity Center のグループ設計**: カテゴリ別グループ + Permission Set
+- **MFA 強制ポリシー**: SCP / Permission Boundary でルール化
+- **監査ログのスコープ**: I-1〜I-5 全員の操作を CloudTrail / SIEM で集約
+- **緊急対応 Fast Track**: I-3 の権限、I-5 STS 一時付与の事前承認テンプレ
+
+→ **I-X が不在 = 外部委託 or 自社運用なし** を意味するため、サポート契約（[C-301](../../hearing-checklist.md)）との整合性を確認する必要があります。
+
+
+
 ### 業界の現在地
 
 - **GitOps**（Weaveworks 提唱、2017〜）が IaC 変更管理の業界標準。**「Git が単一の真実、CI/CD が同期実行」**

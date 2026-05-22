@@ -22,6 +22,41 @@ Next.js / Spring MVC / Django / Rails 等の Server-Side Rendering Web アプリ
 
 ---
 
+### 【バックエンド API のエンドポイント形態（JWT 検証場所の決定軸）】 (B-102-2, 🟡)
+
+> **重要**: 本問は **JWT 検証をどこでするか**（Lambda Authorizer / アプリ側ライブラリ / Service Mesh Sidecar / Cognito Authorizer）を決める軸です。**SSR / SPA / モバイルの選択とは独立した軸**であり、SSR を採用しても本問の答えで Lambda Authorizer の要否が変わります。
+
+バックエンド API への通信経路についてご教示ください。複数該当する場合は **アプリ別のマッピング**（経費精算は ①、決済管理は ② 等）でお答えいただけますと幸いです。
+
+**選択肢**:
+
+- **① AWS API Gateway 経由**（**本基盤 PoC 標準・推奨**）
+  - Bearer JWT → **Lambda Authorizer で検証**
+  - 本基盤の**マルチイシュア対応**（Cognito + Keycloak 並列受理）が必要な場合は事実上必須
+  - 採用シーン: Serverless 構成、複数 IdP / 複数 issuer の JWT を統一処理したい場合
+
+- **② ALB + ECS / EC2 直結**（API Gateway なし）
+  - **アプリ側ライブラリで JWT 検証**（Spring Security / Passport.js / python-jose 等）
+  - Lambda Authorizer は不要
+  - 採用シーン: モノリス的アーキテクチャ、API Gateway 利用コストを避けたい
+
+- **③ Service Mesh**（EKS / ECS + Envoy / Istio Sidecar）
+  - **Sidecar（Envoy 等）で JWT 検証**、Service Mesh の AuthorizationPolicy で認可
+  - Lambda Authorizer は不要、Service Mesh が代替
+  - 採用シーン: マイクロサービス内部通信、mTLS と組み合わせ
+
+- **④ 完全内部完結**（SSR + 内部 API + DB が VPC 内で完結、外部 API 公開なし）
+  - **SSR サーバー内で JWT 検証**、外部 API がないため Lambda Authorizer 不要
+  - 採用シーン: 古典的 Web アプリ、Cookie + Session Store ベース
+
+- **⑤ Cognito Authorizer**（API Gateway 標準機能、Lambda 不使用）
+  - 単一 Cognito User Pool + シンプル検証のみ
+  - 採用シーン: マルチイシュア不要、カスタム認可ロジック不要の場合
+
+**目的**: 本基盤の**マルチイシュア要件**（Cognito + Keycloak 並列で JWT 発行）では **Lambda Authorizer が事実上必須** ですが、顧客アプリ側の構成次第で「アプリ側 JWT 検証」「Service Mesh」等の代替も可能です。本問により、JWT 検証実装の責務範囲（基盤側 vs アプリ側）、Cognito Authorizer で十分か Lambda Authorizer 必要かの判断、Service Mesh / Sidecar 採用時の認可設計などが決まります。**本基盤の責務はあくまで JWT 発行までで、検証手段は各アプリ側で選択可能**ですが、推奨は ① API Gateway + Lambda Authorizer です。
+
+---
+
 ### 【M2M / バッチ処理の有無】 (B-103, 🔥)
 
 バッチ処理 / 定期 API 連携処理 / システム間連携などの M2M（Machine-to-Machine）認証が必要なケースはございますか。
