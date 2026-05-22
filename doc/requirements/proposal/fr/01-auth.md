@@ -434,6 +434,59 @@ flowchart TB
 | **P-5. ゲスト / 外部協力者** | 不定・短期 | 営業時間 | 限定 | 招待 URL + ローカル / ソーシャル（Google 等） |
 | **P-6. B2C エンドユーザー** | 不定 | 24/7 | 個人 | ローカル + ソーシャル + Passkey |
 
+#### 想定するユーザー全体表（4 カテゴリ統合版）
+
+**P-1〜P-6 は「本基盤の認証を経由する人間ユーザー」のみをカバー**します。実際に本基盤を運用する上では、**インフラ運用者（AWS IAM 経由）/ M2M（システム間連携）/ 脅威モデル** も明示的に分類しておく必要があります。
+
+##### Category A: 本基盤の認証を経由する人間ユーザー（上記 P-1〜P-6 と同じ）
+
+| ID | ユーザー種類 | 概要 | 想定する認証方式 |
+|:---:|---|---|---|
+| **P-1** | 基盤運用管理者 | 弊社運用チーム、全顧客影響 | 弊社内 IdP + Break Glass ローカル |
+| **P-2** | テナント管理者 | 顧客のシステム管理者 | 顧客 IdP（推奨）/ ローカル |
+| **P-3** | IdP あり顧客従業員 | 顧客数 × 数百〜数千、**最大ボリューム** | 顧客 IdP（フェデ） |
+| **P-4** | IdP なし顧客従業員 | 一部顧客のみ | ローカル |
+| **P-5** | ゲスト / 外部協力者 | 不定・短期 | 招待 URL + ローカル / ソーシャル |
+| **P-6** | B2C エンドユーザー | 本基盤が B2C 提供する場合 | ローカル + ソーシャル + Passkey |
+
+##### Category B: 本基盤の認証を経由しないインフラ運用者（**従来は明示されていなかった層**）
+
+| ID | ユーザー種類 | 概要 | 想定する認証方式 |
+|:---:|---|---|---|
+| **I-1** | AWS インフラ運用者 | Cognito / Lambda / VPC / API Gateway / DynamoDB 等を AWS Console / CLI / Terraform で直接操作 | **AWS IAM**（IAM Identity Center / IAM ユーザー / IAM Role）、**MFA 必須**、本基盤の認証とは別系統 |
+| **I-2** | Keycloak / RHBK 運用者 | EKS / ECS / OpenShift 上の Keycloak を `kubectl` / `oc` / Helm で運用、SSH / Bastion 経由のコンテナアクセス | AWS IAM + kubectl auth / OpenShift OIDC、Bastion 経由の SSH キー |
+| **I-3** | 監視・SRE 担当 | CloudWatch / Datadog / Grafana / Splunk でアラート受信・ダッシュボード閲覧 | AWS IAM / Datadog SSO / Grafana OAuth、**Read-Only 推奨** |
+| **I-4** | セキュリティ監査者 | CloudTrail / Cognito 監査ログ / Keycloak Event Listener 出力を SIEM 経由で閲覧 | AWS IAM / SIEM 認証、**Read-Only 強制** |
+| **I-5** | ベンダー / SI サポート担当 | Red Hat Support / AWS Support / 外部 SI ベンダー（緊急対応・設計支援等の一時的アクセス） | サポートチケット経由 / **IAM Role の STS 一時付与**、期間限定（24-72h）|
+
+##### Category C: M2M（システム間連携、人間ではない）
+
+| ID | ユーザー種類 | 概要 | 想定する認証方式 |
+|:---:|---|---|---|
+| **M-1** | アプリ間サービス（マイクロサービス OBO）| サービス A → サービス B 内部呼び出しでエンドユーザー文脈を伝播 | **本基盤発行 Token Exchange（RFC 8693）**（Keycloak 必須）+ Client Credentials |
+| **M-2** | CI/CD パイプライン | Terraform Apply / GitHub Actions / CodePipeline で IaC デプロイ | **AWS IAM Role**（GitHub OIDC Federation / OIDC Provider 経由）、**IAM ユーザーは原則使わない** |
+| **M-3** | SCIM プロビジョニング元 | 顧客 IdP（Entra / Okta 等）が本基盤の SCIM エンドポイントを叩いて自動同期 | **本基盤発行 SCIM Bearer Token**、TLS 経由 |
+| **M-4** | Webhook 受信側 | 本基盤 → 外部システム（顧客アプリ / SIEM 等）への `user.created` 等通知 | **HMAC 署名**（本基盤側で生成、受信側で検証）、Bearer Token も併用可 |
+| **M-5** | IoT / CLI デバイス | 入力制約デバイスからの認証（CLI ツール / Smart TV / AI Agent 等） | **本基盤発行 Device Code Flow（RFC 8628）**（Keycloak 標準対応 / Cognito は自前実装） |
+
+##### Category D: 脅威モデル（参考、設計上明示すべき）
+
+| ID | ユーザー種類 | 概要 | 想定する認証方式 |
+|:---:|---|---|---|
+| **T-1** | 外部攻撃者 | 不正アクセス試行、フィッシング、トークン盗難、ブルートフォース等 | （対象外、防御対象） |
+| **T-2** | 内部不正者 | 特権アカウントの悪用、退職者の残存アクセス、内部からのデータ持ち出し | （対象外、防御対象、最小権限・監査ログで対応）|
+
+##### 4 カテゴリの責務分担
+
+| カテゴリ | 認証提供主体 | 本基盤のヒアリング対象 | 関連ヒアリング項目 | 関連設計章 |
+|:---:|---|:---:|---|---|
+| **A. 人間ユーザー（P-1〜P-6）** | 本基盤（Cognito / Keycloak）| ✅ | A-5-2, A-5-3, A-6, B-200 系, C-204 系 | §FR-1.2.0 / §FR-2 |
+| **B. インフラ運用者（I-1〜I-5）** | AWS IAM / IAM Identity Center / Kubernetes RBAC 等 | △ | **A-5-4（新規）**, C-301 サポート体制 | [§NFR-6.4 構成変更プロセス](../nfr/06-operations.md) |
+| **C. M2M（M-1〜M-5）** | 本基盤（Client Credentials / Token Exchange / SCIM Token / Device Code）| ✅ | B-103, B-104, B-105, B-401, B-405 | §FR-1.1, §FR-6.3 |
+| **D. 脅威モデル（T-1, T-2）** | （対象外、防御対象） | — | [§NFR-4 セキュリティ](../nfr/04-security.md) 全般 | §NFR-4 |
+
+→ **Category B のインフラ運用者は本基盤の認証を使わない**ため、Cognito / Keycloak の設計には影響しないが、**運用設計（[§NFR-6.4](../nfr/06-operations.md)）と監査ログ要件には直接関わる**。Category D は脅威モデルとしてセキュリティ章で扱う。
+
 #### ローカルユーザー範囲の 4 シナリオ
 
 ```mermaid
