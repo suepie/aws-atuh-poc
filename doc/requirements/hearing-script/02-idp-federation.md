@@ -326,6 +326,32 @@ flowchart LR
 
 ---
 
+## フェデユーザーのログイン画面に関する責務分担（重要）
+
+> **フェデユーザー（P-3）のログイン操作で経由する画面は 3 つあり、それぞれ管理責務が異なります**。本セクションは [§FR-2.3.3.A フェデユーザー / ローカルユーザーの画面遷移と責務分担](../proposal/fr/02-federation.md#fr-233a-画面所在マトリクスとカスタマイズ-3-パターン) と [branding-strategy-evidence.md §6.A](../../common/branding-strategy-evidence.md) の要約。
+
+### 3 画面の責務マトリクス（顧客対話時の重要ポイント）
+
+| 画面 | 物理的所在 | 管理責務 | A-11 / A-11-α |
+|---|---|---|:---:|
+| **❶ 本基盤の IdP セレクター画面** | 本基盤（`auth.example.com`）| **本基盤チーム** | ✅ 対象 |
+| **❷ 顧客 IdP のログイン画面** | **顧客 IdP**（`login.microsoftonline.com` 等）| **顧客 IT 部門**（Entra Admin Center 等） | ❌ **対象外** |
+| **❸ 本基盤の補完画面**（同意 / プロファイル補完 / アカウントリンク確認）| 本基盤 | 本基盤チーム | ✅ 対象 |
+
+### 顧客への重要な説明事項
+
+「フェデユーザーのログイン画面をカスタマイズしたい」と顧客から要望があった場合、**❷ は本基盤管轄外** であることを **契約・SOW 段階で明示** する必要があります:
+
+| 顧客要望 | 本基盤で対応? | 必要な対応 |
+|---|:---:|---|
+| 本基盤の IdP セレクター画面（❶）に顧客ロゴ | ✅ | A-11-α = Yes 部分（パターン B、Cognito 20 顧客上限）|
+| **顧客 Entra ID のログイン画面（❷）のデザイン** | **❌ 管轄外** | **顧客 IT 部門に依頼**（Entra Admin Center > Company Branding 等）|
+| 本基盤の補完画面（❸）の文言・配置 | ⚠ L4-L8 制約 | Cognito Managed Login は文言変更不可、Keycloak Theme なら可 |
+
+→ 詳細な責務分担・各 IdP 製品の Branding 機能は [§FR-2.3.3.A](../proposal/fr/02-federation.md#fr-233a-画面所在マトリクスとカスタマイズ-3-パターン) / [branding-strategy-evidence.md §6.A](../../common/branding-strategy-evidence.md) 参照。
+
+---
+
 ## 残る独立質問（表に統合できない別軸）
 
 ### 【SAML IdP モード（本基盤が SAML を発行）】 (B-202, 🔥)

@@ -59,23 +59,27 @@ Passkey（FIDO2 / WebAuthn）対応の必要性をご教示ください。
 
 ### 【外部 IdP MFA 信頼度】 (B-506, 🟡)
 
-外部 IdP（顧客 IdP）で既に MFA 済みのユーザーに対して、本基盤側でも MFA を再要求するかご教示ください。
-- 全面信頼（IdP の `amr=mfa` を信頼、本基盤側 MFA はスキップ）
-- 部分信頼（特定の IdP / 特定のロールのみ信頼）
-- 全件再要求（信頼せず本基盤側で必ず MFA）
+> **「フェデなのに 2 回ログインさせるのか?」という顧客誤解への対策の中核質問**。「全面信頼」採用なら MFA 重複なし = ユーザーは 1 回のみ認証。「全件再要求」採用は MFA 2 回（アンチパターン）。詳細: [§FR-2.3.3.A 「2 回ログイン」の正体と対策](../proposal/fr/02-federation.md#fr-233a-画面所在マトリクスとカスタマイズ-3-パターン) / [branding-strategy-evidence.md §6.B](../../common/branding-strategy-evidence.md)。
 
-**目的**: MFA 重複回避設計（[§FR-2.2.3](../proposal/fr/02-federation.md)）、UX 悪化（ログイン 2 回要求）の回避、Conditional MFA フローの設計に必要な情報です。業界標準は「接続承認された IdP のみ信頼」です。
+外部 IdP（顧客 IdP）で既に MFA 済みのユーザーに対して、本基盤側でも MFA を再要求するかご教示ください。
+- **全面信頼**（IdP の `amr=mfa` を信頼、本基盤側 MFA はスキップ）→ **業界標準、UX 良**
+- **部分信頼**（特定の IdP / 特定のロールのみ信頼）→ 規制業種向けハイブリッド
+- **全件再要求**（信頼せず本基盤側で必ず MFA）→ **MFA 重複（アンチパターン）、ユーザーから「2 回ログイン」クレーム源**
+
+**目的**: MFA 重複回避設計（[§FR-2.2.3](../proposal/fr/02-federation.md)）、UX 悪化（**狭義のログイン = パスワード/MFA 入力を 2 回要求される**問題）の回避、Conditional MFA フローの設計に必要な情報です。業界標準は「接続承認された IdP のみ信頼」です。**「全件再要求」採用時は顧客から『SSO じゃないのか?』クレームが出やすい**点にご注意ください。
 
 ---
 
 ### 【信頼する `amr` / AuthnContext 値】 (B-507, 🟡)
+
+> B-506 で「全面信頼」「部分信頼」採用時の具体的な `amr` 値設計。**ここで信頼する値を明確化することで「フェデユーザーの 2 回ログイン」問題を回避**できます。
 
 B-506 で「全面信頼」または「部分信頼」を採用する場合、どの `amr` 値 / AuthnContextClassRef を MFA 済として信頼するかご教示ください。
 代表例:
 - OIDC: `amr=mfa`, `amr=hwk`（ハードウェアキー）, `amr=pwd+mfa`
 - SAML: `urn:oasis:names:tc:SAML:2.0:ac:classes:MultiFactorContract`, `urn:oasis:names:tc:SAML:2.0:ac:classes:PasswordProtectedTransport`
 
-**目的**: ACR-to-LoA Mapping の設計（[§FR-3.3.A](../proposal/fr/03-mfa.md)）、AAL レベル判定ロジックの確定、各 IdP の方言を統一 AAL に正規化するための情報です。
+**目的**: ACR-to-LoA Mapping の設計（[§FR-3.3.A](../proposal/fr/03-mfa.md)）、AAL レベル判定ロジックの確定、各 IdP の方言を統一 AAL に正規化するための情報です。**ここでカバーされない `amr` 値で来た認証は本基盤側で再 MFA 要求 = 「2 回ログイン」**となるため、顧客 IdP の運用実態に即した網羅性が重要です。
 
 ---
 

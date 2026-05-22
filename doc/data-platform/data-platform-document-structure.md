@@ -138,11 +138,11 @@ doc/data-platform/
 
 | # | ドキュメント | 目的 | 状態 |
 |---|------------|------|------|
-| 1 | data-platform-document-structure.md（本書） | 構成・ナラティブ・状態の SSOT | 🚧 初版作成中 |
-| 2 | proposal/00-index.md | 標準ベースライン提示版の SSOT | 📋 未着手 |
-| 3 | proposal/fr/01-data-catalog.md 〜 06-personas.md | 機能要件章 6 本（骨格） | 📋 未着手 |
-| 4 | proposal/nfr/01-availability.md 〜 09-lifecycle.md | 非機能要件章 9 本（骨格） | 📋 未着手 |
-| 5 | proposal/common/01-architecture.md 〜 05-schedule.md | 横断章 5 本（骨格） | 📋 未着手 |
+| 1 | data-platform-document-structure.md（本書） | 構成・ナラティブ・状態の SSOT | ✅ 初版 |
+| 2 | proposal/00-index.md | 標準ベースライン提示版の SSOT | 🚧 骨格 |
+| 3 | proposal/fr/01-data-catalog.md 〜 06-personas.md | 機能要件章 6 本（骨格） | 🚧 骨格 |
+| 4 | proposal/nfr/01-availability.md 〜 09-lifecycle.md | 非機能要件章 9 本（骨格） | 🚧 骨格 |
+| 5 | proposal/common/01-architecture.md 〜 05-schedule.md | 横断章 5 本（骨格） | 🚧 骨格 |
 | 6 | internal-evaluation.md | 社内評価メモ（裏どり） | 📋 未着手 |
 
 **proposal/ 各章の構成規約**（[../requirements/proposal/](../requirements/proposal/00-index.md) の §X.0 規約を継承）:
@@ -385,18 +385,17 @@ doc/data-platform/
 ## 7. 作成スケジュール
 
 ```
-Week 0 (現在):
+Week 0 (完了):
   ✅ 00-index.md（作業場所確保）
-  🚧 data-platform-document-structure.md（本書、初版作成中）
+  ✅ data-platform-document-structure.md（本書、初版）
+  ✅ proposal/00-index.md（SSOT）
+  ✅ proposal/fr/ 7 ファイル（00-index + 6 章骨格）
+  ✅ proposal/nfr/ 10 ファイル（00-index + 9 章骨格 + IPA マッピング）
+  ✅ proposal/common/ 6 ファイル（00-index + 5 章骨格）
 
-Week 1:
-  📋 proposal/00-index.md（SSOT）
-  📋 proposal/fr/ 6 章の骨格
-  📋 proposal/nfr/ 9 章の骨格 + IPA マッピング
-  📋 proposal/common/ 5 章の骨格
-
-Week 2:
-  📋 proposal/ 各章のサブセクション中身埋め
+Week 1-2:
+  📋 proposal/ 各章のサブセクション中身埋め・合意取り
+  📋 §C-4 TBD サマリーへの集約
   📋 hearing-strategy.md
   📋 hearing-checklist.md
 
@@ -492,35 +491,37 @@ flowchart LR
 
 | ドキュメント | 役割 | 状態 |
 |---|---|:---:|
-| [00-index.md](00-index.md) | 本フォルダの入口（暫定） | ✅ 初版 |
-| **data-platform-document-structure.md（本 SSOT）** | 構成・ナラティブ・状態の単一情報源 | 🚧 初版作成中 |
+| [00-index.md](00-index.md) | 本フォルダの入口 | ✅ 初版 |
+| **[data-platform-document-structure.md](data-platform-document-structure.md)（本 SSOT）** | 構成・ナラティブ・状態の単一情報源 | ✅ 初版 |
 
 ### 9.2 標準ベースライン提示版（proposal/）
 
 | ドキュメント | 役割 | 状態 |
 |---|---|:---:|
-| proposal/00-index.md | proposal SSOT | 📋 未着手 |
-| proposal/fr/01-data-catalog.md | §FR-1 対象データ・分類 | 📋 未着手 |
-| proposal/fr/02-storage.md | §FR-2 保存先標準 | 📋 未着手 |
-| proposal/fr/03-pipeline.md | §FR-3 データ連携 | 📋 未着手 |
-| proposal/fr/04-consumption.md | §FR-4 閲覧・活用 | 📋 未着手 |
-| proposal/fr/05-governance.md | §FR-5 ガバナンス | 📋 未着手 |
-| proposal/fr/06-personas.md | §FR-6 ペルソナ別実装パターン | 📋 未着手 |
-| proposal/nfr/00-index.md | NFR 索引 + IPA マッピング | 📋 未着手 |
-| proposal/nfr/01-availability.md | §NFR-1 可用性 | 📋 未着手 |
-| proposal/nfr/02-performance.md | §NFR-2 性能 | 📋 未着手 |
-| proposal/nfr/03-scalability.md | §NFR-3 拡張性 | 📋 未着手 |
-| proposal/nfr/04-security.md | §NFR-4 セキュリティ | 📋 未着手 |
-| proposal/nfr/05-dr.md | §NFR-5 DR | 📋 未着手 |
-| proposal/nfr/06-operations.md | §NFR-6 運用 | 📋 未着手 |
-| proposal/nfr/07-compliance.md | §NFR-7 コンプライアンス | 📋 未着手 |
-| proposal/nfr/08-cost.md | §NFR-8 コスト | 📋 未着手 |
-| proposal/nfr/09-lifecycle.md | §NFR-9 データライフサイクル | 📋 未着手 |
-| proposal/common/01-architecture.md | §C-1 参照アーキテクチャ | 📋 未着手 |
-| proposal/common/02-service-selection.md | §C-2 AWS サービス選定軸 | 📋 未着手 |
-| proposal/common/03-ownership-raci.md | §C-3 運用主体と責任分解 | 📋 未着手 |
-| proposal/common/04-tbd-summary.md | §C-4 TBD サマリー | 📋 未着手 |
-| proposal/common/05-schedule.md | §C-5 スケジュール | 📋 未着手 |
+| [proposal/00-index.md](proposal/00-index.md) | proposal SSOT | 🚧 骨格 |
+| [proposal/fr/00-index.md](proposal/fr/00-index.md) | FR 章一覧 | 🚧 骨格 |
+| [proposal/fr/01-data-catalog.md](proposal/fr/01-data-catalog.md) | §FR-1 対象データ・分類 | 🚧 骨格 |
+| [proposal/fr/02-storage.md](proposal/fr/02-storage.md) | §FR-2 保存先標準 | 🚧 骨格 |
+| [proposal/fr/03-pipeline.md](proposal/fr/03-pipeline.md) | §FR-3 データ連携 | 🚧 骨格 |
+| [proposal/fr/04-consumption.md](proposal/fr/04-consumption.md) | §FR-4 閲覧・活用 | 🚧 骨格 |
+| [proposal/fr/05-governance.md](proposal/fr/05-governance.md) | §FR-5 ガバナンス | 🚧 骨格 |
+| [proposal/fr/06-personas.md](proposal/fr/06-personas.md) | §FR-6 ペルソナ別実装パターン | 🚧 骨格 |
+| [proposal/nfr/00-index.md](proposal/nfr/00-index.md) | NFR 索引 + IPA マッピング | 🚧 骨格 |
+| [proposal/nfr/01-availability.md](proposal/nfr/01-availability.md) | §NFR-1 可用性 | 🚧 骨格 |
+| [proposal/nfr/02-performance.md](proposal/nfr/02-performance.md) | §NFR-2 性能 | 🚧 骨格 |
+| [proposal/nfr/03-scalability.md](proposal/nfr/03-scalability.md) | §NFR-3 拡張性 | 🚧 骨格 |
+| [proposal/nfr/04-security.md](proposal/nfr/04-security.md) | §NFR-4 セキュリティ | 🚧 骨格 |
+| [proposal/nfr/05-dr.md](proposal/nfr/05-dr.md) | §NFR-5 DR | 🚧 骨格 |
+| [proposal/nfr/06-operations.md](proposal/nfr/06-operations.md) | §NFR-6 運用 | 🚧 骨格 |
+| [proposal/nfr/07-compliance.md](proposal/nfr/07-compliance.md) | §NFR-7 コンプライアンス | 🚧 骨格 |
+| [proposal/nfr/08-cost.md](proposal/nfr/08-cost.md) | §NFR-8 コスト | 🚧 骨格 |
+| [proposal/nfr/09-lifecycle.md](proposal/nfr/09-lifecycle.md) | §NFR-9 データライフサイクル | 🚧 骨格 |
+| [proposal/common/00-index.md](proposal/common/00-index.md) | Common 章一覧 | 🚧 骨格 |
+| [proposal/common/01-architecture.md](proposal/common/01-architecture.md) | §C-1 参照アーキテクチャ | 🚧 骨格 |
+| [proposal/common/02-service-selection.md](proposal/common/02-service-selection.md) | §C-2 AWS サービス選定軸 | 🚧 骨格 |
+| [proposal/common/03-ownership-raci.md](proposal/common/03-ownership-raci.md) | §C-3 運用主体と責任分解 | 🚧 骨格 |
+| [proposal/common/04-tbd-summary.md](proposal/common/04-tbd-summary.md) | §C-4 TBD サマリー | 🚧 骨格 |
+| [proposal/common/05-schedule.md](proposal/common/05-schedule.md) | §C-5 スケジュール | 🚧 骨格 |
 | internal-evaluation.md | 社内評価メモ（裏どり） | 📋 未着手 |
 
 ### 9.3 ヒアリング

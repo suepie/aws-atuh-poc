@@ -329,6 +329,157 @@ sequenceDiagram
 
 ---
 
+### §C-1.2.B 想定 AWS 構成図（要件定義用、統合 + マーカー版）
+
+> **このサブセクションで定めること**: 要件定義フェーズで顧客に提示する **「想定する AWS 構成」の叩き台**。プラットフォーム選定前提のため、Cognito / Keycloak 両採用パターンを **1 枚に統合 + マーカーで差分明示**。論理図（§C-1.2）の AWS リソースレベル表現。   
+> **主な判断軸**: 顧客 IT 担当が理解しやすい抽象度、未確定箇所のマーカー、本番想定構成（[platform-architecture-patterns.md](../../../common/platform-architecture-patterns.md)）への詳細委譲   
+> **§C-1 全体との関係**: §C-1.2 の論理図を「AWS リソース視点」に翻訳。**顧客ヒアリングの叩き台**として使い、Phase D で確定図へ進化させる前提
+
+#### 全体構成図（3 アカウント前提、Cognito / Keycloak 統合表現）
+
+```mermaid
+flowchart TB
+    User["👥 エンドユーザー<br/>(ブラウザ / モバイル)"]
+
+    subgraph CustomerEnv["顧客環境 / 顧客指定 IdP（顧客ごとに異なる）"]
+        CustIdP["顧客 IdP<br/>Entra ID / Okta / HENNGE /<br/>Google / Auth0 / Keycloak /<br/>オンプレ AD 等<br/>※ B-200 マスター表 B で確定"]
+    end
+
+    subgraph CDN["コンテンツ配信 + 防御層（共通基盤側）"]
+        CF["☁️ CloudFront<br/>+ ACM 証明書"]
+        WAF["🛡️ AWS WAF<br/>(レート制限 / Bot 対策)"]
+    end
+
+    subgraph AuthAccount["共通認証基盤 AWS アカウント【弊社運用】"]
+        direction TB
+        subgraph AuthServer["認可サーバー ★プラットフォーム選定対象（§C-2）"]
+            Cog["🔴 Cognito User Pool<br/>※ Cognito 採用時のみ<br/>(Managed Login / Hosted UI)"]
+            KC["🟦 Keycloak<br/>(ECS Fargate + Aurora)<br/>※ Keycloak 採用時のみ<br/>(カスタム VPC / 2 AZ)"]
+        end
+        AdminAPI["📡 Admin REST API<br/>(委譲管理者 / SCIM 受信)"]
+        CT["📝 CloudTrail /<br/>Audit Log<br/>(全認証イベント)"]
+        Secrets_A["🔐 Secrets Manager<br/>(Client Secret /<br/>SCIM Token)"]
+    end
+
+    subgraph AppAccount["アプリ AWS アカウント【× N、顧客 or 用途別】"]
+        direction TB
+        SPA["⚛️ SPA / SSR / Mobile"]
+        subgraph BFFLayer["BFF レイヤー（オプション、§FR-1.1 B 要件次第）"]
+            BFFλ["⚡ BFF Lambda<br/>(OAuth Confidential Client)"]
+            DDB["🗄️ Session ストア<br/>DynamoDB + KMS"]
+        end
+        subgraph BE["バックエンド API"]
+            APIGW["🟣 API Gateway"]
+            Authλ["⚡ Lambda Authorizer<br/>(JWT 検証 + JWKS キャッシュ)"]
+            BEλ["🟢 Backend Lambda / ECS"]
+        end
+        Secrets_App["🔐 Secrets Manager<br/>(BFF Token 保管 /<br/>SCIM クライアント認証)"]
+    end
+
+    User --> CF
+    CF --> WAF
+    WAF --> SPA
+
+    SPA -->|"OIDC PKCE 直接"| AuthServer
+    SPA -.オプション.-> BFFλ
+    BFFλ -->|"OIDC + client_secret"| AuthServer
+    BFFλ <--> DDB
+    BFFλ -.- Secrets_App
+
+    AuthServer ==>|"OIDC / SAML / LDAP<br/>(顧客 IdP 種別次第、B-200 表 列 Y)"| CustIdP
+    CustIdP -.SCIM Push<br/>(顧客 IdP 対応時).-> AdminAPI
+
+    SPA -->|"Bearer JWT"| APIGW
+    BFFλ -->|"Bearer JWT 代理添付"| APIGW
+    APIGW --> Authλ
+    APIGW --> BEλ
+    Authλ -.JWKS 取得 (1h キャッシュ).-> AuthServer
+
+    AuthServer --> CT
+    AuthServer -.- Secrets_A
+
+    style AuthAccount fill:#fff5f5,stroke:#cc0000
+    style AppAccount fill:#e8f5e9,stroke:#2e7d32
+    style CustomerEnv fill:#e3f2fd,stroke:#1565c0
+    style BFFLayer fill:#fff3e0,stroke:#e65100
+    style AuthServer fill:#fff0f0,stroke:#cc0000
+    style Cog fill:#ffe0e0
+    style KC fill:#e0e8ff
+```
+
+#### マーカー凡例
+
+| マーカー | 意味 |
+|---|---|
+| **※ Cognito 採用時のみ** / **※ Keycloak 採用時のみ** | [§C-2 プラットフォーム選定](02-platform.md) 後に **どちらか一方** が確定 |
+| **※ B-200 マスター表 B で確定** | [hearing-script B-2](../../hearing-script/02-idp-federation.md) の顧客 IdP リスト次第 |
+| **※ §FR-1.1 B 要件次第** | [§FR-1.1](../fr/01-auth.md) の SPA 認証方式（BFF or PKCE 直接）次第。**オプション層**として点線で表現 |
+| **※ 顧客 IdP 対応時** | 顧客 IdP の SCIM Provisioning 対応有無次第（[B-401](../../hearing-script/04-user-management.md)）|
+
+#### 構成要素の役割（顧客 IT 担当向け 1-2 行解説）
+
+| アカウント / 層 | 構成要素 | 役割 |
+|---|---|---|
+| **顧客環境** | 顧客 IdP | 顧客企業の認証基盤。本基盤と OIDC / SAML / LDAP でフェデレーション。顧客ごとに異なる |
+| **共通基盤** | CloudFront + WAF | コンテンツ配信 + DDoS / Bot 防御。全顧客共通の入口 |
+| 共通基盤 | **Cognito User Pool** / **Keycloak** | 認可サーバー。**選定対象**（[§C-2](02-platform.md)）。フェデ受信 + JWT 発行を担当 |
+| 共通基盤 | Admin REST API | 委譲管理者 / SCIM 受信エンドポイント。顧客アプリ運用がユーザー CRUD に使用 |
+| 共通基盤 | CloudTrail / Audit Log | 全認証イベントの監査ログ。法定保存期間に応じて S3 へ転送 |
+| 共通基盤 | Secrets Manager | OAuth Client Secret / SCIM Token 等の機密情報を KMS で暗号化保管 |
+| **アプリアカウント** | SPA / SSR / Mobile | エンドユーザーが操作するフロントエンド。各アプリ独自に実装 |
+| アプリアカウント | **BFF Lambda（オプション）** | SPA の代わりに OAuth トークンを保管。XSS リスク低減（金融 / 医療等で推奨）|
+| アプリアカウント | Session ストア（DynamoDB）| BFF 採用時の session_id ↔ token マッピング保管 |
+| アプリアカウント | API Gateway | バックエンド API のエントリポイント。Lambda Authorizer で JWT 検証 |
+| アプリアカウント | Lambda Authorizer | JWT 署名検証 + 認可コンテキスト構築。JWKS を 1 時間キャッシュ |
+| アプリアカウント | Backend Lambda / ECS | 業務ロジック実装。認可判定（[§FR-6.0.A](../fr/06-authz.md) 意味 B）はここで行う |
+| アプリアカウント | Secrets Manager（アプリ側）| BFF 用 Token / SCIM クライアント認証情報の保管 |
+
+#### 議論用マーカー（顧客との詰めポイント）
+
+```mermaid
+flowchart LR
+    A["✅ 確定済<br/>(本基盤の標準提供)"]
+    B["⚙️ 顧客要件次第<br/>(BFF 採否 / SCIM 採否 /<br/>テナント分離方式 等)"]
+    C["🔵 プラットフォーム選定後に確定<br/>(Cognito or Keycloak)"]
+    D["🟡 顧客 IdP 構成次第<br/>(B-200 マスター表 B で確定)"]
+```
+
+| 確定度 | 該当箇所 | 確定タイミング |
+|---|---|---|
+| ✅ **確定済**（本基盤標準提供）| CloudFront / WAF / Admin REST API / CloudTrail / Lambda Authorizer / JWT 検証経路 | 既定 |
+| 🔵 **プラットフォーム選定後に確定** | Cognito User Pool or Keycloak（ECS + Aurora）| [§C-2](02-platform.md) 確定後（Phase D）|
+| 🟡 **顧客 IdP 構成次第** | フェデ経路（OIDC / SAML / LDAP）、Identity Brokering の設定 | [B-200](../../hearing-script/02-idp-federation.md) マスター表 B 完成後 |
+| ⚙️ **顧客要件次第（採否選択）** | BFF レイヤー / SCIM 受信 / DR 構成 / マルチリージョン | Phase B-C ヒアリング後 |
+
+#### 詳細版へのリンク（プラットフォーム選定後）
+
+本図はあくまで **要件定義フェーズの叩き台**。プラットフォーム選定後は以下の **本番想定構成図**に進化:
+
+| 採用プラットフォーム | 詳細構成図 | 補足 |
+|---|---|---|
+| **Cognito** | [platform-architecture-patterns.md §2.1 Cognito 全体構成図](../../../common/platform-architecture-patterns.md) | Lambda Triggers / DR Account / 月額試算込み |
+| **Keycloak OSS** | [platform-architecture-patterns.md §3.1 Keycloak OSS 全体構成図](../../../common/platform-architecture-patterns.md) | VPC / 2 AZ / Aurora / Internal ALB（Option B 完成形）|
+| **Keycloak RHBK** | [platform-architecture-patterns.md §4.1 RHBK 構成パターン](../../../common/platform-architecture-patterns.md) | OSS との差分 + Red Hat サポート前提 |
+
+#### ヒアリング時の使い方
+
+```mermaid
+flowchart LR
+    S1["1. 本図を見せる<br/>(俯瞰共有)"]
+    S2["2. マーカーで論点を整理<br/>(確定 / 未確定の明示)"]
+    S3["3. 未確定箇所を質問<br/>(BFF? SCIM? IdP 構成?)"]
+    S4["4. 回答を元に図を更新<br/>(マーカー → 確定要素へ)"]
+    S5["5. Phase D で本番構成図へ"]
+
+    S1 --> S2 --> S3 --> S4 --> S5
+
+    style S5 fill:#fff3e0,stroke:#e65100
+```
+
+→ **要件定義 → 本番構成**へ滑らかに進化する叩き台として使用。
+
+---
+
 ## §C-1.3 採用しない代替パターン
 
 > **このサブセクションで定めること**: 検討した代替パターン(Point-to-Point / Mesh / Identity Fabric / BYOI)と、**なぜ採用しないか**の整理。   

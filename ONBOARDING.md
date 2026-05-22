@@ -47,6 +47,7 @@
 | 6b | **[proposal/fr/06-authz.md §FR-6.0.B](doc/requirements/proposal/fr/06-authz.md)** | **「認可」の 2 つの意味（A 認可フロー / B 認可判定）+ Token Exchange の位置づけ** — 「認可はアプリ側」スタンスの正確な意味 |
 | 7 | [proposal/nfr/00-index.md](doc/requirements/proposal/nfr/00-index.md) | 非機能要件 9 章（IPA 非機能要求グレード 2018 マッピング付き） |
 | 8 | [proposal/common/01-architecture.md](doc/requirements/proposal/common/01-architecture.md) | Identity Broker パターンの採用根拠 |
+| 8a | **[proposal/common/01-architecture.md §C-1.2.B](doc/requirements/proposal/common/01-architecture.md)** | **想定 AWS 構成図（要件定義用、統合 + マーカー版）** — 顧客ヒアリング時の叩き台 |
 | 9 | [proposal/common/02-platform.md](doc/requirements/proposal/common/02-platform.md) | Cognito / Keycloak / RHBK 選定の判定フロー |
 | 10 | [proposal/common/03-tbd-summary.md](doc/requirements/proposal/common/03-tbd-summary.md) | プラットフォーム選定に直結する最優先 TBD（ヒアリング順序の指針） |
 
