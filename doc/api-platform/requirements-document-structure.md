@@ -390,18 +390,18 @@ functional-requirements.md の各表は以下のカラムを必ず持つ:
 ## 7. 作成スケジュール（暫定）
 
 ```
-Week 0 (現在 2026-05-21):
+Week 0 (2026-05-21):
   ✅ 00-index.md（フォルダ立ち上げ）
-  🚧 requirements-document-structure.md（本書、SSOT 初版）
+  ✅ requirements-document-structure.md（本書、SSOT 初版）
 
-Week 1:
+Week 0-1 (2026-05-22):
+  ✅ proposal/00-index.md（proposal SSOT）
+  ✅ proposal/fr/ 全章 骨格（§FR-API-1〜8）
+  ✅ proposal/nfr/ 全章 骨格 + IPA マッピング（§NFR-API-1〜9）
+  ✅ proposal/common/ 全章 骨格（§C-API-1〜5）
+  ✅ hearing-checklist.md 初版（135 項目）
+  ✅ hearing-script/ 初版（11 ファイル）
   📋 current-state-evaluation.md（既存アプリ現状評価）
-  📋 proposal/00-index.md（proposal SSOT）
-
-Week 2:
-  📋 proposal/fr/ 全章 骨格
-  📋 proposal/nfr/ 全章 骨格 + IPA マッピング
-  📋 proposal/common/ 全章 骨格
   📋 requirements-hearing-strategy.md
 
 Week 3:
@@ -486,15 +486,16 @@ flowchart LR
 
 | ドキュメント | 役割 | 状態 |
 |---|---|:---:|
-| **proposal/** | 関係者向け要件定義 提示版 | 📋 未着手 |
+| **[proposal/](proposal/00-index.md)** ⭐ | 関係者向け要件定義 提示版（fr/ §FR-API-1〜8、nfr/ §NFR-API-1〜9、common/ §C-API-1〜5 全 22 章） | 🚧 骨格初版（全章記載） |
 | current-state-evaluation.md | 既存アプリ現状評価 | 📋 未着手 |
 
 ### 9.2 ヒアリング
 
 | ドキュメント | 役割 | 状態 |
 |---|---|:---:|
+| [hearing-checklist.md](hearing-checklist.md) | 全項目 単一一覧（135 項目、Phase A〜D） | 🚧 初版 |
+| [hearing-script/](hearing-script/README.md) | 関係者送付用 敬体スクリプト（章別 11 ファイル） | 🚧 初版 |
 | requirements-hearing-strategy.md | Phase A〜D の進め方 | 📋 未着手 |
-| hearing-checklist.md | 全項目 TBD 一覧 | 📋 未着手 |
 | hearing-phase-a.md | 既存アプリ現状 | ⏳ 未実施 |
 | hearing-phase-b.md | 公開・認証・流量 | ⏳ 未実施 |
 | hearing-phase-c.md | 実装・運用 | ⏳ 未実施 |
@@ -504,7 +505,7 @@ flowchart LR
 
 | ドキュメント | 役割 | 状態 |
 |---|---|:---:|
-| **requirements-document-structure.md（本 SSOT）** | 構成・ナラティブ・状態 | 🚧 ドラフト初版（2026-05-21）|
+| **requirements-document-structure.md（本 SSOT）** | 構成・ナラティブ・状態 | 🚧 ドラフト v0.2（2026-05-22 更新）|
 | functional-requirements.md | 機能要件一覧 | 📋 未着手 |
 | non-functional-requirements.md | 非機能要件一覧 | 📋 未着手 |
 | runtime-pattern-decision.md | Serverless / Container 選定基準 | 📋 未着手 |

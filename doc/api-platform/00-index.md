@@ -5,6 +5,8 @@
 
 > 🌟 **まずここから**: [requirements-document-structure.md](requirements-document-structure.md) が API プラットフォーム標準 要件定義の **SSOT (Single Source of Truth)**。
 > §0 ナラティブ（6 ステップ）／§1 ドキュメント体系／§8 依存関係と読み順／§9 ダッシュボード が全体把握の入口。
+>
+> 📣 **関係者向け要件提示**: [proposal/00-index.md](proposal/00-index.md)（フォルダ化済、章ごとにファイル分割、FR/NFR/common と 1:1 対応、サブセクション単位でベースライン提示 + TBD/要確認）
 
 ---
 
@@ -35,12 +37,12 @@
 
 | 要望テーマ | 4 層モデルでの位置 | 章 |
 |---|---|---|
-| 公開範囲ルール（Public / Internal） | 公開境界層 | §FR-API-1 |
-| 流量制限・課金管理 | 流量制御層 | §FR-API-3 / §FR-API-4 |
-| 監査アカウント FMS | 横串：ガードレール | §FR-API-7 |
-| 標準アーキ（Serverless / ECS） | 実装ランタイム層 | §FR-API-5 / §FR-API-6 |
-| セキュリティ死守事項 | 横串（NFR） | §NFR-API-4 |
-| ログのベストプラクティス | 横串：観測性 | §FR-API-8 / §NFR-API-6 |
+| 公開範囲ルール（Public / Internal） | 公開境界層 | [§FR-API-1](proposal/fr/01-exposure-boundary.md) |
+| 流量制限・課金管理 | 流量制御層 | [§FR-API-3](proposal/fr/03-throttling-quota.md) / [§FR-API-4](proposal/fr/04-metering-billing.md) |
+| 監査アカウント FMS | 横串：ガードレール | [§FR-API-7](proposal/fr/07-guardrails.md) |
+| 標準アーキ（Serverless / ECS） | 実装ランタイム層 | [§FR-API-5](proposal/fr/05-serverless-standard.md) / [§FR-API-6](proposal/fr/06-container-standard.md) |
+| セキュリティ死守事項 | 横串（NFR） | [§NFR-API-4](proposal/nfr/04-security.md) |
+| ログのベストプラクティス | 横串：観測性 | [§FR-API-8](proposal/fr/08-observability.md) / [§NFR-API-6](proposal/nfr/06-operations.md) |
 
 ---
 
@@ -63,15 +65,17 @@ doc/api-platform/
 ├── 00-index.md                           ← 本ファイル
 ├── requirements-document-structure.md    ← SSOT（章立て・ナラティブ・進捗）🚧 ドラフト初版
 │
-├── (以下は順次着手)
-├── proposal/                             ← 関係者向け要件定義 提示版
-│   ├── fr/   (§FR-API-1 〜 §FR-API-8)
-│   ├── nfr/  (§NFR-API-1 〜 §NFR-API-9)
-│   └── common/ (§C-API-1 〜 §C-API-5)
-├── functional-requirements.md            ← 機能要件カタログ
-├── non-functional-requirements.md        ← 非機能要件カタログ
-├── runtime-pattern-decision.md           ← Serverless / Container 選定基準
-└── requirements-spec.md                  ← 要件定義書本体
+├── proposal/                             ← 関係者向け要件定義 提示版 🚧 骨格初版
+│   ├── 00-index.md                       ← proposal SSOT（基本方針・6 ステップ・章ナビ）
+│   ├── fr/   (§FR-API-1 〜 §FR-API-8、8 章)
+│   ├── nfr/  (§NFR-API-1 〜 §NFR-API-9、9 章 + IPA マッピング)
+│   └── common/ (§C-API-1 〜 §C-API-5、5 章)
+│
+├── hearing-checklist.md                  ← ヒアリング項目 単一一覧（135 項目、Phase A-D）
+└── hearing-script/                       ← 関係者送付用 敬体スクリプト
+    ├── README.md
+    ├── 00-common.md                      ← Phase A 共通前提
+    └── 01〜10-*.md                       ← 章別スクリプト（FR / NFR / 最終判断）
 ```
 
 詳細は [requirements-document-structure.md §1 ドキュメント体系の全体像](requirements-document-structure.md) を参照。
@@ -83,8 +87,9 @@ doc/api-platform/
 | ドキュメント | 内容 | 状態 |
 |------------|------|:---:|
 | **[requirements-document-structure.md](requirements-document-structure.md)** ⭐ | **要件定義 SSOT**：ナラティブ・6 ステップ・章構成・依存関係・状態ダッシュボード | 🚧 ドラフト初版 |
-
-> 今後追加されるドキュメントは [requirements-document-structure.md §9 ダッシュボード](requirements-document-structure.md) を一次ソースとする。
+| **[proposal/](proposal/00-index.md)** 📣 | **関係者向け要件定義 提示版**：FR/NFR/common と 1:1 対応で要件ベースライン提示 | 🚧 骨格初版（全 22 章） |
+| **[hearing-checklist.md](hearing-checklist.md)** | ヒアリング項目 単一一覧（135 項目、Phase A〜D、優先度・関連 FR/NFR 付き） | 🚧 初版 |
+| **[hearing-script/](hearing-script/README.md)** | 関係者送付用 敬体スクリプト（章別 11 ファイル） | 🚧 初版 |
 
 ---
 
