@@ -102,9 +102,11 @@ flowchart TB
 
 ### 【細粒度認可（UMA 2.0）の必要性】 (B-303, 🟡)
 
-「ドキュメント X を user A だけが閲覧可、user B は編集可」のようなリソース所有者ベースの細粒度認可は必要でしょうか。
-有無でお答えいただけますと幸いです。
-**目的**: UMA 2.0（User-Managed Access）採用要否の判断。**Yes の場合、Cognito ネイティブ非対応のため Keycloak Authorization Services 必須**、もしくは外部 PDP（Amazon Verified Permissions + Cedar / OPA / OpenFGA）の採用が必要となります。
+> **本問は [マスター表 C](01-auth-flow.md#マスター表-c-御社アプリシステム構成リスト) 列 S K6（UMA 2.0 細粒度認可）に統合済**です。該当アプリで列 S K6 を☑してください。本ページの本項は**該当判定の参考情報**として残しています。
+
+「ドキュメント X を user A だけが閲覧可、user B は編集可」のようなリソース所有者ベースの細粒度認可が必要なアプリが**1 つでも該当する場合**、表 C で該当アプリの列 S K6 を☑してください。
+
+**目的**: UMA 2.0（User-Managed Access）採用要否の判断。**☑の場合（=表 C 列 S K6 がいずれかのアプリで含まれる）、Cognito ネイティブ非対応のため Keycloak Authorization Services 必須**、もしくは外部 PDP（Amazon Verified Permissions + Cedar / OPA / OpenFGA）の採用が必要となります。
 
 ---
 

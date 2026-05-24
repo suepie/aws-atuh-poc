@@ -102,11 +102,15 @@
 
 ### 【Access Token Revocation 要否】 (B-704, 🟡)
 
-Access Token の即時無効化が必要でしょうか。
-- 必須（規制要件、即時アクセス遮断義務）
-- 短 TTL で吸収可能（5-15 分のラグを許容）
+> **本問は [マスター表 C](01-auth-flow.md#マスター表-c-御社アプリシステム構成リスト) 列 S K8（Access Token 即時 Revocation）に統合済**です。該当アプリで列 S K8 を☑してください。本ページの本項は**該当判定の参考情報**として残しています。
 
-**目的**: 両プラットフォームとも Access Token の個別 revoke は不可（Refresh Token revoke で間接無効化）。Cognito では `origin_jti` クレームを使った自前実装、Keycloak では Token Introspection（`/introspect`）標準提供で対応します。**「必須」採用時は Cognito の自前実装コスト or Keycloak の Introspection によるパフォーマンスコストの選択**となります。
+Access Token の即時無効化が必要なアプリが**1 つでも該当する場合**、表 C で該当アプリの列 S K8 を☑してください。
+
+**判定**:
+- ☑ **K8**: 規制要件、即時アクセス遮断義務、短 TTL（5-15 分）では侵害ウィンドウを許容できない
+- （☑ なし）: 短 TTL で吸収可能（5-15 分のラグを許容、Refresh Token revoke で間接無効化）
+
+**目的**: 両プラットフォームとも Access Token の個別 revoke は不可（Refresh Token revoke で間接無効化）。Cognito では `origin_jti` クレームを使った自前実装、Keycloak では Token Introspection（`/introspect`）標準提供で対応します。**「☑ K8」採用時は Cognito の自前実装コスト or Keycloak の Introspection によるパフォーマンスコストの選択**となります。
 
 ---
 

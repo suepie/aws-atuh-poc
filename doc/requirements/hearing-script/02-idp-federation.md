@@ -10,9 +10,10 @@
 
 IdP 関連は質問が多岐にわたるため、**「マスター表に一括記入していただく」** 形式に統合しました。これにより:
 
-- 旧 B-201（Entra ID）/ B-203（LDAP）/ B-204（Okta）/ B-205（Google）/ B-206（SAML SP）/ B-207（独自プロトコル）/ A-6（IdP 種別分布）が **1 つの表に集約**
+- 旧 B-201（Entra ID）/ B-203（LDAP）/ B-204（Okta）/ B-205（Google）/ B-206（SAML SP）/ B-207（独自プロトコル）/ A-6（IdP 種別分布）が **マスター表 B に集約**（顧客 IdP 単位、1 行 1 顧客）
 - 「どの IdP を使っているか」と「どの接続プロトコルで繋ぐか」を顧客企業単位で 1 行ずつ確認
-- 旧 B-202（SAML IdP 発行）/ B-208（Custom Domain）は **表に統合できない別軸**として独立質問のまま残します
+- 旧 B-202（SAML IdP 発行）は **[マスター表 C](01-auth-flow.md#マスター表-c-御社アプリシステム構成リスト) 列 P=g（SAML SP のみ）/ 列 S K5** に統合（アプリ単位）
+- 旧 B-208（Custom Domain）は **基盤全体ポリシー**のため独立質問として残します
 
 事前に **マスター表の選択肢と用語**を読み合わせていただき、その後一括記入いただけますと最も効率的です。
 
@@ -31,7 +32,7 @@ flowchart LR
         CustIdP -->|SAML Assertion 発行| Hub1
     end
 
-    subgraph IdP["★ B-202 独立質問で確認"]
+    subgraph IdP["★ マスター表 C 列 P=g / 列 S K5 で確認"]
         direction LR
         Hub2[本基盤<br/>IdP モード<br/>= 発行側]
         LegacySP[既存 SAML SP アプリ<br/>Salesforce Classic /<br/>レガシー業務系等]
@@ -42,7 +43,7 @@ flowchart LR
     style IdP fill:#fff3e0,stroke:#e65100
 ```
 
-| 観点 | **SAML SP モード**（マスター表 B 列 Y β） | **SAML IdP モード**（B-202 独立質問）|
+| 観点 | **SAML SP モード**（マスター表 B 列 Y β） | **SAML IdP モード**（マスター表 C 列 P=g / 列 S K5）|
 |---|---|---|
 | **本基盤の役割** | **受信側**（SP = Service Provider） | **発行側**（IdP = Identity Provider）|
 | **接続先** | 顧客 IdP（HENNGE / ADFS / Entra ID 等） | 既存 SAML SP アプリ（レガシー業務系等）|
@@ -52,7 +53,7 @@ flowchart LR
 | **想定頻度** | 多い（顧客 IdP の多くが SAML 経由）| 少ない（既存 SAML SP-only アプリがある場合のみ）|
 
 → **完全に別の質問軸**。一緒にすると Cognito/Keycloak 選定の判断軸が崩れます。
-→ マスター表 B 列 Y の β は **SP モードのみ**。IdP モードは **B-202 独立質問**で別途確認。
+→ マスター表 B 列 Y の β は **SP モードのみ**。IdP モードは **[マスター表 C 列 P=g / 列 S K5](01-auth-flow.md#マスター表-c-御社アプリシステム構成リスト)** で別途確認（旧 B-202 は表 C に統合済、本ページの B-202 項は用語整理として残置）。
 
 ---
 
@@ -128,7 +129,7 @@ flowchart LR
 
     subgraph Issue["発行側（基本統一）"]
         I1[アプリ全般<br/>OIDC + OAuth 2.0<br/>JWT]
-        I2[レガシー SAML SP アプリ<br/>SAML 2.0 IdP モード<br/>※B-202 Yes 時のみ追加]
+        I2[レガシー SAML SP アプリ<br/>SAML 2.0 IdP モード<br/>※マスター表 C 列 P=g / 列 S K5 時のみ追加]
     end
 
     R1 --> Hub --> I1
@@ -356,9 +357,11 @@ flowchart LR
 
 ### 【SAML IdP モード（本基盤が SAML を発行）】 (B-202, 🔥)
 
-> **本問は「本基盤 → 既存アプリ（SAML SP）」方向の質問**です。マスター表 B 列 Y β の「SAML SP モード（顧客 IdP → 本基盤の受信）」とは **完全に別の方向 / 別の判定軸** です（冒頭 Mermaid 図参照）。
+> **本問は [マスター表 C](01-auth-flow.md#マスター表-c-御社アプリシステム構成リスト) 列 P = g（SAML SP のみ）または 列 S = ☑K5 に統合済**です。詳細選択肢は表 C を参照ください。本ページの本項は**用語整理と該当判定の参考情報**として残しています。
+>
+> **マスター表 B 列 Y β** の「SAML SP モード（顧客 IdP → 本基盤の受信）」とは **完全に別の方向 / 別の判定軸** です（冒頭 Mermaid 図参照）。
 
-**本基盤を SAML IdP（発行側）として動作させ、SAML SP として動作する既存アプリ・業務システムと連携する必要があるか?** ご教示ください。
+**本基盤を SAML IdP（発行側）として動作させ、SAML SP として動作する既存アプリ・業務システムと連携する必要があるか?** に該当する場合、表 C で該当アプリを記入し、列 P = g（SAML SP のみ）または列 S K5 を☑してください。
 
 **典型的な該当ケース**:
 - レガシー SaaS（Salesforce Classic / 旧 ServiceNow / 旧 Workday 等）が SAML SP として動作
@@ -371,9 +374,9 @@ flowchart LR
 - アプリ側を新規開発 or 改修可能で、OIDC 採用が現実的
 - 既存アプリも OIDC ライブラリで JWT 検証する形に統一
 
-有無 + 対象 SP システム名（差し支えない範囲で）+ 当該アプリの改修可否でお答えいただけますと幸いです。
+**記入時の補足**: 表 C の「補足・特殊要件（自由記入）」列に、当該アプリの**改修可否**（OIDC 化可 / 改修不可 / 部分改修可）を併記いただけますと、移行計画に活用できます。
 
-**目的**: **Yes の場合、Cognito はネイティブ非対応のため Keycloak 必須化** ([K-11](../../reference/cognito-knockout-conditions.md))。基盤からの SAML 発行は受信（マスター表 B 列 Y β）とは別の対応が必要。**No なら本基盤の出力は OIDC（JWT）のみで完結**し、Cognito / Keycloak 両方が候補に残ります。
+**目的**: **Yes（=表 C で列 P = g or 列 S K5 が含まれる）の場合、Cognito はネイティブ非対応のため Keycloak 必須化** ([K-11](../../reference/cognito-knockout-conditions.md))。基盤からの SAML 発行は受信（マスター表 B 列 Y β）とは別の対応が必要。**No なら本基盤の出力は OIDC（JWT）のみで完結**し、Cognito / Keycloak 両方が候補に残ります。
 
 ---
 

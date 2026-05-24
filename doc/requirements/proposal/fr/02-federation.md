@@ -457,6 +457,144 @@ flowchart LR
 | 6 | 複数役割の表現 | 1 人 = 複数組織コードで別レコード化 |
 | 7 | 手動登録 + 自動流入 | 管理者の `AdminCreateUser` vs JIT 流入で別レコード |
 
+#### 7 シナリオの図解（各々がどう「別レコード」を生むか）
+
+> 重複が発生した状態は「同じテナント内に同一人物のユーザーレコードが複数存在し、本基盤の `sub` が別々」であることが核心。**`sub` が分かれると認可・履歴・退職処理・MFA 登録が分断**される。理想は「同一人物 = 1 プロファイル + 複数 IdP リンク（`identities` 配列）」（業界標準 = Microsoft Entra / Auth0 / Okta）。本節は「どうやってその理想状態に収束させるか」の前提となる重複発生メカニズムを図解で示す。
+
+**重複が発生した状態のイメージ**:
+
+```mermaid
+flowchart LR
+    subgraph Person["現実世界の 1 人（例: 田中 alice@acme.co.jp）"]
+        P[Alice]
+    end
+
+    subgraph Hub["共通基盤 Acme テナント内のユーザー DB（重複した状態）"]
+        U1["sub=abc111<br/>identities=[Entra]<br/>roles=[admin]"]
+        U2["sub=def222<br/>identities=[HENNGE]<br/>roles=[]"]
+        U3["sub=ghi333<br/>identities=[local PW]<br/>roles=[viewer]"]
+    end
+
+    P -->|Entra で SSO| U1
+    P -->|HENNGE で SSO| U2
+    P -->|ローカル PW で| U3
+
+    style U1 fill:#ffebee,stroke:#c62828
+    style U2 fill:#ffebee,stroke:#c62828
+    style U3 fill:#ffebee,stroke:#c62828
+```
+
+##### シナリオ 1: 複数 IdP 併用（最頻出）
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Alice
+    participant Entra
+    participant HENNGE
+    participant Hub as 共通基盤
+
+    Note over Alice: 月: 業務で Entra から
+    Alice->>Entra: ログイン
+    Entra->>Hub: assertion(sub=ENTRA-xyz, email=alice@acme.co.jp)
+    Hub-->>Hub: JIT 作成（基盤 sub=abc111）
+
+    Note over Alice: 翌週: 別アプリ用に HENNGE から
+    Alice->>HENNGE: ログイン
+    HENNGE->>Hub: assertion(sub=HEN-789, email=alice@acme.co.jp)
+    Hub-->>Hub: ❌ 同一 email だが別 sub → 別レコード def222 作成
+```
+
+##### シナリオ 2: IdP 切替期間（Okta → Entra 移行中）
+
+```mermaid
+gantt
+    title Acme 社の IdP 切替（例: 2026Q3-Q4）
+    dateFormat YYYY-MM-DD
+    section 旧 Okta
+    全社員 Okta 利用     :done, 2025-01-01, 2026-09-30
+    並走（一部 Okta 残）   :crit, 2026-09-01, 2026-12-31
+    section 新 Entra
+    並走（一部先行移行）   :active, 2026-09-01, 2026-12-31
+    Entra 単独運用       :2026-12-01, 2027-06-30
+```
+
+→ 並走 4 ヶ月の間、**同じ社員が Okta と Entra の両方からログインしてくる** ため、`sub` が異なる 2 レコードが基盤に並存。
+
+##### シナリオ 3: ローカル + フェデの併存
+
+```mermaid
+flowchart LR
+    T1["2026-01<br/>Acme オンボード時<br/>IdP 未連携"] -->|管理者がローカル<br/>PW 登録| L["基盤レコード<br/>sub=ghi333<br/>local PW"]
+    T2["2026-06<br/>Acme が Entra 連携開始"] -->|Alice が Entra でログイン| F["基盤レコード<br/>sub=abc111<br/>identities=Entra"]
+    L -.同じ Alice.-> F
+    style L fill:#fff3e0
+    style F fill:#e3f2fd
+```
+
+##### シナリオ 4: SCIM プロビ + JIT 競合
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant HR as Acme HR
+    participant SCIM as Acme IdP (SCIM Client)
+    participant Hub as 共通基盤
+    actor Alice
+
+    Note over HR,SCIM: 入社処理（事前）
+    HR->>SCIM: 新入社員 Alice 登録
+    SCIM->>Hub: SCIM POST /Users (userName=alice, email=alice@acme.co.jp)
+    Hub-->>Hub: レコード作成（sub=scim-001、IdP リンク無し）
+
+    Note over Alice: 数日後: 初回ログイン
+    Alice->>Hub: Entra 経由でログイン
+    Hub-->>Hub: ❌ JIT が「SCIM 作成済み」を検知できず別レコード作成
+```
+
+##### シナリオ 5: 退職 → 再入社
+
+```mermaid
+flowchart LR
+    A1["2024-04 入社<br/>sub=old-555<br/>roles=[admin]"] -->|2025-03 退職| A2["soft-delete<br/>or 物理削除"]
+    A2 -->|2026-05 再入社| A3["新 sub=new-777<br/>roles=[viewer]<br/>※過去の admin 履歴ロスト"]
+    style A1 fill:#e8f5e9
+    style A2 fill:#eeeeee
+    style A3 fill:#fff3e0
+```
+
+→ IdP 上は **新規アカウント扱い**（社員番号が再採番されるケースも多い）、基盤上は **旧 sub の履歴・監査ログが残る**。同一人物として復活させるか、別人扱いとするかの **運用判断（コンプライアンス論点）** が必要。
+
+##### シナリオ 6: 複数役割の表現（1 人 = 複数組織コードで多重所属）
+
+```mermaid
+flowchart TB
+    Alice["田中 Alice"]
+    Alice -->|営業所長としての権限<br/>org_code=SALES01| R1["sub=role1-aaa<br/>roles=[sales_manager]"]
+    Alice -->|PJ マネージャ権限<br/>org_code=PJ-X| R2["sub=role2-bbb<br/>roles=[pm]"]
+    style R1 fill:#e3f2fd
+    style R2 fill:#fff3e0
+```
+
+→ レアだが業務複雑な業種（建設・コンサル・SI 多重所属）で発生。アプリ側の文脈切替で対応すべき要件か、基盤で別レコードを許すかの判断。
+
+##### シナリオ 7: 手動登録 + 自動流入の競合
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Admin as テナント管理者
+    participant Hub as 共通基盤
+    actor Alice
+
+    Admin->>Hub: AdminCreateUser(email=alice@acme.co.jp, role=admin)
+    Hub-->>Hub: ローカル PW 仮レコード作成（sub=manual-100）
+
+    Note over Alice: 翌日: 招待メールではなく Entra SSO で来てしまう
+    Alice->>Hub: Entra 経由ログイン
+    Hub-->>Hub: ❌ 既存ローカルと突合せず別レコード作成（sub=jit-200）
+```
+
 #### 業界の現在地
 
 - 業界標準は「**同一人物 = 1 プロファイル + 複数 IdP リンク**」（Microsoft Entra / Auth0 / Okta などの実装）
@@ -485,17 +623,48 @@ flowchart LR
 
 #### 対応能力マトリクス
 
-| 機能 | Cognito | Keycloak (OSS / RHBK) | 備考 |
+| 機能 | Cognito | Keycloak (OSS / RHBK) | 備考・出典 |
 |---|:---:|:---:|---|
 | 同一プロファイルへの IdP リンク | ✅ `AdminLinkProviderForUser` API | ✅ First Broker Login Flow | 両方標準 |
-| リンク可能な IdP 数上限 | **5（Hard limit）**[^cognito-q08] | 制限なし | Cognito 制約に注意 |
-| 既存ユーザー検出時の確認フロー | ⚠ Pre Sign-up Lambda 自前実装 | ✅ Confirm Link / Email OTP / Re-auth 標準選択肢 | **Keycloak が圧倒的に楽** |
-| 管理 UI からのリンク操作 | ❌ **API のみ**（Console 不可） | ✅ Admin Console + Account Console | Keycloak UX 良 |
+| **リンク可能な IdP 数上限** | **5（Hard limit）**[^cognito-q08] | 制限なし | AWS 公式: "link up to five federated users to each user profile"[^aws-linking] |
+| **リンク時の突合せ属性数上限** | **5（Hard limit）** | 制限なし | AWS 公式: "from up to five IdP attribute claims"[^aws-linking] |
+| 既存ユーザー検出時の確認フロー | ⚠ Pre Sign-up Lambda 自前実装 | ✅ `Confirm Link Existing Account` / `Verify Existing Account By Email` / `Verify Existing Account By Re-authentication` の 3 認証器を選択 | Keycloak Identity Brokering Docs[^kc-fbl] |
+| Detect Existing Broker User（同一 IdP の別ユーザー名検知）| ❌ 自前 | ✅ `Detect Existing Broker User` 認証器 | Keycloak Docs[^kc-fbl] |
+| **既ログイン済 IdP の再リンク** | ⚠ **既存プロファイル削除が必要**（監査ログ分断）| ✅ `Detect Existing Broker User` で上書き確認 | AWS 公式: "you must first delete their existing profile"[^aws-linking] |
+| 管理 UI からのリンク操作 | ❌ **API のみ**（Console 不可） | ✅ Admin Console + Account Console | AWS 公式: "can't link providers to user profiles in the AWS Management Console"[^aws-linking] |
 | ユーザー自身による自己リンク | ❌ | ✅ Account Console 経由 | 同上 |
-| Trust Email の IdP 単位制御 | ⚠ 暗黙的 | ✅ 明示設定 | 同上 |
+| Trust Email の IdP 単位制御 | ⚠ 暗黙的 | ✅ IdP 設定で明示 | Keycloak Identity Brokering 設定 |
 | `identities` クレーム出力（複数 IdP 可視化）| ✅ ID Token | ✅ Federated Identities API | 両方標準 |
+| 自動リンク（信頼 IdP 前提）| ⚠ Pre Sign-up Lambda で自前 | ✅ `Automatically Set Existing User` 認証器 | Keycloak Docs[^kc-fbl]、業界標準は **自動リンクは非推奨** |
+| 退職 → 再入社時の旧履歴復活 | ⚠ プラットフォーム標準なし、soft-delete + 承認の運用設計マター | ⚠ 同左 | **両者ともシナリオ 5 はプラットフォーム選定で決まらない** |
 
 [^cognito-q08]: [cognito-knockout-conditions.md Q-08](../../../reference/cognito-knockout-conditions.md) — Identities linked to a user は 5 Hard limit
+[^aws-linking]: [AWS 公式 - Linking federated users to an existing user profile](https://docs.aws.amazon.com/cognito/latest/developerguide/cognito-user-pools-identity-federation-consolidate-users.html)（"Things to know about linking federated users" セクション）
+[^kc-fbl]: [Keycloak Server Admin Guide - First Login Flow](https://www.keycloak.org/docs/latest/server_admin/index.html#_default-first-login-flow) — `Confirm Link Existing Account` / `Verify Existing Account By Email` / `Verify Existing Account By Re-authentication` / `Detect Existing Broker User` / `Automatically Set Existing User` 認証器の組合せで重複検出を宣言的に構成
+
+#### シナリオ別の実装可否（7 シナリオ × 2 プラットフォーム）
+
+| # | シナリオ | Cognito での実現 | Keycloak での実現 |
+|:---:|---|---|---|
+| 1 | 複数 IdP 併用 | Pre Sign-up Lambda + `AdminLinkProviderForUser`（**自前 200〜500 行**）。**5 IdP までしかリンク不可** | First Broker Login Flow に `Confirm Link` + `Verify by Email` を組むだけ（**追加コード 0**）。IdP 数無制限 |
+| 2 | IdP 切替期間 | 同上（移行用に Lambda 増強）| 同上（標準フローで自然に処理） |
+| 3 | ローカル + フェデ併存 | Pre Sign-up Lambda + 既存ローカル検索 → Link | First Broker Login Flow で標準動作 |
+| 4 | SCIM + JIT 競合 | **Pre Sign-up Lambda で SCIM 作成済みレコードを email/externalId で検索 → Link**（重い実装）| `Detect Existing Broker User` + email 突合（標準） |
+| 5 | 退職 → 再入社 | **両プラットフォームとも標準機能なし** — soft-delete + 管理者承認のワークフロー自前運用 | 同左（**運用設計マター**、プラットフォーム選定で決まらない） |
+| 6 | 複数役割（多重所属）| アプリ層で文脈切替 or Cognito Groups で属性多重化 | Realm Groups / Composite Roles で表現可。アプリ層対応も推奨 |
+| 7 | 手動 + 自動流入 | Pre Sign-up Lambda で AdminCreateUser 済を検出 → Link | First Broker Login Flow で標準動作 |
+
+#### Cognito の落とし穴 3 点（要件定義時に必ず顧客と握る）
+
+公式ドキュメントから確認できた、**Cognito 採用時に契約前に顧客合意が必要な制約**:
+
+| # | 制約 | 影響シナリオ |
+|:---:|---|---|
+| 1 | **1 ユーザーあたり IdP リンクは 5 個まで（Hard limit）**、突合せ属性も 5 個まで | グローバル製造業（多重子会社で各社が別 IdP）、IdP 切替を複数回経験する顧客で破綻 |
+| 2 | **リンク操作の管理コンソール UI なし**（`AdminLinkProviderForUser` API のみ） | 運用者が CLI / カスタム自前 UI でしかリンク作業ができない。テナント管理者委譲（[B-404](../../hearing-checklist.md#b-4-ユーザー管理プロビジョニング-fr-user-6--proposal-fr-221-fr-7)）を顧客に提供する場合、専用 UI 開発が必須化 |
+| 3 | **既ログイン済 IdP の再リンクには既存プロファイル削除が必要** | 監査ログ・履歴が分断、退職再入社シナリオ（シナリオ 5）で運用が複雑化 |
+
+→ **B-406 で「あり」回答 + 経路に「複数 IdP」「IdP 切替」「SCIM + JIT 競合」のいずれかが含まれる場合、Cognito は実装工数・ハードリミット・運用 UI 不在で実質ノックアウト**になる可能性が高い。本基盤の **プラットフォーム選定上のキーファクター**（[§C-2.2](../common/02-platform.md) と整合）。
 
 #### セキュリティ上の最大論点：アカウント乗っ取り対策
 
