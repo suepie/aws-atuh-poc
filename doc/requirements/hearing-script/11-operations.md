@@ -167,6 +167,26 @@ Keycloak / RHBK のバージョンアップ方針をご教示ください:
 
 ### 【Identity Broker パターン採用前提合意】 (D-6, 🔥)
 
+> **問いの位置づけ**: 本基盤の **根本アーキテクチャ**である Hub-and-Spoke 型 Identity Broker パターンの採用に合意するか。**他の全質問（B-100/B-200/B-200-B 等）の前提**となる最上位判断。
+> **回答で決まること**: ①本基盤の存在意義（合意なら次へ、異論なら全質問が無意味）/ ②御社の各アプリは Broker 1 つだけを Trust（プロトコル統一）/ ③顧客 IdP 追加で各アプリ変更不要 / ④[§C-1 アーキテクチャ](../proposal/common/01-architecture.md) の全議論の前提。
+
+#### なぜこれを今聞くのか
+
+Identity Broker パターンは **業界標準**（Auth0 / Okta / Entra / Cognito / Keycloak の Identity Brokering 機能はすべてこのパターン）で、**複数 IdP × 複数アプリ環境では事実上の必然**です。しかし「本当に必要か」の合意なしに B-100/B-200/B-200-B のマスター表を埋めても、後で「やっぱり個別連携でいい」となると全部やり直しになります。**最初に合意することで、後続全質問が「Broker パターン前提」の議論として進められます**。
+
+#### 比較イメージ（Broker vs 代替案）
+
+| アーキテクチャ | 顧客 IdP 追加時 | アプリ追加時 | 標準化 | 採用例 |
+|---|---|---|---|---|
+| **Hub-and-Spoke Identity Broker**（本基盤）| Broker 側で 1 回追加 | Broker を 1 個 Trust | プロトコル統一（JWT 発行統一）| Auth0 / Okta / Entra / Cognito / Keycloak |
+| **個別連携（Point-to-Point）**| **各アプリで個別追加**（N × M）| 全顧客 IdP との連携を追加 | アプリごとに異なる | レガシー社内システム |
+| **Identity Mesh / Fabric** | 各 IdP が他 IdP を直接 Trust | アプリも各 IdP を直接 Trust | なし（実質 P2P）| 大規模 Federation 構想（実装稀）|
+| **BYOI（Bring Your Own Identity）**| アプリ自身が顧客 IdP を直接 Trust | アプリ側で全 IdP 設定 | なし | スモールスタート B2C |
+
+→ **複数 IdP × 複数アプリ環境では Broker パターン以外は事実上機能しません**（N × M 問題、JWT クレーム不統一による各アプリ実装爆発）。
+
+#### 質問
+
 本基盤のアーキテクチャ前提として、**Hub-and-Spoke 型 Identity Broker パターン**を採用することにご合意いただけますか。
 - 合意（業界標準パターン、本基盤の前提として確定）
 - 異論あり（別アーキテクチャを検討したい）
