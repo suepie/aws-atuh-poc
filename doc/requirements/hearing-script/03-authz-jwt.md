@@ -1,8 +1,16 @@
 # B-3: 認可・JWT 要件
 
-> 元データ: [../hearing-checklist.md B-3](../hearing-checklist.md#b-3-認可jwt-要件-fr-authz-5--proposal-fr-6)  
+> 元データ: [../hearing-checklist.md](../hearing-checklist.md)  
 > 対象: 開発チーム / テックリード  
 > 関連: [proposal §FR-6](../proposal/fr/06-authz.md)
+>
+> **新 §X.Y 構造との対応**（[hearing-checklist.md §0〜§5](../hearing-checklist.md) で subject-matter 軸の一覧確認可）:
+> - **§4.2 認可・JWT クレーム**: B-301（必須クレーム）、B-302（認可粒度）、B-305（既存ロール体系）
+> - 旧 B-303（UMA 細粒度認可）は **§3.3 マスター表 C 列 S K6** に統合済
+> - 旧 B-304（API 間トークンリレー / Token Exchange）は **§3.3 マスター表 C 列 S K1** に統合済（業務シナリオ 7 軸は [マスター表 C 補足 2 K1](01-auth-flow.md#k1-token-exchangerfc-8693--cognito-非対応) に保存）
+> - 本ファイル冒頭の **「意味 A の認可フロー vs 意味 B の認可判定」用語整理**は §4.2 全体の前置きとして残置
+>
+> hearing-script/ は **会議組み立て用に旧 Phase 軸**でファイル分割、hearing-checklist.md は **読み物として subject-matter 軸**で集約。両軸を併用。
 
 ---
 

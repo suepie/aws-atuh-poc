@@ -1,8 +1,21 @@
 # C-2: セキュリティ・コンプライアンス
 
-> 元データ: [../hearing-checklist.md C-2](../hearing-checklist.md#c-2-セキュリティコンプライアンス--cognito-ティア--rhbk-必要性決定--proposal-fr-12-fr-3-fr-52-nfr-4-nfr-7)  
+> 元データ: [../hearing-checklist.md](../hearing-checklist.md)  
 > 対象: セキュリティチーム / コンプライアンス  
 > 関連: [proposal §FR-1.2](../proposal/fr/01-auth.md), [§FR-3](../proposal/fr/03-mfa.md), [§FR-5.2](../proposal/fr/05-logout-session.md), [§NFR-4](../proposal/nfr/04-security.md), [§NFR-7](../proposal/nfr/07-compliance.md)
+>
+> **新 §X.Y 構造との対応**（[hearing-checklist.md §0〜§5](../hearing-checklist.md) で subject-matter 軸の一覧確認可）— **本ファイルは新構造で 5 セクションにまたがる最も分散したファイル**:
+> - **§2.2 規制・コンプラ範囲**: C-201（FIPS 140-2）、C-202（SOC2/ISO27001/PCI DSS/FFIEC）、C-209（GDPR 個人データ削除権）
+> - **§2.6 MFA 適用ポリシー**: C-210（NIST AAL レベル）
+> - **§3.4 既存環境の移行**: C-204-4（既存パスワードハッシュ移行）
+> - **§4.3 MFA 方式（技術仕様）**: C-211（Phishing-resistant MFA）、C-212（ハードウェアキー）、C-213（MFA 要素登録個数）、C-214（条件付き MFA 判定軸）、C-215（端末記憶有効期間）、C-216（ステップアップ認証 RFC 9470）
+> - **§4.4 ログアウト・セッション技術**: C-206（トークン TTL）、C-217（CAEP / 継続的アクセス評価）
+> - **§4.5 パスワード・ローカル認証**: C-204（パスワードポリシー）、C-204-2（パスワード履歴）、C-204-3（NIST SP 800-63B Rev 4）、C-205（アカウントロック）、C-205-2（侵害クレデンシャル検出）
+> - **§5.3 セキュリティ NFR**: C-203（監査ログ保存期間）、C-206-2（アイドルタイムアウト）、C-206-3（絶対経過タイムアウト）、C-208（ペネトレーションテスト）
+> - 旧 C-204-5（既存ローカル認証）は **§3.3 マスター表 C 列 T** に統合済
+> - 旧 C-207（トークン失効要件）は **§3.3 マスター表 C 列 S K8** に統合済（B-704 と完全に同じ問い）
+>
+> hearing-script/ は **会議組み立て用に旧 Phase 軸**でファイル分割、hearing-checklist.md は **読み物として subject-matter 軸**で集約。両軸を併用。
 
 ---
 

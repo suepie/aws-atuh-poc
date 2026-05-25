@@ -1,8 +1,14 @@
 # B-1: 認証フロー / Grant Type + アプリ・システム構成（マスター表 C）
 
-> 元データ: [../hearing-checklist.md B-1](../hearing-checklist.md#b-1-認証フロー--grant-type-fr-auth-11--proposal-fr-11)
+> 元データ: [../hearing-checklist.md](../hearing-checklist.md)
 > 対象: 開発チーム / テックリード
 > 関連: [proposal §FR-1.1](../proposal/fr/01-auth.md)
+>
+> **新 §X.Y 構造との対応**（[hearing-checklist.md §0〜§5](../hearing-checklist.md) で subject-matter 軸の一覧確認可）:
+> - **§3.3 マスター表 C: 御社アプリ・システム構成リスト**: B-100（本ファイルの核心）— **BFF（列 Q）/ Token Exchange リレー（列 S K1）/ Device Code（列 P=e+列 S K2）/ mTLS（列 S K3）/ DPoP（列 S K4）/ SAML 発行（列 P=g+列 S K5）/ UMA（列 S K6）/ Back-Channel Logout（列 S K7）/ Access Token Revocation（列 S K8）/ 既存ローカル認証（列 T）** すべて統合済
+> - **§4.1 認証フロー詳細**: マスター表 C 補足 1〜5（BFF / JWT 検証場所 / Knockout 条件 K1〜K8 / 業界トレンド / FAQ）
+>
+> hearing-script/ は **会議組み立て用に旧 Phase 軸**でファイル分割、hearing-checklist.md は **読み物として subject-matter 軸**で集約。両軸を併用。
 
 ---
 

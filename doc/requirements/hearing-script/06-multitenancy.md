@@ -1,8 +1,16 @@
 # B-6: マルチテナント運用
 
-> 元データ: [../hearing-checklist.md B-6](../hearing-checklist.md#b-6-マルチテナント運用-fr-fed-23--proposal-fr-23)  
+> 元データ: [../hearing-checklist.md](../hearing-checklist.md)  
 > 対象: 開発チーム / 事業企画  
 > 関連: [proposal §FR-2.3](../proposal/fr/02-federation.md)
+>
+> **新 §X.Y 構造との対応**（[hearing-checklist.md §0〜§5](../hearing-checklist.md) で subject-matter 軸の一覧確認可）:
+> - **§2.3 マルチテナント運用方針**: B-602（Keycloak Organization）、B-603（顧客追加リードタイム）、B-606（複数テナント所属）、B-606-2（権限モデル）、B-606-3（切替時 MFA）、B-606-4（属性ソース）、B-607（物理分離特殊顧客）、B-608（オンボーディング主体）、B-611（テナント選択 UI）
+> - **§3.5 ブランディング詳細**: B-612（ログイン画面ブランディング）
+> - **§3.6 顧客 IdP 属性マッピング**: B-604（属性マッピング命名差異）、B-604-2（実属性名サンプル取得）、B-605（属性更新タイミング Force/Import）、B-605-2（属性別 Source of Truth）、B-605-3（**退職反映 SLA 🔥**）、B-610（HRD 解決ルール）
+> - **§4.4 ログアウト・セッション技術**: B-601（IdP 選択 UX）
+>
+> hearing-script/ は **会議組み立て用に旧 Phase 軸**でファイル分割、hearing-checklist.md は **読み物として subject-matter 軸**で集約。両軸を併用。
 
 ---
 

@@ -1,8 +1,14 @@
 # B-8: SSO 詳細
 
-> 元データ: [../hearing-checklist.md B-8](../hearing-checklist.md#b-8-sso-詳細-fr-sso-41--proposal-fr-4)  
+> 元データ: [../hearing-checklist.md](../hearing-checklist.md)  
 > 対象: 開発チーム / セキュリティチーム  
 > 関連: [proposal §FR-4](../proposal/fr/04-sso.md)
+>
+> **新 §X.Y 構造との対応**（[hearing-checklist.md §0〜§5](../hearing-checklist.md) で subject-matter 軸の一覧確認可）:
+> - **§2.5 SSO・ログアウト方針**: B-801（クロス IdP SSO 全体方針）、B-801-1（信頼レベル L1〜L4）、B-801-2（顧客/IdP/アプリ別差別化）、B-801-3（規制業種向け L3 オプション）、B-803（同一テナント内 SSO 切断）
+> - **§4.4 ログアウト・セッション技術**: B-802（外部 IdP SSO TTL 尊重）、B-802-2（max_age 制約）
+>
+> hearing-script/ は **会議組み立て用に旧 Phase 軸**でファイル分割、hearing-checklist.md は **読み物として subject-matter 軸**で集約。両軸を併用。
 
 ---
 

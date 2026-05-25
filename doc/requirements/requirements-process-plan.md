@@ -52,24 +52,32 @@ flowchart LR
 
 ### 3.0 ヒアリング項目の抽出方針（前提）
 
-[hearing-checklist.md](hearing-checklist.md)（全 123 項目）の検討事項は、以下の **4 軸を交差させて抽出**している。Stage 1 を実施する前提として、項目の素性（なぜこの項目を聞くのか）を本節で明文化する。
+[hearing-checklist.md](hearing-checklist.md)（全 124 項目、§0〜§5 構造）の検討事項は、以下の **4 軸を交差させて抽出**している。Stage 1 を実施する前提として、項目の素性（なぜこの項目を聞くのか）を本節で明文化する。
 
 | 軸 | 内容 | 反映先 |
 |---|---|---|
 | **軸 1: 基本方針 4 柱** | 「絶対安全 / どんなアプリでも / 効率よく / 低運用負荷・コスト」のいずれかに紐づく項目のみ採用 | [proposal §0.2](proposal/00-index.md) |
 | **軸 2: 業界標準・公式仕様** | OAuth 2.1 / OIDC Core / RFC 8693, 8628, 8705, 9449 / FAPI 2.0 / NIST SP 800-63B Rev 4 / SCIM 2.0 / **IPA 非機能要求グレード 6 大項目** に項目をマッピング | proposal/fr/, proposal/nfr/ |
 | **軸 3: PoC 検証結果** | 9 フェーズ PoC で確認した Cognito / Keycloak の対応差分（✅ / 🟡 / 🟠 / ❌）から、プラットフォーム選定・設計フェーズで効いてくる項目を 🔥 最優先として抽出 | [functional-requirements.md](functional-requirements.md), [poc-summary-evaluation.md](poc-summary-evaluation.md) |
-| **軸 4: ステークホルダー視点** | 「誰しか答えられない問い」を Phase A（事業）/ B（技術）/ C（運用・セキュリティ）/ D（最終判断）に分離 | [requirements-hearing-strategy.md](requirements-hearing-strategy.md) |
+| **軸 4: ステークホルダー視点（Phase タグ）** | 「誰しか答えられない問い」を `[A]` 事業 / `[B]` 技術 / `[C]` 運用・セキュリティ / `[D]` 意思決定 のタグで分離 | [requirements-hearing-strategy.md](requirements-hearing-strategy.md) |
+
+> **構造再編成**（2026-05-25）: [hearing-checklist.md](hearing-checklist.md) は **§0〜§5（subject-matter 軸）**に再編成済。Phase A/B/C/D は **項目タグとして保持**し、ヒアリング会議の組み立て用 2 軸目として併用。
 
 #### 抽出方針の根拠
 
 1. **後戻りコストの非対称性**: 認証基盤はユーザー ID 体系・トークン署名鍵・テナント分離方式が本番稼働後にほぼ変更不能。事前ヒアリングコスト ≪ 事後修正コストであり「**網羅性 > 簡潔性**」を優先する。
 2. **外部基準による網羅性担保**: 軸 2 のマッピングにより、第三者監査・社内レビューに耐える根拠を持つ（内部主観で要件を絞っていないことを明示できる）。
-3. **意思決定との連動**: 全項目に「優先度（🔥 / 🟡 / 🟢）」「関連 FR/NFR ID」「proposal §」を紐付け、回答取得 → 反映先（[functional-requirements.md](functional-requirements.md) / ADR / プラットフォーム選定）が事前に決まっている。「聞いた後で考える」項目は混ぜていない。
+3. **意思決定との連動**: 全項目に「優先度（🔥 / 🟡 / 🟢）」「Phase タグ」「関連 FR/NFR ID」「proposal §」を紐付け、回答取得 → 反映先（[functional-requirements.md](functional-requirements.md) / ADR / プラットフォーム選定）が事前に決まっている。「聞いた後で考える」項目は混ぜていない。
 
 #### 量に対する設計
 
-123 項目のうち **🔥 最優先 39 件** をプラットフォーム選定（ADR-014/015/016/017 入力）に直結する判断材料として Stage 1 前半で先行確認（§3.3）。Phase 別の担当者分離（A 19 / B 61 / C 37 / D 6）により 1 人あたりの回答負担は 20〜60 項目に抑える。回答形式も `Yes/No` / `選択肢` / `具体値` で事前定義し、自由記述で考え込ませない設計。
+124 項目のうち **🔥 最優先 37 件** をプラットフォーム選定（ADR-014/015/016/017 入力）に直結する判断材料として Stage 1 前半で先行確認（§3.3）。**ヒアリングの最上位順序**:
+
+1. **§1 前提合意 6 件すべて**（A-5-2/3/4、A-11、A-11-α、D-6）— 後続全質問の範囲を規定
+2. **§3.1〜§3.3 の 3 大マスター表**（B-200 弊社 IdP / B-200-B 顧客 IdP / B-100 アプリ）— Cognito vs Keycloak が事実上確定
+3. **§2.1〜§2.2 の事業・規制要件**
+
+Phase タグ別の担当者分離（`[A]` 20 / `[B]` 63 / `[C]` 35 / `[D]` 6）により 1 人あたりの回答負担は 20〜60 項目に抑える。回答形式も `Yes/No` / `選択肢` / `具体値` で事前定義し、自由記述で考え込ませない設計。
 
 > 顧客向けの正式根拠版は [proposal §0.4 検討事項（要件項目）の抽出方針](proposal/00-index.md) に記載。
 
@@ -77,8 +85,9 @@ flowchart LR
 全 TBD 項目について顧客の回答を取得し、**Must / Should / Could / Won't** を確定させる。
 
 ### 3.2 進め方
-- [hearing-checklist.md](hearing-checklist.md) を**唯一の単一ソース**として使用
-- Phase A → B → C → D の順に実施（[requirements-hearing-strategy.md](requirements-hearing-strategy.md)）
+- [hearing-checklist.md](hearing-checklist.md)（§0〜§5 構造）を**唯一の単一ソース**として使用
+- **subject-matter 軸**で読み解く時は §0〜§5 から、**ヒアリング会議の組み立て時**は Phase タグ `[A]` → `[B]` → `[C]` → `[D]` の順に拾う（[requirements-hearing-strategy.md](requirements-hearing-strategy.md)）
+- 顧客送付用の敬体スクリプトは [hearing-script/](hearing-script/) 配下（旧 Phase 軸のファイル分割、各ファイル冒頭に新 §X.Y との対応マップ）
 - 各セッション後、回答を **functional-requirements.md / non-functional-requirements.md の該当行に反映**
 - 議事録テンプレ: ヒアリング戦略 §5 参照
 

@@ -1497,14 +1497,156 @@ sequenceDiagram
 ### §FR-2.3.2 顧客追加オンボーディング（→ FR-FED-011）
 
 > **このサブ・サブセクションで定めること**: 新規顧客企業の IdP を本基盤に接続する**運用フロー**（誰が・どんな手順で・どのくらいの時間で）と自動化方針。   
-> **主な判断軸**: オンボーディング主体（弊社運用 / 顧客企業セルフサービス）、目標リードタイム、SCIM 連携の必要性   
+> **主な判断軸**: オンボーディング主体（弊社運用 / 顧客企業セルフサービス）、目標リードタイム、SCIM 連携の必要性、**顧客 IdP 側の作業 / エンドユーザー影響**   
 > **§FR-2.3 内の位置付け**: §FR-2.3.1 の並行運用を**「持続的に拡張」**する運用面。IaC 自動化により [§FR-8.1 基盤設定管理](08-admin.md#91-基盤設定管理--fr-admin-71) と整合
+
+#### §FR-2.3.2.A 全体像: 3 レイヤービュー（顧客 IdP 追加は 3 つの並行ワークストリーム）
+
+> **論点**: 「IdP 追加」は単に基盤側で IdP 接続を 1 行足す話ではなく、**顧客 IdP 側の RP 登録 + エンドユーザーへの影響周知** が同時進行する複合プロセス。本基盤運用チームが見落としやすい Layer 1 / Layer 3 を明示する。
+
+```mermaid
+flowchart TB
+    subgraph L1["Layer 1: 顧客 IdP 管理者の作業（IdP 種別で大きく違う）"]
+        L1A["本基盤を SP/RP として IdP に登録<br/>Entity ID / ACS URL / Redirect URI / Cert"]
+    end
+    subgraph L2["Layer 2: 共通基盤運用チームの作業（後続「オンボーディングフロー」5 ステップ）"]
+        L2A["Terraform PR で IdP 接続定義追加<br/>属性マッピング / SCIM 設定"]
+    end
+    subgraph L3["Layer 3: エンドユーザーの体験"]
+        L3A["初回 First Broker Login / MFA 再登録 /<br/>パスワード再設定 / ブックマーク更新 等"]
+    end
+
+    L1 -.並行進行.-> L2
+    L2 -.並行進行.-> L3
+
+    style L1 fill:#e3f2fd,stroke:#1565c0
+    style L2 fill:#e8f5e9,stroke:#2e7d32
+    style L3 fill:#fff3e0,stroke:#e65100
+```
+
+##### Layer 1: 顧客 IdP 管理者の作業（IdP 別差異マトリクス）
+
+顧客 IdP 管理者が本基盤を **新しい SP/RP として登録する作業**。IdP ごとに UI・工数が大きく異なる:
+
+| IdP | プロトコル | 主要登録項目 | 作業 UI | 想定工数 | エンドユーザー個人側設定 |
+|---|---|---|---|:---:|:---:|
+| **Entra ID**（Premium P1+）| SAML / OIDC | Reply URL / Identifier (EntityID) / App roles / Token 署名 cert | Entra Admin Center（GUI） | 1〜2h | **不要** |
+| **Okta** | SAML / OIDC | ACS URL / Single Logout URL / Attribute statements | Okta Admin Console（GUI） | 1〜2h | **不要** |
+| **Google Workspace** | SAML（OIDC は限定的） | ACS URL / Entity ID / Name ID Format | Google Admin Console（GUI） | 30 分〜1h | **不要** |
+| **HENNGE One** | SAML | SP-initiated SSO 設定（Entity ID / ACS URL） | HENNGE 管理画面（GUI） | 1〜2h | **不要**（HENNGE 経由は透過） |
+| **AD FS**（オンプレ Microsoft） | SAML / WS-Fed | Relying Party Trust + Claim Rules | AD FS Management Console + PowerShell | **半日〜1 日** | **不要**（社内 AD 環境からのみアクセス可、VPN 経由等の制約は別軸） |
+| **オンプレ AD（LDAP 直結、Keycloak のみ）** | LDAP/Kerberos | Keycloak 側で User Federation 設定（顧客 AD 側は通常変更不要） | Keycloak Admin Console + LDAP bind 設定 | 半日（接続テスト含む） | **不要** |
+
+→ **共通点**: 顧客 IdP 側に基盤の **Entity ID / ACS URL / Redirect URI** を 1 セット登録するだけで、**エンドユーザー個人の IdP 設定変更は基本不要**（顧客はそのまま既存 IdP を使い続けるため）。
+
+→ **AD FS のみ突出して工数大**。PowerShell 操作 + 証明書管理 + 社内ネット制約。Keycloak の LDAP 直結ならその工数自体が消える（[マスター表 B 列 Z](../../hearing-script/02-idp-federation.md) で確認）。
+
+##### Layer 3: エンドユーザー体験（新規顧客追加 = Greenfield 想定）
+
+新規顧客の従業員が初めて本基盤経由のアプリにアクセスした時の体験:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User as エンドユーザー
+    participant App as アプリ
+    participant Hub as 本基盤
+    participant CustIdP as 顧客 IdP
+
+    User->>App: 初回アクセス
+    App->>Hub: 認証要求
+    Hub->>CustIdP: SSO リダイレクト（Layer 1 で事前登録済み）
+    CustIdP->>User: ログイン画面（顧客 IdP のドメイン）
+    User->>CustIdP: 普段使いの社内 ID/PW + MFA
+    CustIdP->>Hub: SAML/OIDC アサーション
+    Hub-->>Hub: JIT 作成 + First Broker Login（[§FR-2.2.1.A](#fr-221a-同一テナント内ユーザー重複の扱い)）
+    Hub->>App: JWT 発行
+    App->>User: アプリ画面
+```
+
+→ **新規顧客のエンドユーザーに必要なアナウンス**: 「このサービスは社内 ID でログインできます」程度。慎重なアナウンス不要。**移行ケース（既存認証システムからの切替）は §FR-2.3.2.B 参照**。
+
+---
+
+#### §FR-2.3.2.B 既存システムからの移行時のエンドユーザー影響と周知チェックリスト
+
+> **論点**: 新規顧客追加（Greenfield、§FR-2.3.2.A シナリオ S1）と異なり、**既存認証システムから本基盤への移行**（シナリオ S2）はエンドユーザー影響が大きい。事前周知・サポート体制の設計が必要。詳細な移行データ層は [§NFR-9 移行性](../nfr/09-migration.md) で扱い、本節ではエンドユーザー UX 観点で整理。
+
+##### 「ドメインが変わらない」が指す対象は最低 3 つあり、影響範囲が異なる
+
+```mermaid
+flowchart LR
+    subgraph Before["移行前"]
+        B1[アプリ URL<br/>app.acme.com]
+        B2[認証 URL<br/>old-auth.acme.com]
+        B3[顧客 IdP<br/>login.acme.com<br/>※持ち越し]
+    end
+    subgraph After["移行後"]
+        A1[アプリ URL<br/>app.acme.com<br/>※同じ]
+        A2[認証 URL<br/>auth.acme.com<br/>※Custom Domain で持ち越し or 新規]
+        A3[顧客 IdP<br/>login.acme.com<br/>※同じ]
+    end
+
+    B1 -. ① アプリ URL 変える? .-> A1
+    B2 -. ② 認証基盤 URL 変える? .-> A2
+    B3 -. ③ 顧客 IdP 変える? .-> A3
+
+    style B1 fill:#e3f2fd
+    style B2 fill:#fff3e0
+    style B3 fill:#e8f5e9
+```
+
+> **重要な前提**: ドメインが変わるか変わらないかに関わらず、**新基盤導入そのもの** が顧客 IdP 側で SP/RP 識別情報の更新を必ず発生させます。これは「URL 文字列」と「SP/RP 識別子（Entity ID / 証明書 / 署名鍵）」が独立した項目だからです。
+>
+> | 項目 | 新基盤導入で変わるか | 顧客 IdP 側作業 |
+> |---|:---:|---|
+> | **Reply URL / ACS URL / Redirect URI** | Custom Domain 持ち越し時は変わらない | 流用可、変更不要 |
+> | **Entity ID / Audience / Client ID** | **必ず新規発行** | **更新必須**（既存 RP の Entity ID 書き換え or 新規 RP 登録）|
+> | **SAML 署名証明書 / OIDC JWKS** | **必ず新規発行** | **証明書差し替え必須**（Cognito は基盤管理で再ローテ不可、Keycloak は BYO 可だが現実的には新規発行）|
+> | **属性マッピング** | 要件次第 | 新基盤が要求属性を追加した場合のみ更新 |
+> | **エンドユーザー個人の IdP 設定** | 変わらない | **不要**（IdP は同じものを使い続けるため）|
+>
+> → 「顧客 IdP の設定不要」が成立するのは **エンドユーザー個人レベル** のみ。**顧客 IdP の管理者は新基盤導入の度に必ず作業発生**。ドメイン変更の有無は「その作業範囲」を左右するだけ。
+
+ドメイン変更の影響範囲は次の通り:
+
+| どのドメインが変わるか | 顧客 IdP 側 RP 設定変更の範囲 | エンドユーザー影響 | 慎重アナウンス必要度 |
+|---|---|---|:---:|
+| **アプリ URL** が変わる | Entity ID / 証明書差し替え（前提）+ Reply URL 更新は通常**不要**（IdP 直接のリダイレクト先はアプリでなく認証基盤のため）| ブックマーク変更、保存パスワード無効、社内 Wiki/メール URL 更新 | 🔥 **高** |
+| **認証基盤 URL**（Custom Domain）が変わる | Entity ID / 証明書差し替え（前提）+ **Reply URL / ACS URL の更新も必要** | 通常見えない（リダイレクト先が変わるだけ）、ただし保存ブックマークがあれば無効 | 🟡 中 |
+| **顧客 IdP** 自体を切替 | 別問題（[§FR-2.2.1.A シナリオ 2](#fr-221a-同一テナント内ユーザー重複の扱い)）| 通常変わらない（IdP の URL は基盤の外） | 🟡 中 |
+| 何も変わらない（既存ドメイン全て持ち越し）| **Entity ID / 証明書差し替えは依然必要**、URL 項目は流用可 | 初回 First Broker Login の確認画面のみ | 🟢 低 |
+
+##### エンドユーザー周知チェックリスト（移行時の 6 つの変化）
+
+「ドメインが変わらなくても、以下が変わるとエンドユーザーへの周知が必要」。1 つでも該当すれば **事前 2〜4 週間の周知 + 当日サポート体制** が業界標準:
+
+| # | 変化項目 | エンドユーザーに何が起きるか | 周知タイミング | 関連章 |
+|:---:|---|---|---|---|
+| 1 | **パスワードハッシュ持ち越し不可** | 全員パスワード再設定（メール送信 → 再設定リンク） | 切替 2-4 週間前 + 当日 | [§NFR-9.2](../nfr/09-migration.md) |
+| 2 | **MFA 登録の持ち越し不可** | 全員 MFA 再登録（TOTP の QR コード再スキャン / Passkey 再登録） | 切替 2-4 週間前 + 当日 + サポート窓口拡充 | [§FR-3](03-mfa.md) |
+| 3 | **First Broker Login 確認画面** | 初回 SSO 時に「同一 email の既存アカウントとリンクしますか?」画面が出る | 切替 1 週間前 | [§FR-2.2.1.A](#fr-221a-同一テナント内ユーザー重複の扱い) |
+| 4 | **SSO セッション切れ** | 切替直後は再ログイン必須（既存セッションは旧基盤側で持っているため新基盤に引き継がれない） | 切替日時の事前共有 | [§FR-5](05-logout-session.md) |
+| 5 | **ログイン画面のブランディング変更** | ログイン画面のロゴ / 色 / ボタン配置が変わる | 切替 1-2 週間前（フィッシング誤認回避） | [§FR-2.3.3](#fr-233-ログイン画面で-idp-選択-ux--home-realm-discovery--fr-fed-013) |
+| 6 | **アプリ URL / 認証基盤 URL の変更** | ブックマーク無効、保存パスワード無効、社内 Wiki / メールの URL 更新 | 切替 4 週間前 + リダイレクトプロキシ運用（推奨） | §FR-2.3.2.B（本節）|
+
+##### 周知体制のベースライン
+
+| 周知チャネル | 推奨 | 適用シナリオ |
+|---|---|---|
+| **顧客 IT 担当者経由メール** | 必須 | 全 6 変化で共通 |
+| **社内ポータル / 社内 Wiki 更新** | 推奨 | 変化 1, 2, 6 |
+| **アプリ内バナー / モーダル**（切替 1-2 週間前）| 推奨 | 変化 5, 6 |
+| **当日サポート窓口拡充**（ヘルプデスク 24h 対応）| 必須 | 変化 1, 2 |
+| **SOC への事前共有** | 必須 | 変化 5（フィッシング誤認・誤通報の急増防止）|
+
+---
 
 #### ベースライン
 
 **Terraform / IaC で自動化**を標準とする。
 
-#### オンボーディングフロー
+#### オンボーディングフロー（Layer 2 = 共通基盤運用チームの作業）
 
 ```mermaid
 flowchart LR
@@ -1519,6 +1661,8 @@ flowchart LR
 ```
 
 **目標リードタイム**：**< 1 営業日**（複雑な顧客でも 2〜3 営業日）
+
+> **注**: 本フローは Layer 2（基盤側作業）のみ。Layer 1（顧客 IdP 側 RP 登録）は §FR-2.3.2.A の IdP 別工数表、Layer 3（エンドユーザー体験 / 移行時の周知）は §FR-2.3.2.B チェックリストを参照。
 
 #### 対応能力
 
@@ -1537,6 +1681,9 @@ flowchart LR
 | 目標リードタイム | < 1 営業日 / N 日 |
 | IdP 情報の受領形式 | SAML Metadata URL / XML / OIDC Discovery URL / 手動 |
 | SCIM プロビジョニング | 必要 / 不要（JIT で OK）|
+| **新基盤導入時のドメイン変更計画**（[B-612](../../hearing-checklist.md)）| アプリ URL 維持 / 認証基盤 URL Custom Domain 持ち越し / 全 URL 新規 |
+| **エンドユーザー周知のリードタイム期待値**（[B-613](../../hearing-checklist.md)）| 切替 2-4 週間前 / それ以下 / 顧客判断委ね |
+| **顧客 IdP 管理者向けオンボーディング手順書テンプレ提供**（[B-614](../../hearing-checklist.md)）| 必須提供 / IdP 別個別作成 / 不要（顧客知見あり）|
 
 ---
 

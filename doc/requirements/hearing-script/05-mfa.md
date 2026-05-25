@@ -1,8 +1,16 @@
 # B-5: MFA 要素・適用ポリシー
 
-> 元データ: [../hearing-checklist.md B-5](../hearing-checklist.md#b-5-mfa-要素適用ポリシー-fr-mfa-3--fr-fed-22--proposal-fr-223-fr-3)  
+> 元データ: [../hearing-checklist.md](../hearing-checklist.md)  
 > 対象: 開発チーム / セキュリティチーム  
 > 関連: [proposal §FR-2.2.3](../proposal/fr/02-federation.md), [§FR-3](../proposal/fr/03-mfa.md)
+>
+> **新 §X.Y 構造との対応**（[hearing-checklist.md §0〜§5](../hearing-checklist.md) で subject-matter 軸の一覧確認可）:
+> - **§2.5 SSO・ログアウト方針**: B-509（SSO で繋ぐシステム範囲）
+> - **§2.6 MFA 適用ポリシー**: B-501（MFA 必須範囲）、B-506（外部 IdP MFA 信頼度）、B-508（高権限ロール追加 MFA）
+> - **§4.3 MFA 方式（技術仕様）**: B-502（MFA 方式）、B-503（WebAuthn/Passkeys）、B-505（端末記憶）、B-507（信頼する amr）
+> - 旧 B-504（Back-Channel Logout）は **§3.3 マスター表 C 列 S K7** に統合済
+>
+> hearing-script/ は **会議組み立て用に旧 Phase 軸**でファイル分割、hearing-checklist.md は **読み物として subject-matter 軸**で集約。両軸を併用。
 
 ---
 

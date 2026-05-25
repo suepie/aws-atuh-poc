@@ -1,8 +1,14 @@
 # B-4: ユーザー管理・プロビジョニング
 
-> 元データ: [../hearing-checklist.md B-4](../hearing-checklist.md#b-4-ユーザー管理プロビジョニング-fr-user-6--proposal-fr-221-fr-7)  
+> 元データ: [../hearing-checklist.md](../hearing-checklist.md)  
 > 対象: 開発チーム / テックリード / 情シス  
 > 関連: [proposal §FR-2.2.1](../proposal/fr/02-federation.md), [§FR-7](../proposal/fr/07-user.md)
+>
+> **新 §X.Y 構造との対応**（[hearing-checklist.md §0〜§5](../hearing-checklist.md) で subject-matter 軸の一覧確認可）:
+> - **§2.4 ユーザー管理ポリシー**: B-401（SCIM 採否）、B-401-2（デフォルト権限）、B-401-3（ユーザー作成通知先）、B-402（セルフサービス）、B-403（既存ユーザー初期投入）、B-404（テナント管理者委譲）、B-405（Webhook 通知）、B-406（同一テナント内ユーザー重複）、B-407（重複検出時挙動）、B-409（リンクトリガー）、B-410（IdP 切替連続性）
+> - **§3.6 顧客 IdP 属性マッピング**: B-408（重複検出突合せキー）
+>
+> hearing-script/ は **会議組み立て用に旧 Phase 軸**でファイル分割、hearing-checklist.md は **読み物として subject-matter 軸**で集約。両軸を併用。
 
 ---
 

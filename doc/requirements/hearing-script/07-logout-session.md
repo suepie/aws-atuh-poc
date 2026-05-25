@@ -1,8 +1,16 @@
 # B-7: ログアウト・セッション管理
 
-> 元データ: [../hearing-checklist.md B-7](../hearing-checklist.md#b-7-ログアウトセッション管理-fr-sso-4243--proposal-fr-5)  
+> 元データ: [../hearing-checklist.md](../hearing-checklist.md)  
 > 対象: 開発チーム / セキュリティチーム  
 > 関連: [proposal §FR-5](../proposal/fr/05-logout-session.md)
+>
+> **新 §X.Y 構造との対応**（[hearing-checklist.md §0〜§5](../hearing-checklist.md) で subject-matter 軸の一覧確認可）:
+> - **§2.5 SSO・ログアウト方針**: B-701（デフォルトログアウトレイヤー）、B-702（フェデ連動ログアウト）、B-703（リダイレクト先全体方針）
+> - **§3.5 ブランディング詳細**: B-703-1（許可リダイレクト URL 事前登録）、B-703-3（テナント別カスタムランディング）
+> - **§4.4 ログアウト・セッション技術**: B-703-2（ログアウト種類別飛び先）、B-703-4（リダイレクト後処理）、B-703-5（強制ログアウト飛び先）、B-705（管理者強制ログアウト粒度）、B-706（セッション管理 UI）
+> - 旧 B-704（Access Token Revocation）は **§3.3 マスター表 C 列 S K8** に統合済（TTL トレードオフは [マスター表 C 補足 2 K8](01-auth-flow.md#k8-access-token-即時-revocation--両プラットフォームで個別-revoke-不可) 参照）
+>
+> hearing-script/ は **会議組み立て用に旧 Phase 軸**でファイル分割、hearing-checklist.md は **読み物として subject-matter 軸**で集約。両軸を併用。
 
 ---
 

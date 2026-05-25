@@ -1,8 +1,17 @@
 # C-3 / D: 運用体制・最終判断
 
-> 元データ: [../hearing-checklist.md C-3](../hearing-checklist.md#c-3-運用体制--rhbk-サポート要否決定--proposal-c-2-nfr-6) / [Phase D](../hearing-checklist.md#phase-d-最終判断会議意思決定者)  
+> 元データ: [../hearing-checklist.md](../hearing-checklist.md)  
 > 対象: インフラチーム / 経営層 / 意思決定者  
 > 関連: [proposal §C-2](../proposal/common/02-platform.md), [§NFR-6](../proposal/nfr/06-operations.md), [§NFR-8](../proposal/nfr/08-cost.md), [§NFR-9](../proposal/nfr/09-migration.md)
+>
+> **新 §X.Y 構造との対応**（[hearing-checklist.md §0〜§5](../hearing-checklist.md) で subject-matter 軸の一覧確認可）:
+> - **§1.4 前提合意（Broker パターン）**: D-6（Identity Broker パターン採用前提合意）
+> - **§2.7 移行戦略・リリース**: D-2（段階移行）、D-5（リリーススケジュール）
+> - **§2.8 意思決定**: D-1（プラットフォーム選定）、D-3（運用体制）、D-4（予算）
+> - **§5.4 運用体制**: C-301（サポート体制 24/7）、C-302（Red Hat 利用実績）、C-304（監視ツール）、C-305（バージョンアップ方針）、C-306（変更管理プロセス）
+> - **§5.5 コスト・予算**: C-303（RHBK サブスクリプション予算）
+>
+> hearing-script/ は **会議組み立て用に旧 Phase 軸**でファイル分割、hearing-checklist.md は **読み物として subject-matter 軸**で集約。両軸を併用。
 
 ---
 

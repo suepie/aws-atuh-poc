@@ -1,8 +1,14 @@
 # C-1: 可用性・性能・DR
 
-> 元データ: [../hearing-checklist.md C-1](../hearing-checklist.md#c-1-可用性性能dr--プラットフォーム選定直結--proposal-nfr-1-nfr-2-nfr-5)  
+> 元データ: [../hearing-checklist.md](../hearing-checklist.md)  
 > 対象: インフラチーム / SRE / セキュリティチーム  
 > 関連: [proposal §NFR-1](../proposal/nfr/01-availability.md), [§NFR-2](../proposal/nfr/02-performance.md), [§NFR-5](../proposal/nfr/05-dr.md)
+>
+> **新 §X.Y 構造との対応**（[hearing-checklist.md §0〜§5](../hearing-checklist.md) で subject-matter 軸の一覧確認可）:
+> - **§5.1 可用性・SLA・DR**: C-101（SLA 目標）、C-102（RTO）、C-103（RPO）、C-104（フェイルオーバー方式）、C-107（メンテナンス窓）
+> - **§5.2 性能・スケール**: C-105（認証応答時間）、C-106（ピーク時想定）
+>
+> hearing-script/ は **会議組み立て用に旧 Phase 軸**でファイル分割、hearing-checklist.md は **読み物として subject-matter 軸**で集約。両軸を併用。
 
 ---
 
