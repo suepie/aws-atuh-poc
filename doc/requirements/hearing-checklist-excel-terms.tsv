@@ -1,0 +1,96 @@
+カテゴリ	コード	意味	文脈・使用箇所	備考
+Phase 軸	A	事業要件（PO / 事業企画 / 営業）	会議組み立て用ステークホルダー軸、20 項目
+Phase 軸	B	技術要件（開発チーム / テックリード）	会議組み立て用ステークホルダー軸、63 項目
+Phase 軸	C	運用・セキュリティ（情シス / SRE / セキュリティ）	会議組み立て用ステークホルダー軸、35 項目
+Phase 軸	D	最終判断（意思決定者）	会議組み立て用ステークホルダー軸、6 項目
+利用者カテゴリ	P-1	基盤運用管理者	A-5-2 / §1.1、弊社内 IdP + Break Glass	弊社運用チーム
+利用者カテゴリ	P-2	顧客企業のテナント管理者	A-5-2 / §1.1	顧客の IT 管理者
+利用者カテゴリ	P-3	顧客企業の一般従業員（フェデユーザー）	A-5-2 / §1.1	顧客 IdP 経由
+利用者カテゴリ	P-4	IdP を持たない顧客のユーザー（ローカル）	A-5-2 / §1.1	中小顧客で IdP 未導入
+利用者カテゴリ	P-5	Break Glass 用ローカル管理者	A-5-2 / §1.1、数名のみ	緊急時 / IdP 障害時
+利用者カテゴリ	P-6	B2C コンシューマーユーザー	A-5-2 / §1.1	一般消費者向け SaaS
+インフラ運用者	I-1	AWS インフラ運用者	A-5-4 / §1.3、AWS IAM 認証、MFA 必須	Cognito / Lambda / VPC 操作
+インフラ運用者	I-2	Keycloak / RHBK 運用者	A-5-4 / §1.3	EKS / OpenShift 上の Keycloak
+インフラ運用者	I-3	監視・SRE 担当	A-5-4 / §1.3、Read-Only 推奨	CloudWatch / Datadog / Grafana
+インフラ運用者	I-4	セキュリティ監査者	A-5-4 / §1.3、Read-Only 強制	CloudTrail / SIEM
+インフラ運用者	I-5	ベンダー / SI サポート	A-5-4 / §1.3、IAM Role STS 一時付与（24-72h）	Red Hat Support / AWS Support
+採用シナリオ	α	全カテゴリ受入（P-1〜P-6）	A-5-3 / §1.2、ローカルユーザー最大	B2C を含む大規模 SaaS
+採用シナリオ	β	管理者 + IdP なし顧客（P-1/P-2/P-4/P-5）	A-5-3 / §1.2	IT 成熟度がまちまちな B2B
+採用シナリオ	γ	管理者層のみ（P-1/P-2/P-5）★業界推奨	A-5-3 / §1.2、顧客に IdP 必須化	エンタープライズ B2B SaaS
+採用シナリオ	δ	Break Glass のみ（P-1/P-5）	A-5-3 / §1.2、全顧客 IdP 強制	規制業種専用 SaaS
+ブランディングパターン	A	軸 1 No × 軸 2 No、アプリ側完結	A-11 / A-11-α 組合せ、最シンプル	Slack / Notion 型
+ブランディングパターン	A'	軸 1 Yes、アプリ別認証基盤側カスタマイズ	A-11 / A-11-α 組合せ	Auth0 / Entra / Okta 型
+ブランディングパターン	B	軸 2 Yes 部分、顧客別認証基盤側カスタマイズ	A-11 / A-11-α 組合せ、Cognito 20 顧客上限	顧客向け公開 SaaS
+ブランディングパターン	C	軸 2 Yes 完全分離、Pool/Realm 分離	A-11 / A-11-α 組合せ、SSO 喪失リスク	Enterprise プラン相当（稀）
+マスター表 B 列	X	IdP 製品（A-1〜A-3 / B / C-1〜C-2 / D / E / F / G / H / I / J / K / L / M / N / O）	B-200-B	Entra / Okta / Google / HENNGE / AD / etc
+マスター表 B 列	Y	接続プロトコル（α/β/γ/δ）	B-200-B、γ LDAP 直結 = Keycloak 必須化	OIDC / SAML / LDAP / 独自
+マスター表 B 列	Z	接続経由（①〜④、AD 利用時）	B-200-B、④ AD 直結 = Keycloak 必須化	直結 / AD FS / Entra Connect / AD 直結
+マスター表 B 列	W	SCIM 対応（✅ / ⚠ / ❌ / ❓）	B-200-B	標準対応 / 上位ライセンス / 未対応 / 不明
+マスター表 B 列	V	テナント分離希望（L1 / L2 / L3）	B-200-B	完全集約 / 論理 / 物理
+マスター表 C 列	P	クライアント種別（a〜g）	B-100	SPA / SSR / モバイル / M2M / CLI・IoT / Backend API / SAML SP
+マスター表 C 列	Q	SPA 認証方式（α/β/γ/—、列 P=a のみ）	B-100	BFF / PKCE 直接 / 段階移行 / 該当なし
+マスター表 C 列	R	Backend API 経路 / JWT 検証場所（①〜⑤）	B-100	API GW+Lambda / ALB+ECS / Service Mesh / サーバー内 / Cognito Auth
+マスター表 C 列	S	特殊要件フラグ（K1〜K8、☑ 複数可）	B-100、1 件でも☑で Keycloak 必須化	Token Exchange / Device Code / mTLS / DPoP / SAML 発行 / UMA / Back-Channel / Revocation
+マスター表 C 列	T	既存ローカル認証 + 移行方針（N / M1〜M4）	B-100	なし / 段階移行 / 並行稼働 / 即時切替 / 維持
+Cognito Knockout	K1	Token Exchange（RFC 8693）	マスター表 C 列 S、マイクロサービス間 OBO	Keycloak 必須
+Cognito Knockout	K2	Device Code Flow（RFC 8628）	マスター表 C 列 S、CLI / IoT / Smart TV / AI Agent	Cognito 自前 or Keycloak
+Cognito Knockout	K3	mTLS Client Authentication（RFC 8705）	マスター表 C 列 S、FAPI 準拠	Keycloak 必須
+Cognito Knockout	K4	DPoP（RFC 9449、Sender-Constrained Tokens）	マスター表 C 列 S、FAPI 2.0	Keycloak 必須
+Cognito Knockout	K5	SAML IdP 発行	マスター表 C 列 S、既存 SAML SP アプリへ	Keycloak 必須
+Cognito Knockout	K6	UMA 2.0 細粒度認可	マスター表 C 列 S、リソース所有者ベース	Keycloak Authz Services or 外部 PDP
+Cognito Knockout	K7	Back-Channel Logout（RFC 8417）	マスター表 C 列 S、全 RP 連動	Keycloak 必須
+Cognito Knockout	K8	Access Token 即時 Revocation	マスター表 C 列 S、規制要件	Cognito 自前 or Keycloak Introspection
+NIST AAL	AAL1	パスワードのみ（MFA 不要）	C-210 / §2.6	内部の機密性低システム
+NIST AAL	AAL2	MFA 必須（推奨）	C-210 / §2.6、TOTP 以上、Passkey 推奨	一般的な B2B SaaS
+NIST AAL	AAL3	Phishing-resistant 必須	C-210 / §2.6、Passkey / YubiKey	金融 / 政府系
+SSO 信頼レベル	L1	完全信頼（業界標準）	B-801-1	外部 IdP セッションを完全信頼
+SSO 信頼レベル	L2	部分信頼（TTL 別管理）	B-801-1
+SSO 信頼レベル	L3	検証ありき（acr 検査 + ステップアップ）	B-801-1	規制業種向け
+SSO 信頼レベル	L4	不信任（毎回再認証）	B-801-1
+ログアウトレイヤー	L1	ローカル（アプリ側セッション破棄のみ）	B-701
+ログアウトレイヤー	L2	IdP セッション破棄	B-701
+ログアウトレイヤー	L3	フェデ連動（外部 IdP セッションも破棄）	B-701
+ログアウトレイヤー	L4	Back-Channel（同 IdP 内全 RP 同期切断、RFC 8417）	B-701、K7 連動
+テナント分離レベル	L1	完全集約（顧客 IdP なし、共通基盤ローカルのみ）	マスター表 B 列 V
+テナント分離レベル	L2	論理分離（標準、単一 Pool/Realm + tenant_id）	マスター表 B 列 V
+テナント分離レベル	L3	物理分離（規制業種向け、Pool/Realm per テナント）	マスター表 B 列 V、追加コスト
+カスタマイズレベル	L1-L3	ロゴ・配色・スペーシング・基本配置	A-11-3、Cognito Managed Login で対応可
+カスタマイズレベル	L4-L8	文言変更・要素追加削除・並び順・完全 HTML	A-11-3、Keycloak Theme 必須
+アーキテクチャ移行案	A 案	共通基盤集約（本基盤の前提）	§FR-1.2.0、§C-1.3	すべてのローカル認証を本基盤に集約
+アーキテクチャ移行案	B 案	個別 IdP（Pool/Realm per テナント）	§FR-1.2.0、B-607 連動	物理分離が必要な特殊顧客のみ例外的に
+アーキテクチャ移行案	C 案	ハイブリッド	§FR-1.2.0、マスター表 C 列 T M4 連動	移行期限定で許容
+既存ローカル認証	N	なし（新規 or 既に共通基盤前提）	マスター表 C 列 T
+既存ローカル認証	M1	あり / 段階移行（リリース時に共通基盤集約）	マスター表 C 列 T
+既存ローカル認証	M2	あり / 並行稼働（一定期間、両方併用）	マスター表 C 列 T
+既存ローカル認証	M3	あり / 即時切替（カットオーバー、リスク高）	マスター表 C 列 T
+既存ローカル認証	M4	あり / 維持（C 案ハイブリッド）	マスター表 C 列 T、移行期限定で許容
+MFA 略語	TOTP	Time-based One-Time Password（RFC 6238）	B-502、Authenticator アプリ	Google Authenticator 等の 6 桁
+MFA 略語	FIDO2	Fast Identity Online 2	B-503、公開鍵暗号ベース	WebAuthn + CTAP
+MFA 略語	WebAuthn	Web Authentication（W3C 標準）	B-503、ブラウザ API	FIDO2 の Web 部分
+MFA 略語	Passkey	（ブランド名）端末同期型認証	B-503、Apple/Google/Microsoft 推進	FIDO2/WebAuthn 利用
+MFA 略語	HOTP	HMAC-based One-Time Password（RFC 4226）	B-502、カウンタベース OTP（古い）
+MFA 略語	SMS OTP	SMS One-Time Password	B-502、NIST 非推奨	SS7 攻撃リスク
+プロビジョニング	JIT	Just-in-Time（外部 IdP → 共通基盤、ログインのついで）	§FR-7.4.0、B-401	ユーザーが初回ログインした瞬間に作成
+プロビジョニング	SCIM	System for Cross-domain Identity Management（RFC 7644）	§FR-7.4.0、B-401	顧客 HR/IdP から push 同期
+プロビジョニング	Webhook	共通基盤 → 各アプリ（方向逆）	§FR-9.3、B-405	基盤側でユーザーイベント発生時に push
+プラットフォーム	Cognito	Amazon Cognito	D-1、ADR-016	AWS マネージド ID 基盤
+プラットフォーム	Lite	Cognito Lite ティア	ADR-016、$0.0055/MAU〜
+プラットフォーム	Essentials	Cognito Essentials ティア	ADR-016、$0.015/MAU	フェデ利用なら追加コストなし
+プラットフォーム	Plus	Cognito Plus ティア	ADR-016、+$0.02/MAU	リスクベース MFA / 侵害検出
+プラットフォーム	Keycloak	Red Hat Keycloak（OSS）	D-1、ADR-017	オープンソース ID 基盤
+プラットフォーム	RHBK	Red Hat Build of Keycloak	D-1、ADR-017、C-201/C-302 連動	商用サポート版、FIPS 140-2 対応
+認可の意味	意味 A	認可フレームワーク（OAuth 2.0 そのもの、Token をどう発行）	§FR-6.0.A	本基盤の責務
+認可の意味	意味 B	認可判定（リソース保護、alice は /expense/123 を編集可?）	§FR-6.0.A	各アプリの責務
+SAML 方向	SAML SP モード	受信側（顧客 HENNGE/ADFS から SAML を受け取る）	マスター表 B 列 Y β	Cognito / Keycloak 両対応
+SAML 方向	SAML IdP モード	発行側（既存 SAML SP アプリに SAML を出す）	マスター表 C 列 P=g / 列 S K5	Cognito 非対応 / Keycloak のみ
+優先度記号	🔥	最優先（事業判断・プラットフォーム選定直結）	全項目共通	37 件
+優先度記号	🟡	重要	全項目共通	66 件
+優先度記号	🟢	通常	全項目共通	21 件
+状態記号	⏳	未確認	状態列	初期値
+状態記号	✅	回答済 / 確定	状態列
+状態記号	⚠	要追加確認	状態列
+状態記号	❌	ペンディング / 不採用 / 非対応	状態列
+要件状態	✅	PoC 検証済 / 即実装可能	functional-requirements.md	そのまま採用
+要件状態	🟡	未検証だが実装可能（既知の方法あり）	functional-requirements.md	PoC 追加検証 or 設計時に深掘り
+要件状態	🟠	制約あり / 設計工夫が必要	functional-requirements.md	ADR 起票
+要件状態	❌	プラットフォーム制約として実現不可	functional-requirements.md	代替プラットフォーム or 再協議

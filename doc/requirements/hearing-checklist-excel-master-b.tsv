@@ -1,0 +1,16 @@
+#	顧客企業名	IdP 製品（列 X）	接続プロトコル（列 Y）	接続経由（列 Z）	SCIM 対応（列 W）	テナント分離希望（列 V）	特殊要件
+1	Acme Corp（例）	A-2 Entra ID P1	α OIDC	① 直結	✅ 標準対応	L2 論理	なし
+2	Globex Inc（例）	B Okta	α OIDC	① 直結	✅ 標準対応	L2 論理	なし
+3	HENNGE Cust（例）	D HENNGE One	β SAML	① 直結	❓ 不明	L2 論理	なし
+4	DefenseCo（例）	G オンプレ AD のみ	γ LDAP 直結	④ AD 直結	❌ 未対応	L3 物理	クラウド禁止規制
+5	TechStart（例）	I IdP なし	（該当なし）	（該当なし）	（該当なし）	L2 論理	IdP 検討中、当面ローカル
+6	SaaS Vendor X（例）	L Keycloak（顧客自社運用）	α OIDC	① 直結	⚠ プラグイン依存	L2 論理	同製品同士のフェデ
+7	AWS-Native Cust（例）	M Cognito（顧客別 AWS）	α OIDC	① 直結	❌ 未対応	L2 論理	Cross-account Cognito federation
+8	Enterprise Y（例）	N PingOne	β SAML	① 直結	✅ 標準対応	L2 論理	大企業向け IDaaS
+9
+10
+11
+12
+13
+14
+15

@@ -1,0 +1,16 @@
+#	システム名	業務カテゴリ	クライアント種別（列 P）	SPA 認証方式（列 Q）	Backend API 経路 / JWT 検証場所（列 R）	特殊要件フラグ（列 S、☑ 複数可）	既存ローカル認証（列 T）	補足・特殊要件
+1	経費精算SaaS（例）	経理	a SPA	α BFF	① API GW + Lambda Authorizer		N
+2	決済管理（例）	決済	b SSR	—	① API GW + Lambda Authorizer	☑K1 ☑K3 ☑K4	N	FAPI 2.0 準拠
+3	営業 iPad（例）	営業	c モバイル	—	① API GW + Lambda Authorizer		N
+4	夜間集計バッチ（例）	内部	d M2M バッチ	—	② ALB + ECS		N	同時実行 5、日次
+5	レガシー業務系（例）	内部	g SAML SP のみ	—	④ サーバー内完結	☑K5	M1 段階移行	改修不可、Salesforce Classic 系
+6	開発者 CLI（例）	内部	e CLI/IoT	—	① API GW + Lambda Authorizer	☑K2	N	社内 30 名利用
+7	顧客マイクロサービス群（例）	顧客向け	f Backend API のみ	—	③ Service Mesh	☑K1 ☑K6	N	サービス間 OBO + リソース所有者ベース
+8
+9
+10
+11
+12
+13
+14
+15

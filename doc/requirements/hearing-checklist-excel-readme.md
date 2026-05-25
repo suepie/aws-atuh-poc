@@ -1,0 +1,183 @@
+# Excel 転記用 TSV ファイル群 — 使い方ガイド
+
+> 目的: [hearing-checklist.md](hearing-checklist.md)（§0〜§5 構造、124 項目）を **Excel で進捗管理しながらヒアリングを進める** ための TSV ファイル群。
+> 詳細な質問内容・補足は [hearing-script/](hearing-script/) 配下を参照する分業構造。
+
+---
+
+## ファイル構成
+
+| ファイル | 用途 | 行数 | 列数 |
+|---|---|---:|---:|
+| [hearing-checklist-excel-main.tsv](hearing-checklist-excel-main.tsv) | **メインシート**: 124 項目を §0〜§5 でソート | 125 | 10 |
+| [hearing-checklist-excel-master-a.tsv](hearing-checklist-excel-master-a.tsv) | マスター表 A: 弊社内 IdP（1 行）| 2-5 | 6 |
+| [hearing-checklist-excel-master-b.tsv](hearing-checklist-excel-master-b.tsv) | マスター表 B: 顧客 IdP（N 行）| 顧客数+8 | 8 |
+| [hearing-checklist-excel-master-c.tsv](hearing-checklist-excel-master-c.tsv) | マスター表 C: アプリ・システム構成（M 行）| アプリ数+8 | 9 |
+| [hearing-checklist-excel-terms.tsv](hearing-checklist-excel-terms.tsv) | **コード体系リファレンス**: Phase / P-X / I-X / α-δ / K1-K8 / L1-L4 / マスター表列コード 等 | 96 | 5 |
+
+> **コード体系の md 正規版**: [terms-and-codes-reference.md](terms-and-codes-reference.md)（章立てと文脈別詳細を確認したい時はこちら）
+
+---
+
+## Excel へのインポート手順
+
+### 方法 1: コピペ（推奨、最速）
+
+1. TSV ファイルをエディタ（VS Code / メモ帳 / TextEdit）で開く
+2. 全選択（Cmd+A / Ctrl+A）→ コピー（Cmd+C / Ctrl+C）
+3. Excel の空白シートで A1 セルを選択
+4. ペースト（Cmd+V / Ctrl+V）
+5. 列ごとに自動分割される
+
+### 方法 2: ファイルから直接開く
+
+1. Excel メニュー → 「ファイル」→ 「開く」
+2. ファイルの種類を「すべてのファイル」に変更
+3. `.tsv` ファイルを選択
+4. テキストインポートウィザード → タブ区切り → 完了
+
+### 方法 3: データタブからインポート（最も柔軟）
+
+1. Excel メニュー → 「データ」→ 「テキストから」
+2. ファイルを選択 → タブ区切り指定
+3. 列の型を個別指定可能（例: 「§」列を数値として）
+
+---
+
+## メインシートの列構成
+
+| 列 | 名前 | 値の例 | 用途 |
+|---|---|---|---|
+| A | § | 1, 2, 3, 4, 5 | 大区分（subject-matter 軸）|
+| B | サブ§ | 1.1, 2.3, 3.5 等 | 細分 |
+| C | Phase | A, B, C, D | 旧ステークホルダー軸（フィルタ用）|
+| D | 優先度 | 🔥, 🟡, 🟢 | ヒアリング優先度 |
+| E | ID | A-5-2, B-401 等 | 旧来の ID（hearing-script のアンカーと一致）|
+| F | タイトル | （短い名前）| 質問の主題 |
+| G | 1 行サマリー | （何を確認するか）| Excel で内容把握 |
+| H | 詳細参照 | hearing-script/04-user-management.md | 詳細を見るときのファイル |
+| I | 回答 | （顧客記入欄）| ヒアリング結果記入 |
+| J | 状態 | ⏳ / ✅ / ⚠ / ❌ | 進捗ステータス |
+
+---
+
+## 推奨する Excel 設定
+
+### オートフィルタを設定
+1. ヘッダ行を選択 → 「データ」→ 「フィルタ」
+2. § / Phase / 優先度 / 状態 列で絞り込み可能に
+
+### 条件付き書式で優先度を色分け
+- 🔥: 赤背景 / 白文字
+- 🟡: 黄背景
+- 🟢: 緑背景
+
+### 状態列にプルダウン設定
+1. J 列を選択
+2. 「データ」→ 「データの入力規則」→ リスト
+3. 元の値: `⏳,✅,⚠,❌`
+
+### 詳細参照をハイパーリンク化
+H 列の値を `=HYPERLINK("ファイルパス", "ファイル名")` 形式に変換すると、クリックで対応する md ファイルが開く（要 Excel の Hyperlink 機能対応）。
+
+### ピボットテーブルで集計
+1. 「挿入」→ 「ピボットテーブル」
+2. 行: §（または Phase）
+3. 列: 状態
+4. 値: ID のカウント
+5. → 進捗ダッシュボードができる
+
+---
+
+## マスター表 A / B / C の使い方
+
+### マスター表 A: 弊社内 IdP（1 行で完結）
+
+弊社運用組織の社内 IdP を記入（P-1 基盤運用管理者の認証用）。
+
+| 列 | 内容 |
+|---|---|
+| IdP 製品 | 例: 弊社 Microsoft Entra ID P2 / 弊社 Okta / なし |
+| 接続プロトコル | OIDC / SAML / なし |
+| SCIM 対応 | ✅ / ⚠ / ❌ / ❓ |
+| 用途 | P-1 基盤運用管理者の認証 等 |
+
+詳細選択肢: [hearing-script/02-idp-federation.md マスター表 A](hearing-script/02-idp-federation.md)
+
+### マスター表 B: 顧客 IdP（N 行 = 顧客数）
+
+顧客企業ごとに 1 行ずつ追加。
+
+| 列 | コード | 選択肢 |
+|---|---|---|
+| **列 X**: IdP 製品 | A-1〜A-3 / B / C-1〜C-2 / D / E / F / G / H / I / J / K / L / M / N / O | Entra/Okta/Auth0/Google/HENNGE/AD/IdP なし 等 |
+| **列 Y**: 接続プロトコル | α / β / γ / δ | OIDC / SAML / LDAP / 独自 |
+| **列 Z**: 接続経由 | ① / ② / ③ / ④ | 直結 / AD FS / Entra Connect / AD 直結 |
+| **列 W**: SCIM 対応 | ✅ / ⚠ / ❌ / ❓ | 標準対応 / 上位ライセンス / 未対応 / 不明 |
+| **列 V**: テナント分離 | L1 / L2 / L3 | 完全集約 / 論理分離 / 物理分離 |
+
+詳細選択肢: [hearing-script/02-idp-federation.md マスター表 B](hearing-script/02-idp-federation.md)
+
+#### 自動判定（表 B から）
+
+| 表 B の状態 | 帰結 |
+|---|---|
+| 列 Y に **γ LDAP 直結** が 1 件でも | **Keycloak 必須化** |
+| 列 V に **L3 物理分離** が 1 件でも | 追加コスト発生（B-607 連動）|
+| 列 W に **❌ 未対応** が多数 | B-401 SCIM 採否で「顧客選択制」推奨 |
+
+### マスター表 C: アプリ・システム構成（M 行 = アプリ数）
+
+御社のアプリ・システムごとに 1 行ずつ追加。**Cognito vs Keycloak 選定の決定打**。
+
+| 列 | コード | 選択肢 |
+|---|---|---|
+| **列 P**: クライアント種別 | a / b / c / d / e / f / g | SPA / SSR / モバイル / M2M / CLI・IoT / Backend API / SAML SP |
+| **列 Q**: SPA 認証方式 | α / β / γ / — | BFF / PKCE 直接 / 段階移行 / 該当なし |
+| **列 R**: Backend API 経路 | ① / ② / ③ / ④ / ⑤ | API GW+Lambda Authorizer / ALB+ECS / Service Mesh / サーバー内完結 / Cognito Authorizer |
+| **列 S**: 特殊要件フラグ ☑ | K1 / K2 / K3 / K4 / K5 / K6 / K7 / K8 | Token Exchange / Device Code / mTLS / DPoP / SAML 発行 / UMA / Back-Channel Logout / Access Token Revocation |
+| **列 T**: 既存ローカル認証 | N / M1 / M2 / M3 / M4 | なし / 段階移行 / 並行稼働 / 即時切替 / 維持 |
+
+詳細選択肢 + 補足 1〜5（BFF/JWT 検証/Knockout 条件 K1〜K8 技術根拠/業界トレンド/FAQ）: [hearing-script/01-auth-flow.md](hearing-script/01-auth-flow.md)
+
+#### 自動判定（表 C から）
+
+| 表 C の状態 | 帰結 |
+|---|---|
+| 列 S に **K1〜K8 のいずれか 1 件**でも☑ | **Keycloak 必須化確定** |
+| 列 P に **e CLI/IoT** が含まれる | 列 S K2 暗黙☑ |
+| 列 P に **g SAML SP のみ** が含まれる | 列 S K5 暗黙☑ |
+| 列 T に **M2 / M3 / M4** が含まれる | 移行戦略策定が必要 |
+
+---
+
+## ヒアリング推奨順序（Excel フィルタの順番）
+
+1. **§ = 1** で絞り込み: 前提合意 6 項目すべて確認（後続全質問の範囲規定）
+2. **§ = 3** で絞り込み: 既存接続元・3 大マスター表を埋める（Cognito vs Keycloak 事実上確定）
+3. **§ = 2、優先度 = 🔥** で絞り込み: サービス要件の最優先項目
+4. **§ = 5、優先度 = 🔥** で絞り込み: NFR の最優先項目
+5. **§ = 4** で絞り込み: 技術仕様の詳細
+6. 残り（🟡 / 🟢）を順次
+
+---
+
+## Phase 軸でヒアリング会議を組む場合
+
+Excel のフィルタを Phase 列で切り替えることで、会議参加者別の項目リストを抽出できる:
+
+| Phase | 想定参加者 | 件数 |
+|---|---|---:|
+| `A` | プロダクトオーナー / 事業企画 / 営業 | 20 |
+| `B` | 開発チーム / テックリード | 63 |
+| `C` | 情シス / SRE / セキュリティ | 35 |
+| `D` | 意思決定者 | 6 |
+
+---
+
+## メンテナンスについて
+
+- [hearing-checklist.md](hearing-checklist.md) が **SSOT**（Single Source of Truth）
+- TSV ファイルは hearing-checklist.md からのスナップショット（再生成可能）
+- 質問の追加・削除があった場合、TSV を再生成
+- Excel 上で記入した「回答」「状態」列の保持は、TSV を上書きせず Excel ファイル側で管理推奨

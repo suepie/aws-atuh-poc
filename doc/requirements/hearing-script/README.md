@@ -81,3 +81,4 @@
 - 「Keycloak 必須化要因」「RHBK 必須化要因」の判定フローは [hearing-checklist.md 補足セクション](../hearing-checklist.md#補足-cognito-knockout-判定フロー) を参照してください
 - 元データの設計詳細・対応能力マトリクス・業界実例は [proposal/](../proposal/) 配下の各章を参照してください
 - マスター表 C 補足 1〜5（BFF / JWT 検証場所 / Knockout 条件 K1〜K8 技術根拠 / 業界トレンド / FAQ）は [01-auth-flow.md](01-auth-flow.md#マスター表-c-の補足) に集約
+- **コード体系の意味で迷ったら → [terms-and-codes-reference.md](../terms-and-codes-reference.md)**（P-1〜P-6 / I-1〜I-5 / α/β/γ/δ / K1〜K8 / L1〜L4 / マスター表列コード 等を 1 ページで対照確認可能）

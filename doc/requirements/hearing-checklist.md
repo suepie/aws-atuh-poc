@@ -14,6 +14,8 @@
 - ヒアリング中: このリストを開きながら順に質問
 - ヒアリング後: 「回答」列に記入し、関連する `functional-requirements.md` / `non-functional-requirements.md` の TBD 列を更新
 
+> **コード体系の意味で迷ったら → [terms-and-codes-reference.md](terms-and-codes-reference.md)**（P-1〜P-6 / I-1〜I-5 / α/β/γ/δ / K1〜K8 / L1〜L4 / マスター表列コード 等を 1 ページで対照確認可能）
+
 ### 凡例
 
 - **優先度**: 🔥 最優先 / 🟡 重要 / 🟢 通常
