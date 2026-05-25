@@ -141,7 +141,7 @@ NIST SP 800-63B Rev 4（2024 公開）への準拠方針をご教示ください
 - **短 TTL（5-15 分）**: 侵害ウィンドウ小、退職者が手元のトークンで API アクセスし続けられる時間が短い。ただし Refresh 頻度増加で API ロード・UX 悪化、Cognito の M2M クライアント 150 RPS 上限に注意
 - **長 TTL（60 分）**: UX 良好、API ロード低い。ただし退職時の侵害ウィンドウが長くなる → 別途 **B-704 Access Token Revocation** で補完が必要
 
-→ **短 TTL で吸収する** か **長 TTL + Token Revocation で対処する** か、設計方針の選択になります。退職反映 SLA（**B-605-3**）と連動してご判断ください。
+→ **短 TTL で吸収する** か **長 TTL + Token Revocation で対処する** か、設計方針の選択になります。退職反映 SLA（**B-605-3**）と連動してご判断ください。Revocation 採用の判断軸・実装コスト比較は **[マスター表 C 補足 2 K8](01-auth-flow.md#k8-access-token-即時-revocation--両プラットフォームで個別-revoke-不可)** を参照。
 
 **目的**: トークンライフサイクル設計、退職時の即時遮断要件との整合性、UX（再ログイン頻度）とセキュリティ（漏洩時の被害最小化）のバランス調整に必要な情報です。
 
@@ -172,8 +172,12 @@ NIST 推奨値:
 
 ### 【トークン失効要件】 (C-207, 🟡)
 
-トークンの即時無効化機能の必要性をご教示ください（B-704 と連動）。
-有無でお答えいただけますと幸いです。
+> **本問は [マスター表 C](01-auth-flow.md#マスター表-c-御社アプリシステム構成リスト) 列 S K8（Access Token 即時 Revocation）に統合済**です。旧 B-704 と完全に同じ問いです。該当アプリで列 S K8 を☑してください。
+
+トークンの即時無効化が必要なアプリが**1 つでも該当する場合**、表 C で該当アプリの列 S K8 を☑してください。
+
+**詳細解説**（短 TTL で吸収 vs 長 TTL + Revocation のトレードオフ表 / 該当判定 / Cognito 自前 vs Keycloak Introspection の実装/運用コスト比較 / [C-206 トークン TTL](#トークン-ttl-c-206-)・[B-605-3 退職反映 SLA](../hearing-checklist.md)・[B-401 SCIM 採否](04-user-management.md) との連動）は **[マスター表 C 補足 2 K8](01-auth-flow.md#k8-access-token-即時-revocation--両プラットフォームで個別-revoke-不可)** を参照ください。
+
 **目的**: Token Revocation 実装方式の確定。両プラットフォームとも Access Token の個別 revoke は不可で、Cognito は `origin_jti` 自前実装、Keycloak は Token Introspection 標準提供で対応します。
 
 ---

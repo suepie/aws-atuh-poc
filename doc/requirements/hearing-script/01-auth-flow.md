@@ -93,14 +93,14 @@
 
 | コード | 特殊要件 | 一行該当判定 | Knockout 影響 |
 |:---:|---|---|---|
-| **K1** | Token Exchange（RFC 8693）| マイクロサービス間でエンドユーザー文脈を伝播する（OBO 等）| **Keycloak 必須** |
+| **K1** | Token Exchange（RFC 8693）| **業務シナリオ 7 軸**で判定（マイクロサービス構成 / A→B 内部呼出 / ログでユーザー追跡 / 個別権限 / scope 縮小 / OBO / コンプラ）→ [補足 2 K1](#k1-token-exchangerfc-8693--cognito-非対応) 詳細 | **Keycloak 必須** |
 | **K2** | Device Code Flow（RFC 8628）| CLI / IoT / Smart TV / AI Agent | Cognito 自前 or Keycloak 必須（列 P=e で自動）|
 | **K3** | mTLS Client Authentication（RFC 8705）| FAPI 準拠 / 高セキュリティ M2M | **Keycloak 必須** |
 | **K4** | DPoP（RFC 9449、Sender-Constrained Tokens）| FAPI 2.0 / トークン盗難対策 | **Keycloak 必須** |
 | **K5** | SAML IdP 発行（本基盤 → 既存アプリ）| 既存 SAML SP アプリ（Salesforce Classic 等）に SAML 出力 | **Keycloak 必須**（列 P=g で自動）|
 | **K6** | UMA 2.0 細粒度認可 | リソース所有者ベース認可 | Keycloak Authorization Services または外部 PDP |
 | **K7** | Back-Channel Logout（RFC 8417）| 全 RP 連動ログアウト | **Keycloak 必須** |
-| **K8** | Access Token 即時 Revocation | 規制要件で短 TTL（15 分）では侵害ウィンドウ許容不可 | Cognito 自前 or Keycloak Introspection |
+| **K8** | Access Token 即時 Revocation | 規制要件で短 TTL（15 分）では侵害ウィンドウ許容不可 → [補足 2 K8](#k8-access-token-即時-revocation--両プラットフォームで個別-revoke-不可) で TTL 設計トレードオフ・実装/運用コスト比較 | Cognito 自前 or Keycloak Introspection |
 
 > K1〜K8 それぞれの **「なぜ Cognito で詰むのか」「該当判定の詳細」「実装代替案」** は → **[補足 2](#補足-2-cognito-knockout-条件-k1k8-の技術的根拠)** を参照。
 
@@ -200,15 +200,79 @@ flowchart LR
 
 #### K1: Token Exchange（RFC 8693） 🚫 Cognito 非対応
 
-**該当判定**: マイクロサービス間でエンドユーザーの文脈を伝播する必要がある。具体的には以下のいずれかに該当する:
-- マイクロサービス A → B 内部呼び出し時に、B 側でエンドユーザーを識別したい
-- B 側のログでエンドユーザー追跡が必須（コンプラ要件）
-- サービス別に異なる権限チェック / scope 縮小が必要
-- 外部システムへの代理操作（OBO: On-Behalf-Of）
+> **問いの位置づけ**: マイクロサービス間でエンドユーザー文脈を保持するか — 本基盤が「**正しい Token を正しい宛先に発行する**」責務（[§FR-6.0.B](../proposal/fr/06-authz.md)）を果たせるか。
+> **回答で決まること**: ①Token Exchange ネイティブ対応の要否 / ②Cognito Knockout 条件 K1 の判定 / ③アプリ側認可の妥協（aud 緩和 / ユーザー文脈喪失 / Service Account への退化）を回避できるか。
 
-**Cognito で詰む理由**: Cognito は RFC 8693 ネイティブ非対応。回避策は「`aud` チェックを甘くする」「ユーザー文脈を捨てる」等の妥協のみで、結果的にアプリ側認可がルーズ化する。
+##### なぜこれを今聞くのか
 
-**代替案**: Keycloak 必須（[K-01](../../reference/cognito-knockout-conditions.md)）。詳細判定フローは [§FR-6.3.4](../proposal/fr/06-authz.md) を参照。
+Token Exchange なしだと、アプリ側で以下のいずれかの**妥協**を強いられます:
+
+| 代替策 | 問題 | アプリ側認可への影響 |
+|---|---|---|
+| **Token をパススルー** | `notification-api` が `aud=expense-api` の Token を受ける（本来拒否すべき）| **`aud` チェックを甘くする必要** = アプリ側認可ルーズ化 |
+| **Client Credentials** | `sub=expense-api-service` に変わる、ユーザー文脈消失 | **「誰のリクエストか」が消える** = 監査不能、ユーザー単位認可不能 |
+| **アクセス禁止** | サービス間連携不能 | 業務成立せず |
+
+→ Token Exchange があれば、アプリは「**自分宛の正しい Token**」を受け取って**純粋に業務認可判定だけに集中**できる。**「認可はアプリ側」スタンス**（[§FR-6.0.A](../proposal/fr/06-authz.md)）を取るからこそ、本基盤側の Token Exchange サポートが**アプリ側認可をルーズ化させない前提**となります。
+
+##### 典型シナリオ（マイクロサービス OBO）
+
+```mermaid
+sequenceDiagram
+    participant Alice
+    participant SPA
+    participant Expense as expense-api
+    participant AS as 本基盤<br/>(Authorization Server)
+    participant Notif as notification-api
+
+    Alice->>SPA: 経費承認依頼
+    SPA->>Expense: POST /expense<br/>JWT (sub=alice, aud=expense-api)
+    Expense->>AS: Token Exchange Request<br/>「alice の Token を notification-api 用に変換」
+    AS->>Expense: 新 JWT (sub=alice, aud=notification-api, scope=notification:send)
+    Expense->>Notif: POST /notification<br/>新 JWT
+    Notif->>Notif: 検証 + 認可判定<br/>「alice は notification:send 権限あり」
+```
+
+##### 該当判定の業務シナリオ 7 軸
+
+該当アプリで列 S K1 を☑する判定基準。**1 つでも当てはまれば K1 ☑**：
+
+| # | 業務シナリオ | 該当例 |
+|---|---|---|
+| ① | マイクロサービス構成を採用している | サービス分割済 / 分割計画あり |
+| ② | サービス A → B 内部呼び出しがある | 経費 → 通知 / 注文 → 在庫 / 等の内部 HTTP 連携 |
+| ③ | B 側のログでエンドユーザー追跡が必須 | コンプラ要件（個人情報アクセス追跡 / 監査）|
+| ④ | サービス別に異なる権限チェックが必要 | 経費 API は閲覧可、決済 API は管理者のみ 等 |
+| ⑤ | scope 縮小（最小権限の段階的適用）が必要 | フロント Token は全 scope、内部呼出は最小 scope |
+| ⑥ | 外部システムへの代理操作（OBO: On-Behalf-Of）| ユーザー文脈で外部 SaaS API を叩く |
+| ⑦ | コンプライアンス要件（個人情報アクセスの追跡 等）| 金融 / 医療 / GDPR 対応 |
+
+##### 判定フローチャート
+
+```mermaid
+flowchart TB
+    Q1{システムは<br/>マイクロサービス構成?}
+    Q1 -->|No モノリス| NoTE[Token Exchange 不要<br/>→ 列 S K1 ☐<br/>→ Cognito OK]
+    Q1 -->|Yes| Q2{サービス間で<br/>HTTP 呼び出しあり?}
+    Q2 -->|No| NoTE
+    Q2 -->|Yes| Q3{呼び出し先サービスで<br/>「誰のリクエストか」<br/>を知る必要ある?}
+    Q3 -->|No 監査もしない<br/>権限チェック不要| NoTE2[Client Credentials で十分<br/>→ 列 S K1 ☐<br/>→ Cognito OK]
+    Q3 -->|Yes 監査 / 個別認可 /<br/>監査ログにユーザー名| TE[Token Exchange 必須<br/>→ 列 S K1 ☑<br/>→ Keycloak 必須化]
+
+    style NoTE fill:#e8f5e9
+    style NoTE2 fill:#e8f5e9
+    style TE fill:#ffe0e0
+```
+
+##### Cognito で詰む理由
+
+Cognito は **RFC 8693 ネイティブ非対応**。回避策は上述の代替策（パススルー / Client Credentials / アクセス禁止）のみで、いずれも**アプリ側認可をルーズ化**させる。
+
+##### 該当時の選択肢
+
+- **Keycloak 必須化**（[K-01](../../reference/cognito-knockout-conditions.md)）— 標準サポート、Token Exchange Endpoint 提供
+- 詳細判定フロー: [§FR-6.3.4](../proposal/fr/06-authz.md)
+- 関連: 旧 B-104 / B-304 業務シナリオ質問は本セクションに統合済
 
 #### K2: Device Code Flow（RFC 8628） ⚠ Cognito 非対応（自前実装可）
 
@@ -260,14 +324,49 @@ flowchart LR
 
 #### K8: Access Token 即時 Revocation ⚠ 両プラットフォームで個別 revoke 不可
 
-**該当判定**: 規制要件で短 TTL（15 分等）では侵害ウィンドウを許容できない、即時無効化必須。
+> **問いの位置づけ**: 退職・侵害発覚時に、配布済 Access Token を**即時無効化**する必要があるか — 「TTL 短縮で吸収」と「Revocation で対処」の設計方針を確定する。
+> **回答で決まること**: ①Token Revocation 実装方式の確定（Cognito 自前 `origin_jti` or Keycloak Introspection）/ ②Access Token TTL の設計値（短 TTL 5-15 分 or 長 TTL 60 分 + Revocation）/ ③退職反映 SLA（[B-605-3](../hearing-checklist.md)）との連動。
 
-**詰むレベル**: 両プラットフォームとも Access Token の個別 revoke は不可。Refresh Token revoke による間接無効化のみ。
+##### なぜこれを今聞くのか
 
-**代替案**:
-- **Cognito**: `origin_jti` クレームを使った自前実装
-- **Keycloak**: Token Introspection（`/introspect`）標準提供
-- **コスト**: Cognito は自前実装コスト、Keycloak は Introspection パフォーマンスコスト（全 API 呼び出しで Keycloak への問合せ発生）
+**退職・侵害時のアクセス遮断** には 2 つのアプローチがあり、設計時に **どちらで対処するか**を確定する必要があります。両者はコストとリスクの異なるトレードオフです。
+
+| アプローチ | 仕組み | メリット | デメリット |
+|---|---|---|---|
+| **A. 短 TTL で吸収**（Revocation なし）| Access Token TTL を 5〜15 分に短縮 | 実装シンプル、両プラットフォーム標準サポート | Refresh 頻度増 → API ロード増 / UX 悪化 / **Cognito M2M 150 RPS Hard Limit 抵触リスク** |
+| **B. 長 TTL + Revocation**（K8 ☑）| Access Token TTL は 60 分、退職時に即時 revoke | UX 良好、API ロード低い | **実装コスト**（Cognito は `origin_jti` 自前 / Keycloak は Introspection 全 API 呼出時に問合せ）|
+
+→ **規制要件で「即時遮断必須」と明文化されている場合は B 一択**（短 TTL でも 15 分のラグは許容できない）。**通常業務系で 15 分以内なら許容**なら A で十分。
+
+##### 該当判定
+
+該当アプリで列 S K8 を☑する判定基準：
+
+| 判定 | 該当ケース |
+|---|---|
+| **☑ K8 必要** | 規制要件で「退職処理後 N 秒以内に全 API アクセス遮断」が SLA で要求されている（金融 / 医療 / 機微個人情報）/ 短 TTL 15 分でも侵害ウィンドウを許容できない |
+| ☐ K8 不要 | 短 TTL（5〜15 分）で吸収可能 / 退職反映 SLA が 15 分以上で OK / Refresh Token revoke による間接無効化で間に合う |
+
+##### 両プラットフォームの制約
+
+**両者とも Access Token の個別 revoke は不可**。Refresh Token revoke による間接無効化のみが標準仕様（[RFC 7009](https://datatracker.ietf.org/doc/html/rfc7009)）。即時無効化を実現するには以下のいずれかが必要：
+
+| プラットフォーム | 実装方式 | 実装コスト | 運用コスト |
+|---|---|---|---|
+| **Cognito** | `origin_jti` クレームを Lambda Pre Token で発行 + 失効リスト DynamoDB + Lambda Authorizer で都度チェック | 高（自前実装）| 中（DynamoDB 読込 + Lambda 実行）|
+| **Keycloak** | Token Introspection（`/introspect`）標準提供、全 API 呼出時に Keycloak に問合せ | 低（標準機能）| 高（**全 API 呼出 → Keycloak 問合せ**、SLA / レイテンシ影響大）|
+
+##### 関連質問との連動
+
+- **[C-206 トークン TTL](10-security-compliance.md)**: K8 ☑なら長 TTL（60 分）+ Revocation 設計、K8 ☐なら短 TTL（5-15 分）で吸収
+- **[B-605-3 退職反映 SLA](../hearing-checklist.md)**: SLA 要件次第で K8 ☑ / ☐ が決まる
+- **[B-401 SCIM 採否](04-user-management.md)**: SCIM 採用 + K8 ☑ の組み合わせが「即時遮断の現実解」
+
+##### 該当時の選択肢
+
+- **Cognito 採用時**: `origin_jti` クレーム + DynamoDB 失効リスト + Lambda Authorizer 都度チェック の自前実装
+- **Keycloak 採用時**: Token Introspection 標準提供、ただし全 API 呼出時に Keycloak 問合せが発生するため **パフォーマンス影響を要評価**
+- 関連: 旧 B-704 / C-207 は本セクションに統合済
 
 ---
 
