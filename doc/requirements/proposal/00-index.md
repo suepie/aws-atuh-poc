@@ -133,7 +133,7 @@ proposal/
 │   ├── 07-compliance.md
 │   ├── 08-cost.md
 │   └── 09-migration.md
-└── common/              ← 横断（§C-1 〜 §C-5）
+└── common/              ← 横断（§C-1 〜 §C-6）
     ├── 01-architecture.md
     ├── 02-platform.md
     ├── 03-tbd-summary.md
@@ -195,11 +195,12 @@ flowchart LR
 
 | 章 | ファイル | 内容 |
 |---|---|---|
-| §C-1 | [common/01-architecture.md](common/01-architecture.md) | アーキテクチャ — Identity Broker パターン |
+| §C-1 | [common/01-architecture.md](common/01-architecture.md) | アーキテクチャ — Identity Broker パターン（**ハイブリッドのコア層に適用**、全体方針は §C-6 参照）|
 | §C-2 | [common/02-platform.md](common/02-platform.md) | 実装プラットフォーム（Cognito / Keycloak OSS / RHBK）選定軸 |
 | §C-3 | [common/03-tbd-summary.md](common/03-tbd-summary.md) | TBD / 要確認 事項サマリー |
 | §C-4 | [common/04-schedule.md](common/04-schedule.md) | 想定スケジュール |
 | §C-5 | [common/05-poc-note.md](common/05-poc-note.md) | 弊社内の事前検証について（PoC 控えめ） |
+| **§C-6** | **[common/06-architecture-decision-hybrid.md](common/06-architecture-decision-hybrid.md)** | **🔥 アーキテクチャ判断: ハイブリッド統合（コア統合 + エッジ自律）の根拠と詳細設計**（2026-05-26 新規、D-6 ヒアリング前提資料）|
 
 ---
 
