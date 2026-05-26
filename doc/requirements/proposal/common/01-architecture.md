@@ -233,7 +233,7 @@ flowchart TB
         AuthN_D --- AppN_D
     end
 
-    C1_D -->|OIDC<br/>(N×M 接続)| AuthA_D
+    C1_D -->|"OIDC<br/>(N×M 接続)"| AuthA_D
     C1_D -.OIDC.-> AuthB_D
     C1_D -.OIDC.-> AuthC_D
     C1_D -.-> AuthN_D
@@ -1062,7 +1062,7 @@ flowchart TB
         AuthC_X["Auth Service C"]
     end
 
-    CustIdP_X ==>|OIDC Federation<br/>(直接、Hub なし)| AuthA_X
+    CustIdP_X ==>|"OIDC Federation<br/>(直接、Hub なし)"| AuthA_X
     CustIdP_X ==>|OIDC Federation| AuthB_X
     CustIdP_X ==>|OIDC Federation| AuthC_X
 
@@ -1109,7 +1109,7 @@ flowchart TB
     CustIdP_Y ==> AuthB_Y
     CustIdP_Y ==> AuthC_Y
 
-    AuthA_Y ==>|直接 SAML/OIDC SSO<br/>(Hub 介在なし)| AuthB_Y
+    AuthA_Y ==>|"直接 SAML/OIDC SSO<br/>(Hub 介在なし)"| AuthB_Y
     AuthB_Y ==>|直接| AuthC_Y
     AuthA_Y ==>|直接| AuthC_Y
 
