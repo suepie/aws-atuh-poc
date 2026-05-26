@@ -57,27 +57,29 @@
 2	2.8	D	🔥	D-1	プラットフォーム選定	Cognito（Lite/Essentials/Plus）or Keycloak（OSS/RHBK）	hearing-script/11-operations.md		⏳
 2	2.8	D	🔥	D-3	運用体制の確定	専任 / 兼任 / 外部委託	hearing-script/11-operations.md		⏳
 2	2.8	D	🔥	D-4	予算の確定	年間予算枠	hearing-script/11-operations.md		⏳
-3	3.1	A	🟡	A-13	御社（事業者）の社内 IdP（軽量版）	IdP の有無 + 製品名 + ライセンス	hearing-script/02-idp-federation.md		⏳
-3	3.1	B	🔥	B-200	マスター表 A: 弊社内 IdP	→ 別シート「マスター表 A」参照	→ 別シート		⏳
-3	3.2	A	🟡	A-6	顧客企業の IdP 種別の概算分布	Entra/Okta/SAML/LDAP/Google/IdP なし の比率%	hearing-script/02-idp-federation.md		⏳
-3	3.2	B	🔥	B-200-B	マスター表 B: 顧客企業の IdP 構成リスト	→ 別シート「マスター表 B」参照	→ 別シート		⏳
-3	3.2	B	🟡	B-609	IdP 情報の受領形式	SAML Metadata URL / XML / OIDC Discovery URL / 手動	hearing-script/02-idp-federation.md		⏳
-3	3.3	B	🔥	B-100	マスター表 C: 御社アプリ・システム構成リスト	→ 別シート「マスター表 C」参照（BFF/リレー/Revocation 等 K1-K8 統合済）	→ 別シート		⏳
-3	3.4	A	🟡	A-14	既存 AWS 利用状況	利用状況 + Enterprise Support 契約 + 既存 VPC / IAM 体制	hearing-script/00-common.md		⏳
-3	3.4	C	🟡	C-204-4	既存パスワードハッシュ移行	形式（bcrypt 等）+ 持ち越し有無 + 件数	hearing-script/10-security-compliance.md		⏳
-3	3.5	A	🟡	A-11-2	アプリ側の動的差替実装責務	取れる / 一部支援要 / 取れない	hearing-script/00-common.md		⏳
-3	3.5	A	🟡	A-11-3	カスタマイズレベル確認	L1-L3 / L4-L8（Keycloak 必須化）/ アプリ側寄せ	hearing-script/00-common.md		⏳
-3	3.5	B	🟡	B-208	Custom Domain 利用	共通 1 つ / なし / 顧客別	hearing-script/02-idp-federation.md		⏳
-3	3.5	B	🟢	B-612	ログイン画面ブランディング詳細	A-11 B/C 採用時のみ深掘り	hearing-script/06-multitenancy.md		⏳
-3	3.5	B	🟡	B-703-1	許可リダイレクト URL の事前登録	URL リスト（コールバック / ログアウト / エラー 等）	hearing-script/07-logout-session.md		⏳
-3	3.5	B	🟢	B-703-3	テナント別カスタムランディング要否	A-11 パターン A 連動 / B 顧客別 URL / なし	hearing-script/07-logout-session.md		⏳
-3	3.6	B	🟡	B-408	重複検出の突合せキー	email / immutable sub / 雇用 ID / カスタム属性	hearing-script/04-user-management.md		⏳
-3	3.6	B	🟡	B-604	属性マッピング: 顧客 IdP 命名差異	命名対応表（必要なら）	hearing-script/06-multitenancy.md		⏳
-3	3.6	B	🟡	B-604-2	顧客 IdP 実属性名サンプル取得手順	手順テンプレ有無	hearing-script/06-multitenancy.md		⏳
-3	3.6	B	🟡	B-605	属性更新タイミング（Force/Import）	毎回上書き / 初回のみ / 別途トリガー	hearing-script/06-multitenancy.md		⏳
-3	3.6	B	🟡	B-605-2	属性ごとの Source of Truth	属性別ソース表	hearing-script/06-multitenancy.md		⏳
-3	3.6	B	🔥	B-605-3	退職反映 SLA	時間（即時 / 5 分 / 1 時間 / 翌日）+ 同期方式	hearing-script/06-multitenancy.md		⏳
-3	3.6	B	🟢	B-610	メールドメインから IdP への解決ルール	1 ドメイン = 1 IdP / 1 顧客に複数ドメイン	hearing-script/06-multitenancy.md		⏳
+3	3.1	A	🟡	A-13	御社（事業者）の社内 IdP（軽量版）	IdP の有無 + 製品名 + ライセンス、詳細は B-200 マスター表 B 事業者行で	hearing-script/02-idp-federation.md		⏳
+3	3.1	A	🟡	A-6	顧客企業の IdP 種別の概算分布	Entra/Okta/SAML/LDAP/Google/IdP なし の比率%、詳細は B-200 マスター表 B 顧客行で	hearing-script/02-idp-federation.md		⏳
+3	3.1	B	🔥	B-200	マスター表 B: 事業者・顧客 IdP 統合表	→ 別シート「マスター表 B」参照（事業者 1 行 + 顧客 N 行、区分列で識別）	→ 別シート		⏳
+3	3.1	B	🟡	B-609	IdP 情報の受領形式	SAML Metadata URL / XML / OIDC Discovery URL / 手動	hearing-script/02-idp-federation.md		⏳
+3	3.1	B	🟡	B-615	新基盤導入時のドメイン変更計画	アプリ URL / 認証基盤 Custom Domain / 顧客 IdP の各レベル変更有無	hearing-script/02-idp-federation.md		⏳
+3	3.1	B	🟡	B-616	エンドユーザー周知のリードタイム期待値	リードタイム + 周知チャネル + 該当変化項目	hearing-script/02-idp-federation.md		⏳
+3	3.1	B	🟢	B-617	顧客 IdP 管理者向け手順書テンプレ提供	整備方針（IdP 別 / 主要 3 種 / 不要 / 将来セルフサービス）	hearing-script/02-idp-federation.md		⏳
+3	3.2	B	🔥	B-100	マスター表 C: 御社アプリ・システム構成リスト	→ 別シート「マスター表 C」参照（BFF/リレー/Revocation 等 K1-K8 統合済）	→ 別シート		⏳
+3	3.3	A	🟡	A-14	既存 AWS 利用状況	利用状況 + Enterprise Support 契約 + 既存 VPC / IAM 体制	hearing-script/00-common.md		⏳
+3	3.3	C	🟡	C-204-4	既存パスワードハッシュ移行	形式（bcrypt 等）+ 持ち越し有無 + 件数	hearing-script/10-security-compliance.md		⏳
+3	3.4	A	🟡	A-11-2	アプリ側の動的差替実装責務	取れる / 一部支援要 / 取れない	hearing-script/00-common.md		⏳
+3	3.4	A	🟡	A-11-3	カスタマイズレベル確認	L1-L3 / L4-L8（Keycloak 必須化）/ アプリ側寄せ	hearing-script/00-common.md		⏳
+3	3.4	B	🟡	B-208	Custom Domain 利用	共通 1 つ / なし / 顧客別	hearing-script/02-idp-federation.md		⏳
+3	3.4	B	🟢	B-612	ログイン画面ブランディング詳細	A-11 B/C 採用時のみ深掘り	hearing-script/06-multitenancy.md		⏳
+3	3.4	B	🟡	B-703-1	許可リダイレクト URL の事前登録	URL リスト（コールバック / ログアウト / エラー 等）	hearing-script/07-logout-session.md		⏳
+3	3.4	B	🟢	B-703-3	テナント別カスタムランディング要否	A-11 パターン A 連動 / B 顧客別 URL / なし	hearing-script/07-logout-session.md		⏳
+3	3.5	B	🟡	B-408	重複検出の突合せキー	email / immutable sub / 雇用 ID / カスタム属性	hearing-script/04-user-management.md		⏳
+3	3.5	B	🟡	B-604	属性マッピング: 顧客 IdP 命名差異	命名対応表（必要なら）	hearing-script/06-multitenancy.md		⏳
+3	3.5	B	🟡	B-604-2	顧客 IdP 実属性名サンプル取得手順	手順テンプレ有無	hearing-script/06-multitenancy.md		⏳
+3	3.5	B	🟡	B-605	属性更新タイミング（Force/Import）	毎回上書き / 初回のみ / 別途トリガー	hearing-script/06-multitenancy.md		⏳
+3	3.5	B	🟡	B-605-2	属性ごとの Source of Truth	属性別ソース表	hearing-script/06-multitenancy.md		⏳
+3	3.5	B	🔥	B-605-3	退職反映 SLA	時間（即時 / 5 分 / 1 時間 / 翌日）+ 同期方式	hearing-script/06-multitenancy.md		⏳
+3	3.5	B	🟢	B-610	メールドメインから IdP への解決ルール	1 ドメイン = 1 IdP / 1 顧客に複数ドメイン	hearing-script/06-multitenancy.md		⏳
 4	4.2	B	🔥	B-301	必須 JWT クレーム	アプリが必要とする属性リスト	hearing-script/03-authz-jwt.md		⏳
 4	4.2	B	🟡	B-302	認可粒度	ロール / リソース / アクション粒度	hearing-script/03-authz-jwt.md		⏳
 4	4.2	B	🟢	B-305	既存ロール体系	階層 / グループ / 部署	hearing-script/03-authz-jwt.md		⏳

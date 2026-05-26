@@ -571,6 +571,42 @@ flowchart TB
 > **主な判断軸**: 顧客が要求する分離レベル（論理 / 物理ハイブリッド / 完全物理）  
 > **§C-1 全体との関係**: §C-1.1 で採用した Broker パターンが、**どこまでの分離要求と両立するか**の境界線を示す。§FR-2.3.A.2（IdP なし顧客の選択肢）と §C-1.3（採用しない代替）と地続きの議論。
 
+### §C-1.4.0 用語前提: Realm（Keycloak）≈ User Pool（Cognito）= 認証境界
+
+物理分離の議論の前に、**Keycloak Realm と Cognito User Pool は同列に語れる概念**であることを明確化する。両者ともユーザー / 外部 IdP / クライアントを内包する独立した認証単位（tenancy boundary）。
+
+| 概念 | Keycloak | Cognito | 説明 |
+|---|---|---|---|
+| **認証境界** | **Realm** | **User Pool** | 独立した認証単位、境界をまたぐ SSO は自動成立しない |
+| **アプリ登録単位** | Client | App Client | 個別アプリ（expense-app / payment-app 等）の設定 |
+| **SSO 範囲** | Realm 内のクライアント間で自動成立 | Pool 内の App Client 間で自動成立 | この境界が「分離の単位」になる |
+| **外部 IdP 接続** | Realm 内 IdP | Pool 内 IdP | 顧客 IdP を Federation 接続する |
+
+#### 階層構造の例
+
+```
+Keycloak Realm "shared"                Cognito User Pool "shared-pool"
+├── Users（ローカルユーザー）           ├── Users
+├── Identity Providers                ├── Identity Providers
+│   ├── acme-entra-id                 │   ├── acme-entra-id
+│   └── globex-okta                   │   └── globex-okta
+├── Clients                           ├── App Clients
+│   ├── expense-app                   │   ├── expense-app
+│   ├── payment-app                   │   ├── payment-app
+│   └── hr-app                        │   └── hr-app
+└── Sessions                          └── Hosted UI
+```
+
+→ 以下 L1〜L6 の「分離」とは、**この Realm/Pool（認証境界）の単位をどう設けるか**の選択を指す。
+
+#### よくある誤解への即答
+
+| 誤解 | 訂正 |
+|---|---|
+| **「Realm をアプリ単位で分けるべき?」** | ❌ 非推奨。アプリ間 SSO が完全に失われる = SSO 基盤の意味なし。アプリは **Client（同一 Realm 内）** として登録するのが正しい単位 |
+| **「Realm を顧客（IdP）単位で分けることはできないのでは?」** | ✅ 可能。それが **L3 物理分離**。同一 Realm 内のアプリ間で SSO は成立するため、「顧客 acme のユーザーが acme の全アプリで SSO」は実現できる |
+| **「全顧客 L3 にすれば最も安全」** | ⚠ Identity Broker パターン崩壊、N×M Client 登録、Cognito Custom Domain 4 個 Hard Limit、設定ドリフト等の重大デメリット |
+
 ### 「全部物理分離 = Broker パターン採用不可」の理解は概ね正しい
 
 顧客から **「テナントごとに完全に物理的に分離してほしい」** という要求が出た場合、これは構造的に Broker パターンを放棄することと等価。理由は明確で:

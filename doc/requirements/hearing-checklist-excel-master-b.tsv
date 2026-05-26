@@ -1,12 +1,13 @@
-#	顧客企業名	IdP 製品（列 X）	接続プロトコル（列 Y）	接続経由（列 Z）	SCIM 対応（列 W）	テナント分離希望（列 V）	特殊要件
-1	Acme Corp（例）	A-2 Entra ID P1	α OIDC	① 直結	✅ 標準対応	L2 論理	なし
-2	Globex Inc（例）	B Okta	α OIDC	① 直結	✅ 標準対応	L2 論理	なし
-3	HENNGE Cust（例）	D HENNGE One	β SAML	① 直結	❓ 不明	L2 論理	なし
-4	DefenseCo（例）	G オンプレ AD のみ	γ LDAP 直結	④ AD 直結	❌ 未対応	L3 物理	クラウド禁止規制
-5	TechStart（例）	I IdP なし	（該当なし）	（該当なし）	（該当なし）	L2 論理	IdP 検討中、当面ローカル
-6	SaaS Vendor X（例）	L Keycloak（顧客自社運用）	α OIDC	① 直結	⚠ プラグイン依存	L2 論理	同製品同士のフェデ
-7	AWS-Native Cust（例）	M Cognito（顧客別 AWS）	α OIDC	① 直結	❌ 未対応	L2 論理	Cross-account Cognito federation
-8	Enterprise Y（例）	N PingOne	β SAML	① 直結	✅ 標準対応	L2 論理	大企業向け IDaaS
+#	区分	企業名	IdP 製品（列 X）	接続プロトコル（列 Y）	接続経由（列 Z）	SCIM 対応（列 W）	テナント分離希望（列 V）	特殊要件	用途
+0	事業者	弊社（例）	A-3 Entra ID P2	α OIDC	① 直結	✅ 標準対応	-（該当なし）	-（該当なし）	P-1 基盤運用管理者の認証
+1	顧客	Acme Corp（例）	A-2 Entra ID P1	α OIDC	① 直結	✅ 標準対応	L2 論理	なし	P-3 一般従業員の認証
+2	顧客	Globex Inc（例）	B Okta	α OIDC	① 直結	✅ 標準対応	L2 論理	なし	P-3 一般従業員の認証
+3	顧客	HENNGE Cust（例）	D HENNGE One	β SAML	① 直結	❓ 不明	L2 論理	なし	P-3 一般従業員の認証
+4	顧客	DefenseCo（例）	G オンプレ AD のみ	γ LDAP 直結	④ AD 直結	❌ 未対応	L3 物理	クラウド禁止規制	P-3 一般従業員の認証
+5	顧客	TechStart（例）	I IdP なし	（該当なし）	（該当なし）	（該当なし）	L2 論理	IdP 検討中、当面ローカル	P-3（ローカル P-4 含む）
+6	顧客	SaaS Vendor X（例）	L Keycloak（顧客自社運用）	α OIDC	① 直結	⚠ プラグイン依存	L2 論理	同製品同士のフェデ	P-3 一般従業員の認証
+7	顧客	AWS-Native Cust（例）	M Cognito（顧客別 AWS）	α OIDC	① 直結	❌ 未対応	L2 論理	Cross-account Cognito federation	P-3 一般従業員の認証
+8	顧客	Enterprise Y（例）	N PingOne	β SAML	① 直結	✅ 標準対応	L2 論理	大企業向け IDaaS	P-3 一般従業員の認証
 9
 10
 11
