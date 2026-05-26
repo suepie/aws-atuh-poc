@@ -1,128 +1,128 @@
-§	サブ§	Phase	優先度	ID	タイトル	1行サマリー（何を確認するか）	詳細参照	回答	状態
-1	1.1	A	🔥	A-5-2	受け入れる利用者カテゴリ	P-1〜P-6 のうち本基盤が認証を引き受ける範囲	hearing-script/00-common.md		⏳
-1	1.2	A	🔥	A-5-3	採用シナリオ α/β/γ/δ	ローカルユーザー受入範囲（4 シナリオ、業界推奨は γ）	hearing-script/00-common.md		⏳
-1	1.3	A	🔥	A-5-4	インフラ運用者カテゴリ I-1〜I-5	本基盤を operate する人と人数（AWS IAM 認証経路）	hearing-script/00-common.md		⏳
-1	1.4	D	🔥	D-6	Identity Broker パターン採用前提合意	Hub-and-Spoke 型アーキテクチャの合意	hearing-script/11-operations.md		⏳
-1	1.5	A	🔥	A-11	ブランディング軸 1（アプリ別）	アプリ別カスタマイズ Yes/No → パターン A/A'	hearing-script/00-common.md		⏳
-1	1.5	A	🔥	A-11-α	ブランディング軸 2（顧客別）	顧客別カスタマイズ No/Yes部分/完全分離 → パターン A/B/C	hearing-script/00-common.md		⏳
-2	2.1	A	🔥	A-1	想定 MAU 規模（1 年後）	1 年後の月次アクティブユーザー数	hearing-script/00-common.md		⏳
-2	2.1	A	🔥	A-2	想定 MAU 規模（3 年後）	3 年後の MAU 目標値	hearing-script/00-common.md		⏳
-2	2.1	A	🔥	A-3	対象システム数	共有基盤の初期スコープのシステム数 + 優先度	hearing-script/00-common.md		⏳
-2	2.1	A	🔥	A-4	顧客拠点の地理分布	国内のみ / グローバル / 一部海外	hearing-script/00-common.md		⏳
-2	2.1	A	🟡	A-7	新規顧客追加の頻度	月平均何社の追加想定	hearing-script/00-common.md		⏳
-2	2.1	A	🟢	A-12	海外展開時期	GDPR / CCPA 対応の必要時期	hearing-script/00-common.md		⏳
-2	2.1	A	🔥	A-15	顧客企業数の現状と 5 年後想定	現状件数 + 5 年後想定 + 増加カーブ（Cognito Hard Limit 抵触判定の最重要入力）	hearing-script/00-common.md		⏳
-2	2.2	A	🟡	A-8	データ所在地要件	国内限定 / 特定リージョン制約	hearing-script/00-common.md		⏳
-2	2.2	A	🟡	A-9	業界規制	業界名 + 規制名（PCI DSS / FFIEC / FISC 等）	hearing-script/00-common.md		⏳
-2	2.2	C	🔥	C-201	FIPS 140-2 認定	業界規制で必須か（Yes → RHBK 必須）	hearing-script/10-security-compliance.md		⏳
-2	2.2	C	🔥	C-202	コンプライアンス認証	SOC2 / ISO27001 / PCI DSS / FFIEC の必要性	hearing-script/10-security-compliance.md		⏳
-2	2.2	C	🟢	C-209	個人データ削除権	GDPR 等の対応必要か	hearing-script/10-security-compliance.md		⏳
-2	2.3	B	🔥	B-306	テナント分離粒度	共有 DB+tenant_id / DB 分離 / アカウント分離	hearing-script/06-multitenancy.md		⏳
-2	2.3	B	🟢	B-602	Keycloak Organization 機能利用	26.0+ Organization 機能を利用するか	hearing-script/06-multitenancy.md		⏳
-2	2.3	B	🟡	B-603	顧客追加リードタイム期待値	業界デフォルト < 1 営業日	hearing-script/06-multitenancy.md		⏳
-2	2.3	B	🟢	B-606	1 ユーザー複数テナント所属の可能性	あり / なし	hearing-script/06-multitenancy.md		⏳
-2	2.3	B	🟡	B-606-2	複数テナント時の権限モデル	GitHub Org 型 / Slack 型 / 別ユーザー扱い	hearing-script/06-multitenancy.md		⏳
-2	2.3	B	🟢	B-606-3	テナント切替時の MFA 再要求	再要求する / しない / ロール別	hearing-script/06-multitenancy.md		⏳
-2	2.3	B	🟢	B-606-4	複数所属時の属性ソース	テナント別管理 / 統合	hearing-script/06-multitenancy.md		⏳
-2	2.3	B	🟢	B-607	物理分離が必要な特殊顧客	あり / なし（あり → L3 物理分離）	hearing-script/06-multitenancy.md		⏳
-2	2.3	B	🟡	B-608	オンボーディング主体	弊社運用 / セルフ / ハイブリッド	hearing-script/06-multitenancy.md		⏳
-2	2.3	B	🟢	B-611	複数テナント所属時の選択 UI	必要 / 不要	hearing-script/06-multitenancy.md		⏳
-2	2.4	B	🟡	B-401	SCIM プロビジョニング採否	JIT のみ / SCIM 併用 / 顧客選択制	hearing-script/04-user-management.md		⏳
-2	2.4	B	🟡	B-401-2	新規作成時のデフォルト権限	最小権限 / "user" 基本ロール / 顧客側指定	hearing-script/04-user-management.md		⏳
-2	2.4	B	🟢	B-401-3	ユーザー作成イベントの通知先	Webhook / CloudWatch / SIEM / メール	hearing-script/04-user-management.md		⏳
-2	2.4	B	🟡	B-402	セルフサービス機能の範囲	パスワード / MFA / プロフィール / セッション	hearing-script/04-user-management.md		⏳
-2	2.4	B	🟢	B-403	既存ユーザーの初期投入方法	バルク / SCIM 連携 / JIT 任せ + 規模	hearing-script/04-user-management.md		⏳
-2	2.4	B	🟢	B-404	テナント管理者の委譲	Yes/No + 委譲範囲（CRUD / + ロール / + IdP 設定）	hearing-script/04-user-management.md		⏳
-2	2.4	B	🟢	B-405	Webhook 通知（基盤 → 外部アプリ）	Yes/No + 対象イベント + 連携先	hearing-script/04-user-management.md		⏳
-2	2.4	B	🟡	B-406	同一テナント内ユーザー重複の想定	あり（経路明示）/ なし	hearing-script/04-user-management.md		⏳
-2	2.4	B	🟡	B-407	重複検出時の挙動	自動リンク / Email OTP / 既存パスワード / エラー停止	hearing-script/04-user-management.md		⏳
-2	2.4	B	🟢	B-409	アカウントリンクのトリガー	管理者主導 / ユーザー主導 / 自動	hearing-script/04-user-management.md		⏳
-2	2.4	B	🟢	B-410	IdP 切替時のユーザー連続性要件	あり / なし / 検討中	hearing-script/04-user-management.md		⏳
-2	2.5	B	🟡	B-509	SSO で繋ぐシステム範囲	社内のみ / 顧客向けも含む / 横断 SSO	hearing-script/05-mfa.md		⏳
-2	2.5	B	🟡	B-701	デフォルトのログアウトレイヤー	L1 / L2 / L3 / L4 のどこまで	hearing-script/07-logout-session.md		⏳
-2	2.5	B	🟡	B-702	フェデ連動ログアウト要否	Yes/No（Cognito は URL エンコード制約あり）	hearing-script/07-logout-session.md		⏳
-2	2.5	B	🟡	B-703	ログアウト後リダイレクト先（全体方針）	基盤側集中 / アプリ個別 / 顧客持込	hearing-script/07-logout-session.md		⏳
-2	2.5	B	🟡	B-801	クロス IdP SSO 方針（全体方針）	全顧客有効 / 限定 / 無効	hearing-script/08-sso-details.md		⏳
-2	2.5	B	🟡	B-801-1	信頼レベル	L1 / L2 / L3 / L4	hearing-script/08-sso-details.md		⏳
-2	2.5	B	🟡	B-801-2	顧客 / IdP / アプリ別の差別化要否	全顧客同一 / 顧客別 / アプリ別 / 両方	hearing-script/08-sso-details.md		⏳
-2	2.5	B	🟢	B-801-3	規制業種向け L3 オプションの要否	必須（業種名）/ 将来検討 / 不要	hearing-script/08-sso-details.md		⏳
-2	2.5	B	🟢	B-803	同一テナント内 SSO 切断システム	あり / なし	hearing-script/08-sso-details.md		⏳
-2	2.6	B	🟡	B-501	MFA 必須範囲	全ユーザー / 管理者のみ / 条件付き	hearing-script/05-mfa.md		⏳
-2	2.6	B	🟡	B-506	外部 IdP MFA 信頼度	全面信頼 / 部分信頼 / 全件再要求	hearing-script/05-mfa.md		⏳
-2	2.6	B	🟡	B-508	高権限ロールへの追加 MFA 強制	する / しない / ロール別	hearing-script/05-mfa.md		⏳
-2	2.6	C	🔥	C-210	目標 NIST AAL レベル	AAL1 / AAL2（推奨）/ AAL3	hearing-script/10-security-compliance.md		⏳
-2	2.7	A	🔥	A-5	既存認証からの移行有無	Yes/No + 移行元 + ユーザー数	hearing-script/00-common.md		⏳
-2	2.7	A	🟢	A-10	初回リリース時期の目標	目標日	hearing-script/00-common.md		⏳
-2	2.7	D	🔥	D-2	段階的移行 vs ビッグバン	移行戦略	hearing-script/11-operations.md		⏳
-2	2.7	D	🔥	D-5	リリーススケジュール	設計 → 開発 → テスト → 移行のマイルストーン	hearing-script/11-operations.md		⏳
-2	2.8	D	🔥	D-1	プラットフォーム選定	Cognito（Lite/Essentials/Plus）or Keycloak（OSS/RHBK）	hearing-script/11-operations.md		⏳
-2	2.8	D	🔥	D-3	運用体制の確定	専任 / 兼任 / 外部委託	hearing-script/11-operations.md		⏳
-2	2.8	D	🔥	D-4	予算の確定	年間予算枠	hearing-script/11-operations.md		⏳
-3	3.1	A	🟡	A-13	御社（事業者）の社内 IdP（軽量版）	IdP の有無 + 製品名 + ライセンス、詳細は B-200 マスター表 B 事業者行で	hearing-script/02-idp-federation.md		⏳
-3	3.1	A	🟡	A-6	顧客企業の IdP 種別の概算分布	Entra/Okta/SAML/LDAP/Google/IdP なし の比率%、詳細は B-200 マスター表 B 顧客行で	hearing-script/02-idp-federation.md		⏳
-3	3.1	B	🔥	B-200	マスター表 B: 事業者・顧客 IdP 統合表	→ 別シート「マスター表 B」参照（事業者 1 行 + 顧客 N 行、区分列で識別）	→ 別シート		⏳
-3	3.1	B	🟡	B-609	IdP 情報の受領形式	SAML Metadata URL / XML / OIDC Discovery URL / 手動	hearing-script/02-idp-federation.md		⏳
-3	3.1	B	🟡	B-615	新基盤導入時のドメイン変更計画	アプリ URL / 認証基盤 Custom Domain / 顧客 IdP の各レベル変更有無	hearing-script/02-idp-federation.md		⏳
-3	3.1	B	🟡	B-616	エンドユーザー周知のリードタイム期待値	リードタイム + 周知チャネル + 該当変化項目	hearing-script/02-idp-federation.md		⏳
-3	3.1	B	🟢	B-617	顧客 IdP 管理者向け手順書テンプレ提供	整備方針（IdP 別 / 主要 3 種 / 不要 / 将来セルフサービス）	hearing-script/02-idp-federation.md		⏳
-3	3.2	B	🔥	B-100	マスター表 C: 御社アプリ・システム構成リスト	→ 別シート「マスター表 C」参照（BFF/リレー/Revocation 等 K1-K8 統合済）	→ 別シート		⏳
-3	3.3	A	🟡	A-14	既存 AWS 利用状況	利用状況 + Enterprise Support 契約 + 既存 VPC / IAM 体制	hearing-script/00-common.md		⏳
-3	3.3	C	🟡	C-204-4	既存パスワードハッシュ移行	形式（bcrypt 等）+ 持ち越し有無 + 件数	hearing-script/10-security-compliance.md		⏳
-3	3.4	A	🟡	A-11-2	アプリ側の動的差替実装責務	取れる / 一部支援要 / 取れない	hearing-script/00-common.md		⏳
-3	3.4	A	🟡	A-11-3	カスタマイズレベル確認	L1-L3 / L4-L8（Keycloak 必須化）/ アプリ側寄せ	hearing-script/00-common.md		⏳
-3	3.4	B	🟡	B-208	Custom Domain 利用	共通 1 つ / なし / 顧客別	hearing-script/02-idp-federation.md		⏳
-3	3.4	B	🟢	B-612	ログイン画面ブランディング詳細	A-11 B/C 採用時のみ深掘り	hearing-script/06-multitenancy.md		⏳
-3	3.4	B	🟡	B-703-1	許可リダイレクト URL の事前登録	URL リスト（コールバック / ログアウト / エラー 等）	hearing-script/07-logout-session.md		⏳
-3	3.4	B	🟢	B-703-3	テナント別カスタムランディング要否	A-11 パターン A 連動 / B 顧客別 URL / なし	hearing-script/07-logout-session.md		⏳
-3	3.5	B	🟡	B-408	重複検出の突合せキー	email / immutable sub / 雇用 ID / カスタム属性	hearing-script/04-user-management.md		⏳
-3	3.5	B	🟡	B-604	属性マッピング: 顧客 IdP 命名差異	命名対応表（必要なら）	hearing-script/06-multitenancy.md		⏳
-3	3.5	B	🟡	B-604-2	顧客 IdP 実属性名サンプル取得手順	手順テンプレ有無	hearing-script/06-multitenancy.md		⏳
-3	3.5	B	🟡	B-605	属性更新タイミング（Force/Import）	毎回上書き / 初回のみ / 別途トリガー	hearing-script/06-multitenancy.md		⏳
-3	3.5	B	🟡	B-605-2	属性ごとの Source of Truth	属性別ソース表	hearing-script/06-multitenancy.md		⏳
-3	3.5	B	🔥	B-605-3	退職反映 SLA	時間（即時 / 5 分 / 1 時間 / 翌日）+ 同期方式	hearing-script/06-multitenancy.md		⏳
-3	3.5	B	🟢	B-610	メールドメインから IdP への解決ルール	1 ドメイン = 1 IdP / 1 顧客に複数ドメイン	hearing-script/06-multitenancy.md		⏳
-4	4.2	B	🔥	B-301	必須 JWT クレーム	アプリが必要とする属性リスト	hearing-script/03-authz-jwt.md		⏳
-4	4.2	B	🟡	B-302	認可粒度	ロール / リソース / アクション粒度	hearing-script/03-authz-jwt.md		⏳
-4	4.2	B	🟢	B-305	既存ロール体系	階層 / グループ / 部署	hearing-script/03-authz-jwt.md		⏳
-4	4.3	B	🟡	B-502	MFA 方式	TOTP / WebAuthn / SMS / Email のどれを許可	hearing-script/05-mfa.md		⏳
-4	4.3	B	🟡	B-503	WebAuthn / FIDO2（Passkeys）	Yes/No（業界 87% deploy/pilot）	hearing-script/05-mfa.md		⏳
-4	4.3	B	🟢	B-505	端末記憶（Trusted Device）	Yes/No（詳細期間は C-215）	hearing-script/05-mfa.md		⏳
-4	4.3	B	🟡	B-507	信頼する amr / AuthnContext 値	値リスト	hearing-script/05-mfa.md		⏳
-4	4.3	C	🟡	C-211	Phishing-resistant MFA 採用方針	Must / Should / Could	hearing-script/10-security-compliance.md		⏳
-4	4.3	C	🟢	C-212	ハードウェアキー対応	Yes/No	hearing-script/10-security-compliance.md		⏳
-4	4.3	C	🟢	C-213	MFA 要素の登録個数制限	1 / 複数	hearing-script/10-security-compliance.md		⏳
-4	4.3	C	🟡	C-214	条件付き MFA の判定軸	IP / 地理 / デバイス / 時間帯 / 行動	hearing-script/10-security-compliance.md		⏳
-4	4.3	C	🟢	C-215	端末記憶の有効期間	日数（業界デフォルト 30 日、範囲 0〜90）	hearing-script/10-security-compliance.md		⏳
-4	4.3	C	🟡	C-216	ステップアップ認証（RFC 9470）の要否	Yes/No + 対象操作	hearing-script/10-security-compliance.md		⏳
-4	4.4	B	🟡	B-601	IdP 選択 UX 案（HRD/セレクター/組織固有 URL）	A. HRD 推奨 / B. セレクター / C. 組織固有 URL	hearing-script/06-multitenancy.md		⏳
-4	4.4	B	🟡	B-703-2	ログアウト種類別の飛び先	種類別 URL マッピング（L1〜L4・強制）	hearing-script/07-logout-session.md		⏳
-4	4.4	B	🟢	B-703-4	リダイレクト先での後処理要件	SIEM / Storage クリア / SW キャッシュ クリア	hearing-script/07-logout-session.md		⏳
-4	4.4	B	🟡	B-703-5	強制ログアウト時の飛び先	URL + メッセージ方針	hearing-script/07-logout-session.md		⏳
-4	4.4	B	🟡	B-705	管理者強制ログアウト粒度	全 / テナント単位 / 個別	hearing-script/07-logout-session.md		⏳
-4	4.4	B	🟢	B-706	ユーザー自身のセッション管理 UI	Yes/No	hearing-script/07-logout-session.md		⏳
-4	4.4	B	🟢	B-802	外部 IdP の SSO セッション TTL 尊重	従う / 上書き / IdP TTL + 短 Access TTL	hearing-script/08-sso-details.md		⏳
-4	4.4	B	🟢	B-802-2	max_age 制約の適用	適用する（時間）/ 適用しない	hearing-script/08-sso-details.md		⏳
-4	4.4	C	🟡	C-206	トークン TTL	Access / Refresh / ID Token の時間	hearing-script/10-security-compliance.md		⏳
-4	4.4	C	🟢	C-217	CAEP / 継続的アクセス評価（将来発展）	必須 / 将来検討 / 不要	hearing-script/10-security-compliance.md		⏳
-4	4.5	C	🟡	C-204	パスワードポリシー（基本）	最小長・複雑性・履歴・有効期限 + 適用粒度	hearing-script/10-security-compliance.md		⏳
-4	4.5	C	🟡	C-204-2	パスワード履歴	Yes/No + N 個	hearing-script/10-security-compliance.md		⏳
-4	4.5	C	🟡	C-204-3	NIST SP 800-63B Rev 4 準拠方針	完全準拠 / 部分採用 / 不要	hearing-script/10-security-compliance.md		⏳
-4	4.5	C	🟡	C-205	アカウントロック詳細設定	自動 BF / 設定 N 回 N 分	hearing-script/10-security-compliance.md		⏳
-4	4.5	C	🟡	C-205-2	侵害クレデンシャル検出	Yes/No	hearing-script/10-security-compliance.md		⏳
-5	5.1	C	🔥	C-101	SLA 目標	99.9% / 99.95% / 99.99%	hearing-script/09-availability.md		⏳
-5	5.1	C	🔥	C-102	RTO	分 / 時間	hearing-script/09-availability.md		⏳
-5	5.1	C	🔥	C-103	RPO	分 / 0	hearing-script/09-availability.md		⏳
-5	5.1	C	🔥	C-104	フェイルオーバー方式	自動 / 手動	hearing-script/09-availability.md		⏳
-5	5.1	C	🟢	C-107	計画メンテナンス窓	月何時間まで許容	hearing-script/09-availability.md		⏳
-5	5.2	C	🟡	C-105	認証応答時間目標	P95 / P99 の ms 値	hearing-script/09-availability.md		⏳
-5	5.2	C	🟡	C-106	ピーク時想定	朝 / 業務開始時の倍率	hearing-script/09-availability.md		⏳
-5	5.3	C	🔥	C-203	監査ログ保存期間	期間（SOC 2 1年/PCI 1年/HIPAA 6年/FFIEC 5-7年/GDPR 等）	hearing-script/10-security-compliance.md		⏳
-5	5.3	C	🟡	C-206-2	セッションタイムアウト目標（アイドル）	時間（NIST AAL2 1h / AAL3 15min）	hearing-script/10-security-compliance.md		⏳
-5	5.3	C	🟡	C-206-3	絶対経過タイムアウト	時間 / 日（NIST AAL2 24h / AAL3 12h）	hearing-script/10-security-compliance.md		⏳
-5	5.3	C	🟡	C-208	ペネトレーションテスト	年何回実施	hearing-script/10-security-compliance.md		⏳
-5	5.4	C	🔥	C-301	サポート体制	24/7 / 営業時間 / 不要	hearing-script/11-operations.md		⏳
-5	5.4	C	🔥	C-302	既存の Red Hat 利用実績	Yes/No + 契約規模	hearing-script/11-operations.md		⏳
-5	5.4	C	🟡	C-304	監視ツール	CloudWatch / Datadog / Grafana / Splunk 等	hearing-script/11-operations.md		⏳
-5	5.4	C	🟡	C-305	バージョンアップ方針	LTS のみ / 最新追従 / 任意	hearing-script/11-operations.md		⏳
-5	5.4	C	🟡	C-306	変更管理プロセス	プロセス + 各変更種別 SLA + 緊急対応ルート	hearing-script/11-operations.md		⏳
-5	5.5	C	🔥	C-303	RHBK サブスクリプション予算	Yes/No / 上限（年 $15K〜90K）	hearing-script/11-operations.md		⏳
+§	サブ§	Phase	優先度	ヒアリング回	ID	タイトル	1行サマリー（何を確認するか）	詳細参照	回答	状態
+1	1.1	A	🔥	M1	A-5-2	受け入れる利用者カテゴリ	P-1〜P-6 のうち本基盤が認証を引き受ける範囲	hearing-script/00-common.md		⏳
+1	1.2	A	🔥	M1	A-5-3	採用シナリオ α/β/γ/δ	ローカルユーザー受入範囲（4 シナリオ、業界推奨は γ）	hearing-script/00-common.md		⏳
+1	1.3	A	🔥	M1	A-5-4	インフラ運用者カテゴリ I-1〜I-5	本基盤を operate する人と人数（AWS IAM 認証経路）	hearing-script/00-common.md		⏳
+1	1.4	D	🔥	M1	D-6	Identity Broker パターン採用前提合意	Hub-and-Spoke 型アーキテクチャの合意	hearing-script/11-operations.md		⏳
+1	1.5	A	🔥	M1	A-11	ブランディング軸 1（アプリ別）	アプリ別カスタマイズ Yes/No → パターン A/A'	hearing-script/00-common.md		⏳
+1	1.5	A	🔥	M1	A-11-α	ブランディング軸 2（顧客別）	顧客別カスタマイズ No/Yes部分/完全分離 → パターン A/B/C	hearing-script/00-common.md		⏳
+2	2.1	A	🔥	M1	A-1	想定 MAU 規模（1 年後）	1 年後の月次アクティブユーザー数	hearing-script/00-common.md		⏳
+2	2.1	A	🔥	M1	A-2	想定 MAU 規模（3 年後）	3 年後の MAU 目標値	hearing-script/00-common.md		⏳
+2	2.1	A	🔥	M1	A-3	対象システム数	共有基盤の初期スコープのシステム数 + 優先度	hearing-script/00-common.md		⏳
+2	2.1	A	🔥	M1	A-4	顧客拠点の地理分布	国内のみ / グローバル / 一部海外	hearing-script/00-common.md		⏳
+2	2.1	A	🟡	M1	A-7	新規顧客追加の頻度	月平均何社の追加想定	hearing-script/00-common.md		⏳
+2	2.1	A	🟢	M1	A-12	海外展開時期	GDPR / CCPA 対応の必要時期	hearing-script/00-common.md		⏳
+2	2.1	A	🔥	M1	A-15	顧客企業数の現状と 5 年後想定	現状件数 + 5 年後想定 + 増加カーブ（Cognito Hard Limit 抵触判定の最重要入力）	hearing-script/00-common.md		⏳
+2	2.2	A	🟡	M1	A-8	データ所在地要件	国内限定 / 特定リージョン制約	hearing-script/00-common.md		⏳
+2	2.2	A	🟡	M1	A-9	業界規制	業界名 + 規制名（PCI DSS / FFIEC / FISC 等）	hearing-script/00-common.md		⏳
+2	2.2	C	🔥	M1	C-201	FIPS 140-2 認定	業界規制で必須か（Yes → RHBK 必須）	hearing-script/10-security-compliance.md		⏳
+2	2.2	C	🔥	M1	C-202	コンプライアンス認証	SOC2 / ISO27001 / PCI DSS / FFIEC の必要性	hearing-script/10-security-compliance.md		⏳
+2	2.2	C	🟢	M1	C-209	個人データ削除権	GDPR 等の対応必要か	hearing-script/10-security-compliance.md		⏳
+2	2.3	B	🔥	M2	B-306	テナント分離粒度	共有 DB+tenant_id / DB 分離 / アカウント分離	hearing-script/06-multitenancy.md		⏳
+2	2.3	B	🟢	M2	B-602	Keycloak Organization 機能利用	26.0+ Organization 機能を利用するか	hearing-script/06-multitenancy.md		⏳
+2	2.3	B	🟡	M2	B-603	顧客追加リードタイム期待値	業界デフォルト < 1 営業日	hearing-script/06-multitenancy.md		⏳
+2	2.3	B	🟢	M2	B-606	1 ユーザー複数テナント所属の可能性	あり / なし	hearing-script/06-multitenancy.md		⏳
+2	2.3	B	🟡	M2	B-606-2	複数テナント時の権限モデル	GitHub Org 型 / Slack 型 / 別ユーザー扱い	hearing-script/06-multitenancy.md		⏳
+2	2.3	B	🟢	M2	B-606-3	テナント切替時の MFA 再要求	再要求する / しない / ロール別	hearing-script/06-multitenancy.md		⏳
+2	2.3	B	🟢	M2	B-606-4	複数所属時の属性ソース	テナント別管理 / 統合	hearing-script/06-multitenancy.md		⏳
+2	2.3	B	🟢	M2	B-607	物理分離が必要な特殊顧客	あり / なし（あり → L3 物理分離）	hearing-script/06-multitenancy.md		⏳
+2	2.3	B	🟡	M2	B-608	オンボーディング主体	弊社運用 / セルフ / ハイブリッド	hearing-script/06-multitenancy.md		⏳
+2	2.3	B	🟢	M2	B-611	複数テナント所属時の選択 UI	必要 / 不要	hearing-script/06-multitenancy.md		⏳
+2	2.4	B	🟡	M2	B-401	SCIM プロビジョニング採否	JIT のみ / SCIM 併用 / 顧客選択制	hearing-script/04-user-management.md		⏳
+2	2.4	B	🟡	M2	B-401-2	新規作成時のデフォルト権限	最小権限 / "user" 基本ロール / 顧客側指定	hearing-script/04-user-management.md		⏳
+2	2.4	B	🟢	M2	B-401-3	ユーザー作成イベントの通知先	Webhook / CloudWatch / SIEM / メール	hearing-script/04-user-management.md		⏳
+2	2.4	B	🟡	M2	B-402	セルフサービス機能の範囲	パスワード / MFA / プロフィール / セッション	hearing-script/04-user-management.md		⏳
+2	2.4	B	🟢	M2	B-403	既存ユーザーの初期投入方法	バルク / SCIM 連携 / JIT 任せ + 規模	hearing-script/04-user-management.md		⏳
+2	2.4	B	🟢	M2	B-404	テナント管理者の委譲	Yes/No + 委譲範囲（CRUD / + ロール / + IdP 設定）	hearing-script/04-user-management.md		⏳
+2	2.4	B	🟢	M2	B-405	Webhook 通知（基盤 → 外部アプリ）	Yes/No + 対象イベント + 連携先	hearing-script/04-user-management.md		⏳
+2	2.4	B	🟡	M2	B-406	同一テナント内ユーザー重複の想定	あり（経路明示）/ なし	hearing-script/04-user-management.md		⏳
+2	2.4	B	🟡	M2	B-407	重複検出時の挙動	自動リンク / Email OTP / 既存パスワード / エラー停止	hearing-script/04-user-management.md		⏳
+2	2.4	B	🟢	M2	B-409	アカウントリンクのトリガー	管理者主導 / ユーザー主導 / 自動	hearing-script/04-user-management.md		⏳
+2	2.4	B	🟢	M2	B-410	IdP 切替時のユーザー連続性要件	あり / なし / 検討中	hearing-script/04-user-management.md		⏳
+2	2.5	B	🟡	M2	B-509	SSO で繋ぐシステム範囲	社内のみ / 顧客向けも含む / 横断 SSO	hearing-script/05-mfa.md		⏳
+2	2.5	B	🟡	M2	B-701	デフォルトのログアウトレイヤー	L1 / L2 / L3 / L4 のどこまで	hearing-script/07-logout-session.md		⏳
+2	2.5	B	🟡	M2	B-702	フェデ連動ログアウト要否	Yes/No（Cognito は URL エンコード制約あり）	hearing-script/07-logout-session.md		⏳
+2	2.5	B	🟡	M2	B-703	ログアウト後リダイレクト先（全体方針）	基盤側集中 / アプリ個別 / 顧客持込	hearing-script/07-logout-session.md		⏳
+2	2.5	B	🟡	M2	B-801	クロス IdP SSO 方針（全体方針）	全顧客有効 / 限定 / 無効	hearing-script/08-sso-details.md		⏳
+2	2.5	B	🟡	M2	B-801-1	信頼レベル	L1 / L2 / L3 / L4	hearing-script/08-sso-details.md		⏳
+2	2.5	B	🟡	M2	B-801-2	顧客 / IdP / アプリ別の差別化要否	全顧客同一 / 顧客別 / アプリ別 / 両方	hearing-script/08-sso-details.md		⏳
+2	2.5	B	🟢	M2	B-801-3	規制業種向け L3 オプションの要否	必須（業種名）/ 将来検討 / 不要	hearing-script/08-sso-details.md		⏳
+2	2.5	B	🟢	M2	B-803	同一テナント内 SSO 切断システム	あり / なし	hearing-script/08-sso-details.md		⏳
+2	2.6	B	🟡	M2	B-501	MFA 必須範囲	全ユーザー / 管理者のみ / 条件付き	hearing-script/05-mfa.md		⏳
+2	2.6	B	🟡	M2	B-506	外部 IdP MFA 信頼度	全面信頼 / 部分信頼 / 全件再要求	hearing-script/05-mfa.md		⏳
+2	2.6	B	🟡	M2	B-508	高権限ロールへの追加 MFA 強制	する / しない / ロール別	hearing-script/05-mfa.md		⏳
+2	2.6	C	🔥	M2	C-210	目標 NIST AAL レベル	AAL1 / AAL2（推奨）/ AAL3	hearing-script/10-security-compliance.md		⏳
+2	2.7	A	🔥	M1	A-5	既存認証からの移行有無	Yes/No + 移行元 + ユーザー数	hearing-script/00-common.md		⏳
+2	2.7	A	🟢	M1	A-10	初回リリース時期の目標	目標日	hearing-script/00-common.md		⏳
+2	2.7	D	🔥	M1	D-2	段階的移行 vs ビッグバン	移行戦略	hearing-script/11-operations.md		⏳
+2	2.7	D	🔥	M1	D-5	リリーススケジュール	設計 → 開発 → テスト → 移行のマイルストーン	hearing-script/11-operations.md		⏳
+2	2.8	D	🔥	M3	D-1	プラットフォーム選定	Cognito（Lite/Essentials/Plus）or Keycloak（OSS/RHBK）	hearing-script/11-operations.md		⏳
+2	2.8	D	🔥	M3	D-3	運用体制の確定	専任 / 兼任 / 外部委託	hearing-script/11-operations.md		⏳
+2	2.8	D	🔥	M3	D-4	予算の確定	年間予算枠	hearing-script/11-operations.md		⏳
+3	3.1	A	🟡	M1	A-13	御社（事業者）の社内 IdP（軽量版）	IdP の有無 + 製品名 + ライセンス、詳細は B-200 マスター表 B 事業者行で	hearing-script/02-idp-federation.md		⏳
+3	3.1	A	🟡	M1	A-6	顧客企業の IdP 種別の概算分布	Entra/Okta/SAML/LDAP/Google/IdP なし の比率%、詳細は B-200 マスター表 B 顧客行で	hearing-script/02-idp-federation.md		⏳
+3	3.1	B	🔥	M1	B-200	マスター表 B: 事業者・顧客 IdP 統合表	→ 別シート「マスター表 B」参照（事業者 1 行 + 顧客 N 行、区分列で識別）	→ 別シート		⏳
+3	3.1	B	🟡	M1	B-609	IdP 情報の受領形式	SAML Metadata URL / XML / OIDC Discovery URL / 手動	hearing-script/02-idp-federation.md		⏳
+3	3.1	B	🟡	M1	B-615	新基盤導入時のドメイン変更計画	アプリ URL / 認証基盤 Custom Domain / 顧客 IdP の各レベル変更有無	hearing-script/02-idp-federation.md		⏳
+3	3.1	B	🟡	M1	B-616	エンドユーザー周知のリードタイム期待値	リードタイム + 周知チャネル + 該当変化項目	hearing-script/02-idp-federation.md		⏳
+3	3.1	B	🟢	M1	B-617	顧客 IdP 管理者向け手順書テンプレ提供	整備方針（IdP 別 / 主要 3 種 / 不要 / 将来セルフサービス）	hearing-script/02-idp-federation.md		⏳
+3	3.2	B	🔥	M1	B-100	マスター表 C: 御社アプリ・システム構成リスト	→ 別シート「マスター表 C」参照（BFF/リレー/Revocation 等 K1-K8 統合済）	→ 別シート		⏳
+3	3.3	A	🟡	M1	A-14	既存 AWS 利用状況	利用状況 + Enterprise Support 契約 + 既存 VPC / IAM 体制	hearing-script/00-common.md		⏳
+3	3.3	C	🟡	M1	C-204-4	既存パスワードハッシュ移行	形式（bcrypt 等）+ 持ち越し有無 + 件数	hearing-script/10-security-compliance.md		⏳
+3	3.4	A	🟡	M3	A-11-2	アプリ側の動的差替実装責務	取れる / 一部支援要 / 取れない	hearing-script/00-common.md		⏳
+3	3.4	A	🟡	M3	A-11-3	カスタマイズレベル確認	L1-L3 / L4-L8（Keycloak 必須化）/ アプリ側寄せ	hearing-script/00-common.md		⏳
+3	3.4	B	🟡	M3	B-208	Custom Domain 利用	共通 1 つ / なし / 顧客別	hearing-script/02-idp-federation.md		⏳
+3	3.4	B	🟢	M3	B-612	ログイン画面ブランディング詳細	A-11 B/C 採用時のみ深掘り	hearing-script/06-multitenancy.md		⏳
+3	3.4	B	🟡	M3	B-703-1	許可リダイレクト URL の事前登録	URL リスト（コールバック / ログアウト / エラー 等）	hearing-script/07-logout-session.md		⏳
+3	3.4	B	🟢	M3	B-703-3	テナント別カスタムランディング要否	A-11 パターン A 連動 / B 顧客別 URL / なし	hearing-script/07-logout-session.md		⏳
+3	3.5	B	🟡	M2	B-408	重複検出の突合せキー	email / immutable sub / 雇用 ID / カスタム属性	hearing-script/04-user-management.md		⏳
+3	3.5	B	🟡	M2	B-604	属性マッピング: 顧客 IdP 命名差異	命名対応表（必要なら）	hearing-script/06-multitenancy.md		⏳
+3	3.5	B	🟡	M2	B-604-2	顧客 IdP 実属性名サンプル取得手順	手順テンプレ有無	hearing-script/06-multitenancy.md		⏳
+3	3.5	B	🟡	M2	B-605	属性更新タイミング（Force/Import）	毎回上書き / 初回のみ / 別途トリガー	hearing-script/06-multitenancy.md		⏳
+3	3.5	B	🟡	M2	B-605-2	属性ごとの Source of Truth	属性別ソース表	hearing-script/06-multitenancy.md		⏳
+3	3.5	B	🔥	M2	B-605-3	退職反映 SLA	時間（即時 / 5 分 / 1 時間 / 翌日）+ 同期方式	hearing-script/06-multitenancy.md		⏳
+3	3.5	B	🟢	M2	B-610	メールドメインから IdP への解決ルール	1 ドメイン = 1 IdP / 1 顧客に複数ドメイン	hearing-script/06-multitenancy.md		⏳
+4	4.2	B	🔥	M2	B-301	必須 JWT クレーム	アプリが必要とする属性リスト	hearing-script/03-authz-jwt.md		⏳
+4	4.2	B	🟡	M2	B-302	認可粒度	ロール / リソース / アクション粒度	hearing-script/03-authz-jwt.md		⏳
+4	4.2	B	🟢	M2	B-305	既存ロール体系	階層 / グループ / 部署	hearing-script/03-authz-jwt.md		⏳
+4	4.3	B	🟡	M3	B-502	MFA 方式	TOTP / WebAuthn / SMS / Email のどれを許可	hearing-script/05-mfa.md		⏳
+4	4.3	B	🟡	M3	B-503	WebAuthn / FIDO2（Passkeys）	Yes/No（業界 87% deploy/pilot）	hearing-script/05-mfa.md		⏳
+4	4.3	B	🟢	M3	B-505	端末記憶（Trusted Device）	Yes/No（詳細期間は C-215）	hearing-script/05-mfa.md		⏳
+4	4.3	B	🟡	M3	B-507	信頼する amr / AuthnContext 値	値リスト	hearing-script/05-mfa.md		⏳
+4	4.3	C	🟡	M3	C-211	Phishing-resistant MFA 採用方針	Must / Should / Could	hearing-script/10-security-compliance.md		⏳
+4	4.3	C	🟢	M3	C-212	ハードウェアキー対応	Yes/No	hearing-script/10-security-compliance.md		⏳
+4	4.3	C	🟢	M3	C-213	MFA 要素の登録個数制限	1 / 複数	hearing-script/10-security-compliance.md		⏳
+4	4.3	C	🟡	M3	C-214	条件付き MFA の判定軸	IP / 地理 / デバイス / 時間帯 / 行動	hearing-script/10-security-compliance.md		⏳
+4	4.3	C	🟢	M3	C-215	端末記憶の有効期間	日数（業界デフォルト 30 日、範囲 0〜90）	hearing-script/10-security-compliance.md		⏳
+4	4.3	C	🟡	M3	C-216	ステップアップ認証（RFC 9470）の要否	Yes/No + 対象操作	hearing-script/10-security-compliance.md		⏳
+4	4.4	B	🟡	M3	B-601	IdP 選択 UX 案（HRD/セレクター/組織固有 URL）	A. HRD 推奨 / B. セレクター / C. 組織固有 URL	hearing-script/06-multitenancy.md		⏳
+4	4.4	B	🟡	M3	B-703-2	ログアウト種類別の飛び先	種類別 URL マッピング（L1〜L4・強制）	hearing-script/07-logout-session.md		⏳
+4	4.4	B	🟢	M3	B-703-4	リダイレクト先での後処理要件	SIEM / Storage クリア / SW キャッシュ クリア	hearing-script/07-logout-session.md		⏳
+4	4.4	B	🟡	M3	B-703-5	強制ログアウト時の飛び先	URL + メッセージ方針	hearing-script/07-logout-session.md		⏳
+4	4.4	B	🟡	M3	B-705	管理者強制ログアウト粒度	全 / テナント単位 / 個別	hearing-script/07-logout-session.md		⏳
+4	4.4	B	🟢	M3	B-706	ユーザー自身のセッション管理 UI	Yes/No	hearing-script/07-logout-session.md		⏳
+4	4.4	B	🟢	M3	B-802	外部 IdP の SSO セッション TTL 尊重	従う / 上書き / IdP TTL + 短 Access TTL	hearing-script/08-sso-details.md		⏳
+4	4.4	B	🟢	M3	B-802-2	max_age 制約の適用	適用する（時間）/ 適用しない	hearing-script/08-sso-details.md		⏳
+4	4.4	C	🟡	M3	C-206	トークン TTL	Access / Refresh / ID Token の時間	hearing-script/10-security-compliance.md		⏳
+4	4.4	C	🟢	M3	C-217	CAEP / 継続的アクセス評価（将来発展）	必須 / 将来検討 / 不要	hearing-script/10-security-compliance.md		⏳
+4	4.5	C	🟡	M3	C-204	パスワードポリシー（基本）	最小長・複雑性・履歴・有効期限 + 適用粒度	hearing-script/10-security-compliance.md		⏳
+4	4.5	C	🟡	M3	C-204-2	パスワード履歴	Yes/No + N 個	hearing-script/10-security-compliance.md		⏳
+4	4.5	C	🟡	M3	C-204-3	NIST SP 800-63B Rev 4 準拠方針	完全準拠 / 部分採用 / 不要	hearing-script/10-security-compliance.md		⏳
+4	4.5	C	🟡	M3	C-205	アカウントロック詳細設定	自動 BF / 設定 N 回 N 分	hearing-script/10-security-compliance.md		⏳
+4	4.5	C	🟡	M3	C-205-2	侵害クレデンシャル検出	Yes/No	hearing-script/10-security-compliance.md		⏳
+5	5.1	C	🔥	M3	C-101	SLA 目標	99.9% / 99.95% / 99.99%	hearing-script/09-availability.md		⏳
+5	5.1	C	🔥	M3	C-102	RTO	分 / 時間	hearing-script/09-availability.md		⏳
+5	5.1	C	🔥	M3	C-103	RPO	分 / 0	hearing-script/09-availability.md		⏳
+5	5.1	C	🔥	M3	C-104	フェイルオーバー方式	自動 / 手動	hearing-script/09-availability.md		⏳
+5	5.1	C	🟢	M3	C-107	計画メンテナンス窓	月何時間まで許容	hearing-script/09-availability.md		⏳
+5	5.2	C	🟡	M3	C-105	認証応答時間目標	P95 / P99 の ms 値	hearing-script/09-availability.md		⏳
+5	5.2	C	🟡	M3	C-106	ピーク時想定	朝 / 業務開始時の倍率	hearing-script/09-availability.md		⏳
+5	5.3	C	🔥	M3	C-203	監査ログ保存期間	期間（SOC 2 1年/PCI 1年/HIPAA 6年/FFIEC 5-7年/GDPR 等）	hearing-script/10-security-compliance.md		⏳
+5	5.3	C	🟡	M3	C-206-2	セッションタイムアウト目標（アイドル）	時間（NIST AAL2 1h / AAL3 15min）	hearing-script/10-security-compliance.md		⏳
+5	5.3	C	🟡	M3	C-206-3	絶対経過タイムアウト	時間 / 日（NIST AAL2 24h / AAL3 12h）	hearing-script/10-security-compliance.md		⏳
+5	5.3	C	🟡	M3	C-208	ペネトレーションテスト	年何回実施	hearing-script/10-security-compliance.md		⏳
+5	5.4	C	🔥	M3	C-301	サポート体制	24/7 / 営業時間 / 不要	hearing-script/11-operations.md		⏳
+5	5.4	C	🔥	M3	C-302	既存の Red Hat 利用実績	Yes/No + 契約規模	hearing-script/11-operations.md		⏳
+5	5.4	C	🟡	M3	C-304	監視ツール	CloudWatch / Datadog / Grafana / Splunk 等	hearing-script/11-operations.md		⏳
+5	5.4	C	🟡	M3	C-305	バージョンアップ方針	LTS のみ / 最新追従 / 任意	hearing-script/11-operations.md		⏳
+5	5.4	C	🟡	M3	C-306	変更管理プロセス	プロセス + 各変更種別 SLA + 緊急対応ルート	hearing-script/11-operations.md		⏳
+5	5.5	C	🔥	M3	C-303	RHBK サブスクリプション予算	Yes/No / 上限（年 $15K〜90K）	hearing-script/11-operations.md		⏳
