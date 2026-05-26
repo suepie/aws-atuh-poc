@@ -706,7 +706,160 @@ flowchart LR
 
 ---
 
-## §C-1.5 TBD / 要確認
+## §C-1.5 規模スケーリング戦略（1500-3000 顧客企業）
+
+> **このサブセクションで定めること**: 顧客企業数（テナント数）が **1500-3000 規模** になった場合の、L2 論理分離の維持可否と Hard Limit 抵触対策。**A-15（顧客企業数）** との連動章。
+> **主な判断軸**: Cognito Hard Limit（IdP per Pool、Custom Domain）の抵触判定、Keycloak 単一 Realm の運用限界。
+
+### §C-1.5.0 規模を聞く理由
+
+**MAU（A-1/A-2）とは別軸**で、**顧客企業数（テナント数 = IdP 接続数）** が **Cognito Hard Limit に直接抵触**する。MAU が小さくても顧客企業が 1500 社あれば Cognito 単一 Pool は不可。事業計画に応じた **5 年後想定** まで把握することで、初期設計段階で **スケール戦略** を組み込む。
+
+### §C-1.5.1 Cognito Hard Limit と顧客企業数の関係
+
+#### 主要な Hard Limit（2026 時点）
+
+| リソース | デフォルト上限 | 引き上げ可否 | 1500-3000 顧客時の影響 |
+|---|---:|---|---|
+| **Identity Providers per User Pool** | 1,000 | ⚠ 引き上げ要相談（実質ハード）| 単一 Pool では **不足**（1500 で抵触）|
+| **SAML IdPs per User Pool**（実質）| 約 50-100 | 個別案件 | **HENNGE / ADFS / 国内 IDaaS が 100 社超で抵触** |
+| **User Pools per AWS account per Region** | 1,000 | ✅ 引き上げ可 | 3000 顧客分けても OK（10-30 Pool で済む）|
+| **Custom Domain per Region** | **4** | ❌ **完全ハード** | Pool ごとに別 Domain にすると 4 Pool で詰む |
+| **App Clients per User Pool** | 10,000 | ✅ 引き上げ可 | 余裕あり |
+| **AdminCreateUser API** | 50 RPS | ✅ 引き上げ可 | バルクインポート時注意 |
+| **M2M Token endpoint** | 150 RPS | ✅ 引き上げ可 | 大規模バッチ時注意 |
+
+→ **問題は IdP 上限（特に SAML）と Custom Domain 4 個 Hard Limit**。
+
+#### Cognito 採用時の Pool 分割戦略（変形 L2）
+
+**Pool あたり 100-200 顧客が現実解**：
+
+```
+本基盤 Cognito（事業者 AWS アカウント）
+├── User Pool "shared-cohort-01"（顧客 1-100、SAML 80 + OIDC 20）
+│   ├── 100 IdP
+│   └── App Clients: expense / payment / hr ...
+├── User Pool "shared-cohort-02"（顧客 101-200）
+│   └── 100 IdP
+├── ...（15-30 Pool）
+└── 共通 Custom Domain: auth.example.com（Path で Pool ルーティング、Lambda@Edge）
+```
+
+**運用上の課題**：
+- **Custom Domain 4 個 Hard Limit**: Pool ごとに別 Domain にすると 4 Pool 目で詰む
+  - 対策 1: **共通 Domain + Path で Pool ルーティング**（Lambda@Edge / API Gateway で Pool ID 判定）
+  - 対策 2: **複数リージョンに分散**（4 Pool × 4 リージョン = 16 Pool まで、さらに複雑）
+- **アプリ側**: 30 Pool それぞれに App Client 登録 = **30 個の issuer 検証**ロジック（Lambda Authorizer で multi-issuer 対応必須）
+- **顧客振り分けロジック**: HRD（メールドメイン → どの Pool か）の実装が必要
+- **Pool 間 SSO**: ❌ 不成立（顧客またぎの SSO は B2B では不要）
+
+→ **これは「変形 L2」**。論理分離の思想は維持しつつ、Cognito 制約で物理的に複数 Pool に分かれる。
+
+### §C-1.5.2 Keycloak の Limit と顧客企業数の関係
+
+| リソース | 上限 | 1500-3000 顧客時の評価 |
+|---|---|---|
+| **Realm 数** | 実質無制限（PostgreSQL DB 性能依存）| 単一 Realm で対応推奨 |
+| **Identity Providers per Realm** | 実質無制限（数千 OK）| ✅ 1500-3000 IdP 可能 |
+| **Clients per Realm** | 実質無制限（万 OK）| ✅ 余裕 |
+| **Users per Realm** | 数千万（適切な DB 設計）| 全顧客総ユーザー数次第 |
+| **Organizations per Realm**（26+）| 実質無制限 | ✅ 1500-3000 Organization OK |
+
+#### Keycloak 採用時の構成（Organization 機能活用）
+
+```
+Realm "shared"（1 つだけ）
+├── Organizations: 1500-3000（顧客企業ごとに 1 Organization）
+├── Identity Providers: 1500-3000
+├── Clients: 10〜30 程度（全アプリ）
+└── 単一 Custom Domain: auth.example.com（顧客数によらず 1 つで OK）
+```
+
+**メリット**：
+- **Custom Domain は 1 つで完結**（Cognito の Hard Limit 問題なし）
+- **Identity Broker パターン完全成立**（各アプリは Realm 1 つだけを Trust）
+- **アプリ追加は 1 回**（全顧客で利用可能）
+- **顧客追加は IdP + Organization 登録 1 回**
+
+**留意点**：
+- **Admin Console** で 3000 IdP 一覧表示は重い → **Organization 単位での管理**で UX 向上
+- **DB チューニング**: PostgreSQL の indexing、Realm cache size 設定が必要
+- **JWKS endpoint キャッシュ**: アプリ側で適切にキャッシュ（5 分等）すれば認証レイテンシ問題なし
+
+### §C-1.5.3 プラットフォーム比較（1500-3000 顧客規模）
+
+| 観点 | **Cognito**（複数 Pool 分割必須）| **Keycloak**（単一 Realm + Organization）|
+|---|---|---|
+| **Pool/Realm 数** | **15-30 Pool**（cohort 別、100-200 顧客/Pool）| **1 Realm**（Organization 機能で論理分割）|
+| **Custom Domain** | 4 Pool しか持てない → Path ルーティング or 複数リージョン | **共通 1 つ**で全 3000 顧客カバー |
+| **アプリ追加コスト** | 各 Pool に App Client 登録（**15-30 回**）| **1 回**で完結 |
+| **顧客追加コスト** | どの Pool に入れるか判定 + 登録 | **Organization + IdP 登録 1 回** |
+| **Identity Broker パターン** | ⚠ 部分崩壊（multi-issuer Lambda Authorizer で吸収）| **✅ 完全成立** |
+| **運用画面操作性** | Pool ごとに Console 切替 | Organization 単位で集約管理（26+）|
+| **DB 設計負荷** | AWS マネージドで不要 | PostgreSQL チューニング必要 |
+| **リスク** | **SAML IdP Hard Limit に確実に抵触** | DB / Cache チューニング失敗時の性能劣化 |
+| **本基盤での評価** | **規模が大きいほど不利**（運用複雑化）| **規模が大きいほど有利**（単一 Realm で対応）|
+
+→ **1500-3000 顧客規模では Keycloak が圧倒的に有利**（Cognito 採用時は Pool 分割の運用負荷が顕著に重い）。
+
+### §C-1.5.4 認証性能（per-request 性能）
+
+総顧客数とは別に、**1 回の認証リクエストあたりの性能**：
+
+| 観点 | 影響 | 顧客数依存 |
+|---|---|---|
+| **JWT 発行レイテンシ** | 100-300ms（標準）| ❌ 顧客数に依存しない |
+| **JWKS 検証**（アプリ側）| キャッシュで 1ms 以下 | ❌ 依存しない |
+| **HRD 解決**（メールドメイン → IdP）| 1-10ms（DB ルックアップ）| ⚠ 顧客数に弱依存（インデックスで対応）|
+| **Token Exchange / Lambda Authorizer** | 100-500ms | ❌ 依存しない |
+| **Cognito レート制限**（M2M 150 RPS / Pool）| - | ⚠ Pool 分割により 1 Pool あたりは緩和 |
+| **Keycloak DB クエリ** | 1-50ms | ⚠ インデックス・キャッシュチューニング次第 |
+
+→ **3000 顧客でも認証レイテンシは劣化しない**（適切な設計なら）。問題になるのは **管理画面操作・初期化時間・バッチ処理レート**。
+
+### §C-1.5.5 5 年見据えた拡張シナリオ
+
+#### Keycloak 採用シナリオ
+
+| Year | 顧客数 | 構成 | 運用ポイント |
+|:---:|---:|---|---|
+| 0 | 1,500 | 単一 Realm + Organization | DB は PostgreSQL r6i.2xlarge クラス、JWKS キャッシュ 5 分 |
+| 3 | 2,500 | 単一 Realm + 性能監視強化 | Realm 起動時間 / 認可レイテンシ監視 |
+| 5 | 3,000 | 単一 Realm or 2-3 分割 | L3 物理分離顧客（数社）は別 Realm |
+| 8 | 5,000+ | 複数 Realm 分割 | 地域別 / 業種別 Realm |
+
+#### Cognito 採用シナリオ（参考）
+
+| Year | 顧客数 | 必要 Pool 数 | 課題 |
+|:---:|---:|---:|---|
+| 0 | 1,500 | **15** | Pool 分割設計が初期から必要 |
+| 3 | 2,500 | **25** | Pool 間でのアプリ Client 同期運用 |
+| 5 | 3,000 | **30** | **運用負荷が線形に増加**、人員 増員必須 |
+
+→ Cognito 採用は **規模拡大に伴い運用負荷が爆発**するため、1500-3000 顧客規模では Keycloak を強推奨。
+
+### §C-1.5.6 規模別の本基盤対応マトリクス
+
+| 顧客企業数 | 推奨プラットフォーム | 構成 | 運用負荷 |
+|---:|---|---|---|
+| 〜100 社 | Cognito / Keycloak 両方可 | 単一 Pool/Realm | 低 |
+| 〜500 社 | **Keycloak 推奨** | 単一 Realm + Organization | 中 |
+| **1500-3000 社** | **Keycloak 強推奨** | 単一 Realm + Organization + DB チューニング | 中〜高 |
+| 〜10000 社 | Keycloak（複数 Realm 分割）| Realm 分割 + 専任 SRE | 高 |
+
+### TBD / 要確認
+
+| 確認項目 | 回答例 |
+|---|---|
+| 想定顧客企業数（現状 / 3 年 / 5 年）| 1500 / 2500 / 3000 等 |
+| 規模軸での Cognito vs Keycloak 選定合意 | Keycloak 強推奨に合意 / Cognito Pool 分割で進める |
+| Pool 分割戦略採用時の Custom Domain 構成 | 共通 1 Domain + Path ルーティング / 複数リージョン |
+| Keycloak DB 性能基準 | 認可レイテンシ P95 〇〇 ms 以下 等 |
+
+---
+
+## §C-1.6 TBD / 要確認
 
 | 確認項目 | 回答例 |
 |---|---|

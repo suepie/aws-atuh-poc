@@ -11,6 +11,7 @@
 2	2.1	A	🔥	A-4	顧客拠点の地理分布	国内のみ / グローバル / 一部海外	hearing-script/00-common.md		⏳
 2	2.1	A	🟡	A-7	新規顧客追加の頻度	月平均何社の追加想定	hearing-script/00-common.md		⏳
 2	2.1	A	🟢	A-12	海外展開時期	GDPR / CCPA 対応の必要時期	hearing-script/00-common.md		⏳
+2	2.1	A	🔥	A-15	顧客企業数の現状と 5 年後想定	現状件数 + 5 年後想定 + 増加カーブ（Cognito Hard Limit 抵触判定の最重要入力）	hearing-script/00-common.md		⏳
 2	2.2	A	🟡	A-8	データ所在地要件	国内限定 / 特定リージョン制約	hearing-script/00-common.md		⏳
 2	2.2	A	🟡	A-9	業界規制	業界名 + 規制名（PCI DSS / FFIEC / FISC 等）	hearing-script/00-common.md		⏳
 2	2.2	C	🔥	C-201	FIPS 140-2 認定	業界規制で必須か（Yes → RHBK 必須）	hearing-script/10-security-compliance.md		⏳

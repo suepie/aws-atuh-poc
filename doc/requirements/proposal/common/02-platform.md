@@ -466,6 +466,53 @@ flowchart TD
 | **C. 大規模（10 万 MAU 超）or 特殊要件** | Token Exchange / SCIM / Back-Channel Logout Must、または大規模 | **Keycloak OSS**（性能・コスト優位、要 DevOps）|
 | **D. 規制対応必須**（金融・政府）| FIPS 140-2 or 24/7 商用サポート Must | **Keycloak RHBK**（Red Hat サポート + FIPS）|
 
+### §C-2.4.A 規模軸：顧客企業数（テナント数）による判定
+
+> **MAU 軸とは別の独立軸**として、**顧客企業数（テナント数 = IdP 接続数）** が **Cognito Hard Limit（IdP per Pool ~1000、SAML 実質 ~100、Custom Domain 4/region）** に直接抵触するため、規模で機械的にプラットフォーム選定が絞られる。
+
+#### 規模別の推奨プラットフォーム（A-15 連動）
+
+| 顧客企業数 | 推奨プラットフォーム | 構成 | 主な制約 |
+|---:|---|---|---|
+| **〜100 社** | Cognito / Keycloak 両方可 | 単一 Pool/Realm | なし |
+| **〜500 社** | **Keycloak 推奨** | 単一 Realm + Organization | Cognito は SAML 顧客多数で Pool 分割要 |
+| **〜1500 社** | **Keycloak 強推奨** | 単一 Realm + Organization + DB チューニング | Cognito は **15 Pool 必須 + Custom Domain 4/region 抵触** |
+| **〜3000 社** | **Keycloak 強推奨** | 単一 Realm or 2-3 分割 | Cognito は **30 Pool**、運用負荷爆発 |
+| **〜10000 社** | Keycloak（複数 Realm 分割）| Realm 分割 + 専任 SRE | Cognito は事実上不可 |
+
+→ **1500-3000 顧客企業規模では Keycloak が事実上必須**（Cognito 採用時の Pool 分割運用負荷が看過できない）。詳細は [§C-1.5 規模スケーリング戦略](01-architecture.md#c-15-規模スケーリング戦略1500-3000-顧客企業)。
+
+#### 規模軸を反映した拡張意思決定フロー
+
+```mermaid
+flowchart TD
+    Start[開始：要件確定済]
+
+    Q0{"A-15 顧客企業数<br/>現状または 5 年想定"}
+    Q0 -->|1500 社以上| KC0["**Keycloak 強推奨**<br/>(Cognito は Pool 分割で<br/>運用負荷爆発)"]
+    Q0 -->|500-1500 社| Q1
+    Q0 -->|〜500 社| Q1
+
+    Q1{"§C-2.2.A Keycloak<br/>必須要件のいずれか Must?"}
+    Q1 -->|Yes| KC1[Keycloak 確定]
+    Q1 -->|No| Q3{MAU 規模 < 17.5 万?}
+
+    KC0 --> KC1
+    KC1 --> Q4{FIPS / 24/7 サポート Must?}
+    Q4 -->|Yes| RHBK[Keycloak RHBK]
+    Q4 -->|No| KCOSS[Keycloak OSS]
+
+    Q3 -->|Yes| Cog[Cognito]
+    Q3 -->|No| KCOSS
+
+    style KC0 fill:#ffe0e0,stroke:#cc0000
+    style RHBK fill:#fff3e0,stroke:#e65100
+    style KCOSS fill:#fff3e0,stroke:#e65100
+    style Cog fill:#e3f2fd,stroke:#1565c0
+```
+
+→ **規模軸（A-15）が先に来る**: 1500 社以上なら他要件によらず Keycloak、それ未満は従来通り §C-2.2 必須要因と MAU で判定。
+
 ### ベースライン
 
 | 項目 | ベースライン |
@@ -482,6 +529,7 @@ flowchart TD
 | 確認項目 | 回答例 | 影響 |
 |---|---|---|
 | 想定 MAU 規模（1 年後 / 3 年後）| N 万 / M 万 | コスト損益分岐 |
+| **顧客企業数（現状 / 5 年後想定、A-15）** | 例: 1500 / 3000 社 | **1500 社以上で Keycloak 強推奨**（Cognito Hard Limit 抵触）|
 | Token Exchange / Device Code / mTLS の要否 | はい / いいえ | **Keycloak 必須化**（A-1, A-2, A-3）|
 | SAML IdP モード / LDAP 直結の要否 | はい / いいえ | **Keycloak 必須化**（A-4, A-5）|
 | Back-Channel Logout / Access Token Revocation Must | はい / いいえ | **Keycloak 必須化**（A-7, A-8）|
