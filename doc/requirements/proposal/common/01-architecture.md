@@ -119,6 +119,173 @@ flowchart TB
 
 → Broker パターン採用は「**基本方針 4 軸すべての実現**」の中核装置。
 
+### §C-1.0.B 代替アーキテクチャスタンスの参考図（§C-1.0.A と同粒度比較）
+
+> **このサブセクションの目的**: §C-1.0.A で示した「完全統合（Broker パターン）」スタンスに対する、**ハイブリッド統合** と **完全分散** の代替スタンスを、**同じ粒度の構成図**で並列提示。設計レビュー段階で提起された 6 懸念（SPOF / 過剰品質 / アプリ最適化放棄 等）の議論で、3 つのスタンスを **同じ視覚言語で 1 度に比較**できる位置付け。
+> **詳細分析**: 各代替の詳細設計は [§C-1.2.C 代替アーキテクチャの比較](#c-12c-代替アーキテクチャの比較完全統合--ハイブリッド--完全分散) と [§C-6 アーキテクチャ判断: ハイブリッド統合](06-architecture-decision-hybrid.md) を参照。
+
+#### 図 1: 完全統合（§C-1.0.A 再掲、参考）
+
+§C-1.0.A の図を参照（**当初の前提**、本基盤の現スタンス）。
+
+#### 図 2: ハイブリッド統合（コア + エッジ、§C-6 推奨）
+
+```mermaid
+flowchart TB
+    subgraph CustomerIdP_H["顧客企業の IdP 群(Spoke - 一般従業員 P-3/P-4 用)"]
+        C1_H["Acme<br/>Entra ID"]
+        C2_H["Globex<br/>Okta"]
+        C3_H["HENNGE<br/>顧客"]
+        C4_H["AD 直結<br/>顧客"]
+    end
+
+    subgraph InternalIdP_H["弊社内 IdP (基盤運用管理者 P-1 用)"]
+        I1_H["弊社<br/>Entra ID 等"]
+    end
+
+    Core_H["共通認証基盤 コア層<br/>(Hub = Identity Broker)<br/>属性正規化 + 統一 JWT 発行<br/>+ Break Glass 用<br/>最小ローカル管理者<br/>+ ティア化<br/>(Standard / High-security / Critical)"]
+
+    EdgeFAPI_H["エッジ層 1<br/>FAPI 2.0 Keycloak<br/>(金融・決済規制)"]
+    EdgeAI_H["エッジ層 2<br/>Device Code 独自<br/>(AI Agent / IoT)"]
+    EdgeLegacy_H["エッジ層 3<br/>SAML IdP モード<br/>(レガシー業務)"]
+
+    subgraph StdApps_H["標準アプリ(コア層接続、80%)"]
+        A1_H["経費精算"]
+        A2_H["勤怠管理"]
+        A3_H["人事システム"]
+        A4_H["..."]
+    end
+
+    subgraph SpecApps_H["特殊アプリ(エッジ層接続、20%)"]
+        AD_H["決済"]
+        AE_H["AI 連携"]
+        AF_H["レガシー業務"]
+    end
+
+    C1_H -->|OIDC| Core_H
+    C2_H -->|OIDC| Core_H
+    C3_H -->|SAML| Core_H
+    C4_H -->|LDAP| Core_H
+    I1_H -->|"OIDC<br/>(基盤運用者用)"| Core_H
+
+    Core_H -->|統一 JWT| A1_H
+    Core_H -->|統一 JWT| A2_H
+    Core_H -->|統一 JWT| A3_H
+    Core_H -->|統一 JWT| A4_H
+
+    Core_H <-.SSO Federation.-> EdgeFAPI_H
+    Core_H <-.SSO Federation.-> EdgeAI_H
+    Core_H <-.SSO Federation.-> EdgeLegacy_H
+
+    EdgeFAPI_H -->|FAPI JWT| AD_H
+    EdgeAI_H -->|JWT| AE_H
+    EdgeLegacy_H -->|SAML| AF_H
+
+    style Core_H fill:#fff3e0,stroke:#e65100
+    style InternalIdP_H fill:#f3e5f5,stroke:#7b1fa2
+    style EdgeFAPI_H fill:#e1f5fe,stroke:#0277bd
+    style EdgeAI_H fill:#e1f5fe,stroke:#0277bd
+    style EdgeLegacy_H fill:#e1f5fe,stroke:#0277bd
+```
+
+> **ハイブリッド統合の利用者カテゴリ位置付け**:
+> - **顧客 IdP 群 / 弊社内 IdP**: §C-1.0.A と同じ（コア層に接続）
+> - **コア層**: 標準アプリ（80% 想定）を統合、ティア化（Standard / High-security / Critical）で過剰品質回避
+> - **エッジ層**: 特殊要件アプリ（20% 想定）が独自基盤、コア層と **SSO Federation で連携**
+> - 詳細は [§C-6 §6.2-6.4](06-architecture-decision-hybrid.md)
+
+#### 図 3: 完全分散（各アプリ独自認証、SSO は IdP セッション依存）
+
+```mermaid
+flowchart TB
+    subgraph CustomerIdP_D["顧客企業の IdP 群(Spoke - 一般従業員 P-3/P-4 用)"]
+        C1_D["Acme<br/>Entra ID"]
+        C2_D["Globex<br/>Okta"]
+        C3_D["HENNGE<br/>顧客"]
+        C4_D["AD 直結<br/>顧客"]
+    end
+
+    subgraph InternalIdP_D["弊社内 IdP (基盤運用管理者 P-1 用)"]
+        I1_D["弊社<br/>Entra ID 等"]
+    end
+
+    subgraph AppA_FullD["経費精算アプリ"]
+        AuthA_D["独自 Auth A<br/>(Cognito Pool A)"]
+        AppA_D["経費精算"]
+        AuthA_D --- AppA_D
+    end
+
+    subgraph AppB_FullD["勤怠管理アプリ"]
+        AuthB_D["独自 Auth B<br/>(Keycloak Realm B)"]
+        AppB_D["勤怠管理"]
+        AuthB_D --- AppB_D
+    end
+
+    subgraph AppC_FullD["人事アプリ"]
+        AuthC_D["独自 Auth C<br/>(Auth0)"]
+        AppC_D["人事システム"]
+        AuthC_D --- AppC_D
+    end
+
+    subgraph AppN_FullD["他のアプリ..."]
+        AuthN_D["独自 Auth N<br/>(各アプリ別 IdP)"]
+        AppN_D["..."]
+        AuthN_D --- AppN_D
+    end
+
+    C1_D -->|OIDC<br/>(N×M 接続)| AuthA_D
+    C1_D -.OIDC.-> AuthB_D
+    C1_D -.OIDC.-> AuthC_D
+    C1_D -.-> AuthN_D
+    C2_D -->|OIDC| AuthA_D
+    C2_D -.-> AuthB_D
+    C2_D -.-> AuthC_D
+    C3_D -->|SAML| AuthA_D
+    C3_D -.-> AuthB_D
+    C3_D -.-> AuthC_D
+    C4_D -->|LDAP| AuthA_D
+    C4_D -.-> AuthB_D
+    C4_D -.-> AuthC_D
+
+    I1_D -.-> AuthA_D
+    I1_D -.-> AuthB_D
+    I1_D -.-> AuthC_D
+
+    AuthA_D <-.❌ SLO 不可<br/>❌ トークン非互換<br/>⚠ ログイン SSO のみ<br/>(顧客 IdP セッション依存).-> AuthB_D
+    AuthB_D <-.同上.-> AuthC_D
+
+    style InternalIdP_D fill:#f3e5f5,stroke:#7b1fa2
+    style AppA_FullD fill:#fff8e1,stroke:#f57c00
+    style AppB_FullD fill:#fff8e1,stroke:#f57c00
+    style AppC_FullD fill:#fff8e1,stroke:#f57c00
+    style AppN_FullD fill:#fff8e1,stroke:#f57c00
+```
+
+> **完全分散スタンスの特徴**:
+> - **共通 Hub なし**: 各アプリが顧客 IdP + 弊社内 IdP に直接 federation
+> - **N×M 接続**: 顧客 1500 社 × アプリ 10 個 = **15,000 federation 設定**
+> - **SSO**: ログイン時のみ顧客 IdP セッション経由で成立、SLO / トークンリレーは不可
+> - **アプリ最適化**: 各アプリで最適 IdP 選定可能（但し運用負荷 N 倍）
+> - 詳細は [§C-1.2.C.2 「分散 + SSO + SPOF フリー」3 つの現実パターン](#c-12c2-分散--sso--spof-フリーを実現する-3-つの現実パターン)
+
+#### 3 スタンス俯瞰比較（同粒度図ベース）
+
+| 観点 | 完全統合（図 1 = §C-1.0.A）| **ハイブリッド統合（図 2）** ⭐ | 完全分散（図 3）|
+|---|:-:|:-:|:-:|
+| **共通 Hub** | 1 つ | コア 1 + エッジ N | なし |
+| **アプリ最適化** | ❌ 不可 | ✅ エッジで可 | ✅ 完全 |
+| **SPOF 影響範囲** | 全アプリ | コアのみ | 各アプリ独立 |
+| **顧客 IdP 接続** | 1 箇所集約 | コア層に集約 | **N×M = 15,000** |
+| **SSO** | ✅ 自動 | ✅ コア自動 + エッジ Federation | ⚠ ログインのみ |
+| **SLO（全アプリログアウト）** | ✅ | ✅ | ❌ |
+| **トークンリレー** | ✅ | ✅ Token Exchange 等 | ❌ |
+| **過剰品質回避** | ❌ | ✅ ティア化 | ✅ |
+| **運用人員** | 1 チーム | コア + 限定エッジ | **N チーム** |
+| **業界実例** | Slack / Notion | **Auth0 / Microsoft / Okta** | 大手金融業務系 |
+| **御社規模での適性** | △（1500 顧客で Pool 分割必須）| **◎ 推奨** | ×（N×M 設定爆発）|
+
+→ **3 つのスタンスを §C-1.0.A 同粒度で並列比較**することで、設計判断の俯瞰が容易。詳細根拠は §C-1.2.C / §C-6。
+
 ### 本章で扱うサブセクション
 
 | サブセクション | 内容 |
@@ -127,6 +294,8 @@ flowchart TB
 | §C-1.2 全体アーキテクチャ | 構成要素・データフロー・各章との対応 |
 | §C-1.3 採用しない代替パターン | Point-to-Point / Mesh / Identity Fabric / BYOI の位置付け |
 | §C-1.4 物理分離レベルと Broker パターンの関係 | 6 段階分離レベル(L1〜L6)と Broker 採用境界、業界実例 |
+| §C-1.5 規模スケーリング戦略（1500-3000 顧客企業）| Cognito Hard Limit と Pool 分割戦略 |
+| §C-1.6 TBD / 要確認 | - |
 
 ---
 
@@ -799,6 +968,379 @@ flowchart TB
 - **点線（<-.-->）**: Federation / 信頼関係
 
 → **詳細な根拠と推奨判断は [§C-6 アーキテクチャ判断: ハイブリッド統合の根拠と設計](06-architecture-decision-hybrid.md)** を参照。
+
+---
+
+### §C-1.2.C.1 Federation Hub の 5 つの実装パターンと SPOF 評価
+
+> **このサブセクションが解消する誤解**: 「Federation Hub = SPOF」は**短絡的**。Hub の実装パターンには 5 種類あり、**Pattern A の設計なら SPOF を回避可能**。OIDC Federation 1.0（IETF）や SAML Federation（GakuNin / eduGAIN）は実際にこの設計を採用している。
+
+#### 5 つの実装パターン分類
+
+| パターン | Hub の役割 | 認証フローへの介在 | Hub 障害時の影響 | SPOF 度 | 業界実例 |
+|---|---|---|---|---|---|
+| **A. Metadata Registry のみ** | 信頼関係・公開鍵・エンドポイント情報を**公開のみ**（静的、署名済）| ❌ 介在しない | 既存キャッシュで継続稼働 / 新規 trust 追加のみ不可 | **🟢 低**（実質 SPOF フリー）| **OIDC Federation 1.0**（IETF）、**SAML Federation Metadata Aggregate** |
+| **B. Discovery Service** | ユーザーに「どの IdP に行くか」を選択させる UI / API | ⚠ 初回のみ介在 | デフォルト動作・直接 URL アクセスで継続可 | **🟢 低-中** | **Shibboleth DS**、**eduGAIN Discovery** |
+| **C. Runtime Federation Broker** | 認証要求を各 IdP に**リアルタイム転送・属性変換** | ✅ 常時介在 | クロスアプリ認証停止 | **🔴 中-高** | **AWS IAM Identity Center**（中央 SSO ポータル）、**Azure AD B2B** |
+| **D. SLO Orchestrator** | 全アプリへログアウト通知配信（Back-Channel Logout 仲介）| 部分介在（ログアウト時のみ）| SLO 不成立（ログインは可）| **🟡 中**（SLO のみ）| **OIDC Back-Channel Logout (RFC 8417) hub** |
+| **E. Central Token Service** | JWT 発行を集約 | ✅ 常時介在 | **全認証停止 = ほぼ完全統合と同等** | **🔴 高**（= 完全統合）| **Auth0 / Cognito の本来の動作**（これは Hub ではなく Token Issuer）|
+
+#### パターン別の Hub 障害時動作詳細
+
+```mermaid
+flowchart TB
+    subgraph PA["Pattern A: Metadata Registry"]
+        PAH["Hub 障害"]
+        PAH --> PA1["既存 trust メタデータ（キャッシュ）有効<br/>→ 認証フロー継続"]
+        PAH --> PA2["新規 trust 追加不可<br/>→ 新顧客/新アプリ受付停止のみ"]
+    end
+
+    subgraph PB["Pattern B: Discovery Service"]
+        PBH["Hub 障害"]
+        PBH --> PB1["デフォルト IdP / 直接 URL でログイン可"]
+        PBH --> PB2["新規ユーザーの IdP 選択 UI 喪失"]
+    end
+
+    subgraph PC["Pattern C: Runtime Broker"]
+        PCH["Hub 障害"]
+        PCH --> PC1["❌ クロスアプリ認証停止"]
+        PCH --> PC2["既存セッションは TTL 内継続"]
+    end
+
+    subgraph PD["Pattern D: SLO Orchestrator"]
+        PDH["Hub 障害"]
+        PDH --> PD1["ログインは継続"]
+        PDH --> PD2["❌ Single Logout 不成立"]
+    end
+
+    subgraph PE["Pattern E: Central Token Service"]
+        PEH["Hub 障害"]
+        PEH --> PE1["❌ 全認証停止"]
+        PEH --> PE2["= 完全統合と同等の SPOF"]
+    end
+
+    style PAH fill:#c8e6c9,stroke:#2e7d32
+    style PBH fill:#c8e6c9,stroke:#2e7d32
+    style PCH fill:#ffcdd2,stroke:#c62828
+    style PDH fill:#fff9c4,stroke:#f57f17
+    style PEH fill:#ffcdd2,stroke:#c62828
+```
+
+→ **A/B パターンなら SPOF は事実上ない**（キャッシュベース、設計が薄い）
+→ **C-E パターンは SPOF**（程度の差はあるが）
+→ **業界の標準 OIDC/SAML Federation は Pattern A/B 設計**
+
+#### 既存図 C-b の精緻化（修正版位置付け）
+
+前述の **図 C-b（Federation Hub 経由分散版）** は、デフォルト解釈では **Pattern C/D（runtime 関与あり）** として SPOF リスクのある図に見えるが、**Pattern A（metadata-only）として設計すれば SPOF フリー**にできる。後述 §C-1.2.C.2 の図 E（Metadata-only Federation Hub）が **同じ構造を SPOF フリー設計**で再描画したもの。
+
+---
+
+### §C-1.2.C.2 「分散 + SSO + SPOF フリー」を実現する 3 つの現実パターン
+
+> **このサブセクションの狙い**: 「真に分散しつつ SSO 対応する」要件に対して、技術的に実装可能な 3 パターンを提示。各パターンの強み・弱み・御社規模での適性を客観的に評価する。
+
+#### 図 D. パターン X: BYOI（Bring Your Own Identity）— 最もシンプル
+
+**思想**: 各アプリが**顧客 IdP に直接 federation**。弊社側に Hub を一切持たない。顧客 IdP のセッションが SSO の Source of Truth。
+
+```mermaid
+flowchart TB
+    subgraph CustIdP_X["顧客企業 IdP（1500-3000 社）"]
+        IdP_X1["Acme<br/>Entra ID"]
+        IdP_X2["Globex<br/>Okta"]
+        IdP_X3["HENNGE One"]
+    end
+
+    subgraph AppA_X["🟨 App A: 経費精算<br/>(Cognito Pool A)"]
+        AuthA_X["Auth Service A"]
+    end
+    subgraph AppB_X["🟨 App B: 人事<br/>(Keycloak Realm B)"]
+        AuthB_X["Auth Service B"]
+    end
+    subgraph AppC_X["🟨 App C: 決済<br/>(Auth0 FAPI)"]
+        AuthC_X["Auth Service C"]
+    end
+
+    CustIdP_X <==>|OIDC Federation<br/>(直接、Hub なし)| AuthA_X
+    CustIdP_X <==>|OIDC Federation| AuthB_X
+    CustIdP_X <==>|OIDC Federation| AuthC_X
+
+    style CustIdP_X fill:#e3f2fd,stroke:#1565c0
+    style AppA_X fill:#fff8e1,stroke:#f57c00
+    style AppB_X fill:#fff8e1,stroke:#f57c00
+    style AppC_X fill:#fff8e1,stroke:#f57c00
+```
+
+**SSO 動作**: 顧客 IdP セッション再利用で全アプリ自動 SSO。ユーザーは 1 度顧客 IdP に認証すれば、各アプリで再認証なし。
+**SPOF（弊社側）**: **ゼロ**（顧客 IdP の SPOF は元々顧客責任）
+**業界実例**: 多数の小規模 SaaS で採用
+**問題**: **N×M 設定爆発**（顧客 1500 × アプリ 10 = **15,000 federation 設定を保守**）
+
+#### 図 E. パターン Y: Metadata-only Federation Hub（OIDC Federation 1.0 / SAML Federation）
+
+**思想**: Hub は **trust metadata 公開のみ**（静的、署名済）。各アプリは metadata をキャッシュ、認証フローは直接。Hub は **runtime に介在しない**ため SPOF フリー。
+
+```mermaid
+flowchart TB
+    subgraph Hub_Y["🟩 Metadata Registry Hub<br/>(静的公開、24h キャッシュ、Pattern A)"]
+        Meta_Y["Trust Metadata Aggregate<br/>+ Entity Statements<br/>(署名済、定期更新)"]
+    end
+
+    subgraph CustIdP_Y["顧客企業 IdP"]
+        IdP_Y["顧客 IdP<br/>(各社の Entra/Okta)"]
+    end
+
+    subgraph AppA_Y["🟨 App A 認証 + ロジック"]
+        AuthA_Y["Auth A<br/>+ Metadata Cache"]
+    end
+    subgraph AppB_Y["🟨 App B 認証 + ロジック"]
+        AuthB_Y["Auth B<br/>+ Metadata Cache"]
+    end
+    subgraph AppC_Y["🟨 App C 認証 + ロジック"]
+        AuthC_Y["Auth C<br/>+ Metadata Cache"]
+    end
+
+    Hub_Y -.定期 fetch<br/>(24h cache).-> AuthA_Y
+    Hub_Y -.定期 fetch.-> AuthB_Y
+    Hub_Y -.定期 fetch.-> AuthC_Y
+
+    CustIdP_Y ==> AuthA_Y
+    CustIdP_Y ==> AuthB_Y
+    CustIdP_Y ==> AuthC_Y
+
+    AuthA_Y <==>|直接 SAML/OIDC SSO<br/>(Hub 介在なし)| AuthB_Y
+    AuthB_Y <==>|直接| AuthC_Y
+    AuthA_Y <==>|直接| AuthC_Y
+
+    style Hub_Y fill:#e8f5e9,stroke:#2e7d32
+    style CustIdP_Y fill:#e3f2fd,stroke:#1565c0
+    style AppA_Y fill:#fff8e1,stroke:#f57c00
+    style AppB_Y fill:#fff8e1,stroke:#f57c00
+    style AppC_Y fill:#fff8e1,stroke:#f57c00
+```
+
+**SSO 動作**: 各アプリ間で OIDC/SAML Federation で直接 SSO（App A → App B が IdP として trust）
+**SPOF**: **実質ゼロ**（Hub down → キャッシュで継続、24h 後の metadata 更新が止まるだけ）
+**業界実例**: **GakuNin（学術連邦）/ eduGAIN / OIDC Federation 1.0（IETF）**
+**問題**: 顧客 IdP 接続は依然 N×M（Hub は信頼関係の集約のみ、顧客接続を集約しない）
+
+#### 図 F. パターン Z: Pure Federation Mesh（完全相互信頼、Hub なし）
+
+**思想**: Hub すらなく、各アプリが相互に IdP として trust。
+
+```mermaid
+flowchart TB
+    subgraph CustIdP_Z["顧客企業 IdP"]
+        IdP_Z["顧客 IdP"]
+    end
+
+    subgraph AppA_Z["🟨 App A<br/>(Trust List: B, C)"]
+        AuthA_Z["Auth A"]
+    end
+    subgraph AppB_Z["🟨 App B<br/>(Trust List: A, C)"]
+        AuthB_Z["Auth B"]
+    end
+    subgraph AppC_Z["🟨 App C<br/>(Trust List: A, B)"]
+        AuthC_Z["Auth C"]
+    end
+
+    CustIdP_Z ==> AuthA_Z
+    CustIdP_Z ==> AuthB_Z
+    CustIdP_Z ==> AuthC_Z
+
+    AuthA_Z <==>|相互 trust<br/>直接 SSO| AuthB_Z
+    AuthB_Z <==>|相互 trust| AuthC_Z
+    AuthA_Z <==>|相互 trust| AuthC_Z
+
+    style CustIdP_Z fill:#e3f2fd,stroke:#1565c0
+    style AppA_Z fill:#fff8e1,stroke:#f57c00
+    style AppB_Z fill:#fff8e1,stroke:#f57c00
+    style AppC_Z fill:#fff8e1,stroke:#f57c00
+```
+
+**SPOF**: **完全ゼロ**
+**業界実例**: **ほぼ存在しない**（理論上、研究実装のみ）
+**問題**: **N×N trust 設定爆発**（10 アプリで 90 trust 関係、20 アプリで 380 trust 関係）+ 顧客 IdP 接続は依然 N×M
+
+---
+
+### §C-1.2.C.3 SSO 動作詳細（分散構成でのシーケンス図）
+
+> **このサブセクションの狙い**: 分散構成（パターン X/Y/Z）で SSO がどう動くか、**ログイン / SLO / トークンリレーの 3 シナリオ**で詳細フローを示す。
+
+#### シーケンス図 1: ログインフロー（SSO 成立シーン）
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant U as ユーザー
+    participant AppA as App A<br/>(Cognito Pool A)
+    participant AppB as App B<br/>(Keycloak)
+    participant IdP as 顧客 IdP<br/>(Entra ID)
+
+    Note over U,IdP: 朝一: App A にログイン
+    U->>AppA: アクセス
+    AppA->>IdP: OIDC Auth Request<br/>(App A 用設定)
+    IdP->>U: ログイン画面
+    U->>IdP: ID/PW + MFA
+    IdP->>IdP: 🔵 セッション確立<br/>(sess-abc)
+    IdP->>AppA: Authorization Code + Token
+    AppA->>AppA: 独自セッション A 確立<br/>(JWT issuer: App A)
+
+    Note over U,IdP: 後ほど: App B にアクセス（SSO 期待）
+    U->>AppB: アクセス
+    AppB->>IdP: OIDC Auth Request<br/>(App B 用設定)
+    Note over IdP: 🔵 既存セッション sess-abc 認識<br/>「alice は既にログイン中、再認証不要」
+    IdP->>AppB: Authorization Code（再認証なし!）
+    AppB->>AppB: 独自セッション B 確立<br/>(JWT issuer: App B)
+
+    Note over U: ✅ ユーザー視点では SSO 成立<br/>（App B でパスワード入力なし）
+    Note over AppA,AppB: ⚠ ただし App A と App B は別 JWT、別セッション
+```
+
+→ **「ログイン時の SSO」は分散構成でも顧客 IdP セッションで成立する**。これは pattern X/Y/Z すべてで同じ。
+
+#### シーケンス図 2: ログアウトフロー（SLO の現実）
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant U as ユーザー
+    participant AppA as App A
+    participant AppB as App B
+    participant IdP as 顧客 IdP
+
+    Note over U,IdP: ユーザーが App A でログアウト
+    U->>AppA: ログアウトボタン
+    AppA->>AppA: 🔴 セッション A 破棄
+    AppA->>IdP: RP-Initiated Logout<br/>(OIDC standard)
+    IdP->>IdP: 🔴 セッション sess-abc 破棄
+
+    Note over AppB: ❌ App B は知らない<br/>セッション B は生きている
+
+    alt パターン α: 何もしない（よくある実装）
+        Note over U,AppB: ユーザーが App B にアクセス
+        U->>AppB: アクセス
+        AppB->>AppB: ⚠ セッション B 有効 → 操作続行可<br/>(App A ログアウト後でも!)
+    end
+
+    alt パターン β: OIDC Back-Channel Logout（RFC 8417）対応
+        IdP->>AppB: Back-Channel Logout 通知<br/>(IdP が登録済 RP 全てに送信)
+        AppB->>AppB: 🔴 セッション B 破棄
+        Note over U: ✅ App B も自動ログアウト<br/>(ただし IdP + 全 RP が Back-Channel 対応必須)
+    end
+
+    alt パターン γ: Federation Hub（Pattern D）が SLO 仲介
+        Note over AppA: AppA → Federation Hub → 全 App に通知
+        Note over U: ✅ ハブ経由で SLO<br/>(ただし Hub が SLO 専用 SPOF に)
+    end
+```
+
+→ **SLO は分散構成では困難**。可能なのは：
+- 顧客 IdP が **OIDC Back-Channel Logout（RFC 8417）対応** + 全アプリが対応 → 自動 SLO
+- それ以外は **各アプリで個別ログアウト**必要
+
+#### シーケンス図 3: クロスアプリトークンリレー（API 間呼び出し）の現実
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant U as ユーザー
+    participant AppA as App A
+    participant AppB_API as App B API
+
+    Note over U,AppB_API: シナリオ: App A から App B の API を呼び出し
+    U->>AppA: 操作
+    AppA->>AppA: JWT A 持っている<br/>(issuer: App A's auth)
+
+    AppA->>AppB_API: JWT A を Bearer ヘッダーで送信
+    Note over AppB_API: ❌ JWT A は App A 用<br/>(issuer / audience 不一致)<br/>→ 検証失敗
+    AppB_API-->>AppA: 401 Unauthorized
+
+    Note over AppA,AppB_API: 解決策（完全分散では困難）
+    Note over AppA: 1. App A のユーザーで再認証要求 → UX 悪化
+    Note over AppA: 2. Token Exchange (RFC 8693) 必要 → 統合 or 専用基盤要
+    Note over AppA: 3. Service Account でユーザー文脈喪失 → 監査不能
+```
+
+→ **クロスアプリ API 呼び出しは完全分散では事実上不可**（OIDC issuer 違いで JWT 受理不可）。Token Exchange (RFC 8693) には Token Issuer の統合が必要 = 結局 Hub 必要。
+
+---
+
+### §C-1.2.C.4 御社規模での評価とハイブリッドに行き着く理由
+
+#### 3 パターン（X/Y/Z）の御社規模での適性
+
+| 観点 | X. BYOI | Y. Metadata Hub | Z. Pure Mesh |
+|---|:-:|:-:|:-:|
+| **SPOF（弊社側）** | ✅ ゼロ | ✅ 実質ゼロ（キャッシュ）| ✅ 完全ゼロ |
+| **SSO（ログイン）** | ✅ 顧客 IdP 経由 | ✅ Federation で直接 | ✅ 相互 trust で直接 |
+| **SLO（全アプリログアウト）** | ⚠ IdP Back-Channel Logout 次第 | ⚠ 同上 + Federation 規約次第 | ❌ 各アプリ個別 |
+| **クロスアプリトークンリレー** | ❌ 不可 | ❌ 不可 | ❌ 不可 |
+| **属性一貫性** | ⚠ 各アプリ独自マッピング | ⚠ Federation 規約次第 | ⚠ 各アプリ独自 |
+| **顧客 IdP 側負担** | 🔴 **N×M = 15,000 federation 設定** | 🔴 同上 | 🟢 一切ない |
+| **アプリ間 trust 設定** | 不要 | M×M（10 アプリで 100）| **M×M = 100**（10 アプリ）/ **400**（20 アプリ）|
+| **新規アプリ追加** | 各顧客 IdP に新規設定（1500 回）| 同上 + Hub に metadata 登録 | 全既存アプリの trust list 更新 |
+| **新規顧客追加** | 各アプリで新規 federation 設定（M 回）| 同上 + Hub 登録 | 顧客 IdP 不要 |
+| **業界実例** | 多数の小規模 SaaS | GakuNin / eduGAIN / OIDC Federation 1.0 | **ほぼ存在しない** |
+| **御社規模適性** | △（N×M 爆発）| ⚠（Y 中規模なら OK、3000 顧客は厳しい）| × |
+
+#### 御社規模 1500-3000 顧客での厳しい現実
+
+| パターン | 設定総数 | 運用負荷 | 結論 |
+|---|---|---|---|
+| X. BYOI | **1500 顧客 × 10 アプリ = 15,000 federation 設定** | 顧客企業が「10 個のアプリ用 federation 設定」を各 IdP で管理 | **顧客側負担が破綻** |
+| Y. Metadata Hub | 同上 + Hub metadata 管理 | 顧客側負担 + 弊社 Hub 運用 | 同上 |
+| Z. Pure Mesh | アプリ 10-20 個なら 100-400 trust | アプリ間 trust は管理可能だが、依然顧客接続が課題 | **アプリ間は OK だが顧客接続が課題** |
+
+→ **「真の分散 + SSO + SPOF フリー」は技術的には可能だが、御社規模では顧客側 N×M 設定が運用破綻**。
+
+#### ハイブリッド版が現実解な理由（再確認）
+
+御社規模で「分散 + SSO + SPOF フリー」を追求すると、結局以下に行き着く：
+
+1. **顧客 IdP 接続の集約は必須**（N×M = 15,000 は管理不能）→ 中央点が必要
+2. ただし**中央点を SPOF にしないため、Multi-Region Active-Active**で設計
+3. **アプリ最適化は中央点と並列でエッジ層**で実現
+4. **エッジ層は中央点と Federation で SSO 維持**
+
+→ これは図 B（ハイブリッド版）**そのもの**。「分散したい」要望を真剣に追求すると、御社規模ではハイブリッドに収束する。
+
+#### 分散指向の意思決定者向けの妥協案
+
+完全分散にこだわる場合、以下の妥協案がある：
+
+| 妥協案 | 内容 | 適用条件 |
+|---|---|---|
+| **小規模顧客に絞る** | 100 社程度ならパターン X が運用可能 | 事業規模を限定する判断 |
+| **アプリ数を絞る** | 5 アプリ以下ならパターン Z が運用可能 | アプリ統合・廃止 |
+| **顧客 IdP 接続だけ集約**（IdP Proxy）| 顧客 IdP 接続のみ集約、アプリ認証は分散（部分的ハイブリッド）| IdP Proxy 専用基盤の構築・運用が必要 |
+
+→ 御社の事業計画次第。1500-3000 顧客 × 10+ アプリでの「真の分散」は技術的・運用的に成立しない。
+
+#### 参考: 業界 Federation 標準の SPOF フリー設計
+
+| 標準 / 実装 | パターン | Hub 障害時の動作 |
+|---|---|---|
+| **OIDC Federation 1.0**（IETF 2023〜）| A | Trust Anchor 障害時、各 Entity は cached Entity Statement で継続 |
+| **SAML Metadata Aggregate**（eduGAIN）| A | 24h refresh cycle、Hub 障害時もキャッシュで継続 |
+| **Shibboleth Discovery Service** | B | Hub 障害時、各 SP のデフォルト IdP または直接 URL でログイン可 |
+| **AWS IAM Identity Center** | C/D | Hub 障害時、各 AWS サービスへのフェデレーションは停止 |
+| **Auth0 Universal Login** | E | Auth0 障害時、全認証停止（= Token Issuer の SPOF）|
+
+→ **OIDC/SAML の本格的な Federation 標準は Pattern A/B 設計**で SPOF を回避している。Pattern C-E は実質的に Token Issuer / Auth Service そのもので、それは「Hub」ではなく「中央認証基盤」。
+
+#### 結論
+
+| 質問 | 答え |
+|---|---|
+| Federation Hub は SPOF か? | **実装パターン次第**（Pattern A/B なら SPOF フリー、C-E は SPOF）|
+| 分散構成で SSO 維持できるか? | **可能**（顧客 IdP セッション経由）|
+| 御社規模 1500-3000 顧客で完全分散は実用的か? | **❌ 不可**（顧客側 N×M 設定が運用破綻）|
+| 「分散 + SSO + SPOF フリー」を追求するとどうなるか? | **ハイブリッド版（図 B）に収束する** |
+
+→ §C-6 の **ハイブリッド推奨は、分散思想を真剣に検討した結果としても合理的**。
 
 ---
 

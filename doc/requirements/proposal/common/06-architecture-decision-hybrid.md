@@ -438,11 +438,11 @@ flowchart TB
 #### 6.2.1 基本構成
 
 - **プラットフォーム**: Keycloak（OSS or RHBK、規制要件で決定）
-- **デプロイ**: Multi-Region Active-Active（東京 + 大阪 等）
+- **デプロイ**: **ティア別に異なる**（§6.2.4 参照、全ティア Multi-Region Active-Active が必要なわけではない）
 - **マルチテナント**: 単一 Realm + Organization 機能（Keycloak 26+）
 - **対象アプリ**: 標準的な認証要件のアプリ（80% 想定）
 
-#### 6.2.2 ティア化
+#### 6.2.2 ティア化（概要）
 
 | ティア | SLA | AAL | 監査ログ | 適用アプリ例 |
 |---|---|---|---|---|
@@ -450,10 +450,70 @@ flowchart TB
 | **High-security** | 99.99% | AAL3 | 3 年 | 個人情報・機微情報を扱うアプリ |
 | **Critical** | 99.99% | AAL3 + FIPS | 7 年 | 金融・医療など規制業種アプリ（ただし業種次第でエッジ層に移すことも検討）|
 
-#### 6.2.3 SSO 範囲
+#### 6.2.3 ティア化の実装方法（3 手法を組み合わせ）
+
+> **重要**: ティア化は「ティアごとに別の認証基盤を建てる」ことではない。**多くは Keycloak の Per-Client 設定で実現可能**。インフラ分離（別 Cluster）は Critical ティアの一部のみ。
+
+| 手法 | 内容 | 適用される要件 | 実装難度 |
+|---|---|---|---|
+| **A. Per-Client 設定**（最も現実的）| 単一 Realm 内で **各 Client（アプリ）ごとに異なる Authentication Flow / MFA Policy / Session TTL** を設定。Keycloak の標準機能 | MFA レベル、セッション TTL、Theme、許容認証方式 | 低 |
+| **B. Authentication Flow 分岐** | アプリ別 / ロール別に異なる認証フローを選択。例: 「決済アプリは Passkey 必須」「管理画面はステップアップ MFA」| 認証フローの分岐、ステップアップ認証 | 中 |
+| **C. インフラ分離**（最後の手段）| Critical ティアのみ別 Keycloak Cluster（Multi-Region 等）。SLA の物理保証や暗号鍵分離が必須な時のみ | 物理的 SLA 保証、FIPS 140-2 暗号モジュール分離 | 高 |
+
+**「ティア化なし vs あり」の差分**:
+
+```
+ティア化なし（前回の問題点）:
+全アプリに AAL3 + 99.99% + 7 年ログ → 経費精算にも過剰
+                                       ↓
+                                    過剰品質、コスト爆発（懸念 4）
+
+ティア化あり:
+経費精算 → Standard ティア（AAL2 / 99.95% / 1 年）  ← 必要十分
+人事 → Standard ティア
+顧客ポータル → High-security ティア（個人情報扱う）
+金融規制対応 → Critical ティア
+```
+
+→ **ティア化 = 「アプリごとに必要なレベルを選択できる仕組み」**。実装の大半は **手法 A（Per-Client 設定）で完結**。
+
+#### 6.2.4 SLA 別の必要構成（Multi-Region Active-Active は全ティア必須ではない）
+
+> **§C-1.2.C で「コア層 = Multi-Region Active-Active」と一律記述していたのを修正**: ティア別に必要構成が異なる。
+
+| 目標 SLA | 必要な構成 | 年間ダウン許容 | 構築・運用複雑度 |
+|---|---|---|---|
+| **99.9%** | 単一リージョン Multi-AZ（3 AZ）| 8.76 時間 | 低 |
+| **99.95%** | 単一リージョン Multi-AZ + DR コールドスタンバイ | 4.38 時間 | 低-中 |
+| **99.99%** | **Multi-Region Active-Active** または Active-Standby（自動 failover）| 52.6 分 | 中-高 |
+| **99.999%** | Multi-Region Active-Active 完全冗長 + Chaos Engineering | 5.26 分 | 極めて高 |
+
+#### 6.2.5 ティア別の推奨構成（修正版）
+
+| ティア | SLA 目標 | 構成 | Multi-Region 要否 |
+|---|---|---|---|
+| **Standard** | 99.95% | 単一リージョン Multi-AZ + DR Standby | **❌ 不要** |
+| **High-security** | 99.99% | Multi-Region Active-Standby（自動 failover）| **△ 望ましい**（Standby でも可）|
+| **Critical** | 99.99% + RTO 1h | **Multi-Region Active-Active** | **✅ 必要** |
+
+#### 6.2.6 Keycloak Multi-Region Active-Active の実装難度（Critical ティアのみ）
+
+Keycloak で Active-Active を実装する場合の主要課題：
+
+| 課題 | 内容 |
+|---|---|
+| **DB 同期** | PostgreSQL を Aurora Global Database で cross-region 同期 |
+| **セッション同期** | Infinispan / Hot Rod でセッションを cross-region 共有 |
+| **トラフィック制御** | Route 53 latency-based or geolocation routing |
+| **キャッシュ整合性** | Realm cache / User cache を cross-region 整合 |
+| **運用負荷** | デプロイ・障害対応・パッチ適用が複雑化 |
+
+→ **「Multi-Region Active-Active」は構築・運用ともに重い**。Critical ティアの顧客が実際にいる場合のみ採用、それ以外は Standard / High-security ティアの構成で対応。
+
+#### 6.2.7 SSO 範囲
 
 - **コア層内**: 自動 SSO（Realm 内のアプリ間）
-- **コア → エッジ**: Federation 経由で SSO 維持
+- **コア → エッジ**: Federation 経由で SSO 維持（§6.4 参照）
 
 ### 6.3 エッジ層の設計
 
@@ -476,35 +536,246 @@ flowchart TB
 | レガシー業務系（SAML SP-only）| Keycloak SAML IdP モード | 古い SAML SP との連携、専用設定 |
 | 規制業種専用（金融 / 医療）| 別 Keycloak Cluster + 物理分離 | コンプラ要件で物理分離必須 |
 
+#### 6.3.3 エッジ層の AWS アカウント配置（3 オプション）
+
+> **重要**: 「エッジ層」は **どの AWS アカウントに置くか** で運用責任・自律性・複雑度が変わる。3 つの選択肢があり、設計判断が必要。
+
+#### Option I: アプリごとの AWS アカウント内（**最も自律性が高い、推奨**）
+
+各アプリチームが自分の AWS アカウントを持ち、その中にエッジ認証基盤を配置。
+
+```mermaid
+flowchart TB
+    subgraph SharedAcc["共通 AWS アカウント（auth-prod）"]
+        Core["コア層 Keycloak"]
+    end
+
+    subgraph PaymentAcc["決済アプリ AWS アカウント（payment-prod）"]
+        EdgeFAPI["エッジ FAPI Keycloak"]
+        PaymentApp["決済アプリ"]
+        EdgeFAPI --- PaymentApp
+    end
+
+    subgraph AIAcc["AI 連携アプリ AWS アカウント（ai-prod）"]
+        EdgeAI["エッジ AI Auth"]
+        AIApp["AI アプリ"]
+        EdgeAI --- AIApp
+    end
+
+    Core <-.Federation<br/>(PrivateLink or Internet).-> EdgeFAPI
+    Core <-.Federation.-> EdgeAI
+
+    style SharedAcc fill:#fff3e0,stroke:#e65100
+    style PaymentAcc fill:#e1f5fe,stroke:#0277bd
+    style AIAcc fill:#e1f5fe,stroke:#0277bd
+```
+
+**メリット**:
+- アプリチームの **完全な自律性**（6 つの懸念の「アプリ最適化」「個別要件変更」を直接解決）
+- AWS アカウント境界による **Blast Radius 限定**（決済の障害が AI に影響しない）
+- 課金・セキュリティ責任が明確
+- 「想定外アプリへの対応」も自然（新規アプリは自分のアカウントで Edge を建てる）
+
+**デメリット**:
+- アプリチームに認証運用能力が必要
+- Federation 設定のオーナーシップ調整必要（コア層側でアプリ Edge を IdP として登録）
+
+**典型的**: 大手企業の Multi-Account 戦略（AWS Control Tower / Account Factory for Terraform 採用組織）
+
+#### Option II: 共通の auth AWS アカウント内（コア + 全エッジ集約）
+
+エッジ層をすべて共通の auth アカウントに集約。
+
+```mermaid
+flowchart TB
+    subgraph SharedAuthAcc["共通 AWS アカウント（auth-prod）"]
+        Core2["コア層 Keycloak"]
+        EdgeFAPI2["エッジ FAPI Keycloak"]
+        EdgeAI2["エッジ AI Auth"]
+        Core2 <-.Federation.-> EdgeFAPI2
+        Core2 <-.Federation.-> EdgeAI2
+    end
+
+    subgraph PaymentAcc2["決済アプリ AWS アカウント"]
+        PaymentApp2["決済アプリ"]
+    end
+
+    subgraph AIAcc2["AI 連携アプリ AWS アカウント"]
+        AIApp2["AI アプリ"]
+    end
+
+    EdgeFAPI2 ==> PaymentApp2
+    EdgeAI2 ==> AIApp2
+
+    style SharedAuthAcc fill:#fff3e0,stroke:#e65100
+    style PaymentAcc2 fill:#f1f8e9
+    style AIAcc2 fill:#f1f8e9
+```
+
+**メリット**:
+- 認証専門チームが一括運用
+- Federation 設定が同一アカウント内で完結（IAM 簡素化）
+- 監視・ログ集約
+
+**デメリット**:
+- アプリチームの自律性が低い（**懸念 3「アプリ最適化」、懸念 5「個別要件変更」への対応が弱い**）
+- auth アカウントが肥大化（コア + N 個のエッジ）
+- エッジが増えるたびに共通アカウントの権限・運用が複雑化
+
+**典型的**: 中規模組織の集約戦略
+
+#### Option III: エッジ専用 AWS アカウント（中間案）
+
+コア + 全エッジを認証専用アカウント群（複数）に集約。アプリはアプリアカウント。
+
+```mermaid
+flowchart TB
+    subgraph CoreAcc["コア AWS アカウント"]
+        Core3["コア層 Keycloak"]
+    end
+
+    subgraph EdgeAcc["エッジ専用 AWS アカウント（複数）"]
+        EdgeFAPI3["エッジ FAPI"]
+        EdgeAI3["エッジ AI"]
+    end
+
+    subgraph AppAcc["アプリ AWS アカウント"]
+        PaymentApp3["決済アプリ"]
+        AIApp3["AI アプリ"]
+    end
+
+    Core3 <-.Federation.-> EdgeFAPI3
+    Core3 <-.Federation.-> EdgeAI3
+    EdgeFAPI3 ==> PaymentApp3
+    EdgeAI3 ==> AIApp3
+
+    style CoreAcc fill:#fff3e0
+    style EdgeAcc fill:#e1f5fe
+    style AppAcc fill:#f1f8e9
+```
+
+**メリット**: 認証層を専門アカウント群に集約 / アプリは認証から独立
+**デメリット**: アカウント数が多い / 中央集権寄り / 「アプリ自律性」のメリット薄い
+
+#### 推奨
+
+御社が「**6 つの懸念を真剣に解決したい**」のであれば、**Option I（アプリごとの AWS アカウント）を推奨**：
+
+| 解決される懸念 | Option I での対応 |
+|---|---|
+| 懸念 3「アプリごとの実装最適化の放棄」| アプリチームが自分の Edge で自由に最適化 |
+| 懸念 5「個別要件変更の困難」| アプリチームが自分で変更可能（コア層に影響せず）|
+| 懸念 6「想定外アプリへの対応」| 新規アプリは自分のアカウントで Edge を建てるだけ |
+| 懸念 2「単一障害点」| AWS アカウント境界で Blast Radius を限定 |
+
+ただし、**運用人員の能力が必要**（各アプリチームが認証基盤を運用できる体制）。
+
+#### 判定基準
+
+| 御社の状況 | 推奨 Option |
+|---|---|
+| アプリチームに認証運用能力あり / Multi-Account 戦略採用 | **Option I**（推奨）|
+| 認証専門チームが一括運用 / アプリチームに認証スキルなし | Option II |
+| エッジが少数（1-3）/ アプリチームは別アカウントだが認証は集約 | Option III |
+
 ### 6.4 Federation 接続パターン
 
-#### 6.4.1 SSO 連携（コア → エッジ）
+> **重要な認識**: ハイブリッド構成は **2 段階の Federation（二重 Federation）** を行う。これは OIDC / SAML 標準で許容される設計だが、レイテンシ・複雑度のトレードオフがあるため、**Token Exchange 代替案**も併せて検討する。
+
+#### 6.4.1 認証チェーンの全体像（二重 Federation の明示）
+
+```mermaid
+flowchart LR
+    User[ユーザー<br/>alice@acme.com]
+
+    CustIdP[Acme Entra ID<br/>顧客 IdP]
+    Core["コア層<br/>Keycloak<br/>(統合)"]
+    Edge["エッジ層<br/>Keycloak FAPI<br/>(決済専用)"]
+    App[決済アプリ]
+
+    User -.認証.-> CustIdP
+    CustIdP -.Federation 1<br/>(OIDC).- Core
+    Core -.Federation 2<br/>(OIDC).- Edge
+    Edge -.JWT 発行.-> App
+
+    style CustIdP fill:#e3f2fd
+    style Core fill:#fff3e0
+    style Edge fill:#e1f5fe
+    style App fill:#f1f8e9
+```
+
+**Federation 1**: Customer IdP（Entra）→ Core Keycloak（OIDC Federation）
+**Federation 2**: Core Keycloak → Edge Keycloak（OIDC Federation、Edge は Core を IdP として trust）
+
+→ ユーザーの identity が **Customer IdP → Core → Edge → App** と 3 層を伝搬。3 つの JWT issuer が階層化される。
+
+#### 6.4.2 詳細フロー（既存 SSO セッションありの場合）
 
 ```mermaid
 sequenceDiagram
-    participant User
-    participant Core as コア基盤<br/>(Keycloak)
-    participant Edge as エッジ基盤<br/>(FAPI Keycloak)
+    autonumber
+    participant U as ユーザー
+    participant Edge as エッジ Keycloak<br/>(FAPI)
+    participant Core as コア Keycloak
+    participant CustIdP as Acme Entra ID
     participant App as 決済アプリ
 
-    User->>Core: ログイン（経費精算経由）
-    Core->>User: SSO セッション確立 + JWT 発行
+    U->>App: アクセス
+    App->>Edge: 認証要求
+    Edge->>Core: Federation 1: 認証要求<br/>(Edge は Core を IdP として trust)
 
-    Note over User,App: 後で決済アプリにアクセス
+    alt 既存 SSO セッションあり
+        Note over Core: 🔵 既存セッション認識<br/>(他アプリでログイン済み)
+        Core->>Edge: Assertion 発行
+    else 新規ログイン
+        Core->>CustIdP: Federation 2: 認証要求<br/>(Core は CustIdP を trust)
+        CustIdP->>U: ログイン画面
+        U->>CustIdP: ID/PW + MFA
+        CustIdP->>Core: Assertion 発行
+        Core->>Core: セッション確立 + Core JWT 発行
+        Core->>Edge: Assertion 発行
+    end
 
-    User->>App: 決済アプリ アクセス
-    App->>Edge: 認証要求（Federation で Core を Trust）
-    Edge->>Core: SAML/OIDC で Federation Auth Request
-    Core->>Edge: User の既存セッション認識 + Assertion 発行
-    Edge->>App: Edge 独自 JWT 発行（FAPI 準拠）
-    App->>User: ログイン完了（再認証なし、SSO 成立）
+    Edge->>Edge: Edge セッション確立 + Edge JWT 発行<br/>(FAPI 準拠)
+    Edge->>App: Edge JWT
+    App->>U: ログイン完了
 ```
 
-#### 6.4.2 接続プロトコル
+#### 6.4.3 二重 Federation の特徴とトレードオフ
+
+| 観点 | 内容 |
+|---|---|
+| **業界標準対応** | ✅ OIDC / SAML 標準で「SP が他の SP に対する IdP になる」のは規定通り。eduGAIN（学術連邦）/ Microsoft B2B Cross-Tenant 等で多数実例あり |
+| **レイテンシ** | 初回 SSO 時のみ +200-500ms（federation 1 hop あたり）。2 回目以降はキャッシュで高速 |
+| **ユーザー体験** | **透過的**。ユーザーは「1 度ログインしたら全アプリ使える」と感じる |
+| **トークン構造** | 3 つの JWT が階層化：Customer IdP token → Core JWT → Edge JWT |
+| **監査ログ** | 各層で独立して記録（traceability あり）|
+| **設定複雑度** | 中程度（Edge は Core を IdP として登録、Core は Customer IdP を登録）|
+
+#### 6.4.4 二重 Federation を避ける代替案
+
+| 代替案 | 内容 | トレードオフ |
+|---|---|---|
+| **A. Edge が Customer IdP に直接 Federation** | Edge アプリだけは Core を経由せず、顧客 IdP に直接接続 | **N×M 設定問題が Edge にも発生**（決済アプリ × 1500 顧客 = 1500 接続）、運用負荷大 |
+| **B. Token Exchange (RFC 8693)** | Edge は Core の JWT を受け取り、自分用の JWT に変換 | **Keycloak 必須**（Token Exchange サポート）、設計はシンプル、レイテンシ削減 |
+| **C. 共通 JWT を全アプリで受理** | Edge も Core の JWT をそのまま受理 | Edge の特殊要件（FAPI 等）が満たせない → **エッジ層の意味がない** |
+
+#### 6.4.5 推奨パターン
+
+| 状況 | 推奨パターン | 理由 |
+|---|---|---|
+| **エッジ層が独自要件を持つ**（FAPI / 独自 IdP モード 等）| **二重 Federation**（6.4.1-6.4.2 の標準パターン）| 業界標準、独立性と SSO の両立 |
+| **エッジ層が単に独立運用したい**（要件はコアと同じ）| **Token Exchange（代替案 B）** | レイテンシ削減、設定シンプル、Keycloak 必須 |
+| **エッジ層は限定的、コア層で吸収可能** | **エッジ層を作らずコア層に統合**（ティア化で対応）| エッジ層の運用負荷を回避 |
+
+→ **多くのケースで二重 Federation がデフォルト**、Token Exchange は最適化として後から導入可能。
+
+#### 6.4.6 接続プロトコル
 
 - **コア → エッジ**: OIDC Federation または SAML SP モード
 - **エッジは Core を Identity Provider として登録**
 - ユーザーは Core で 1 度認証すれば、Edge アプリでも SSO 成立
+- **Token Exchange 採用時**: コア層・エッジ層ともに Keycloak（RFC 8693 ネイティブサポート）必須
 
 ### 6.5 Federation-Friendly 設計原則
 
