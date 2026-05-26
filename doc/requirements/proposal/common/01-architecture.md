@@ -173,9 +173,9 @@ flowchart TB
     Core_H -->|統一 JWT| A3_H
     Core_H -->|統一 JWT| A4_H
 
-    Core_H <-.SSO Federation.-> EdgeFAPI_H
-    Core_H <-.SSO Federation.-> EdgeAI_H
-    Core_H <-.SSO Federation.-> EdgeLegacy_H
+    Core_H -. SSO Federation .-> EdgeFAPI_H
+    Core_H -. SSO Federation .-> EdgeAI_H
+    Core_H -. SSO Federation .-> EdgeLegacy_H
 
     EdgeFAPI_H -->|FAPI JWT| AD_H
     EdgeAI_H -->|JWT| AE_H
@@ -251,8 +251,8 @@ flowchart TB
     I1_D -.-> AuthB_D
     I1_D -.-> AuthC_D
 
-    AuthA_D <-.❌ SLO 不可<br/>❌ トークン非互換<br/>⚠ ログイン SSO のみ<br/>(顧客 IdP セッション依存).-> AuthB_D
-    AuthB_D <-.同上.-> AuthC_D
+    AuthA_D -. ❌ SLO 不可<br/>❌ トークン非互換<br/>⚠ ログイン SSO のみ<br/>(顧客 IdP セッション依存) .-> AuthB_D
+    AuthB_D -. 同上 .-> AuthC_D
 
     style InternalIdP_D fill:#f3e5f5,stroke:#7b1fa2
     style AppA_FullD fill:#fff8e1,stroke:#f57c00
@@ -774,9 +774,9 @@ flowchart TB
     CustomerIdP_H ==>|主接続| Core
     Core ==> StdApps
 
-    Core <-.SSO Federation.-> EdgeFAPI
-    Core <-.SSO Federation.-> EdgeAI
-    Core <-.SSO Federation.-> EdgeLegacy
+    Core -. SSO Federation .-> EdgeFAPI
+    Core -. SSO Federation .-> EdgeAI
+    Core -. SSO Federation .-> EdgeLegacy
 
     EdgeFAPI ==> App_HD
     EdgeAI ==> App_HE
@@ -855,9 +855,9 @@ flowchart TB
     CustomerIdP_D ==>|N×M 接続| AuthC_D
     CustomerIdP_D ==>|N×M 接続| AuthN_D
 
-    AuthA_D <-.❌ SSO 困難<br/>各アプリで再ログイン.-> AuthB_D
-    AuthB_D <-.❌ SSO 困難.-> AuthC_D
-    AuthC_D <-.❌ SSO 困難.-> AuthN_D
+    AuthA_D -. ❌ SSO 困難<br/>各アプリで再ログイン .-> AuthB_D
+    AuthB_D -. ❌ SSO 困難 .-> AuthC_D
+    AuthC_D -. ❌ SSO 困難 .-> AuthN_D
 
     style AppA_D fill:#fff8e1,stroke:#f57c00
     style AppB_D fill:#fff8e1,stroke:#f57c00
@@ -920,12 +920,12 @@ flowchart TB
     CustomerIdP_F ==> AuthB_F
     CustomerIdP_F ==> AuthC_F
 
-    AuthA_F <-.Federation.-> FedHub
-    AuthB_F <-.Federation.-> FedHub
-    AuthC_F <-.Federation.-> FedHub
+    AuthA_F -. Federation .-> FedHub
+    AuthB_F -. Federation .-> FedHub
+    AuthC_F -. Federation .-> FedHub
 
-    AuthA_F <-.SSO 経由<br/>Hub.-> AuthB_F
-    AuthB_F <-.SSO 経由<br/>Hub.-> AuthC_F
+    AuthA_F -. SSO 経由<br/>Hub .-> AuthB_F
+    AuthB_F -. SSO 経由<br/>Hub .-> AuthC_F
 
     style AppA_F fill:#fff8e1,stroke:#f57c00
     style AppB_F fill:#fff8e1,stroke:#f57c00
@@ -1062,9 +1062,9 @@ flowchart TB
         AuthC_X["Auth Service C"]
     end
 
-    CustIdP_X <==>|OIDC Federation<br/>(直接、Hub なし)| AuthA_X
-    CustIdP_X <==>|OIDC Federation| AuthB_X
-    CustIdP_X <==>|OIDC Federation| AuthC_X
+    CustIdP_X ==>|OIDC Federation<br/>(直接、Hub なし)| AuthA_X
+    CustIdP_X ==>|OIDC Federation| AuthB_X
+    CustIdP_X ==>|OIDC Federation| AuthC_X
 
     style CustIdP_X fill:#e3f2fd,stroke:#1565c0
     style AppA_X fill:#fff8e1,stroke:#f57c00
@@ -1109,9 +1109,9 @@ flowchart TB
     CustIdP_Y ==> AuthB_Y
     CustIdP_Y ==> AuthC_Y
 
-    AuthA_Y <==>|直接 SAML/OIDC SSO<br/>(Hub 介在なし)| AuthB_Y
-    AuthB_Y <==>|直接| AuthC_Y
-    AuthA_Y <==>|直接| AuthC_Y
+    AuthA_Y ==>|直接 SAML/OIDC SSO<br/>(Hub 介在なし)| AuthB_Y
+    AuthB_Y ==>|直接| AuthC_Y
+    AuthA_Y ==>|直接| AuthC_Y
 
     style Hub_Y fill:#e8f5e9,stroke:#2e7d32
     style CustIdP_Y fill:#e3f2fd,stroke:#1565c0
@@ -1149,9 +1149,9 @@ flowchart TB
     CustIdP_Z ==> AuthB_Z
     CustIdP_Z ==> AuthC_Z
 
-    AuthA_Z <==>|相互 trust<br/>直接 SSO| AuthB_Z
-    AuthB_Z <==>|相互 trust| AuthC_Z
-    AuthA_Z <==>|相互 trust| AuthC_Z
+    AuthA_Z ==>|相互 trust<br/>直接 SSO| AuthB_Z
+    AuthB_Z ==>|相互 trust| AuthC_Z
+    AuthA_Z ==>|相互 trust| AuthC_Z
 
     style CustIdP_Z fill:#e3f2fd,stroke:#1565c0
     style AppA_Z fill:#fff8e1,stroke:#f57c00

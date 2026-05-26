@@ -154,9 +154,14 @@ flowchart TB
 
 ```mermaid
 flowchart LR
-    A[App A] ⇄ B[App B] ⇄ C[App C]
-    A ⇄ C
+    A[App A]
+    B[App B]
+    C[App C]
     Fabric["Identity Fabric<br/>(Trust + Policy + Discovery)"]
+
+    A <--> B
+    B <--> C
+    A <--> C
     A --- Fabric
     B --- Fabric
     C --- Fabric
@@ -415,9 +420,9 @@ flowchart TB
     Edge2 ==> E
     Edge3 ==> F
 
-    Core <-.Federation/SSO.-> Edge1
-    Core <-.Federation.-> Edge2
-    Core <-.Federation.-> Edge3
+    Core -. Federation/SSO .-> Edge1
+    Core -. Federation .-> Edge2
+    Core -. Federation .-> Edge3
 
     subgraph Cust["顧客 IdP"]
         CI["顧客企業 IdP<br/>(Entra/Okta/etc<br/>1500-3000 社)"]
@@ -562,8 +567,8 @@ flowchart TB
         EdgeAI --- AIApp
     end
 
-    Core <-.Federation<br/>(PrivateLink or Internet).-> EdgeFAPI
-    Core <-.Federation.-> EdgeAI
+    Core -. Federation<br/>(PrivateLink or Internet) .-> EdgeFAPI
+    Core -. Federation .-> EdgeAI
 
     style SharedAcc fill:#fff3e0,stroke:#e65100
     style PaymentAcc fill:#e1f5fe,stroke:#0277bd
@@ -592,8 +597,8 @@ flowchart TB
         Core2["コア層 Keycloak"]
         EdgeFAPI2["エッジ FAPI Keycloak"]
         EdgeAI2["エッジ AI Auth"]
-        Core2 <-.Federation.-> EdgeFAPI2
-        Core2 <-.Federation.-> EdgeAI2
+        Core2 -. Federation .-> EdgeFAPI2
+        Core2 -. Federation .-> EdgeAI2
     end
 
     subgraph PaymentAcc2["決済アプリ AWS アカウント"]
@@ -644,8 +649,8 @@ flowchart TB
         AIApp3["AI アプリ"]
     end
 
-    Core3 <-.Federation.-> EdgeFAPI3
-    Core3 <-.Federation.-> EdgeAI3
+    Core3 -. Federation .-> EdgeFAPI3
+    Core3 -. Federation .-> EdgeAI3
     EdgeFAPI3 ==> PaymentApp3
     EdgeAI3 ==> AIApp3
 
