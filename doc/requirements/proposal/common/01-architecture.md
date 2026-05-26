@@ -488,6 +488,320 @@ flowchart LR
 
 ---
 
+### §C-1.2.C 代替アーキテクチャの比較（完全統合 / ハイブリッド / 完全分散）
+
+> **このサブセクションで定めること**: §C-1.2 で示した「完全統合」を中心に、**3 つの代替アーキテクチャを構成図ベースで比較**。設計レビュー段階で提起された 6 つの懸念（SPOF / 過剰品質 / アプリ最適化放棄 / 個別変更困難 / 想定外対応 等）を踏まえ、それぞれの構造的特徴を可視化する。
+> **主な判断軸**: SSO 維持 / 単一障害点リスク / アプリ最適化 / 過剰品質回避 / 個別要件変更 / 想定外アプリ対応の 6 観点。
+> **§C-1.2 全体との関係**: §C-1.2 の構成図は「完全統合」を採用した場合の詳細。本サブセクションでは **3 つの選択肢を同じ視覚言語で並列**し、最終判断（[§C-6 アーキテクチャ判断](06-architecture-decision-hybrid.md)）の根拠資料とする。
+> **§C-1.4 / §C-6 との関係**: §C-1.4（物理分離レベル）と §C-6（ハイブリッド推奨）の議論を、**4 つの全体構成図で 1 度に俯瞰**できる位置付け。
+
+#### 図 A. 完全統合版（参考、現状の §C-1.2 簡略版）
+
+```mermaid
+flowchart TB
+    subgraph CustomerIdP_A["顧客企業 IdP（1500-3000 社）"]
+        direction LR
+        IdP_A1["Acme<br/>Entra ID"]
+        IdP_A2["Globex<br/>Okta"]
+        IdP_A3["HENNGE One<br/>(SAML)"]
+        IdP_AN["..."]
+    end
+
+    subgraph Hub_A["共通認証基盤（1 つの Hub）"]
+        direction TB
+        AS_A["Authorization Server<br/>(Cognito or Keycloak)"]
+        UD_A["User DB<br/>(JIT/SCIM)"]
+        JWT_A["JWT 発行<br/>(統一クレーム)"]
+        AS_A --- UD_A
+        AS_A --- JWT_A
+    end
+
+    subgraph Apps_A["全アプリ（コア層に統合）"]
+        direction LR
+        APP_A1["経費精算"]
+        APP_A2["人事"]
+        APP_A3["決済（FAPI）"]
+        APP_A4["AI 連携"]
+        APP_A5["レガシー業務"]
+        APP_AN["..."]
+    end
+
+    CustomerIdP_A ==> Hub_A
+    Hub_A ==> Apps_A
+
+    style Hub_A fill:#fff3e0,stroke:#e65100,stroke-width:3px
+    style CustomerIdP_A fill:#e3f2fd,stroke:#1565c0
+    style Apps_A fill:#e8f5e9,stroke:#2e7d32
+```
+
+**特徴**: 1 つの Hub に全アプリ統合、SSO は自動成立。
+**強み**: SSO 自動、運用集約、セキュリティ baseline 統一。
+**弱点**: SPOF（全アプリ依存）、最大公約数の過剰品質、変更困難、想定外アプリ対応不可、プラットフォーム選定が一発勝負。
+
+---
+
+#### 図 B. ハイブリッド版（コア統合 + エッジ自律）⭐ §C-6 推奨
+
+```mermaid
+flowchart TB
+    subgraph CustomerIdP_H["顧客企業 IdP（1500-3000 社）"]
+        direction LR
+        IdP_H1["Acme<br/>Entra ID"]
+        IdP_H2["Globex<br/>Okta"]
+        IdP_H3["HENNGE One<br/>(SAML)"]
+        IdP_HN["..."]
+    end
+
+    subgraph Core["🟧 コア層: 共通認証基盤（80% のアプリ）"]
+        direction TB
+        CoreAS["Authorization Server<br/>Keycloak + Organization 機能<br/>Multi-Region Active-Active"]
+        subgraph CoreTier["ティア化"]
+            direction LR
+            T1["Standard<br/>99.95% / AAL2"]
+            T2["High-security<br/>99.99% / AAL3"]
+            T3["Critical<br/>99.99% / AAL3 + FIPS"]
+        end
+        CoreJWT["JWT 発行<br/>(統一クレーム)"]
+        CoreAS --- CoreTier
+        CoreAS --- CoreJWT
+    end
+
+    subgraph EdgeFAPI["🟦 エッジ層 1: FAPI 2.0 専用"]
+        direction TB
+        Edge1AS["Keycloak<br/>FAPI Profile"]
+        Edge1Note["DPoP / mTLS / PAR<br/>金融・決済規制対応"]
+        Edge1AS --- Edge1Note
+    end
+
+    subgraph EdgeAI["🟦 エッジ層 2: AI Agent / IoT"]
+        direction TB
+        Edge2AS["Device Code 独自実装<br/>Lambda + DynamoDB"]
+        Edge2Note["RFC 8628 / AI 連携"]
+        Edge2AS --- Edge2Note
+    end
+
+    subgraph EdgeLegacy["🟦 エッジ層 3: レガシー SAML"]
+        direction TB
+        Edge3AS["Keycloak<br/>SAML IdP モード"]
+        Edge3Note["既存 SAML SP 連携"]
+        Edge3AS --- Edge3Note
+    end
+
+    subgraph StdApps["🟩 標準アプリ（コア層接続、80%）"]
+        direction LR
+        App_H1["経費精算<br/>(Standard)"]
+        App_H2["人事<br/>(Standard)"]
+        App_H3["顧客ポータル<br/>(High-security)"]
+        App_H4["..."]
+    end
+
+    subgraph SpecApps["🟩 特殊アプリ（エッジ層接続、20%）"]
+        direction LR
+        App_HD["決済<br/>(FAPI 2.0)"]
+        App_HE["AI 連携 API"]
+        App_HF["レガシー<br/>業務系"]
+    end
+
+    CustomerIdP_H ==>|主接続| Core
+    Core ==> StdApps
+
+    Core <-.SSO Federation.-> EdgeFAPI
+    Core <-.SSO Federation.-> EdgeAI
+    Core <-.SSO Federation.-> EdgeLegacy
+
+    EdgeFAPI ==> App_HD
+    EdgeAI ==> App_HE
+    EdgeLegacy ==> App_HF
+
+    style Core fill:#fff3e0,stroke:#e65100,stroke-width:3px
+    style EdgeFAPI fill:#e1f5fe,stroke:#0277bd
+    style EdgeAI fill:#e1f5fe,stroke:#0277bd
+    style EdgeLegacy fill:#e1f5fe,stroke:#0277bd
+    style CustomerIdP_H fill:#e3f2fd,stroke:#1565c0
+    style StdApps fill:#e8f5e9,stroke:#2e7d32
+    style SpecApps fill:#f1f8e9,stroke:#558b2f
+```
+
+**特徴**:
+- **🟧 コア層**（オレンジ）: Keycloak 単一 Realm + Organization で 80% のアプリを統合。**3 ティア**で過剰品質回避
+- **🟦 エッジ層**（水色）: 特殊要件アプリごとに独立した認証基盤。FAPI / AI Agent / レガシー SAML 等
+- **太矢印（==>）**: 直接認証経路
+- **点線矢印（<-.-->）**: SSO Federation（コア ↔ エッジで信頼関係を共有、ユーザーは 1 回ログイン）
+
+**強み**: コア層内 SSO + エッジ Federation で SSO 維持 / ティア化で過剰品質回避 / エッジで最適化と想定外対応可 / SPOF 影響範囲を限定。
+**弱点**: 運用 2 系統（コア + エッジ）/ Federation 設計の専門性必要 / ガバナンス強化必要。
+
+**認証フロー例（決済アプリへのアクセス）**:
+1. ユーザーが経費精算アプリにログイン（コア層で認証）→ コア層 SSO セッション確立
+2. ユーザーが決済アプリにアクセス → エッジ FAPI 層に認証要求
+3. エッジ FAPI 層は **コア層を IdP として Trust** → Federation Auth Request
+4. コア層が既存セッション認識 → Assertion 発行
+5. エッジ FAPI 層がエッジ独自 JWT（FAPI 準拠）を発行
+6. ユーザーは **再ログイン不要で決済アプリ利用可**（SSO 成立）
+
+---
+
+#### 図 C-a. 完全分散版（純粋分散、各アプリ直接 IdP 接続）
+
+```mermaid
+flowchart TB
+    subgraph CustomerIdP_D["顧客企業 IdP（1500-3000 社）"]
+        direction LR
+        IdP_D1["Acme<br/>Entra ID"]
+        IdP_D2["Globex<br/>Okta"]
+        IdP_D3["HENNGE One<br/>(SAML)"]
+        IdP_DN["..."]
+    end
+
+    subgraph AppA_D["🟨 アプリ A: 経費精算"]
+        direction TB
+        AuthA_D["独自 Auth Service<br/>(Cognito Pool A)"]
+        App_DA1["経費精算ロジック"]
+        AuthA_D --- App_DA1
+    end
+
+    subgraph AppB_D["🟨 アプリ B: 人事"]
+        direction TB
+        AuthB_D["独自 Auth Service<br/>(Keycloak Realm B)"]
+        App_DB1["人事ロジック"]
+        AuthB_D --- App_DB1
+    end
+
+    subgraph AppC_D["🟨 アプリ C: 決済"]
+        direction TB
+        AuthC_D["独自 Auth Service<br/>(Auth0 Tenant C<br/>FAPI 2.0)"]
+        App_DC1["決済ロジック"]
+        AuthC_D --- App_DC1
+    end
+
+    subgraph AppN_D["🟨 アプリ N: ..."]
+        direction TB
+        AuthN_D["独自 Auth Service<br/>(各アプリ別 IdP)"]
+        App_DN1["..."]
+        AuthN_D --- App_DN1
+    end
+
+    CustomerIdP_D ==>|N×M 接続| AuthA_D
+    CustomerIdP_D ==>|N×M 接続| AuthB_D
+    CustomerIdP_D ==>|N×M 接続| AuthC_D
+    CustomerIdP_D ==>|N×M 接続| AuthN_D
+
+    AuthA_D <-.❌ SSO 困難<br/>各アプリで再ログイン.-> AuthB_D
+    AuthB_D <-.❌ SSO 困難.-> AuthC_D
+    AuthC_D <-.❌ SSO 困難.-> AuthN_D
+
+    style AppA_D fill:#fff8e1,stroke:#f57c00
+    style AppB_D fill:#fff8e1,stroke:#f57c00
+    style AppC_D fill:#fff8e1,stroke:#f57c00
+    style AppN_D fill:#fff8e1,stroke:#f57c00
+    style CustomerIdP_D fill:#e3f2fd,stroke:#1565c0
+```
+
+**特徴**: 各アプリが独自の認証基盤を持ち、顧客 IdP に直接接続。中央集約なし。
+
+**強み**: アプリごと完全最適化 / SPOF なし / 変更完全自由。
+**弱点**:
+- 🔴 **N×M 接続爆発**: 顧客 IdP 1500 × アプリ 10 = **15,000 接続を保守**
+- 🔴 **SSO 不成立**: 各アプリ独立 → ユーザーは各アプリで毎回ログイン
+- 🔴 **運用人員 N 倍**: アプリチームごとに認証専門家が必要
+- 🟡 **セキュリティ baseline drift**: 各アプリで MFA / パスワードポリシー等がバラバラ
+- 🔴 **顧客 IdP 側負担増**: 顧客企業も 10 個の SAML/OIDC 接続を管理
+
+→ **SSO 必須要件が満たせない**ため、御社の用途では事実上採用不可。
+
+---
+
+#### 図 C-b. 完全分散版（Federation Hub 経由で SSO 維持、Identity Mesh / Fabric 初期形態）
+
+```mermaid
+flowchart TB
+    subgraph CustomerIdP_F["顧客企業 IdP（1500-3000 社）"]
+        direction LR
+        IdP_F1["Acme<br/>Entra ID"]
+        IdP_F2["Globex<br/>Okta"]
+        IdP_F3["HENNGE One"]
+        IdP_FN["..."]
+    end
+
+    subgraph FedHub["🟩 Federation Hub<br/>(信頼関係のみ集約、JWT 発行はしない)"]
+        Trust["Trust Registry<br/>各 Auth Service の<br/>相互信頼設定のみ"]
+        Discovery["Discovery<br/>Endpoint"]
+        Trust --- Discovery
+    end
+
+    subgraph AppA_F["🟨 アプリ A 認証 + ロジック"]
+        AuthA_F["Cognito Pool A"]
+        App_FA1["経費精算"]
+        AuthA_F --- App_FA1
+    end
+
+    subgraph AppB_F["🟨 アプリ B 認証 + ロジック"]
+        AuthB_F["Keycloak Realm B"]
+        App_FB1["人事"]
+        AuthB_F --- App_FB1
+    end
+
+    subgraph AppC_F["🟨 アプリ C 認証 + ロジック"]
+        AuthC_F["Auth0 Tenant C<br/>(FAPI 2.0)"]
+        App_FC1["決済"]
+        AuthC_F --- App_FC1
+    end
+
+    CustomerIdP_F ==> AuthA_F
+    CustomerIdP_F ==> AuthB_F
+    CustomerIdP_F ==> AuthC_F
+
+    AuthA_F <-.Federation.-> FedHub
+    AuthB_F <-.Federation.-> FedHub
+    AuthC_F <-.Federation.-> FedHub
+
+    AuthA_F <-.SSO 経由<br/>Hub.-> AuthB_F
+    AuthB_F <-.SSO 経由<br/>Hub.-> AuthC_F
+
+    style AppA_F fill:#fff8e1,stroke:#f57c00
+    style AppB_F fill:#fff8e1,stroke:#f57c00
+    style AppC_F fill:#fff8e1,stroke:#f57c00
+    style CustomerIdP_F fill:#e3f2fd,stroke:#1565c0
+    style FedHub fill:#e8f5e9,stroke:#2e7d32
+```
+
+**特徴**: Federation Hub で **JWT 発行はしないが、各 Auth Service の相互信頼**のみ集約。SSO を Hub 経由で維持。
+
+**強み**: SSO 維持可 / アプリ最適化 / SPOF 影響は Hub 障害時のみ（既存セッションは継続）。
+**弱点**: 各アプリ Auth Service の運用負荷は変わらず / Hub 設計が複雑 / セキュリティ baseline は各アプリ規約依存 / **業界実例少なく専門性ハードル高**（GakuNin / eduGAIN 等の学術連邦のみ）。
+
+---
+
+#### 4 構成の俯瞰比較表
+
+| 観点 | A. 完全統合 | **B. ハイブリッド** ⭐ | C-a. 純粋分散 | C-b. Fed Hub 経由 |
+|---|:-:|:-:|:-:|:-:|
+| **認証基盤数** | 1 | コア 1 + エッジ N | N（各アプリ）| N + Hub |
+| **顧客 IdP 接続** | 1 箇所に集約 | コア層 1 箇所に集約 | **N×M = 15,000** | Hub or 各アプリ |
+| **SSO** | ✅ 自動 | ✅ コア自動 + エッジ Federation | ❌ 困難 | ✅ Hub 経由 |
+| **SPOF 影響範囲** | 全アプリ | コアのみ（エッジ独立）| 各アプリ独立 | Hub 障害で新規 SSO 停止 |
+| **アプリ最適化** | ❌ | ✅ エッジで可 | ✅ 完全 | ✅ 完全 |
+| **過剰品質回避** | ❌ | ✅ ティア化 | ✅ | ✅ |
+| **個別要件変更** | ❌ 困難 | ✅ エッジ自由 | ✅ 自由 | ✅ 自由 |
+| **想定外アプリ対応** | ❌ | ✅ エッジで新規対応 | ✅ | ✅ |
+| **運用人員** | 1 チーム | コアチーム + 限定的エッジ | **N チーム必須** | N チーム + Hub チーム |
+| **業界実例** | Slack / Notion | **Auth0 / Microsoft / Okta** | 大手金融機関業務系 | GakuNin（学術連邦）|
+| **御社規模（1500-3000 社）での適性** | △ | **◎ 推奨** | × | △（運用専門性必要）|
+
+#### 視覚言語の凡例
+
+- **🟧 オレンジ（共通認証基盤）**: 統合された認証基盤
+- **🟦 水色（エッジ層）**: 特殊要件アプリの独自基盤
+- **🟦 薄青（顧客 IdP）**: 顧客企業の認証基盤
+- **🟩 緑（アプリ）**: バックエンドシステム
+- **🟨 黄（独立認証付きアプリ）**: 分散版での自前 Auth + App セット
+- **太矢印（==>）**: 直接認証経路
+- **点線（<-.-->）**: Federation / 信頼関係
+
+→ **詳細な根拠と推奨判断は [§C-6 アーキテクチャ判断: ハイブリッド統合の根拠と設計](06-architecture-decision-hybrid.md)** を参照。
+
+---
+
 ## §C-1.3 採用しない代替パターン
 
 > **このサブセクションで定めること**: 検討した代替パターン(Point-to-Point / Mesh / Identity Fabric / BYOI)と、**なぜ採用しないか**の整理。   
