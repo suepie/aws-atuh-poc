@@ -143,7 +143,7 @@ doc/data-platform/
 | 3 | proposal/fr/01-data-catalog.md 〜 06-personas.md | 機能要件章 6 本（骨格） | 🚧 骨格 |
 | 4 | proposal/nfr/01-availability.md 〜 09-lifecycle.md | 非機能要件章 9 本（骨格） | 🚧 骨格 |
 | 5 | proposal/common/01-architecture.md 〜 05-schedule.md | 横断章 5 本（骨格） | 🚧 骨格 |
-| 6 | internal-evaluation.md | 社内評価メモ（裏どり） | 📋 未着手 |
+| 6 | [internal-evaluation.md](internal-evaluation.md) | 社内評価メモ（抽出方針の裏どり） | ✅ 初版 |
 
 **proposal/ 各章の構成規約**（[../requirements/proposal/](../requirements/proposal/00-index.md) の §X.0 規約を継承）:
 
@@ -522,7 +522,7 @@ flowchart LR
 | [proposal/common/03-ownership-raci.md](proposal/common/03-ownership-raci.md) | §C-3 運用主体と責任分解 | 🚧 骨格 |
 | [proposal/common/04-tbd-summary.md](proposal/common/04-tbd-summary.md) | §C-4 TBD サマリー | 🚧 骨格 |
 | [proposal/common/05-schedule.md](proposal/common/05-schedule.md) | §C-5 スケジュール | 🚧 骨格 |
-| internal-evaluation.md | 社内評価メモ（裏どり） | 📋 未着手 |
+| [internal-evaluation.md](internal-evaluation.md) | 社内評価メモ（抽出方針の裏どり資料） | ✅ 初版 |
 
 ### 9.3 ヒアリング
 
