@@ -1442,9 +1442,19 @@ sequenceDiagram
 複数テナント所属ユーザー向け：
 - ログイン後に「どのテナントとして動くか」を選択する UI
 - AWS Console の "Switch Role" と同様
-- 実装：基盤に "user → tenants" マッピングを持ち、選択 UI を提供
 
-→ 要件次第。多くの B2B SaaS では「1 アカウント = 1 テナント」で十分。
+**実装責務分担**（業界標準）:
+
+| 責務 | 担当 |
+|---|---|
+| `memberships` クレーム発行（全所属配列）| **共通基盤**（[B-606-4](../../hearing-checklist.md)）|
+| 切替時の新 JWT 発行（active_tenant 差替）| **共通基盤**（Refresh Token + クレーム差替 / Token Exchange） |
+| **テナント選択 UI 描画**（ドロップダウン / 画面）| **アプリ側 SPA / BFF**（業界標準、[B-611](../../hearing-checklist.md)）|
+| active_tenant のセッション保持 | アプリ側 BFF or SPA |
+
+→ **基盤側で UI を持つのは業界実例なし**（Slack / Notion / GitHub / Atlassian Cloud / Linear すべてアプリ側実装）。本基盤の責務は **`memberships` クレーム + 切替時の JWT 再発行 API**、UI はアプリ層で構築。
+
+→ 要件次第。多くの B2B SaaS では「1 アカウント = 1 テナント」で十分（[B-606](../../hearing-checklist.md) で確認）。
 
 #### SSO 挙動の比較（multi-tenant 文脈）
 
