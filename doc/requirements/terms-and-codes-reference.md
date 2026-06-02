@@ -354,6 +354,52 @@
 
 ---
 
+## 20. OAuth/OIDC 認証・認可フロー種別（6 種類）
+
+> **「認可フロー」は文脈で 2 つの意味**を持つため、議論時には必ず文脈を明示する。[§C-1.2.D 認可フロー種別の整理](proposal/common/01-architecture.md#c-12d-bearer-jwt--jwks-の標準動作と認可フロー種別の整理) と整合。
+
+| # | フロー名 | 内容 | 主役 | OAuth 標準用語 |
+|:-:|---|---|---|---|
+| 1 | **認証フロー**（Authentication Flow）| ユーザーが**誰か**を確認 + 識別 | 認証基盤 + 顧客 IdP | Authentication |
+| 2 | **認可フロー（意味 A）**（Authorization Grant Flow）| OAuth 2.0 で **Token を発行する仕組み** | 認証基盤（Authorization Server）| Authorization Grant |
+| 3 | **トークン検証フロー**（Token Validation）| Bearer JWT の**署名・有効期限・audience 検証** | API Gateway + Lambda Authorizer | Token Validation |
+| 4 | **認可判定フロー（意味 B）**（Resource Access Control）| tenant_id / roles から **リソースアクセス可否を判定** | アプリ Backend | Authorization Decision |
+| 5 | **ログアウトフロー**（Logout Flow）| セッション終了、4 レイヤー（L1〜L4）| 認証基盤 + アプリ + 顧客 IdP | Logout / SLO |
+| 6 | **Federation フロー** | コア層 ↔ エッジ層 / 顧客 IdP 間の **トラスト連携** | 各認証層 | Federation |
+
+> **「API 認可フロー」と呼ばれる経路**: #3 + #4 の複合フロー（Bearer JWT を API Gateway / Lambda Authorizer が受け取り、検証してから Backend が認可判定）
+
+---
+
+## 21. Bearer Token / JWT / JWKS / Token Introspection（API 認可関連用語）
+
+> §C-1.2.B 構成図で登場する用語。OAuth/OIDC 標準の API 認可に関する基本概念。
+
+| 用語 | 正式名称 / 規格 | 何か | 主な使用箇所 |
+|---|---|---|---|
+| **Bearer Token** | RFC 6750 | 「持参者トークン」。HTTP `Authorization: Bearer <token>` ヘッダーで送信。**持っていれば誰でも使える** | Bearer JWT の送信方式 |
+| **JWT** | RFC 7519（JSON Web Token）| 認証基盤が発行した**署名付き Token**。ヘッダー / ペイロード / 署名の 3 部構成、Base64URL エンコード | sub / iss / aud / exp / tenant_id / roles 等をクレームに含む |
+| **Bearer JWT** | RFC 6750 + RFC 7519 | Bearer Token として送信する JWT。OAuth/OIDC の **デファクト標準** | SPA → API Gateway 通信、§C-1.2.B 矢印「Bearer JWT」|
+| **JWKS** | RFC 7517（JSON Web Key Set）| 認証基盤が**公開鍵一覧**を公開する仕組み。`/.well-known/jwks.json` Endpoint | Lambda Authorizer が公開鍵取得 → 1h キャッシュ → ローカル JWT 検証 |
+| **kid** | RFC 7515（JWS）| Key ID。JWT ヘッダーに含まれる、使用すべき公開鍵の識別子 | JWKS 内の複数の公開鍵から該当のものを選択 |
+| **Token Introspection** | RFC 7662 | API 側が**毎回認証基盤に問い合わせ**て Token の有効性を確認する方式 | 即時失効必須時のみ採用（[K8 Access Token Revocation](proposal/common/01-architecture.md#c-12c1-federation-hub-の-5-つの実装パターンと-spof-評価)）|
+
+#### JWKS 方式 vs Token Introspection の選択
+
+| 観点 | **JWKS 方式（本基盤標準）** | Token Introspection |
+|---|---|---|
+| **認証基盤への通信頻度** | 初回 + 1h ごと（キャッシュヒット）| **API 呼び出しの度** |
+| **レイテンシ** | キャッシュヒット = 1ms 以下 | 毎回 50-200ms |
+| **認証基盤負荷** | 軽 | 重 |
+| **認証基盤の SPOF 影響** | **キャッシュ内は継続動作** | **基盤障害で全 API 停止** |
+| **トークン即時失効** | ❌ TTL 内は失効不可 | ✅ 即座に反映 |
+
+→ **本基盤標準は JWKS 方式**。Token Introspection は K8 規制要件時のみ採用。詳細は [§C-1.2.D.6](proposal/common/01-architecture.md#c-12d6-jwks-方式-vs-token-introspection-の選択)。
+
+> **使用箇所**: §C-1.2.B 構成図、§C-1.2.D、§FR-6.1.A 最小クレーム設計
+
+---
+
 ## 関連ドキュメント
 
 - [hearing-checklist.md](hearing-checklist.md): 全 124 項目の SSOT（§0〜§5 構造）

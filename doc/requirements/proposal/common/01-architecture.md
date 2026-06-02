@@ -1344,6 +1344,164 @@ sequenceDiagram
 
 ---
 
+### §C-1.2.D Bearer JWT / JWKS の標準動作と認可フロー種別の整理
+
+> **このサブセクションの目的**: 構成図（§C-1.2 / §C-1.2.B）と認証フロー図（§C-1.2.A）に登場する「**Bearer JWT**」「**JWKS**」「**Lambda Authorizer**」の標準動作を明確化。あわせて「**認可フロー**」という用語が文脈で複数の意味を持つ問題を整理し、6 種類のフローをタグ付きで定義する。
+> **主な判断軸**: 顧客 / アプリチームとの議論で「どのフローの話か」を機械的に識別できるよう、共通語彙を確立。
+> **§C-1.2 全体との関係**: §C-1.2 の構成図に登場する矢印・データフローが「OAuth/OIDC 標準のどの動作か」を逆引きできる位置付け。
+
+#### §C-1.2.D.1 認証・認可関連フロー 6 種類の整理表
+
+| # | フロー名 | 内容 | 主役 | OAuth/OIDC 標準用語 | 本基盤での該当箇所 |
+|:-:|---|---|---|---|---|
+| 1 | **認証フロー**（Authentication Flow）| ユーザーが**誰か**を確認 + 識別 | 認証基盤 + 顧客 IdP | Authentication | §C-1.2 構成図、§FR-1.1 |
+| 2 | **認可フロー（意味 A）**（Authorization Grant Flow）| OAuth 2.0 で **Token を発行する仕組み**（Authorization Code + PKCE 等）| 認証基盤（Authorization Server）| Authorization Grant | §FR-1.1 認証フロー一覧、マスター表 C 列 P |
+| 3 | **トークン検証フロー**（Token Validation）| Bearer JWT の**署名・有効期限・audience 検証** | API Gateway + Lambda Authorizer | Token Validation | §C-1.2.B Lambda Authorizer、§C-1.2.A 図 4 |
+| 4 | **認可判定フロー（意味 B）**（Resource Access Control）| tenant_id / roles から **リソースアクセス可否を判定** | アプリ Backend | Authorization Decision | §FR-6.0.A スタンス、Backend Lambda |
+| 5 | **ログアウトフロー**（Logout Flow）| セッション終了、4 レイヤー（L1〜L4）| 認証基盤 + アプリ + 顧客 IdP | Logout / SLO（Single Logout）| §FR-5、B-701〜B-706 |
+| 6 | **Federation フロー** | コア層 ↔ エッジ層 / 顧客 IdP 間の **トラスト連携** | 各認証層 | Federation | §C-1.2.C.2、§C-6 §6.4 |
+
+#### §C-1.2.D.2 「認可フロー」の 2 つの意味（混同しやすい）
+
+> **重要**: 「認可フロー」は OAuth / OIDC 文脈で **2 つの異なる意味**を持つため、議論時に必ず文脈を明示する。
+
+| 「認可」の意味 | 何の話か | 担当者 | OAuth 用語 |
+|---|---|---|---|
+| **意味 A: 認可フレームワーク**（OAuth 2.0 そのもの）| **Token をどう発行するか**（フロー / プロトコル）| **認証基盤**（Authorization Server）| Authorization Grant Flow / OAuth Flow |
+| **意味 B: 認可判定**（リソース保護）| **alice は /expense/123 にアクセスできるか?** | **各アプリ**（Resource Server）| Resource Access Control / Authorization Decision |
+
+→ 本基盤のスタンス（[§FR-6.0.A](../fr/06-authz.md)）: **「意味 B の認可判定は各アプリの責務」**。本基盤は **意味 A の認可（Token 発行制御）** と **意味 B のための材料提供（クレーム / JWT 検証手段）** を担当。
+
+#### §C-1.2.D.3 「API 認可フロー」の正確な分解（§C-1.2.B 構成図の動作）
+
+§C-1.2.B 構成図に登場する `SPA → API Gateway → Lambda Authorizer → JWKS → Backend Lambda` の経路は、上記 6 種類のフローのうち **#3 + #4 をまたぐ複合フロー**：
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant SPA
+    participant APIGW as API Gateway
+    participant Authz as Lambda Authorizer
+    participant Cache as Authorizer<br/>メモリキャッシュ
+    participant Auth as 認証基盤<br/>(JWKS Endpoint)
+    participant BE as Backend Lambda
+
+    Note over SPA,BE: 前提: SPA は事前に #2 認可フロー（意味 A）<br/>で JWT を取得済み
+
+    SPA->>APIGW: GET /api/expense<br/>Authorization: Bearer <JWT>
+    APIGW->>Authz: 認可判定要求
+
+    Note over Authz: ⓪ JWT のヘッダー解析<br/>kid = "abc123" 抽出
+
+    alt 初回 or キャッシュ TTL 切れ（1h ごと）
+        Authz->>Auth: ① GET /.well-known/jwks.json
+        Auth->>Authz: JWKS（公開鍵リスト）
+        Authz->>Cache: ② キャッシュ保存（1h）
+    else キャッシュヒット（ほぼ毎回）
+        Authz->>Cache: kid=abc123 の公開鍵取得<br/>(1ms 以下)
+        Cache->>Authz: 公開鍵
+    end
+
+    Note over Authz: ③ #3 トークン検証フロー<br/>ローカルで JWT 署名検証<br/>(認証基盤に問い合わせ不要)<br/>+ exp / aud / iss / tenant_id 検証
+
+    Authz->>APIGW: 検証 OK + 認可コンテキスト
+    APIGW->>BE: API 呼び出し + 認可コンテキスト
+
+    Note over BE: ④ #4 認可判定フロー（意味 B）<br/>tenant_id / roles から<br/>「alice は /expense/123 を編集可?」判定
+
+    BE->>SPA: レスポンス
+```
+
+**推奨タイトル**: **「Bearer JWT による API 認可フロー」**（#3 トークン検証 + #4 認可判定の複合フロー）
+
+#### §C-1.2.D.4 Bearer JWT とは
+
+**Bearer JWT** は OAuth 2.0 標準（RFC 6750）の **トークン送信方式**：
+
+- **Bearer Token** = 「持参者トークン」（持っていれば誰でも使える）
+- **JWT** = JSON Web Token（認証基盤が発行した署名付き Token、RFC 7519）
+- **送信方法**: HTTP Authorization ヘッダーに `Authorization: Bearer eyJhbGc...` の形式で添付
+
+**JWT の中身（例）**:
+
+```json
+ヘッダー: { "alg": "RS256", "kid": "abc123", "typ": "JWT" }
+ペイロード: {
+  "iss": "https://auth.example.com",
+  "sub": "alice@acme.com",
+  "aud": "expense-api",
+  "tenant_id": "acme",
+  "roles": ["user", "approver"],
+  "exp": 1717000000,
+  "iat": 1716996400
+}
+署名: 認証基盤の秘密鍵で RS256 署名
+```
+
+→ アプリは JWT を見るだけで「誰が、どのテナント、どの権限で来ているか」が分かる（**self-contained / stateless**）。
+
+#### §C-1.2.D.5 JWKS とは
+
+**JWKS**（JSON Web Key Set、RFC 7517）= 認証基盤が発行する **公開鍵の一覧** を JSON 形式で公開する仕組み。
+
+- Endpoint 例: `https://auth.example.com/.well-known/jwks.json`
+- **目的**: API 側で JWT の署名を**ローカル検証**するために、認証基盤の公開鍵を取得
+- **キャッシュ戦略**: 1 時間程度（KID 変更時のみ更新）
+
+**JWKS の内容例**:
+
+```json
+{
+  "keys": [
+    {
+      "kty": "RSA",
+      "kid": "abc123",
+      "use": "sig",
+      "alg": "RS256",
+      "n": "0vx7agoebGcQSuuPiL...",
+      "e": "AQAB"
+    }
+  ]
+}
+```
+
+#### §C-1.2.D.6 JWKS 方式 vs Token Introspection の選択
+
+「API 側で JWT が本物か検証する」方式は 2 つあり、本基盤は **JWKS 方式（標準）** を採用：
+
+| 観点 | **JWKS 方式（本基盤標準）** | Token Introspection（RFC 7662）|
+|---|---|---|
+| **認証基盤への通信頻度** | **初回 + 1h ごと**（実質キャッシュヒット）| **API 呼び出しの度** |
+| **レイテンシ** | キャッシュヒット = 1ms 以下 | 毎回 50-200ms |
+| **認証基盤負荷** | 軽（1h に 1 回 / アプリ）| 重（全 API リクエストの度）|
+| **認証基盤の SPOF 影響** | **キャッシュ TTL 内は継続動作**（基盤障害でも 1h は耐える）| **基盤障害で全 API 停止** |
+| **トークン即時失効** | ❌ TTL 内は失効不可 | ✅ 即座に反映 |
+| **採用シーン** | 標準的な OAuth/OIDC API | 即時失効必須（[K8 Access Token Revocation](#c-12c1-federation-hub-の-5-つの実装パターンと-spof-評価) 等）|
+
+→ **JWKS 方式は「分散検証 + 性能 + SPOF 影響緩和」の標準解**。Token Introspection は規制要件で即時失効必須な場合（[B-704 → K8](#c-12c1-federation-hub-の-5-つの実装パターンと-spof-評価)）にのみ採用。
+
+#### §C-1.2.D.7 「Authorizer → JWKS」矢印の正しい解釈
+
+§C-1.2.B 構成図の `Authλ -.JWKS 取得 (1h キャッシュ).-> AuthServer` 矢印について、**よくある誤解と正しい理解**：
+
+| 誤解 | 正しい理解 |
+|---|---|
+| ❌ JWT 検証の度に認証基盤に問い合わせている | ✅ **公開鍵を取得するためのアクセス**。初回 + 1h ごとのみ、以降はオフライン検証 |
+| ❌ Authorizer が SPOF を作っている | ✅ **キャッシュで吸収**、認証基盤障害時も 1h は継続動作可 |
+| ❌ 全 API 呼び出しがクリティカルパスに認証基盤への通信を含む | ✅ **クリティカルパスは Authorizer ローカル完結**（JWKS は事前取得済） |
+| ❌ 矢印が双方向矢印になっていない | ✅ **点線（-.->）が「常時通信ではない、キャッシュ前提」を意味**する |
+
+→ **矢印の設計は正しい**、Bearer JWT + JWKS の標準動作を表現したもの。
+
+#### §C-1.2.D.8 関連リファレンス
+
+- [§FR-6.0.A 認可スタンス](../fr/06-authz.md): 「意味 B の認可判定はアプリ責務」
+- [§FR-1.1 認証フロー](../fr/01-auth.md): Authorization Grant Flow（意味 A）の詳細
+- [マスター表 C 補足 2 K8](../../hearing-script/01-auth-flow.md): Token Introspection が必要な場合（規制要件）
+- [terms-and-codes-reference.md](../../terms-and-codes-reference.md): Bearer JWT / JWKS / Token Introspection 等の用語整理
+
+---
+
 ## §C-1.3 採用しない代替パターン
 
 > **このサブセクションで定めること**: 検討した代替パターン(Point-to-Point / Mesh / Identity Fabric / BYOI)と、**なぜ採用しないか**の整理。   
