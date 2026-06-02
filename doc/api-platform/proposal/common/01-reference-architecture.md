@@ -35,7 +35,7 @@
 |---|---|
 | §C-1.1 | 4 層モデル全体図 |
 | §C-1.2 | Serverless パターン参照アーキ |
-| §C-1.3 | Container（ECS）パターン参照アーキ |
+| §C-1.3 | Container（ECS）パターン参照アーキ — **マイクロサービス / モノリス 両方** |
 | §C-1.4 | アカウント体系（Landing Zone との関係） |
 
 ---
@@ -189,9 +189,38 @@ flowchart LR
 - **DB**：Aurora Serverless v2 / RDS Proxy（要件次第）
 - **観測**：ADOT Collector サイドカー、Fluent Bit でログルーティング
 
-### §C-1.3.3 TBD / 要確認
+### §C-1.3.3 SSR モノリスパターン参照アーキ
+
+[§C-API-2 §C-2.1](02-runtime-selection-criteria.md) のパターン C（SSR モノリス）を採用する場合の参照アーキ：
+
+```mermaid
+flowchart LR
+    Internet --> CF[CloudFront] --> WAF[AWS WAF]
+    WAF --> ALB[ALB<br/>+ Cognito session auth]
+    ALB -.path: /api/*.-> ECS[ECS Fargate Service<br/>Next.js / Rails / Spring Boot<br/>full-stack monolith]
+    ALB -.path: /pages/*.-> ECS
+    ALB -.path: /assets/*.-> ECS
+    ECS --> RDS[RDS / Aurora]
+
+    ECS -.ADOT sidecar.-> CW[CloudWatch + ADOT]
+    ECS -.firelens.-> CWL[CloudWatch Logs]
+```
+
+#### モノリスパターンの標準要素
+
+- **CloudFront / WAF**：Public は前段必須（マイクロサービスと同じ）
+- **ALB**：path-based routing で 1 ECS Service に集約。**ALB 認証（Cognito）が第一選択**
+- **ECS Fargate**：1 Service / 1 Task Definition、フルスタックエンジニアの構成
+- **Service Connect / VPC Lattice**：**不要**（同一プロセス内で完結）
+- **DB**：RDS / Aurora 主流（リレーショナル中心のフレームワークが多い）
+- **観測**：ADOT Collector サイドカー + OTel SDK（言語別）、Fluent Bit でログルーティング
+
+→ 詳細は [§FR-API-6 §6.1.A モノリス vs マイクロサービス](../fr/06-container-standard.md) 参照。
+
+### §C-1.3.4 TBD / 要確認
 
 - Q: Service Connect vs VPC Lattice の **デフォルト境界**確定 → `API-B-106`（§FR-API-1 と同じ）
+- Q: モノリスパターン用 **Service Catalog 製品**の整備優先度 → `API-D-2201-α`
 
 ---
 

@@ -149,9 +149,37 @@ flowchart LR
 
 ---
 
+## §4.A SSR モノリスでの留意点
+
+[§C-API-2 §C-2.1](../common/02-runtime-selection-criteria.md) のパターン C（SSR モノリス）では、利用者識別と按分の設計が API Gateway 系と異なる：
+
+| 観点 | API Gateway 系（API） | SSR モノリス |
+|---|---|---|
+| **テナント識別子** | API Key（per-key 計測容易）| **JWT クレーム `tenant_id` / Session ID** |
+| 計測手段 | API Gateway access log / Usage Plan の Usage data | **アプリ内で EMF カスタムメトリクス出力** |
+| EMF カスタム次元 | （API Gateway 連携）| アプリ middleware で次元を埋め込む（Powertools 等） |
+| Cost allocation tag | Service Catalog 製品で自動付与 | 同左（ECS Service / Task Definition / ALB に付与） |
+| 課金按分 | per-tenant API Key で粒度高 | **session / `tenant_id` 計測の粒度に依存**、按分精度がやや低い |
+
+**モノリス採用時の計測パス（推奨）**：
+1. アプリ middleware で **request 毎に `tenant_id` を確定**（JWT クレームまたは session 参照）
+2. アプリ内の構造化ログ + EMF カスタムメトリクスで **`tenant_id` 次元を CloudWatch に送信**
+3. ECS Service / Task / ALB に **必須タグ**（CostCenter / Application / Tenant 等）を付与
+4. CUR + Athena で **tag-based 按分**、テナント別は EMF メトリクスと突き合わせ
+5. **per-tenant 課金が要件化した場合**：§C-API-2 §C-2.3 段階移行で `/api/*` を別サービス化、API Key + Usage Plan を導入
+
+**EMF カーディナリティ注意**：
+- テナント数が大きい場合、`tenant_id` 次元をそのまま EMF に出すと CloudWatch コストが急増
+- **上位 N テナント + その他** に集約するか、CUR + アプリログ集計の併用が現実的
+
+詳細は [§FR-API-6 §6.1.A モノリス vs マイクロサービス](06-container-standard.md) 参照。
+
+---
+
 ## §4.x 関連ドキュメント
 
 - [§FR-API-3 流量制御](03-throttling-quota.md) — Usage Plan と API Key の連動
+- [§FR-API-6 §6.1.A モノリス vs マイクロサービス](06-container-standard.md) — モノリスでの計測
 - [§FR-API-8 観測性](08-observability.md) — access log・EMF の詳細
 - [§NFR-API-8 コスト](../nfr/08-cost.md) — コスト可視化・予算アラート
 - [§C-API-5 標準提供物](../common/05-self-service-catalog.md) — 必須タグの IaC モジュール

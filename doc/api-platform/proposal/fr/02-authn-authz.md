@@ -147,9 +147,38 @@
 
 ---
 
+## §2.A SSR モノリスでの留意点
+
+[§C-API-2 §C-2.1](../common/02-runtime-selection-criteria.md) のパターン C（SSR モノリス）では、認証方式の標準が API Gateway 系と異なる：
+
+| 観点 | API Gateway 系（API） | SSR モノリス |
+|---|---|---|
+| **第一選択** | JWT Authorizer（HTTP API）/ Cognito Authorizer（REST API） | **ALB Authentication（Cognito / OIDC）** |
+| トークン形式 | Bearer JWT in `Authorization` ヘッダ | **Session Cookie**（ALB が `AWSELBAuthSessionCookie`、または独自 cookie） |
+| クレーム取得 | アプリ側で JWT decode | ALB が **`X-Amzn-Oidc-Data`** / **`X-Amzn-Oidc-Identity`** ヘッダに注入 |
+| 認可ロジックの位置 | Lambda Authorizer / Verified Permissions | アプリ内 middleware（Next.js middleware、Rails before_action、Spring Security 等）|
+| API Key | API GW Usage Plan | **使えない**（ALB に Usage Plan なし） — 必要なら自前検証 |
+| mTLS | API GW Custom Domain | **ALB mTLS Listener**（2023〜） |
+| IAM auth | API Gateway IAM auth | ALB は IAM auth 非対応 → **Cognito session または独自 IdP** |
+
+**モノリス採用時の認証パス（推奨）**：
+1. ブラウザ → CloudFront → ALB
+2. ALB が未認証検知 → Cognito Hosted UI へリダイレクト
+3. 認証成功 → ALB が **session cookie 発行 + `X-Amzn-Oidc-*` ヘッダ注入**
+4. ECS の SSR モノリスがクレームを参照、アプリ内で認可判定
+5. `/api/*` も同じ session cookie で認証（モバイル API 等の Bearer token 必要なら別 endpoint 切り出し検討）
+
+**API 切り出し時の認証**：
+- 将来モバイル / 外部 Partner 連携で `/api/*` を別サービスに切り出す場合、認証は **Bearer JWT** に切り替える必要あり（§C-API-2 §C-2.3 段階移行パス）
+
+詳細は [§FR-API-6 §6.1.A モノリス vs マイクロサービス](06-container-standard.md) 参照。
+
+---
+
 ## §2.x 関連ドキュメント
 
 - [§FR-API-1 公開境界](01-exposure-boundary.md) — 境界別の認証方式マッピング
 - [§FR-API-3 流量制御](03-throttling-quota.md) — API Key と Usage Plan の関係
 - [§FR-API-4 課金](04-metering-billing.md) — 利用者識別子（API Key・JWT sub）の活用
+- [§FR-API-6 §6.1.A モノリス vs マイクロサービス](06-container-standard.md) — モノリス採用時の認証設計
 - [§C-API-3 共有認証基盤との接続点](../common/03-shared-auth-boundary.md) — 認証基盤側 SSOT との境界整理

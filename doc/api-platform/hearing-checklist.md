@@ -41,10 +41,24 @@
 | API-A-108 | 既存アプリの IaC 化率（CDK / Terraform / CFn / 手作業） | §C-API-5 | 🟡 | ⏳ |
 | API-A-109 | 主要なアプリチームの技術スキル分布（Lambda 経験 / Container 経験） | §C-API-2 | 🟡 | ⏳ |
 | API-A-110 | 本標準の対象範囲（全アプリ / 新規のみ / Critical のみ） | §NFR-API-9 | 🔥 | ⏳ |
+| API-A-111 | 新規アプリで採用予定のアーキパターン（SPA+API / SSR+API / SSR モノリス）の想定分布 | §C-API-2 §C-2.1 | 🔥 | ⏳ |
+| API-A-102-α | 既存アプリのうち SSR モノリス構成（Next.js full-stack / Rails / Spring Boot 等）の割合 | §C-API-2, §FR-API-6 | 🔥 | ⏳ |
 
 ---
 
 ## Phase B: 技術要件
+
+### B-0: アーキパターン選定（§C-API-2 §C-2.1）
+
+| ID | 質問 | 関連 FR/NFR | 優先度 | 状態 |
+|---|---|---|:---:|:---:|
+| API-B-001 | 本標準で 3 アーキパターン（SPA+API / SSR+API / SSR モノリス）**すべてサポート対象**にするか | §C-API-2 §C-2.1 | 🔥 | ⏳ |
+| API-B-001-α | SSR モノリスの **将来マイクロ化リスク**（モバイル要件等で API 切り出し）への扱い方針 | §C-API-2 §C-2.3, §NFR-API-9 | 🟡 | ⏳ |
+| API-B-001-β | SSR モノリスの **規模上限**（同時タスク数 / TPS）の目安設定 | §C-API-2 §C-2.1, §NFR-API-3 | 🟡 | ⏳ |
+| API-B-002 | SSR モノリスでの **認証は ALB + Cognito 標準化** で良いか | §FR-API-2 §2.A, §FR-API-6 | 🔥 | ⏳ |
+| API-B-003 | SSR モノリスでの **流量制御は WAF rate-based + アプリ内 throttling** で良いか | §FR-API-3 §3.A | 🟡 | ⏳ |
+| API-B-004 | SSR モノリスでの **per-tenant 課金按分**の要件（EMF カスタム次元 / CUR タグ集計） | §FR-API-4 §4.A | 🟡 | ⏳ |
+| API-B-005 | SSR モノリスの **観測性スタック**標準化（OpenTelemetry SDK + ADOT Collector サイドカー） | §FR-API-8 §8.A | 🟡 | ⏳ |
 
 ### B-1: 公開境界（§FR-API-1）
 
@@ -347,11 +361,11 @@
 
 | Phase | 件数 | うち 🔥 最優先 |
 |---|---:|---:|
-| Phase A | 10 | 4 |
-| Phase B | 41 | 7 |
+| Phase A | 12 | 6 |
+| Phase B | 48 | 10 |
 | Phase C | 37 | 0 |
 | Phase D | 47 | 14 |
-| **合計** | **135** | **25** |
+| **合計** | **144** | **30** |
 
 ### Stage 1（最優先 25 項目）を先行確認することで、本標準の中核判断（公開境界の判定 / プラットフォーム選定の方針 / 監査アカウント役割 / ガードレールの範囲）が早期確定できる。
 

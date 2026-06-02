@@ -21,7 +21,20 @@
 
 ---
 
-## §0.1 スコープ（4 層 + 横串の論述構造）
+## §0.1 スコープ（対象 Workload と 4 層 + 横串の論述構造）
+
+### 対象 Workload
+
+本標準は **「外部から HTTP(S) を受ける Workload」全般**を対象とする。具体的には：
+
+- **純粋な API**（HTTP API / REST API / GraphQL / WebSocket）
+- **SSR モノリス**（フロント + バックエンドが 1 ECS / 1 Lambda に同居：Next.js full-stack / Rails / Spring Boot 等）
+- **マイクロサービス間 API**
+- **内部 Webhook 受け口**
+
+**対象外**：非 HTTP の Workload（バッチ / ETL / ML 推論等）→ 別途「**Workload 標準**」で扱う前提。
+
+### 論述構造
 
 AWS 公式ドキュメント（API Gateway Developer Guide / Well-Architected Serverless Lens / Prescriptive Guidance「Multi-tenant SaaS API access」）および業界標準（API Gateway パターン）に共通する **論述順を抽出すると、4 層 + 横串** の構造に整理できる。**AWS が公式に「4 層モデル」と命名しているわけではなく、本標準が複数ソースから抽出・合成した分解**である（根拠は [requirements-document-structure.md 付録 A.0](requirements-document-structure.md) 参照）。
 

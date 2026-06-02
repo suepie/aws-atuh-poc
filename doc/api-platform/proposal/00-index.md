@@ -21,25 +21,31 @@
 
 ---
 
-## §1 要件定義の 6 ステップ（語る順序）
+## §1 要件定義の 7 ステップ（語る順序）
 
 ```mermaid
 flowchart LR
-    S1["①<br/>公開境界<br/>(§FR-API-1)"] --> S2["②<br/>認証認可<br/>(§FR-API-2)"]
+    S0["⓪<br/>アーキパターン選定<br/>(§C-API-2 §C-2.1)"] --> S1["①<br/>公開境界<br/>(§FR-API-1)"]
+    S1 --> S2["②<br/>認証認可<br/>(§FR-API-2)"]
     S2 --> S3["③<br/>流量制御・課金<br/>(§FR-API-3/4)"]
     S3 --> S4["④<br/>実装ランタイム<br/>(§FR-API-5/6)"]
     S4 --> S5["⑤<br/>ガードレール<br/>(§FR-API-7)"]
     S5 --> S6["⑥<br/>観測性<br/>(§FR-API-8)"]
+
+    style S0 fill:#e8f5e9,stroke:#2e7d32
 ```
 
 | Step | 章 | 答える問い |
 |:---:|---|---|
+| ⓪ | [§C-API-2 §C-2.1 アーキパターン選定](common/02-runtime-selection-criteria.md) | フロント・バックエンドをどう分けるか？ SPA+API / SSR+API / SSR モノリスの 3 パターン |
 | ① | [§FR-API-1 公開境界](fr/01-exposure-boundary.md) | どの境界に出す API か？ Public / Internal / Partner / Private |
 | ② | [§FR-API-2 認証認可](fr/02-authn-authz.md) | 誰が呼ぶか？ 共有認証基盤連携・API Key・mTLS・IAM auth |
 | ③ | [§FR-API-3 流量制御](fr/03-throttling-quota.md) / [§FR-API-4 課金](fr/04-metering-billing.md) | どれだけ使えるか？ 誰がどれだけ使ったか？ |
-| ④ | [§FR-API-5 Serverless](fr/05-serverless-standard.md) / [§FR-API-6 Container](fr/06-container-standard.md) | どう実装するか？ 2 系統標準と選定基準 |
+| ④ | [§FR-API-5 Serverless](fr/05-serverless-standard.md) / [§FR-API-6 Container](fr/06-container-standard.md) | どう実装するか？ 2 系統標準と選定基準（モノリス vs マイクロサービス含む） |
 | ⑤ | [§FR-API-7 ガードレール](fr/07-guardrails.md) | 何を全 API で必ず守らせるか？ |
 | ⑥ | [§FR-API-8 観測性](fr/08-observability.md) | どう運用観測するか？ |
+
+**ステップ ⓪ の意義**：本標準は **「外部から HTTP(S) を受ける Workload」全般**（API / SSR モノリス含む）を対象とする。3 アーキパターンをすべてサポートし、選定は各アプリに委ねる（決定木で支援）。⓪ の選定結果が ①〜⑥ の各章のデフォルト設定に影響する。
 
 ---
 

@@ -20,50 +20,77 @@
 
 すべての要件は **AWS マルチアカウント前提**で、各アプリアカウントが本標準を適用する。proposal/ 配下の各ファイル / functional-requirements.md / non-functional-requirements.md の各セクションは、この 4 軸に対する立場を明示すること。
 
-### 0.2 要件定義の 6 ステップ（語る順序）
+### 0.2 要件定義の 7 ステップ（語る順序）
 
-API プラットフォーム要件定義書および対関係者説明資料は、以下の 6 ステップで論理を組み立てる。**「公開境界 → 認証認可 → 流量制御 → 実装ランタイム → ガードレール → 観測性」** が本フェーズの中核ストーリー。
+API プラットフォーム要件定義書および対関係者説明資料は、以下の 7 ステップで論理を組み立てる。**「アーキパターン選定 → 公開境界 → 認証認可 → 流量制御 → 実装ランタイム → ガードレール → 観測性」** が本フェーズの中核ストーリー。
 
 ```mermaid
 flowchart LR
-    S1["①<br/>公開範囲<br/>(Public/Internal/Partner)"] --> S2["②<br/>認証認可<br/>(共有認証基盤連携)"]
+    S0["⓪<br/>アーキパターン選定<br/>(SPA+API / SSR+API / SSRモノリス)"] --> S1["①<br/>公開範囲<br/>(Public/Internal/Partner)"]
+    S1 --> S2["②<br/>認証認可<br/>(共有認証基盤連携)"]
     S2 --> S3["③<br/>流量制御・課金<br/>(Quota・利用者識別)"]
     S3 --> S4["④<br/>実装ランタイム<br/>(Serverless / ECS 標準)"]
     S4 --> S5["⑤<br/>ガードレール<br/>(監査アカウントFMS / 死守事項)"]
     S5 --> S6["⑥<br/>観測性<br/>(ログ・トレース・メトリクス)"]
 
+    style S0 fill:#e8f5e9,stroke:#2e7d32
     style S1 fill:#fff3e0,stroke:#e65100
     style S5 fill:#fce4ec,stroke:#ad1457
 ```
 
-**認証基盤の SSOT との対比**：認証側は ④「Cognito vs Keycloak の単一選定」が中核だが、API 側は **2 系統並行カタログ**（Serverless / ECS）と **ガードレール配信**（FMS）が中核。`プラットフォーム選定` 章は存在せず、代わりに `実装パターン選定基準` を common 章に置く。
+**ステップ ⓪ アーキパターン選定の意義**：
+本標準が対象とする Workload は「**外部から HTTP(S) を受ける Workload**」全般。
+SPA + 別 API、SSR + 別 API、SSR モノリス の 3 アーキパターンを **すべてサポート対象**とし、選定は各アプリに委ねる（決定木で支援）。
+このステップを最初に置くのは、選定結果が ①〜⑥ の各章のデフォルト設定に影響するため。
+
+**認証基盤の SSOT との対比**：認証側は ④「Cognito vs Keycloak の単一選定」が中核だが、API 側は **2 系統並行カタログ**（Serverless / ECS）と **ガードレール配信**（FMS）が中核。`プラットフォーム選定` 章は存在せず、代わりに `アーキパターン選定 + 実装ランタイム選定基準` を common 章に置く（ステップ ⓪ + ④）。
 
 ### 0.3 各ステップで答える問い
 
 | Step | 答える問い | 一次ソース（予定） | 補強ドキュメント |
 |:---:|---|---|---|
+| ⓪ | **どのアーキパターンで API を提供するか？**（SPA+API / SSR+API / SSR モノリスの 3 パターン、選定基準） | `proposal/common/02-runtime-selection-criteria.md §C-2.1` | Next.js / Rails / Spring Boot 実装例、業界の Web SPA vs SSR 比較 |
 | ① | **どんな公開境界の API を扱うか？**（Public / Internal / Partner / Private、判定フロー） | `functional-requirements.md §FR-API-1 公開境界` | API Gateway endpoint type / CloudFront / PrivateLink パターン |
 | ② | **誰がその API を呼ぶか？どう認証認可するか？**（共有認証基盤との接続点） | `functional-requirements.md §FR-API-2 認証認可` | [../requirements/](../requirements/00-index.md) 共有認証基盤の連携面 |
 | ③ | **どれだけ使えるか？誰がどれだけ使ったか？**（throttle / quota / 利用者識別 / 課金按分） | `functional-requirements.md §FR-API-3 流量制御 / §FR-API-4 課金管理` | Usage Plan・WAF rate-based・Cost allocation tag・CUR |
-| ④ | **どう実装するか？**（Serverless / ECS の 2 系統標準、選定基準） | `functional-requirements.md §FR-API-5 Serverless / §FR-API-6 Container` | Well-Architected Serverless Lens / ECS Best Practices |
+| ④ | **どう実装するか？**（Serverless / Container の 2 系統標準、選定基準。モノリス vs マイクロサービスを含む） | `functional-requirements.md §FR-API-5 Serverless / §FR-API-6 Container` | Well-Architected Serverless Lens / ECS Best Practices |
 | ⑤ | **何を全 API で必ず守らせるか？**（監査アカウント FMS 配信ルール、セキュリティ死守事項） | `functional-requirements.md §FR-API-7 ガードレール`、`non-functional-requirements.md §NFR-API-4 セキュリティ` | AWS Firewall Manager / Control Tower / SCP |
 | ⑥ | **どう運用観測するか？**（構造化ログ・X-Ray/ADOT・メトリクス・CloudTrail） | `functional-requirements.md §FR-API-8 観測性`、`non-functional-requirements.md §NFR-API-6 運用` | Powertools / ADOT / CloudWatch Logs Data Protection |
 
-### 0.4 ステップ ④（実装ランタイム）の論理構造
+**ステップ ⓪ と ④ の関係**：
+- ⓪ は **「フロントエンドとバックエンドをどう分けるか」**（SPA+API / SSR+API / SSR モノリス）
+- ④ は **「バックエンドを何で実装するか」**（Serverless / Container）
+
+両者は独立した軸。例：「SPA + 別 API」を選んだ後、API 部分を Serverless で実装するか Container で実装するかは ④ で決める。SSR モノリスを選んだ場合は Container 一択。
+
+### 0.4 ステップ ⓪（アーキパターン選定）の論理構造
+
+⓪ は **「フロントエンドとバックエンドをどう分けるか」**の決定。3 パターンをすべてサポート対象とする：
+
+| パターン | 構成 | 適性 | 実装ランタイム |
+|---|---|---|---|
+| **A. SPA + 別 API** | フロント (S3+CloudFront) + バックエンド API（別サービス）| 大規模 / マルチクライアント / B2B SaaS | API 側は Serverless / Container どちらでも |
+| **B. SSR + 別 API** | SSR フロント (Lambda/ECS) + バックエンド API（別サービス）| SEO 重視 + 高機能 / モバイル併用 | フロント Container 多い、API は両方可 |
+| **C. SSR モノリス** | フロント + ビジネスロジックが 1 プロセス（Next.js full-stack / Rails / Spring Boot 等）| 小〜中規模 / 単一クライアント / フルスタックチーム | **Container 一択**、Serverless は事実上適用外 |
+
+→ 「どれを推奨するか」ではなく「**3 パターンすべてサポートしつつ、各アプリの要件に応じた選定を支援**」が要件定義の役割。選定基準は [proposal/common/02-runtime-selection-criteria.md §C-2.1](proposal/common/02-runtime-selection-criteria.md) で決定木形式に展開。
+
+### 0.5 ステップ ④（実装ランタイム）の論理構造
 
 API 側の ④ は認証側のような「単一プラットフォーム選定」ではなく、**「2 系統並行カタログ + 選定基準」**：
 
 | 観点 | Serverless（API GW + Lambda） | Container（ECS Fargate） |
 |---|---|---|
-| 想定ワークロード | 短時間処理 / イベント駆動 / 不定期トラフィック | 長時間処理 / 常時稼働 / 既存資産活用 |
+| 想定ワークロード | 短時間処理 / イベント駆動 / 不定期トラフィック | 長時間処理 / 常時稼働 / 既存資産活用 / **SSR モノリス** |
 | コストモデル | リクエスト課金（変動費中心） | 時間課金（固定費中心） |
 | デプロイ単位 | Function / Stage | Service / Task Definition |
 | 公開境界 | API Gateway（HTTP/REST）/ Function URL | ALB / NLB / API Gateway VPC Link |
 | 主な落とし穴 | Cold start、Usage Plan は REST のみ、in-VPC のコスト | サイドカー OOM、Task Role 設計、AZ rebalancing |
+| Container 内の構成 | （該当なし）| **マイクロサービス vs モノリス** のサブ選定あり |
 
-→ 「どちらを選ぶか」ではなく「**両方の標準テンプレを揃えた上で、選定基準を明文化**」が要件定義の役割。選定基準は common 章で扱う。
+→ 「どちらを選ぶか」ではなく「**両方の標準テンプレを揃えた上で、選定基準を明文化**」が要件定義の役割。選定基準は common 章で扱う（§C-API-2 §C-2.2）。
 
-### 0.5 4 層モデル × 共有認証基盤との境界
+### 0.6 4 層モデル × 共有認証基盤との境界
 
 ```mermaid
 flowchart TB
@@ -128,7 +155,7 @@ doc/api-platform/
 │   │   └── common/                       ← 横断章 §C-API-1 〜 §C-API-5
 │   │       ├── 00-index.md
 │   │       ├── 01-reference-architecture.md  ← §C-API-1 全体参照アーキ（Serverless / Container 並列）
-│   │       ├── 02-runtime-selection-criteria.md ← §C-API-2 実装ランタイム選定基準
+│   │       ├── 02-runtime-selection-criteria.md ← §C-API-2 アーキパターン選定 + 実装ランタイム選定基準
 │   │       ├── 03-shared-auth-boundary.md ← §C-API-3 共有認証基盤との接続点
 │   │       ├── 04-audit-governance.md    ← §C-API-4 監査アカウントとのガバナンス境界
 │   │       └── 05-self-service-catalog.md ← §C-API-5 標準提供物（Service Catalog / IaC モジュール）

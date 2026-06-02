@@ -181,9 +181,41 @@ JSON フォーマットで以下を出力（マネージド変数を使用）：
 
 ---
 
+## §8.A SSR モノリスでの留意点
+
+[§C-API-2 §C-2.1](../common/02-runtime-selection-criteria.md) のパターン C（SSR モノリス）では、観測性スタックが Lambda 系と異なる：
+
+| 観点 | Lambda 系 | SSR モノリス（ECS）|
+|---|---|---|
+| **構造化ログ** | Powertools for AWS Lambda（Python / TypeScript / Java / .NET）| **OTel / Pino / Bunyan / Logback / Logrus 等の言語別 SDK** |
+| **ログ送信** | Lambda CloudWatch 直接出力 | **Fluent Bit / Firelens サイドカー** で CloudWatch Logs / S3 / OpenSearch ルーティング |
+| **トレース** | ADOT Lambda Layer + auto-instrumentation | **ADOT Collector サイドカー + OpenTelemetry SDK**（言語別） |
+| **メトリクス** | EMF（Powertools Metrics）| OpenTelemetry Metrics SDK + ADOT Collector |
+| **アプリ内 instrumentation** | Powertools が標準ライブラリ統合（boto3 等）| 言語別に **OpenTelemetry SDK の auto-instrumentation** を使う |
+| access log | API Gateway access log | **ALB access log（S3 出力）** + アプリ内 request log |
+
+**モノリス採用時の観測性スタック（推奨）**：
+1. **アプリ内 OpenTelemetry SDK**（auto-instrumentation 推奨）
+   - Node.js / Python / Ruby / Java / Go の言語別 OTel SDK
+2. **ADOT Collector サイドカー**（同一 task definition 内）
+   - アプリから OTLP 受信 → CloudWatch / X-Ray / Prometheus へエクスポート
+3. **Fluent Bit サイドカー**（Firelens）でログルーティング
+4. **ALB access log** を S3 に出力（Athena でクエリ）
+5. **アプリ内 middleware で `tenant_id` / `request_id` を構造化ログに埋め込み**
+
+**留意点**：
+- Powertools for AWS Lambda は **Lambda 専用**、ECS には適用不可
+- OpenTelemetry SDK のバージョンと言語別の成熟度を要確認（Node / Python / Java は成熟、Ruby はやや遅れ）
+- ADOT Collector サイドカーのメモリ消費を **task definition のリソース上限に織り込む**
+
+詳細は [§FR-API-6 §6.1.A モノリス vs マイクロサービス](06-container-standard.md) 参照。
+
+---
+
 ## §8.x 関連ドキュメント
 
 - [§FR-API-4 課金](04-metering-billing.md) — access log を課金按分のデータソースとして利用
+- [§FR-API-6 §6.1.A モノリス vs マイクロサービス](06-container-standard.md) — モノリスでの観測性
 - [§NFR-API-4 セキュリティ](../nfr/04-security.md) — 暗号化・PII マスク
 - [§NFR-API-6 運用](../nfr/06-operations.md) — 監視・アラート要件
 - [§NFR-API-7 コンプラ](../nfr/07-compliance.md) — 監査ログ保管期間

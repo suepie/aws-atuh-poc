@@ -144,9 +144,31 @@ flowchart TD
 
 ---
 
+## §1.A SSR モノリスでの留意点
+
+[§C-API-2 §C-2.1](../common/02-runtime-selection-criteria.md) のパターン C（SSR モノリス）を採用する場合、公開境界の扱いが API Gateway ベースとは異なる：
+
+| 観点 | API Gateway 系 | SSR モノリス |
+|---|---|---|
+| 境界判定の単位 | API（メソッド・リソース）単位 | **path 単位**（`/api/*`、`/admin/*`、`/pages/*`、`/assets/*`）|
+| Public / Internal の混在 | 別 stage / 別 API で分離 | **同一 ALB の path-based routing で分離**、Public/Internal の境界は path で表現 |
+| エンドポイントの区分 | API Gateway endpoint type | **ALB scheme**（internet-facing / internal）+ path |
+| Partner（B2B）| API Key / mTLS | mTLS（ALB mTLS Listener）+ 専用 path |
+| Private | Private API Gateway + VPCE | **Internal ALB + SG / NACL** で制御 |
+
+→ モノリスでは「**path ベースで公開境界を切る**」設計が前提。例：
+- `/api/v1/admin/*` → Internal 扱い（同一 ECS だが path で論理境界）
+- `/api/v1/public/*` → Public、WAF + Cognito session
+- `/assets/*` → Public、CloudFront キャッシュ
+
+詳細は [§FR-API-6 §6.1.A モノリス vs マイクロサービス](06-container-standard.md) 参照。
+
+---
+
 ## §1.x 関連ドキュメント
 
 - [§FR-API-2 認証認可](02-authn-authz.md) — 各区分で採用可能な認証方式の詳細
 - [§FR-API-7 ガードレール](07-guardrails.md) — 区分別 FMS 配信ルール
 - [§C-API-1 全体参照アーキ](../common/01-reference-architecture.md) — 区分別構成図の全体俯瞰
+- [§C-API-2 §C-2.1 アーキパターン選定](../common/02-runtime-selection-criteria.md) — モノリス採用判断
 - [§C-API-4 監査ガバナンス](../common/04-audit-governance.md) — 区分変更承認のフロー

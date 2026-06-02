@@ -153,9 +153,37 @@
 
 ---
 
+## §3.A SSR モノリスでの留意点
+
+[§C-API-2 §C-2.1](../common/02-runtime-selection-criteria.md) のパターン C（SSR モノリス）では、流量制御の手段が大きく異なる：
+
+| 観点 | API Gateway 系（API） | SSR モノリス（ALB + ECS）|
+|---|---|---|
+| **Usage Plan + API Key** | 利用可（REST API） | **利用不可**（ALB に Usage Plan なし）|
+| Throttle | API GW stage / method throttle | **WAF rate-based rule のみ**（IP / 5min 窓）|
+| Quota | Usage Plan で per-key | **自前実装**（DynamoDB アトミックカウンタ等）|
+| 429 応答 | API GW 自動 | アプリ自前または ALB レベル（リクエスト容量超過時） |
+| **代替手段** | （該当なし） | WAF rate-based + アプリ内 throttling（middleware）+ DynamoDB カウンタ |
+
+**モノリス採用時の流量制御パス（推奨）**：
+1. **第 1 層：CloudFront / WAF rate-based**（IP 単位、5min 窓、ボットや DDoS 対策）
+2. **第 2 層：ALB**（target group の max connections / desired count スケール制御）
+3. **第 3 層：アプリ内 middleware**（session ID / tenant_id 単位の throttling、必要時は DynamoDB）
+4. **B2B 課金が要件化したら**：§C-API-2 §C-2.3 段階移行パスで `/api/*` を別サービスに切り出し、API Gateway + Usage Plan を導入
+
+**留意点**：
+- Usage Plan が使えないため、**per-tenant 課金が必須要件のアプリはモノリスを避ける**（パターン A / B を選ぶ）
+- WAF rate-based の窓は固定 5min、より細かい制御は middleware で実装
+- DynamoDB アトミックカウンタは **コスト感度が高い**ため、テナント数 × リクエスト頻度を要見積
+
+詳細は [§FR-API-6 §6.1.A モノリス vs マイクロサービス](06-container-standard.md) 参照。
+
+---
+
 ## §3.x 関連ドキュメント
 
 - [§FR-API-4 課金](04-metering-billing.md) — 利用者識別子（API Key）の活用
+- [§FR-API-6 §6.1.A モノリス vs マイクロサービス](06-container-standard.md) — モノリスでの流量制御
 - [§FR-API-7 ガードレール](07-guardrails.md) — WAF rate-based rule の FMS 配信
 - [§NFR-API-4 セキュリティ](../nfr/04-security.md) — DDoS 対策の死守事項
 - [§NFR-API-8 コスト](../nfr/08-cost.md) — 流量制御で防ぐべきコスト暴騰シナリオ
