@@ -21,9 +21,9 @@
 
 ---
 
-## §0.1 スコープ（4 層モデル）
+## §0.1 スコープ（4 層 + 横串の論述構造）
 
-調査の結果、API プラットフォーム標準は **4 層 + 横串** で整理するのが AWS 流儀。
+AWS 公式ドキュメント（API Gateway Developer Guide / Well-Architected Serverless Lens / Prescriptive Guidance「Multi-tenant SaaS API access」）および業界標準（API Gateway パターン）に共通する **論述順を抽出すると、4 層 + 横串** の構造に整理できる。**AWS が公式に「4 層モデル」と命名しているわけではなく、本標準が複数ソースから抽出・合成した分解**である（根拠は [requirements-document-structure.md 付録 A.0](requirements-document-structure.md) 参照）。
 
 ```
 [公開境界層]      Who can reach the API?         Public / Internal / Partner / Private

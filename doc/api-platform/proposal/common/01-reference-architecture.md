@@ -11,7 +11,7 @@
 
 | 用語 | 定義 |
 |---|---|
-| **4 層モデル** | 公開境界 / 認証認可 / 流量制御 / 実装ランタイム の層構造 |
+| **4 層モデル** | 公開境界 / 認証認可 / 流量制御 / 実装ランタイム の層構造。**AWS が公式に命名したフレームワークではなく**、API Gateway Developer Guide / Well-Architected Serverless Lens / Prescriptive Guidance / 業界標準の API Gateway パターン等に共通する論述順を抽出した本標準の合成（根拠は [SSOT 付録 A.0](../../requirements-document-structure.md)） |
 | **Landing Zone** | AWS Organizations + Control Tower + 標準アカウント体系の総称 |
 | **共有認証基盤アカウント** | OIDC/OAuth 認可サーバを提供する集中アカウント |
 | **監査アカウント** | FMS Delegated Admin、CloudTrail / Config 集約先 |
