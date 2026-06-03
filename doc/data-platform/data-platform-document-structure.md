@@ -493,6 +493,7 @@ flowchart LR
 |---|---|:---:|
 | [00-index.md](00-index.md) | 本フォルダの入口 | ✅ 初版 |
 | **[data-platform-document-structure.md](data-platform-document-structure.md)（本 SSOT）** | 構成・ナラティブ・状態の単一情報源 | ✅ 初版 |
+| [powerpoint-outline-and-references.md](powerpoint-outline-and-references.md) | PowerPoint 構成案・参考資料マトリクス（8 章 39 項目 ~156 枚）| ✅ 初版 |
 
 ### 9.2 標準ベースライン提示版（proposal/）
 

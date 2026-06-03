@@ -261,29 +261,11 @@
 
 > **Q1 への対応**: 元「ローカル認証_パスワードポリシー」を本項目に統合（パスワード + ロック + 侵害検出 + Bot を 1 つに）。**セルフサービス機能（5.6）は別概念**として独立。
 
-### 3.4 認可スタンス + JWT クレーム設計 + API 認可フロー
+> **§3 の旧 §3.4 / §3.5 は移動済**:
+> - 旧 §3.4 認可スタンス + JWT クレーム設計 + API 認可フロー → **§4.1（§4 認可として独立章化）**
+> - 旧 §3.5 ITDR → **§7.4（§7 非機能要件のセキュリティ群に移動）**
 
-**概要**: 認可の 2 つの意味 + JWT クレーム + 認可粒度 + Bearer JWT / JWKS 標準動作 + Token Introspection 代替 + Token Exchange（K1）。
-
-| 種別 | 参考資料 |
-|---|---|
-| **hearing-script** | [03-authz-jwt.md B-301, B-302, B-305](hearing-script/03-authz-jwt.md), [01-auth-flow.md マスター表 C 補足 2 K1](hearing-script/01-auth-flow.md) |
-| **hearing-checklist** | §4.2 |
-| **proposal** | [§FR-6.0.A 認可スタンス](proposal/fr/06-authz.md), [§FR-6.1.A 最小クレーム設計](proposal/fr/06-authz.md), [§C-1.2.D Bearer JWT / JWKS / 認可フロー 6 種](proposal/common/01-architecture.md) |
-| **内部** | [common/authz-architecture-design.md](../common/authz-architecture-design.md), [terms-and-codes-reference.md §16, §20, §21](terms-and-codes-reference.md) |
-| **外部** | RFC: [6750 Bearer](https://datatracker.ietf.org/doc/html/rfc6750) / [7519 JWT](https://datatracker.ietf.org/doc/html/rfc7519) / [7517 JWKS](https://datatracker.ietf.org/doc/html/rfc7517) / [7662 Introspection](https://datatracker.ietf.org/doc/html/rfc7662) / [8693 Token Exchange](https://datatracker.ietf.org/doc/html/rfc8693) |
-
-### 3.5 ITDR（Identity Threat Detection & Response）統合戦略 ★NEW
-
-**概要**: 個別検知（侵害クレデンシャル C-205-2 / CAEP C-217）を**統合 ITDR 戦略**として整理。認証イベント異常検知 / リアルタイムリスク評価 / 自動レスポンス（強制ログアウト / MFA 要求）/ SOC 連携。
-
-| 種別 | 参考資料 |
-|---|---|
-| **hearing-script** | [10-security-compliance.md C-217](hearing-script/10-security-compliance.md) + 新規（C-217-2 ITDR 統合戦略）|
-| **proposal** | [§FR-5.4 CAEP 将来発展](proposal/fr/05-logout-session.md) |
-| **外部** | [Microsoft Defender for Identity](https://learn.microsoft.com/en-us/defender-for-identity/) / [AWS GuardDuty Identity Protection](https://docs.aws.amazon.com/guardduty/latest/ug/) / [Shared Signals Framework (OpenID)](https://openid.net/wg/sharedsignals/) / [Gartner ITDR Market Guide](https://www.gartner.com/en/documents/) |
-
-### 3.6 認証フロー一覧（OAuth 2.0 / OIDC 標準）
+### 3.4 認証フロー一覧（OAuth 2.0 / OIDC 標準）★繰上げ（旧 §3.6）
 
 **概要**: Authorization Code Flow + PKCE / Client Credentials / Device Code / mTLS / DPoP の使い分け、マスター表 C 列 P/S との対応。
 
@@ -306,7 +288,33 @@
 
 ---
 
-## 4. SSO・セッション・ログアウト（6 項目）
+## 4. 認可 / Authorization（1 項目、★NEW 独立章）
+
+> **2026-06-03 新設**: 元 §3.4 認可スタンス + JWT クレーム設計 + API 認可フローを **§3 認証から独立**。理由:
+> - **業界標準** で認証 (Authentication) と認可 (Authorization) は明確に分離される概念（Microsoft Entra / Okta / Gartner 整理に整合）
+> - **ボリューム**（スライド 6 枚 × ~20KB）が §3 内 1 項目では実態と乖離していた
+> - **議論の独立性**: 認可スタンス・JWT 設計・API 認可は **認証方式とは別軸の意思決定**（Bearer JWT vs Introspection / クレーム最小化 vs 充実 / アプリ側 vs Authorizer 認可 等）
+
+### 4.1 認可スタンス + JWT クレーム設計 + API 認可フロー
+
+**概要**: 認可の 2 つの意味 + JWT クレーム + 認可粒度 + Bearer JWT / JWKS 標準動作 + Token Introspection 代替 + Token Exchange（K1）。
+
+> **将来の細分化候補**（議論ボリュームが増えた場合）:
+> - §4.1 認可スタンス（基盤側 vs アプリ側の責任分界）
+> - §4.2 JWT クレーム設計（最小クレーム vs 充実 / カスタムクレーム）
+> - §4.3 API 認可フロー（JWKS / Bearer JWT / Token Introspection 例外）
+
+| 種別 | 参考資料 |
+|---|---|
+| **hearing-script** | [03-authz-jwt.md B-301, B-302, B-305](hearing-script/03-authz-jwt.md), [01-auth-flow.md マスター表 C 補足 2 K1](hearing-script/01-auth-flow.md) |
+| **hearing-checklist** | §4.2 |
+| **proposal** | [§FR-6.0.A 認可スタンス](proposal/fr/06-authz.md), [§FR-6.1.A 最小クレーム設計](proposal/fr/06-authz.md), [§C-1.2.D Bearer JWT / JWKS / 認可フロー 6 種](proposal/common/01-architecture.md) |
+| **内部** | [common/authz-architecture-design.md](../common/authz-architecture-design.md), [common/token-exchange-spec-and-patterns.md](../common/token-exchange-spec-and-patterns.md), [terms-and-codes-reference.md §16, §20, §21](terms-and-codes-reference.md) |
+| **外部** | RFC: [6750 Bearer](https://datatracker.ietf.org/doc/html/rfc6750) / [7519 JWT](https://datatracker.ietf.org/doc/html/rfc7519) / [7517 JWKS](https://datatracker.ietf.org/doc/html/rfc7517) / [7662 Introspection](https://datatracker.ietf.org/doc/html/rfc7662) / [8693 Token Exchange](https://datatracker.ietf.org/doc/html/rfc8693) |
+
+---
+
+## 5. SSO・セッション・ログアウト（6 項目）★旧 §4 から繰下げ
 
 ### 4.1 SSO 方針 + セッション信頼レベル
 
@@ -402,7 +410,7 @@
 
 ---
 
-## 5. ユーザー管理・プロビジョニング・セルフサービス（8 項目）
+## 6. ユーザー管理・プロビジョニング・セルフサービス（8 項目）★旧 §5 から繰下げ
 
 ### 5.1 フェデユーザ同期（JIT / SCIM）
 
@@ -514,9 +522,9 @@
 
 ---
 
-## 6. 非機能要件（8 項目）
+## 7. 非機能要件（9 項目）★旧 §6 から繰下げ、§7.4 ITDR 追加
 
-### 6.1 可用性・SLA・DR
+### 7.1 可用性・SLA・DR
 
 **概要**: SLA 目標 + RTO + RPO + フェイルオーバー方式 + 計画メンテナンス窓 + Multi-Region vs Multi-AZ。
 
@@ -527,7 +535,7 @@
 | **proposal** | [§NFR-1 可用性](proposal/nfr/01-availability.md), [§NFR-5 DR](proposal/nfr/05-dr.md), [§C-6 §6.2.4 SLA 別必要構成](proposal/common/06-architecture-decision-hybrid.md) |
 | **外部** | [AWS Multi-Region Best Practices](https://docs.aws.amazon.com/wellarchitected/latest/reliability-pillar/welcome.html) / [Keycloak HA Guide](https://www.keycloak.org/server/concepts-cluster) / [IPA 非機能要求グレード A. 可用性](https://www.ipa.go.jp/sec/softwareengineering/std/ent03-b.html) |
 
-### 6.2 性能・スケール
+### 7.2 性能・スケール
 
 **概要**: 認証応答時間目標 + ピーク時想定 + Cognito Hard Limit + Keycloak DB チューニング + 規模スケーリング戦略。
 
@@ -539,7 +547,7 @@
 | **内部** | [ADR-006 コスト損益分岐](../adr/006-cognito-vs-keycloak-cost-breakeven.md) |
 | **外部** | [AWS Cognito Service Quotas](https://docs.aws.amazon.com/cognito/latest/developerguide/limits.html) / [Keycloak Performance Tuning](https://www.keycloak.org/server/configuration-production) |
 
-### 6.3 セキュリティ NFR + 監査ログ詳細 + Key Management ★拡張
+### 7.3 セキュリティ NFR + 監査ログ詳細 + Key Management ★拡張
 
 **概要**: 監査ログ詳細（SIEM 連携 / 改ざん防止 / レポート）+ セッションタイムアウト + ペネトレ + **JWT 署名鍵管理（KMS / HSM）** + 暗号化 + ゼロトラスト。
 
@@ -551,7 +559,27 @@
 | **内部** | [common/jwks-public-exposure.md](../common/jwks-public-exposure.md) |
 | **外部** | [OWASP Top 10 (2021)](https://owasp.org/Top10/) / [NIST SP 800-53 Rev 5](https://csrc.nist.gov/publications/detail/sp/800-53/rev-5/final) / [IPA 非機能要求グレード E. セキュリティ](https://www.ipa.go.jp/sec/softwareengineering/std/ent03-b.html) / [CIS Controls v8](https://www.cisecurity.org/controls) / [AWS KMS Best Practices](https://docs.aws.amazon.com/kms/latest/developerguide/best-practices.html) / [Keycloak Key Management](https://www.keycloak.org/server/keys) |
 
-### 6.4 運用 + IaC + CI/CD ★拡張
+### 7.4 ITDR / Identity Security（Identity Threat Detection & Response）★旧 §3.5 から移動
+
+**概要**: 認証後の**動的な脅威検知 + 自動応答**。個別検知（侵害クレデンシャル C-205-2 / CAEP C-217）を**統合 ITDR 戦略**として整理。認証イベント異常検知 / リアルタイムリスク評価 / 自動レスポンス（強制ログアウト / MFA 要求）/ SOC 連携。
+
+> **§7.3 セキュリティ NFR との関係**: §7.3 が「**静的・基盤設計**」（監査ログ / 暗号化 / 鍵管理 等の設計時に決めるベースライン）、§7.4 が「**動的・運用機能**」（運用中のリアルタイム脅威応答）。両者で「セキュリティ全体像」を構成。
+>
+> **§5.6 強制再認証・ステップアップとの関係**: ITDR で脅威検知 → §5.6 強制再認証を発火、という連動関係。CAEP / Shared Signals Framework は両者の橋渡し標準。
+
+**業界での位置付け（独立カテゴリ化の進行）**:
+- **Gartner**: 2022 から ITDR を独立カテゴリ化（IAM / IGA / **ITDR** / PAM）
+- **Microsoft Entra**: Identity Protection（ITDR 専門）として独立機能化
+- **Okta**: Identity Security Posture Management（ISPM）として独立
+- **CrowdStrike**: Falcon Identity Protection として独立製品
+
+| 種別 | 参考資料 |
+|---|---|
+| **hearing-script** | [10-security-compliance.md C-217](hearing-script/10-security-compliance.md) + 新規（C-217-2 ITDR 統合戦略）|
+| **proposal** | [§FR-5.4 CAEP 将来発展](proposal/fr/05-logout-session.md), [§NFR-4 セキュリティ](proposal/nfr/04-security.md) |
+| **外部** | [Microsoft Defender for Identity](https://learn.microsoft.com/en-us/defender-for-identity/) / [AWS GuardDuty Identity Protection](https://docs.aws.amazon.com/guardduty/latest/ug/) / [Shared Signals Framework (OpenID)](https://openid.net/wg/sharedsignals/) / [Gartner ITDR Market Guide](https://www.gartner.com/en/documents/) / [CrowdStrike Falcon Identity Protection](https://www.crowdstrike.com/en-us/products/identity-protection/) |
+
+### 7.5 運用 + IaC + CI/CD ★拡張
 
 **概要**: 監視ツール + バージョンアップ方針 + 変更管理プロセス（Git PR ベース）+ **IaC（Terraform / CloudFormation / Helm）** + **CI/CD パイプライン** + Runbook + 緊急対応 Fast Track。
 
@@ -562,7 +590,7 @@
 | **proposal** | [§NFR-6 運用](proposal/nfr/06-operations.md), [§NFR-6.4 構成変更プロセス](proposal/nfr/06-operations.md) |
 | **外部** | [AWS Well-Architected Framework - Operational Excellence](https://docs.aws.amazon.com/wellarchitected/latest/operational-excellence-pillar/welcome.html) / [Terraform AWS Provider Cognito](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/cognito_user_pool) / [Keycloak Helm Charts](https://github.com/keycloak/keycloak-helm) / [IPA 非機能要求グレード C. 運用・保守性](https://www.ipa.go.jp/sec/softwareengineering/std/ent03-b.html) |
 
-### 6.5 運用体制（24/7 サポート・人員）
+### 7.6 運用体制（24/7 サポート・人員）
 
 **概要**: サポート体制（24/7 / 営業時間）+ Red Hat 利用実績 + RHBK サブスク要否 + 専任 / 兼任 / 外部委託の選択。
 
@@ -573,7 +601,7 @@
 | **proposal** | [§C-2.3 運用体制](proposal/common/02-platform.md), [§NFR-6 運用](proposal/nfr/06-operations.md) |
 | **外部** | [Red Hat Build of Keycloak Subscription](https://access.redhat.com/products/red-hat-build-of-keycloak) / [AWS Enterprise Support](https://aws.amazon.com/premiumsupport/plans/enterprise/) |
 
-### 6.6 コスト・予算
+### 7.7 コスト・予算
 
 **概要**: 3 年 TCO + RHBK サブスク予算 + 年間予算枠 + ティア別コスト試算。
 
@@ -585,7 +613,7 @@
 | **内部** | [ADR-006 Cognito vs Keycloak コスト損益分岐 (175K MAU)](../adr/006-cognito-vs-keycloak-cost-breakeven.md) |
 | **外部** | [AWS Cognito Pricing](https://aws.amazon.com/cognito/pricing/) / [Red Hat Build of Keycloak Subscription Pricing](https://access.redhat.com/products/red-hat-build-of-keycloak) |
 
-### 6.7 監査ログ・コンプラレポート（独立項目化）
+### 7.8 監査ログ・コンプラレポート（独立項目化）
 
 **概要**: 監査ログ保存期間 + ログフォーマット + SIEM 連携 + 改ざん防止 + コンプラ別レポート（SOC 2 / PCI DSS / HIPAA）。
 
@@ -596,7 +624,7 @@
 | **proposal** | [§FR-8.2 監査ログ](proposal/fr/08-admin.md), [§FR-9.2 ログ統合](proposal/fr/09-integration.md), [§NFR-7 コンプライアンス](proposal/nfr/07-compliance.md) |
 | **外部** | [Splunk / Datadog SIEM integration patterns](https://www.datadoghq.com/blog/security-monitoring-for-aws-cognito/) / [AWS CloudTrail Best Practices](https://docs.aws.amazon.com/awscloudtrail/latest/userguide/best-practices-security.html) / [Keycloak Event Listener SPI](https://www.keycloak.org/docs/latest/server_development/#_events) |
 
-### 6.8 BCP・DR ランブック
+### 7.9 BCP・DR ランブック
 
 **概要**: 災害復旧手順（Runbook）+ DR 訓練計画 + リハーサル頻度 + 連絡フロー + エスカレーション体制。
 
@@ -608,11 +636,11 @@
 
 ---
 
-## 7. 開発者体験・UX・プライバシー（5 項目、★NEW 章）
+## 8. 開発者体験・UX・プライバシー（5 項目）★旧 §7 から繰下げ
 
 > **本章の意義**: 「機能要件 / 非機能要件」の枠に収まらない、**開発者・エンドユーザー・規制対応**の横断観点を集約。CIAM 業界では「**Developer Experience + Privacy**」が独立評価軸として定着（[Kinde 2026 Top 10 Enterprise Auth Providers](https://www.kinde.com/comparisons/what-are-the-top-10-enterprise-authentication-providers-in-2026/)）。
 
-### 7.1 開発者体験（SDK / API ドキュメント / サンプル）★NEW
+### 8.1 開発者体験（SDK / API ドキュメント / サンプル）★NEW
 
 **概要**: アプリチームの自律性 = ハイブリッド構成の前提。SDK / ドキュメント / サンプルコードの整備。
 
@@ -629,7 +657,7 @@
 | **proposal** | [§FR-9.1 プロトコル準拠](proposal/fr/09-integration.md) |
 | **外部** | [Kinde Top 10 Enterprise Auth Providers 2026](https://www.kinde.com/comparisons/what-are-the-top-10-enterprise-authentication-providers-in-2026/) / [Auth0 SDK Libraries](https://auth0.com/docs/libraries) / [Cognito SDK for JavaScript](https://github.com/aws-amplify/amplify-js) / [Keycloak Adapter Libraries](https://www.keycloak.org/securing-apps/overview) |
 
-### 7.2 アクセシビリティ（WCAG 2.1 / JIS X 8341-3）★NEW
+### 8.2 アクセシビリティ（WCAG 2.1 / JIS X 8341-3）★NEW
 
 **概要**: ログイン画面のアクセシビリティ。WCAG 2.1 AA 準拠 / スクリーンリーダー対応 / キーボード操作 / カラーコントラスト。
 
@@ -639,7 +667,7 @@
 | **proposal** | [§FR-2.3.3.A ブランディング](proposal/fr/02-federation.md) |
 | **外部** | [WCAG 2.1 (W3C)](https://www.w3.org/TR/WCAG21/) / [JIS X 8341-3 (総務省)](https://waic.jp/) / [Microsoft Accessibility for Enterprise](https://www.microsoft.com/en-us/accessibility/) / [Auth0 Accessibility Statement](https://auth0.com/docs/get-started/applications/accessibility) |
 
-### 7.3 多言語対応（i18n / l10n）★NEW
+### 8.3 多言語対応（i18n / l10n）★NEW
 
 **概要**: 顧客企業がグローバル展開（A-12 = Yes）の場合の必須要件。
 
@@ -655,7 +683,7 @@
 | **hearing-script** | 新規（A-12-3 多言語対応要件）|
 | **外部** | [Cognito Managed Login Languages](https://docs.aws.amazon.com/cognito/latest/developerguide/managed-login-languages.html) / [Keycloak Internationalization](https://www.keycloak.org/docs/latest/server_admin/#_internationalization-config) |
 
-### 7.4 プライバシー / Cookie Consent / GDPR DSR ★NEW
+### 8.4 プライバシー / Cookie Consent / GDPR DSR ★NEW
 
 **概要**: GDPR / CCPA / APPI 対応。Cookie consent UI + プライバシーポリシー + Data Subject Rights（Access / Erasure / Portability）。
 
@@ -673,7 +701,7 @@
 | **proposal** | [§NFR-7 コンプライアンス](proposal/nfr/07-compliance.md) |
 | **外部** | [GDPR Article 15-22 Data Subject Rights](https://gdpr-info.eu/chapter-3/) / [Secure Privacy Mobile Consent](https://secureprivacy.ai/blog/mobile-app-sdk-consent-management) / [Microsoft GDPR Compliance](https://learn.microsoft.com/en-us/compliance/regulatory/gdpr) / [個人情報保護法（APPI）](https://www.ppc.go.jp/) |
 
-### 7.5 Vendor Lock-in 回避 / Portability ★NEW
+### 8.5 Vendor Lock-in 回避 / Portability ★NEW
 
 **概要**: プラットフォーム選定後の出口戦略。Cognito → Keycloak 移行（または逆）の容易性。
 
@@ -690,70 +718,71 @@
 
 ---
 
-## 8. 元 28 項目 ↔ 新 44 項目のマッピング表
+## 9. 元 28 項目 ↔ 新 45 項目のマッピング表（8 章構成）
 
-> **目的**: 当初提示された 28 項目が新構造のどこに配置されたか、**抜けがないかの確認**用。
+> **目的**: 当初提示された 28 項目が新構造のどこに配置されたか、**抜けがないかの確認**用。**2026-06-03 構成変更**: 認可を §4 として独立章化、ITDR を §7.4 セキュリティ群へ移動。
 
 | # | 元 28 項目（ご提示）| 新項目 | 状態 |
 |:-:|---|---|:-:|
 | 1 | MFA要件 | **3.2 MFA 要件（初回認証）** | ✅ そのまま（#7 から分離、初回 MFA に純化）|
-| 2 | SSO方針・セッション信頼方針 | **4.1 SSO 方針 + セッション信頼レベル** | ✅ そのまま |
-| 3 | アカウント重複・リンク方針 | **5.4 アカウント重複・リンク方針** | ✅ そのまま |
+| 2 | SSO方針・セッション信頼方針 | **5.1 SSO 方針 + セッション信頼レベル** | ✅ そのまま |
+| 3 | アカウント重複・リンク方針 | **6.4 アカウント重複・リンク方針** | ✅ そのまま |
 | 4 | アカウントロック_侵害検出 | **3.3 ローカルユーザー認証ポリシー**（統合）| ✅ パスワード + ロック + 侵害検出 + Bot を統合 |
 | 5 | 移行方針・リリース計画 | **1.6 移行方針・リリース計画** | ✅ そのまま（+ Vendor Lock-in 追記） |
 | 6 | 規模・規制・コンプライアンス | **2.1 規模・規制・コンプライアンス** | ✅ そのまま（+ A-15 顧客数追記） |
-| 7 | 強制再認証・ステップアップ認証 | **4.6 強制再認証・ステップアップ認証（★NEW 独立章）** | ⚠ §3.2 から独立、ポリシー層として整理 |
-| 8 | クレーム設計 | **3.4 認可スタンス + JWT クレーム設計 + API 認可フロー** | ⚠ #13 と統合 |
+| 7 | 強制再認証・ステップアップ認証 | **5.6 強制再認証・ステップアップ認証（★NEW 独立章）** | ⚠ §3.2 から独立、ポリシー層として整理 |
+| 8 | クレーム設計 | **4.1 認可スタンス + JWT クレーム設計 + API 認可フロー** | ⚠ #13 と統合 |
 | 9 | 構成概要 | **1.4 構成概要図 / 1.3 アーキテクチャ方針** | ⚠ 細分化 |
 | 10 | 顧客別ブランディング | **2.5 顧客別ブランディング** | ✅ そのまま |
 | 11 | 製品選定 | **1.5 製品選定** | ✅ そのまま（+ ティア・規模軸明示） |
 | 12 | 接続するサービスの情報 | **2.2 顧客 IdP 一覧 + 2.3 接続アプリ・システム一覧** | ⚠ 2 つに分離（IdP vs アプリ）|
-| 13 | 認可設定（JWTクレーム）| **3.4 に統合** | ⚠ #8 と統合 |
+| 13 | 認可設定（JWTクレーム）| **4.1 に統合** | ⚠ #8 と統合 |
 | 14 | 認証基盤で認証するユーザ | **1.2 認証基盤で認証するユーザ** | ✅ そのまま（P-1〜P-6 + α-δ 拡充） |
-| 15 | 非機能_運用 | **6.4 運用 + IaC + CI/CD** | ✅ 拡張（IaC 明示）|
-| 16 | 非機能_可溶性・SLA・DR | **6.1 可用性・SLA・DR** | ✅ そのまま |
-| 17 | フェデレーションユーザの権限 | **5.2 フェデユーザ権限（デフォルト権限）** | ✅ そのまま |
-| 18 | フェデレーションユーザの通知 | **5.3 フェデユーザ通知（Webhook）** | ✅ そのまま |
-| 19 | フェデレーションユーザの同期 | **5.1 フェデユーザ同期（JIT / SCIM）** | ✅ そのまま |
+| 15 | 非機能_運用 | **7.5 運用 + IaC + CI/CD** | ✅ 拡張（IaC 明示）|
+| 16 | 非機能_可溶性・SLA・DR | **7.1 可用性・SLA・DR** | ✅ そのまま |
+| 17 | フェデレーションユーザの権限 | **6.2 フェデユーザ権限（デフォルト権限）** | ✅ そのまま |
+| 18 | フェデレーションユーザの通知 | **6.3 フェデユーザ通知（Webhook）** | ✅ そのまま |
+| 19 | フェデレーションユーザの同期 | **6.1 フェデユーザ同期（JIT / SCIM）** | ✅ そのまま |
 | 20 | マルチテナント設計 | **2.4 マルチテナント設計** | ✅ 拡張（分離粒度・規模戦略・Org 機能・特殊顧客 統合）|
 | 21 | ローカル認証_パスワードポリシー | **3.3 ローカルユーザー認証ポリシー**（統合改名）| ⚠ #4 と統合（後述 Q1）|
-| 22 | ログアウト方針 | **4.2 ログアウト方針 + 4.3 SLO** | ⚠ 細分化 |
+| 22 | ログアウト方針 | **5.2 ログアウト方針 + 5.3 SLO** | ⚠ 細分化 |
 | 23 | ログイン方式・画面設定 | **3.1 ログイン方式・画面設定** | ✅ そのまま |
-| 24 | 属性マッピング・更新 | **5.5 属性マッピング・更新** | ✅ そのまま |
-| 25 | 非機能_運用体制 | **6.5 運用体制** | ✅ そのまま（#15 とは別に保持）|
-| 26 | 非機能_コスト・予算 | **6.6 コスト・予算** | ✅ そのまま |
-| 27 | 非機能_性能・スケール | **6.2 性能・スケール** | ✅ そのまま |
-| 28 | 非機能_セキュリティ | **6.3 セキュリティ NFR + 監査ログ詳細 + Key Management** | ✅ 拡張 |
+| 24 | 属性マッピング・更新 | **6.5 属性マッピング・更新** | ✅ そのまま |
+| 25 | 非機能_運用体制 | **7.6 運用体制** | ✅ そのまま（#15 とは別に保持）|
+| 26 | 非機能_コスト・予算 | **7.7 コスト・予算** | ✅ そのまま |
+| 27 | 非機能_性能・スケール | **7.2 性能・スケール** | ✅ そのまま |
+| 28 | 非機能_セキュリティ | **7.3 セキュリティ NFR + 監査ログ詳細 + Key Management** | ✅ 拡張 |
 
-### 新規追加項目（10 件）
+### 新規追加項目（13 件、§4.1 独立章 + §7.4 ITDR 移動を含む）
 
 | 新項目 | 不足理由 | 該当 §（既存資料での扱い）|
 |---|---|---|
 | **1.7 スコープ宣言** | 対象外領域の明示が抜け | §FR-8.3 PAM / 既存資料に散在 |
 | **3.3 ローカル認証ポリシー（拡張）** | Bot 保護が抜け | C-205-3 想定 |
-| **3.5 ITDR 統合戦略** | 個別検知はあるが統合視点なし | C-217 / 新規 |
-| **3.6 認証フロー一覧** | 元の「構成概要」に含む想定だが詳細別出し推奨 | §FR-1.1 / マスター表 C 補足 |
-| **4.5 セッション TTL 設計** | C-206 系を独立項目化 | C-206/206-2/206-3 |
-| **4.6 強制再認証・ステップアップ認証** | 元 #7 を §3.2 から独立、システム駆動とアプリ駆動を「追加認証要求」ポリシー層として束ねる | C-216 / B-704 / B-605-3 / 新規 |
-| **5.6 セルフサービス機能** | 元 28 項目に**なし**（B-402 既存）| §FR-7.3 |
-| **5.7 委譲管理（Delegated Admin）** | 元 28 項目に**なし**（B-404 既存）| §FR-8.3 |
-| **5.8 ユーザーライフサイクル管理（JML）** | 元 28 項目に**なし**（JML 統合視点）| §FR-7.4 + §FR-2.2.1 |
-| **6.7 監査ログ・コンプラレポート** | C-203 のみで詳細浅い | §FR-8.2 / §FR-9.2 |
-| **6.8 BCP・DR ランブック** | 6.1 DR とは別の運用視点 | §NFR-5 + §NFR-6 |
-| **7.1〜7.5（章 7 全体）** | 元 28 項目に**なし**（業界標準で必須）| 新規 |
+| **7.4 ITDR / Identity Security**（**旧 §3.5 から §7 セキュリティ群へ移動**） | 個別検知はあるが統合視点なし | C-217 / 新規 |
+| **3.4 認証フロー一覧**（旧 §3.6 から繰上げ） | 元の「構成概要」に含む想定だが詳細別出し推奨 | §FR-1.1 / マスター表 C 補足 |
+| **5.5 セッション TTL 設計**（旧 §4.5 から繰下げ） | C-206 系を独立項目化 | C-206/206-2/206-3 |
+| **5.6 強制再認証・ステップアップ認証** | 元 #7 を §3.2 から独立、システム駆動とアプリ駆動を「追加認証要求」ポリシー層として束ねる | C-216 / B-704 / B-605-3 / 新規 |
+| **6.6 セルフサービス機能**（旧 §5.6 から繰下げ） | 元 28 項目に**なし**（B-402 既存）| §FR-7.3 |
+| **6.7 委譲管理（Delegated Admin）**（旧 §5.7 から繰下げ） | 元 28 項目に**なし**（B-404 既存）| §FR-8.3 |
+| **6.8 ユーザーライフサイクル管理（JML）**（旧 §5.8 から繰下げ） | 元 28 項目に**なし**（JML 統合視点）| §FR-7.4 + §FR-2.2.1 |
+| **7.8 監査ログ・コンプラレポート**（旧 §6.7 から繰下げ） | C-203 のみで詳細浅い | §FR-8.2 / §FR-9.2 |
+| **7.9 BCP・DR ランブック**（旧 §6.8 から繰下げ） | 6.1 DR とは別の運用視点 | §NFR-5 + §NFR-6 |
+| **8.1〜8.5（章 8 全体）**（旧 §7 から繰下げ） | 元 28 項目に**なし**（業界標準で必須）| 新規 |
 
-### 統合・改名・分離された項目（4 組）
+### 統合・改名・分離・移動された項目（5 組）
 
 | 元 | 新 | 理由 |
 |---|---|---|
 | #4 アカウントロック_侵害検出 + #21 ローカル認証_パスワードポリシー | **3.3 ローカルユーザー認証ポリシー** | ローカル認証関連を統合 |
-| #8 クレーム設計 + #13 認可設定（JWTクレーム） | **3.4 認可スタンス + JWT クレーム設計 + API 認可フロー** | 重複統合 |
-| **#7 強制再認証・ステップアップ認証**（元 #1 と統合予定だった）| **4.6 強制再認証・ステップアップ認証（独立）** | 「初回認証 (#1)」と「追加認証要求 (#7)」は性質が異なるため分離。#7 はシステム駆動 (強制) + アプリ駆動 (ステップアップ) を **追加認証要求ポリシー層** として独立化 |
+| #8 クレーム設計 + #13 認可設定（JWTクレーム） | **4.1 認可スタンス + JWT クレーム設計 + API 認可フロー（§4 独立章化）** | 重複統合 + 認証/認可分離（業界標準・ボリューム実態） |
+| **#7 強制再認証・ステップアップ認証**（元 #1 と統合予定だった）| **5.6 強制再認証・ステップアップ認証（独立）** | 「初回認証 (#1)」と「追加認証要求 (#7)」は性質が異なるため分離 |
 | #9 構成概要 | **1.3 アーキテクチャ方針 + 1.4 構成概要図** | 細分化 |
+| **ITDR**（旧 §3.5 認証群） | **§7.4 Identity Security**（**§7 セキュリティ群へ移動**） | 静的 NFR (§7.3) と動的応答 (§7.4) を「セキュリティ全体像」として隣接配置。業界 ITDR 独立カテゴリ化トレンドに整合 |
 
 ---
 
-## 9. PowerPoint スライド構成テンプレ
+## 10. PowerPoint スライド構成テンプレ
 
 各大項目を以下の **基本テンプレ 3-5 スライド** で構成：
 
@@ -777,33 +806,34 @@
 
 ---
 
-## 10. ヒアリング会議への適用
+## 11. ヒアリング会議への適用
 
-### 3 回ヒアリング計画との対応
+### 3 回ヒアリング計画との対応（8 章構成、2026-06-03 改訂）
 
 | 章 | ヒアリング回 | 含まれる項目 | スライド範囲 |
 |---|---|---|---|
 | **章 1 全体方針・前提（7）** | **M1** | 1.1〜1.7 全て | 約 28 枚 |
 | **章 2 接続元・対象（5）** | **M1** | 2.1〜2.5 全て | 約 20 枚 |
-| **章 3 認証方式（6）** | **M2** | 3.1〜3.6 | 約 24 枚 |
-| **章 4 SSO・セッション（5）** | **M2 + M3** | M2: 4.1, 4.4 / M3: 4.2, 4.3, 4.5 | 約 20 枚 |
-| **章 5 ユーザー管理（8）** | **M2 + M3** | M2: 5.1〜5.5 / M3: 5.6〜5.8 | 約 32 枚 |
-| **章 6 非機能要件（8）** | **M3** | 6.1〜6.8 全て | 約 32 枚 |
-| **章 7 開発者体験・UX・プライバシー（5）** | **M3** | 7.1〜7.5 全て | 約 20 枚 |
+| **章 3 認証（4）** | **M2** | 3.1〜3.4 | 約 16 枚 |
+| **章 4 認可（1）★NEW 独立章** | **M2** | 4.1 | 約 6 枚 |
+| **章 5 SSO・セッション・ログアウト（6）** | **M2 + M3** | M2: 5.1, 5.4 / M3: 5.2, 5.3, 5.5, 5.6 | 約 24 枚 |
+| **章 6 ユーザー管理（8）** | **M2 + M3** | M2: 6.1〜6.5 / M3: 6.6〜6.8 | 約 32 枚 |
+| **章 7 非機能要件（9、★ITDR §7.4 追加）** | **M3** | 7.1〜7.9 全て | 約 36 枚 |
+| **章 8 開発者体験・UX・プライバシー（5）** | **M3** | 8.1〜8.5 全て | 約 20 枚 |
 
 ### 想定スケジュール（再計算）
 
 | 回 | スライド範囲 | 時間 | 主な対象者 |
 |---|---|---|---|
 | **M1 第 1 回** | 章 1（28 枚）+ 章 2（20 枚）= **48 枚** | 2.5 時間 | PO / 事業企画 + テックリード + 情シス |
-| **M2 第 2 回** | 章 3（24 枚）+ 章 4 前半（8 枚）+ 章 5 前半（20 枚）= **52 枚** | 2.5 時間 | 開発チーム / テックリード中心 |
-| **M3 第 3 回** | 章 4 後半（16 枚、§4.6 含む）+ 章 5 後半（12 枚）+ 章 6（32 枚）+ 章 7（20 枚）= **80 枚** | 3 時間 | インフラ / SRE / セキュリティ + 意思決定者 |
+| **M2 第 2 回** | 章 3（16 枚）+ **章 4 認可（6 枚）** + 章 5 前半（8 枚）+ 章 6 前半（20 枚）= **50 枚** | 2.5 時間 | 開発チーム / テックリード中心 |
+| **M3 第 3 回** | 章 5 後半（16 枚、§5.6 含む）+ 章 6 後半（12 枚）+ 章 7（36 枚、§7.4 ITDR 含む）+ 章 8（20 枚）= **84 枚** | 3 時間 | インフラ / SRE / セキュリティ + 意思決定者 |
 
-→ **合計 8 時間**（3 回会議）で全 ~180 枚をカバー。M3 が重いため、章 7（開発者体験・UX）を**事前読み合わせ + Q&A 中心**にすれば短縮可能。
+→ **合計 8 時間**（3 回会議）で全 ~182 枚をカバー。M3 が重いため、章 8（開発者体験・UX）を**事前読み合わせ + Q&A 中心**にすれば短縮可能。
 
 ---
 
-## 11. 関連ドキュメント
+## 12. 関連ドキュメント
 
 ### 一次資料（本基盤の SSOT）
 
@@ -835,10 +865,11 @@
 
 ---
 
-## 12. 改訂履歴
+## 13. 改訂履歴
 
 | 日付 | 内容 |
 |---|---|
 | 2026-05-27 | 初版作成。28 項目 → 31 項目（6 章）に再編成、参考資料マトリクス + スライド構成案 + 3 回ヒアリング対応 |
 | 2026-06-03 | **業界標準フレームワーク 8 種照合の結果**、31 項目 → **44 項目（7 章）**に拡張。**章 7「開発者体験・UX・プライバシー」を新設**。元 28 項目とのマッピング表を §8 として追加。Q1（セルフサービス vs パスワードポリシー）/ Q2（全件委譲時の管理）への対応を §5.6 / §5.7 に反映 |
 | 2026-06-03 | **§3.2 と #7 強制再認証・ステップアップ認証の分離**。元の解釈「#7 = ユーザー駆動のステップアップ」を「#7 = システム駆動 (強制再認証) + アプリ駆動 (ステップアップ)」に再定義。**§3.2 を「初回認証」に純化**し、**§4.6「強制再認証・ステップアップ認証」を新設**（44 項目 → 45 項目）。「追加で認証を要求する」テーマを **ポリシー層 (§4.6)** として束ね、実装技術は §4.3 / §4.5 / §3.5 に委譲する構成に再編 |
+| 2026-06-03 | **§3.4 認可 / §3.5 ITDR の構成見直し（章数 7 → 8）**。**(1)** 認可（旧 §3.4）を **§4 認可 / Authorization** として独立章化（業界標準 = 認証 vs 認可は分離、ボリューム実態と整合）。**(2)** ITDR（旧 §3.5）を **§7.4 Identity Security** として §7 非機能セキュリティ群に移動（静的 NFR §7.3 と動的応答 §7.4 で「セキュリティ全体像」を構成、業界 ITDR 独立カテゴリ化トレンドに整合）。**(3)** 旧 §4-§7 を §5-§8 に繰下げ、章番号大幅更新。**スライドファイル名のリネームと参照同期は後続対応**（Phase 2/3）|
