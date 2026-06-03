@@ -297,6 +297,32 @@ flowchart TB
 | §C-1.5 規模スケーリング戦略（1500-3000 顧客企業）| Cognito Hard Limit と Pool 分割戦略 |
 | §C-1.6 TBD / 要確認 | - |
 
+### 🎯 内側プロトコル方針: **アプリへの発行は OIDC 推奨**（2026-06-03 確定）
+
+> Broker パターンは**外側（受信）と内側（発行）の 2 面**を持つ。**内側プロトコル（接続アプリへの発行）は OIDC を推奨方針**とする。
+
+**方針の核**:
+
+| 区分 | 推奨方針 |
+|---|---|
+| **新規開発アプリ** | **OIDC 一択**（SAML SP として新規構築しない）|
+| **既存アプリ: OIDC 化可能** | OIDC 化を優先検討（Phase 1-2 で対応）|
+| **既存アプリ: OIDC 化困難 / 短期不可** | SAML IdP 発行 (K5) で当面接続 + 中期 OIDC 移行計画 |
+| **既存 SaaS（自社管轄外）** | SaaS 側仕様に従う（既存 SaaS の多くは SAML SP のみ → K5 必要）|
+
+**外側（顧客 IdP からの受信）は SAML + OIDC 両方サポート継続**（顧客側 IdP は仕様統制不可のため両対応必須）。
+
+**なぜ内側 OIDC 推奨か**（4 つの根拠）:
+1. **製品選定の自由度拡大** — K5 発生件数を抑制すれば Cognito 採用余地が広がる（[ティア使い分け](#) と整合）
+2. **開発・運用負荷の低減** — SDK 選択肢豊富、JWT 検証が単一フォーマット
+3. **業界トレンドとの整合** — Microsoft / Google / Auth0 / Okta 全社が「新規=OIDC、SAML=legacy 互換用」スタンス
+4. **機能拡張の容易さ** — Token Exchange / DPoP / mTLS / RFC 9470 step-up 等モダン仕様はすべて OIDC/OAuth ベース
+
+**ヒアリング連動**:
+- **D-7（Phase D 前提合意）**: 「内側プロトコル方針: OIDC 推奨を前提合意」を顧客と合意
+- **マスター表 C 列 P=g / 列 S K5**: ☑する前に「OIDC 化検討の余地はないか」を必ず確認
+- 詳細: [hearing-checklist.md D-7 / B-100 マスター表 C](../../hearing-checklist.md)、[terms-and-codes-reference.md §7 末尾の方針](../../terms-and-codes-reference.md)
+
 ---
 
 ## §C-1.1 Broker パターン採用根拠

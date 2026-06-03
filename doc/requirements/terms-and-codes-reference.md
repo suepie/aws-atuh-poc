@@ -119,13 +119,19 @@
 
 | 列 | 意味 | 選択肢コード | 詳細 |
 |:---:|---|---|---|
-| **P** | クライアント種別 | a / b / c / d / e / f / g | SPA / SSR / モバイル / M2M バッチ / CLI・IoT / Backend API のみ / SAML SP のみ |
+| **P** | クライアント種別 | a / b / c / d / e / f / g | SPA / SSR / モバイル / M2M バッチ / CLI・IoT / Backend API のみ / SAML SP のみ（**g は OIDC 化検討必須**）|
 | **Q** | SPA 認証方式（列 P=a のみ）| α / β / γ / — | BFF / PKCE 直接 / 段階移行 / 該当なし |
 | **R** | Backend API 経路 / JWT 検証場所 | ① / ② / ③ / ④ / ⑤ | API GW + Lambda Authorizer / ALB + ECS 直結 / Service Mesh / サーバー内完結 / Cognito Authorizer |
 | **S** | 特殊要件フラグ（複数 ☑ 可）| K1〜K8（次節）| Cognito Knockout 条件 |
 | **T** | 既存ローカル認証 + 移行方針 | N / M1〜M4 | なし / 段階移行 / 並行稼働 / 即時切替 / 維持 |
 
 > **使用箇所**: [B-100 マスター表 C](hearing-script/01-auth-flow.md)
+
+> **🎯 内側プロトコル方針（2026-06-03 確定）**: 接続アプリへの **発行プロトコルは OIDC を推奨**。
+> - **新規開発アプリ**: OIDC 一択（SAML SP として新規構築しない）
+> - **既存アプリ**: OIDC 化を優先検討、**列 P=g（SAML SP のみ）に☑する前に必ず OIDC 化可否を確認**
+> - **OIDC 化困難な既存資産のみ** SAML IdP 発行 (K5) で当面接続 + 中期移行計画
+> - 目的: **K5 発生件数を抑制 → Cognito 採用余地拡大 → 製品選定の柔軟性確保**
 
 ---
 
@@ -139,7 +145,7 @@
 | **K2** | Device Code Flow（RFC 8628）| CLI / IoT / Smart TV / AI Agent | Lambda + DynamoDB 自前実装が必要 |
 | **K3** | mTLS Client Authentication（RFC 8705）| FAPI 準拠 / 高セキュリティ M2M | FAPI 不適合 |
 | **K4** | DPoP（RFC 9449）| FAPI 2.0 準拠 / トークン盗難対策 | 標準非対応 |
-| **K5** | SAML IdP 発行 | 既存 SAML SP アプリに本基盤が SAML を出す | Cognito は SAML SP（受信）のみ |
+| **K5** | SAML IdP 発行 | 既存 SAML SP アプリに本基盤が SAML を出す **（OIDC 化検討必須、§7 末尾の方針参照）** | Cognito は SAML SP（受信）のみ |
 | **K6** | UMA 2.0 細粒度認可 | リソース所有者ベース認可 | ネイティブ機能なし |
 | **K7** | Back-Channel Logout（RFC 8417）| 全 RP 連動ログアウト | 非対応 |
 | **K8** | Access Token 即時 Revocation | 規制要件で短 TTL（15 分）でも侵害ウィンドウ許容不可 | 個別 revoke 不可（Refresh のみ）|

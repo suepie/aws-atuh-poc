@@ -13,14 +13,15 @@
 |:-:|:-:|---|:-:|:-:|
 | 1 | 7 | 全体方針・前提 | 28 | 30 分 |
 | 2 | 5 | 接続元・対象 | 20 | 30 分 |
-| 3 | 6 | 認証方式 | 24 | 25 分 |
-| 4 | 6 | SSO・セッション・ログアウト | 24 | 28 分 |
-| 5 | 8 | ユーザー管理・プロビジョニング・セルフサービス | 32 | 30 分 |
-| 6 | 8 | 非機能要件 | 32 | 30 分 |
-| 7 | 5 | 開発者体験・UX・プライバシー（★NEW 章）| 20 | 20 分 |
-| **計** | **45** | - | **~180** | **~193 分（3.2 時間）** |
+| 3 | 4 | **認証**（Authentication）| 16 | 18 分 |
+| 4 | 1 | **認可**（Authorization、★NEW 独立章）| 6 | 10 分 |
+| 5 | 6 | SSO・セッション・ログアウト | 24 | 28 分 |
+| 6 | 8 | ユーザー管理・プロビジョニング・セルフサービス | 32 | 30 分 |
+| 7 | 9 | 非機能要件（★ITDR/Identity Security 追加）| 36 | 33 分 |
+| 8 | 5 | 開発者体験・UX・プライバシー | 20 | 20 分 |
+| **計** | **45** | - | **~182** | **~199 分（3.3 時間）** |
 
-> **改訂履歴**: 初版 31 項目 → 2026-06-03 業界標準フレームワーク照合 **44 項目** → 2026-06-03 強制再認証/ステップアップを §3.2 から独立させ **45 項目**（11 項目追加 + 3 項目改名）。詳細は §11 改訂履歴。
+> **改訂履歴**: 初版 31 項目 → 2026-06-03 業界標準フレームワーク照合 **44 項目** → 2026-06-03 強制再認証/ステップアップ独立 **45 項目** → 2026-06-03 **認可を §3.4 から §4 独立章化 + ITDR を §3.5 から §7.4 セキュリティ群へ移動**（章数 7 → 8、業界 ITDR トレンドに整合）。詳細は §12 改訂履歴。
 
 > ヒアリング 3 回会議計画（[hearing-checklist-excel-main.tsv ヒアリング回 M1/M2/M3](hearing-checklist-excel-main.tsv)）と照合：M1（章 1-2 中心）/ M2（章 3-5 中心）/ M3（章 6-7 + 最終意思決定）
 
@@ -214,7 +215,9 @@
 
 ---
 
-## 3. 認証方式（6 項目）
+## 3. 認証 / Authentication（4 項目）
+
+> **2026-06-03 構成変更**: 元の「§3.4 認可スタンス」を **§4 認可 (Authorization)** として独立章化、元の「§3.5 ITDR」を **§7.4 Identity Security** として §7 非機能要件群に移動。**§3 は「認証（Who you are）」の議論に純化**。
 
 ### 3.1 ログイン方式・画面設定
 
@@ -284,10 +287,21 @@
 
 **概要**: Authorization Code Flow + PKCE / Client Credentials / Device Code / mTLS / DPoP の使い分け、マスター表 C 列 P/S との対応。
 
+> **🎯 内側プロトコル方針（D-7）**: 接続アプリへの**発行プロトコルは OIDC を推奨**。新規開発アプリは OIDC 一択、既存 SAML SP アプリは OIDC 化検討を優先、OIDC 化困難な既存資産のみ SAML IdP 発行 (K5) で当面接続。**外側（顧客 IdP からの受信）は SAML + OIDC 両対応を継続**（顧客側 IdP は仕様統制不可）。
+
+**Broker の 4 役割マトリクス**（受信 × 発行）:
+
+| | 外側=受信側（顧客 IdP）| 内側=発行側（接続アプリ）|
+|---|---|---|
+| **SAML 2.0** | ✅ SAML SP モード（両製品対応）| ⚠ SAML IdP モード（**K5**、Keycloak のみ）|
+| **OIDC** | ✅ OIDC RP モード（両製品対応）| ✅ OIDC OP モード（**標準・推奨**）|
+
 | 種別 | 参考資料 |
 |---|---|
 | **hearing-script** | [01-auth-flow.md マスター表 C 補足 1〜5](hearing-script/01-auth-flow.md) |
-| **proposal** | [§FR-1.1 認証フロー / Grant Type](proposal/fr/01-auth.md) |
+| **hearing-checklist** | [D-7 内側 OIDC 推奨合意](hearing-checklist.md), [B-100 マスター表 C](hearing-checklist.md) |
+| **proposal** | [§FR-1.1 認証フロー / Grant Type](proposal/fr/01-auth.md), [§C-1 内側プロトコル方針](proposal/common/01-architecture.md) |
+| **内部** | [terms-and-codes-reference.md §7 末尾 OIDC 推奨方針](terms-and-codes-reference.md) |
 | **外部** | [OAuth 2.0 Best Current Practice (RFC 8252)](https://datatracker.ietf.org/doc/html/rfc8252) / [OIDC Core 1.0](https://openid.net/specs/openid-connect-core-1_0.html) |
 
 ---

@@ -425,6 +425,8 @@ sequenceDiagram
 
 **重要**: マイクロサービス構成で Token Exchange が必要な場合、**Keycloak 必須となる**。Cognito では非標準的な実装で代替する必要があり、保守性・標準準拠性で劣る。
 
+> **詳細**: Token Exchange の全パラメータ仕様、7 設計パターン（Token 型変換 / Audience 縮小 / Scope 縮小 / Impersonation / Delegation / クロスドメイン橋渡し / ハイブリッド構成）、Delegation vs Impersonation の `act` claim 詳細、実装例 4 言語、製品別設定、セキュリティ考慮は **[token-exchange-spec-and-patterns.md](token-exchange-spec-and-patterns.md)** に集約。
+
 ---
 
 ### 2.6 Device Code Flow — Device Authorization Grant
