@@ -14,13 +14,13 @@
 | 1 | 7 | 全体方針・前提 | 28 | 30 分 |
 | 2 | 5 | 接続元・対象 | 20 | 30 分 |
 | 3 | 6 | 認証方式 | 24 | 25 分 |
-| 4 | 5 | SSO・セッション・ログアウト | 20 | 25 分 |
+| 4 | 6 | SSO・セッション・ログアウト | 24 | 28 分 |
 | 5 | 8 | ユーザー管理・プロビジョニング・セルフサービス | 32 | 30 分 |
 | 6 | 8 | 非機能要件 | 32 | 30 分 |
 | 7 | 5 | 開発者体験・UX・プライバシー（★NEW 章）| 20 | 20 分 |
-| **計** | **44** | - | **~176** | **~190 分（3.2 時間）** |
+| **計** | **45** | - | **~180** | **~193 分（3.2 時間）** |
 
-> **改訂履歴**: 初版 31 項目 → 2026-06-03 業界標準フレームワーク照合の結果 **44 項目**（10 項目追加 + 3 項目改名）に拡張。詳細は §11 改訂履歴。
+> **改訂履歴**: 初版 31 項目 → 2026-06-03 業界標準フレームワーク照合 **44 項目** → 2026-06-03 強制再認証/ステップアップを §3.2 から独立させ **45 項目**（11 項目追加 + 3 項目改名）。詳細は §11 改訂履歴。
 
 > ヒアリング 3 回会議計画（[hearing-checklist-excel-main.tsv ヒアリング回 M1/M2/M3](hearing-checklist-excel-main.tsv)）と照合：M1（章 1-2 中心）/ M2（章 3-5 中心）/ M3（章 6-7 + 最終意思決定）
 
@@ -227,17 +227,22 @@
 | **proposal** | [§FR-2.3.3 ログイン UX](proposal/fr/02-federation.md) |
 | **外部** | [IETF / Curity BFF gold standard 2025](https://curity.io/resources/learn/the-bff-pattern/) / [Home Realm Discovery (Shibboleth)](https://shibboleth.atlassian.net/wiki/spaces/SP3/pages/2065335462/HomeRealmDiscovery) |
 
-### 3.2 MFA 要件 + ステップアップ認証
+### 3.2 MFA 要件（初回認証）
 
-**概要**: MFA 必須範囲 + MFA 方式（TOTP / WebAuthn / SMS / ハードウェアキー）+ AAL レベル + 条件付き MFA 判定軸 + ステップアップ認証（RFC 9470）+ 外部 IdP MFA 信頼度。
+**概要**: **初回ログイン時の MFA** に関する要件 — MFA 必須範囲 + MFA 方式（TOTP / WebAuthn / SMS / ハードウェアキー）+ AAL レベル + 条件付き MFA 判定軸 + 外部 IdP MFA 信頼度。
+
+> **スコープ注記**: 本項目は「**初回認証時の MFA**」に純化。
+> - **強制再認証**（システム駆動: 退職検知 / Risk / 管理者操作 / CAEP）→ [§4.6 強制再認証・ステップアップ認証](#46-強制再認証ステップアップ認証forced--step-up-re-authentication)
+> - **ステップアップ認証**（アプリ駆動: 高権限操作 / 高額決済等で追加 MFA）→ [§4.6 強制再認証・ステップアップ認証](#46-強制再認証ステップアップ認証forced--step-up-re-authentication)
+> - **「追加で認証を要求する」テーマは §4.6 に集約**（実装技術 = `prompt=login` / `max_age` / `acr_values` / Token Revocation で共通）
 
 | 種別 | 参考資料 |
 |---|---|
-| **hearing-script** | [05-mfa.md B-501〜B-509](hearing-script/05-mfa.md), [10-security-compliance.md C-210〜C-216](hearing-script/10-security-compliance.md) |
+| **hearing-script** | [05-mfa.md B-501〜B-509](hearing-script/05-mfa.md), [10-security-compliance.md C-210〜C-215](hearing-script/10-security-compliance.md) |
 | **hearing-checklist** | §2.6, §4.3 |
-| **proposal** | [§FR-3 MFA](proposal/fr/03-mfa.md), [§FR-3.3 ステップアップ認証](proposal/fr/03-mfa.md), [§FR-2.2.3 MFA 重複回避](proposal/fr/02-federation.md) |
+| **proposal** | [§FR-3 MFA](proposal/fr/03-mfa.md), [§FR-2.2.3 MFA 重複回避](proposal/fr/02-federation.md) |
 | **内部** | [ADR-009 MFA 責任分担](../adr/009-mfa-responsibility-by-idp.md) |
-| **外部** | [NIST SP 800-63B Rev 4 §5 MFA](https://pages.nist.gov/800-63-4/sp800-63b.html) / [RFC 9470 OAuth Step-up](https://datatracker.ietf.org/doc/html/rfc9470) / [FIDO Alliance Passkey](https://fidoalliance.org/passkeys/) / [WebAuthn Level 3](https://www.w3.org/TR/webauthn-3/) |
+| **外部** | [NIST SP 800-63B Rev 4 §5 MFA](https://pages.nist.gov/800-63-4/sp800-63b.html) / [FIDO Alliance Passkey](https://fidoalliance.org/passkeys/) / [WebAuthn Level 3](https://www.w3.org/TR/webauthn-3/) |
 
 ### 3.3 ローカルユーザー認証ポリシー（パスワード + アカウントロック + 侵害検出 + Bot 保護）★改名 + 拡張
 
@@ -287,7 +292,7 @@
 
 ---
 
-## 4. SSO・セッション・ログアウト（5 項目）
+## 4. SSO・セッション・ログアウト（6 項目）
 
 ### 4.1 SSO 方針 + セッション信頼レベル
 
@@ -343,6 +348,43 @@
 | **hearing-checklist** | §4.4 (C-206), §5.3 (C-206-2/3) |
 | **proposal** | [§FR-5.2 セッション TTL](proposal/fr/05-logout-session.md) |
 | **外部** | [NIST SP 800-63B Rev 4 §4.1.3 Reauthentication](https://pages.nist.gov/800-63-4/sp800-63b.html) |
+
+### 4.6 強制再認証・ステップアップ認証（Forced & Step-up Re-authentication）★NEW
+
+**概要**: **「追加で認証を要求する」要件のポリシー層**。トリガー一覧 + 切断深度（L1〜L4 + Token Revocation 要否）+ SLA + 実装方式の関連章への橋渡し。
+
+> **位置付け**: §3.2 が「**初回認証時の MFA**」であるのに対し、本項目は「**初回認証後に、何らかの理由で追加認証を要求する**」要件の整理。**ポリシー定義**を本章で行い、実装技術は §4.3 / §4.5 / §3.5 に委譲する。
+
+**含まれる 2 系統**:
+| 系統 | トリガー | 典型例 |
+|---|---|---|
+| **A. 強制再認証**（システム駆動）| 退職検知 / 異動 / Risk Score 閾値超過 / 管理者操作 / セキュリティポリシー変更 / CAEP signals | 退職者の即時遮断、漏洩疑い時の全員強制ログアウト |
+| **B. ステップアップ認証**（アプリ駆動、RFC 9470）| 業務イベント（高権限操作 / 高額決済 / 機微情報アクセス）| 管理画面の「テナント削除」操作時に追加 MFA |
+
+**両系統の実装技術（共通）**:
+1. `prompt=login` / `max_age=0` で次回認証時に再要求
+2. `acr_values` 引き上げ要求（AAL レベル上昇）
+3. Back-Channel Logout (RFC 8417) → §4.3 / K7
+4. Access/Refresh Token Revocation (RFC 7009) → §4.3 / K8
+5. `WWW-Authenticate: insufficient_user_authentication`（RFC 9470）
+6. Continuous Access Evaluation (CAEP / Shared Signals) → §3.5
+
+**ヒアリング 6 項目**:
+| # | 質問 | 影響 |
+|:-:|---|---|
+| 1 | **強制再認証のトリガー**（退職 / 異動 / Risk / 管理者 / ポリシー変更 / CAEP）はどれが必要か | トリガー一覧確定 |
+| 2 | 各トリガー別の**切断深度**（L1 IdP セッションのみ / L4 全 Token Revoke まで）| 実装方式 §4.3 連動 |
+| 3 | **退職反映 SLA**（即時 / 5分 / 15分 / 翌日）| 製品選定（Cognito K7/K8 影響）|
+| 4 | **ステップアップ認証**の必要性（高権限操作 / 高額決済等）| §3.2 と切り分け |
+| 5 | **管理者の Force Logout 権限**（誰が誰のセッションを切れるか）| §5.7 委譲管理連動 |
+| 6 | **CAEP / Shared Signals** 採否（顧客 IdP からの脅威シグナル受信）| §3.5 ITDR 連動 |
+
+| 種別 | 参考資料 |
+|---|---|
+| **hearing-script** | [10-security-compliance.md C-216 ステップアップ（RFC 9470）, C-217 CAEP](hearing-script/10-security-compliance.md), [05-mfa.md B-504 BCL](hearing-script/05-mfa.md), [07-logout-session.md B-704 Token Revoke](hearing-script/07-logout-session.md), [06-multitenancy.md B-605-3 退職 SLA](hearing-script/06-multitenancy.md) |
+| **hearing-checklist** | §3.2 (B-100 列 S K7/K8), §4.3, §4.4, §5.3 |
+| **proposal** | [§FR-3.3 ステップアップ認証](proposal/fr/03-mfa.md), [§FR-5.3 Token Revocation](proposal/fr/05-logout-session.md), [§FR-5.4 CAEP](proposal/fr/05-logout-session.md) |
+| **外部** | [RFC 9470 OAuth Step-up Authentication Challenge](https://datatracker.ietf.org/doc/html/rfc9470) / [RFC 8417 Security Event Token](https://datatracker.ietf.org/doc/html/rfc8417) / [Shared Signals Framework (CAEP)](https://openid.net/wg/sharedsignals/) / [Microsoft Entra Continuous Access Evaluation](https://learn.microsoft.com/en-us/entra/identity/conditional-access/concept-continuous-access-evaluation) / [NIST SP 800-63B Rev 4 §4.1.3 Reauthentication](https://pages.nist.gov/800-63-4/sp800-63b.html) |
 
 ---
 
@@ -640,13 +682,13 @@
 
 | # | 元 28 項目（ご提示）| 新項目 | 状態 |
 |:-:|---|---|:-:|
-| 1 | MFA要件 | **3.2 MFA 要件 + ステップアップ認証** | ✅ 統合（#7 と合体）|
+| 1 | MFA要件 | **3.2 MFA 要件（初回認証）** | ✅ そのまま（#7 から分離、初回 MFA に純化）|
 | 2 | SSO方針・セッション信頼方針 | **4.1 SSO 方針 + セッション信頼レベル** | ✅ そのまま |
 | 3 | アカウント重複・リンク方針 | **5.4 アカウント重複・リンク方針** | ✅ そのまま |
 | 4 | アカウントロック_侵害検出 | **3.3 ローカルユーザー認証ポリシー**（統合）| ✅ パスワード + ロック + 侵害検出 + Bot を統合 |
 | 5 | 移行方針・リリース計画 | **1.6 移行方針・リリース計画** | ✅ そのまま（+ Vendor Lock-in 追記） |
 | 6 | 規模・規制・コンプライアンス | **2.1 規模・規制・コンプライアンス** | ✅ そのまま（+ A-15 顧客数追記） |
-| 7 | 強制再認証・ステップアップ認証 | **3.2 に統合** | ⚠ #1 に統合 |
+| 7 | 強制再認証・ステップアップ認証 | **4.6 強制再認証・ステップアップ認証（★NEW 独立章）** | ⚠ §3.2 から独立、ポリシー層として整理 |
 | 8 | クレーム設計 | **3.4 認可スタンス + JWT クレーム設計 + API 認可フロー** | ⚠ #13 と統合 |
 | 9 | 構成概要 | **1.4 構成概要図 / 1.3 アーキテクチャ方針** | ⚠ 細分化 |
 | 10 | 顧客別ブランディング | **2.5 顧客別ブランディング** | ✅ そのまま |
@@ -678,6 +720,7 @@
 | **3.5 ITDR 統合戦略** | 個別検知はあるが統合視点なし | C-217 / 新規 |
 | **3.6 認証フロー一覧** | 元の「構成概要」に含む想定だが詳細別出し推奨 | §FR-1.1 / マスター表 C 補足 |
 | **4.5 セッション TTL 設計** | C-206 系を独立項目化 | C-206/206-2/206-3 |
+| **4.6 強制再認証・ステップアップ認証** | 元 #7 を §3.2 から独立、システム駆動とアプリ駆動を「追加認証要求」ポリシー層として束ねる | C-216 / B-704 / B-605-3 / 新規 |
 | **5.6 セルフサービス機能** | 元 28 項目に**なし**（B-402 既存）| §FR-7.3 |
 | **5.7 委譲管理（Delegated Admin）** | 元 28 項目に**なし**（B-404 既存）| §FR-8.3 |
 | **5.8 ユーザーライフサイクル管理（JML）** | 元 28 項目に**なし**（JML 統合視点）| §FR-7.4 + §FR-2.2.1 |
@@ -685,13 +728,13 @@
 | **6.8 BCP・DR ランブック** | 6.1 DR とは別の運用視点 | §NFR-5 + §NFR-6 |
 | **7.1〜7.5（章 7 全体）** | 元 28 項目に**なし**（業界標準で必須）| 新規 |
 
-### 統合・改名された項目（4 組）
+### 統合・改名・分離された項目（4 組）
 
 | 元 | 新 | 理由 |
 |---|---|---|
 | #4 アカウントロック_侵害検出 + #21 ローカル認証_パスワードポリシー | **3.3 ローカルユーザー認証ポリシー** | ローカル認証関連を統合 |
 | #8 クレーム設計 + #13 認可設定（JWTクレーム） | **3.4 認可スタンス + JWT クレーム設計 + API 認可フロー** | 重複統合 |
-| #1 MFA要件 + #7 強制再認証・ステップアップ認証 | **3.2 MFA 要件 + ステップアップ認証** | 関連統合 |
+| **#7 強制再認証・ステップアップ認証**（元 #1 と統合予定だった）| **4.6 強制再認証・ステップアップ認証（独立）** | 「初回認証 (#1)」と「追加認証要求 (#7)」は性質が異なるため分離。#7 はシステム駆動 (強制) + アプリ駆動 (ステップアップ) を **追加認証要求ポリシー層** として独立化 |
 | #9 構成概要 | **1.3 アーキテクチャ方針 + 1.4 構成概要図** | 細分化 |
 
 ---
@@ -740,9 +783,9 @@
 |---|---|---|---|
 | **M1 第 1 回** | 章 1（28 枚）+ 章 2（20 枚）= **48 枚** | 2.5 時間 | PO / 事業企画 + テックリード + 情シス |
 | **M2 第 2 回** | 章 3（24 枚）+ 章 4 前半（8 枚）+ 章 5 前半（20 枚）= **52 枚** | 2.5 時間 | 開発チーム / テックリード中心 |
-| **M3 第 3 回** | 章 4 後半（12 枚）+ 章 5 後半（12 枚）+ 章 6（32 枚）+ 章 7（20 枚）= **76 枚** | 3 時間 | インフラ / SRE / セキュリティ + 意思決定者 |
+| **M3 第 3 回** | 章 4 後半（16 枚、§4.6 含む）+ 章 5 後半（12 枚）+ 章 6（32 枚）+ 章 7（20 枚）= **80 枚** | 3 時間 | インフラ / SRE / セキュリティ + 意思決定者 |
 
-→ **合計 8 時間**（3 回会議）で全 176 枚をカバー。M3 が重いため、章 7（開発者体験・UX）を**事前読み合わせ + Q&A 中心**にすれば短縮可能。
+→ **合計 8 時間**（3 回会議）で全 ~180 枚をカバー。M3 が重いため、章 7（開発者体験・UX）を**事前読み合わせ + Q&A 中心**にすれば短縮可能。
 
 ---
 
@@ -784,3 +827,4 @@
 |---|---|
 | 2026-05-27 | 初版作成。28 項目 → 31 項目（6 章）に再編成、参考資料マトリクス + スライド構成案 + 3 回ヒアリング対応 |
 | 2026-06-03 | **業界標準フレームワーク 8 種照合の結果**、31 項目 → **44 項目（7 章）**に拡張。**章 7「開発者体験・UX・プライバシー」を新設**。元 28 項目とのマッピング表を §8 として追加。Q1（セルフサービス vs パスワードポリシー）/ Q2（全件委譲時の管理）への対応を §5.6 / §5.7 に反映 |
+| 2026-06-03 | **§3.2 と #7 強制再認証・ステップアップ認証の分離**。元の解釈「#7 = ユーザー駆動のステップアップ」を「#7 = システム駆動 (強制再認証) + アプリ駆動 (ステップアップ)」に再定義。**§3.2 を「初回認証」に純化**し、**§4.6「強制再認証・ステップアップ認証」を新設**（44 項目 → 45 項目）。「追加で認証を要求する」テーマを **ポリシー層 (§4.6)** として束ね、実装技術は §4.3 / §4.5 / §3.5 に委譲する構成に再編 |
