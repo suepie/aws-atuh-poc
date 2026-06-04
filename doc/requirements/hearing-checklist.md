@@ -255,6 +255,15 @@
 > 3. **OIDC 化コスト vs SAML IdP 発行運用コスト** の比較
 > 4. **SaaS 等で自社管轄外** の場合は SaaS 側仕様に従う（K5 確定）
 > → K5 確定アプリのみ Keycloak/RHBK 必須化、それ以外は OIDC で Cognito でも対応可
+>
+> **🎯 ドメイン構成チェック（5 項目、Cookie / CORS / Cognito Custom Domain 設計に直結）**:
+> 1. **アプリのドメイン構成方針**: (A) 全アプリ同一親ドメインのサブドメイン（`app1.example.com` 等、**推奨**）/ (B) アプリ別の独立ドメイン / (C) 混在
+> 2. **共通親ドメイン**: `example.com` 等（A or C 採用時）
+> 3. **認証基盤の配置 URL**: `auth.example.com` / `idp.example.com` 等（Cognito Custom Domain として登録）
+> 4. **Cookie 共有方針**: (A) 各サブドメイン独立（**業界推奨**、`Domain` 未指定 or Host-only Cookie）/ (B) 親ドメイン共有（**非推奨**、XSS / Subdomain Takeover リスク）
+> 5. **SSO 実現方式**: OIDC リダイレクトで Hub セッション参照（**推奨、標準**）/ Cookie 共有（非推奨）
+>
+> → サブドメイン構成は **SameSite / 現代ブラウザ規制 (ITP / 3rd-party Cookie 廃止) / BFF / TLS 証明書管理** 全てで有利。詳細は [common/subdomain-architecture-notes.md](../common/subdomain-architecture-notes.md) 参照。
 > | **UMA 2.0 細粒度認可** | 列 S K6 | 旧 B-303 |
 > | **Back-Channel Logout** | 列 S K7 | 旧 B-504 |
 > | **Access Token 即時 Revocation** | 列 S K8 | 旧 B-704, C-207 |

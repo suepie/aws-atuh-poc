@@ -323,6 +323,33 @@ flowchart TB
 - **マスター表 C 列 P=g / 列 S K5**: ☑する前に「OIDC 化検討の余地はないか」を必ず確認
 - 詳細: [hearing-checklist.md D-7 / B-100 マスター表 C](../../hearing-checklist.md)、[terms-and-codes-reference.md §7 末尾の方針](../../terms-and-codes-reference.md)
 
+### 🎯 ドメイン構成方針: **サブドメイン構成を推奨**（2026-06-04 確定）
+
+> Broker パターンは「**認証基盤 (Hub)** と **複数アプリ**」の構成。各アプリのドメインを **同一親ドメインのサブドメイン**（`app1.example.com` / `app2.example.com` / `auth.example.com`）で配置することを推奨。
+
+**結論**: サブドメイン構成は本方式（Identity Broker + Cognito/Keycloak + Bearer JWT + OIDC SSO）に対して**問題なく動作**し、**完全別ドメイン構成より複数観点で有利**。
+
+**サブドメイン構成のメリット（5 つ）**:
+
+| # | メリット | 内容 |
+|:-:|---|---|
+| 1 | **SameSite/CORS の制約緩和** | Same-Site 扱い、`SameSite=Lax` で動作可能（完全別ドメインは `None+Secure` 必須）|
+| 2 | **現代ブラウザ規制（ITP / 3rd-party Cookie 廃止）の影響小** | Same-Site なので 3rd-party Cookie 規制の対象外 |
+| 3 | **BFF パターンとの相性最良** | [Curity BFF Gold Standard 2025](https://curity.io/resources/learn/the-bff-pattern/) が同一親ドメイン構成を推奨 |
+| 4 | **TLS 証明書管理がシンプル** | ワイルドカード証明書 1 枚（`*.example.com`）で全アプリ対応 |
+| 5 | **Cognito Custom Domain 制約の回避** | 認証基盤を `auth.example.com` の 1 つだけにすれば 1 Region 4 上限の影響なし |
+
+**設計上の最重要原則**:
+- ❌ **Cookie の `Domain` を親ドメイン（`.example.com`）に設定しない** — アプリ間 Cookie 漏洩リスク
+- ✅ **各アプリの Cookie は各サブドメインに限定**（Host-only Cookie 推奨）
+- ✅ **SSO は OIDC リダイレクトで Hub セッション参照** — アプリ間 Cookie 共有は不要かつ非推奨
+
+**業界実例**: Google Workspace / AWS Console / Microsoft 365 / Slack / Salesforce 等、大手 SaaS の主流。
+
+**詳細**: [common/subdomain-architecture-notes.md](../../../common/subdomain-architecture-notes.md) に技術仕様 + 設計原則 + 注意点 + ヒアリング項目を網羅。
+
+**ヒアリング連動**: マスター表 C（B-100）の補足として「ドメイン構成 5 項目」を確認（[hearing-checklist.md](../../hearing-checklist.md) 参照）。
+
 ---
 
 ## §C-1.1 Broker パターン採用根拠

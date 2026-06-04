@@ -17,11 +17,11 @@
 | 4 | 1 | **認可**（Authorization、★NEW 独立章）| 6 | 10 分 |
 | 5 | 6 | SSO・セッション・ログアウト | 24 | 28 分 |
 | 6 | 8 | ユーザー管理・プロビジョニング・セルフサービス | 32 | 30 分 |
-| 7 | 9 | 非機能要件（★ITDR/Identity Security 追加）| 36 | 33 分 |
-| 8 | 5 | 開発者体験・UX・プライバシー | 20 | 20 分 |
+| 7 | 10 | 非機能要件（★ITDR/Identity Security + ★移行性 NFR 追加）| 40 | 35 分 |
+| 8 | 4 | 開発者体験・UX・プライバシー | 16 | 18 分 |
 | **計** | **45** | - | **~182** | **~199 分（3.3 時間）** |
 
-> **改訂履歴**: 初版 31 項目 → 2026-06-03 業界標準フレームワーク照合 **44 項目** → 2026-06-03 強制再認証/ステップアップ独立 **45 項目** → 2026-06-03 **認可を §3.4 から §4 独立章化 + ITDR を §3.5 から §7.4 セキュリティ群へ移動**（章数 7 → 8、業界 ITDR トレンドに整合）。詳細は §12 改訂履歴。
+> **改訂履歴**: 初版 31 項目 → 2026-06-03 業界標準フレームワーク照合 **44 項目** → 2026-06-03 強制再認証/ステップアップ独立 **45 項目** → 2026-06-03 **認可を §3.4 から §4 独立章化 + ITDR を §3.5 から §7.4 セキュリティ群へ移動**（章数 7 → 8）→ 2026-06-04 **§8.5 移行性/Vendor Lock-in を §7.10 へ移動**（IPA D. 移行性 NFR 業界分類と整合、§8 を UX に純化）。詳細は §13 改訂履歴。
 
 > ヒアリング 3 回会議計画（[hearing-checklist-excel-main.tsv ヒアリング回 M1/M2/M3](hearing-checklist-excel-main.tsv)）と照合：M1（章 1-2 中心）/ M2（章 3-5 中心）/ M3（章 6-7 + 最終意思決定）
 
@@ -125,13 +125,19 @@
 
 ### 1.6 移行方針・リリース計画
 
-**概要**: 既存認証移行戦略 + パスワードハッシュ移行 + リリーススケジュール + ドメイン変更計画 + ユーザー周知 + **Vendor lock-in / Portability**。
+**概要**: **既存システムから本基盤への移行プロセス**（プロジェクト計画）+ パスワードハッシュ移行 + リリーススケジュール + ドメイン変更計画 + ユーザー周知。
+
+> **🎯 §7.10 移行性 NFR との違い（2026-06-04 整理）**:
+> - **§1.6（本項目）= 移行プロセス + リリース計画**（プロジェクト計画、M1 議論）— 既存システムから本基盤へどうやって移行するか
+> - **§7.10 移行性 NFR / Vendor Lock-in / Portability**（NFR、M3 議論）— 本基盤を将来別製品に移行できるかのシステム特性
+> - 両者は別概念で議論ステージも異なるため、本項目は **移行プロセスのみ** を扱い、Portability/Vendor Lock-in は §7.10 で扱う
 
 | 種別 | 参考資料 |
 |---|---|
 | **hearing-script** | [00-common.md A-5, A-10](hearing-script/00-common.md), [11-operations.md D-2, D-5](hearing-script/11-operations.md), [10-security-compliance.md C-204-4](hearing-script/10-security-compliance.md), [02-idp-federation.md B-615/616/617](hearing-script/02-idp-federation.md) |
 | **hearing-checklist** | §2.7, §3.3 (C-204-4) |
 | **proposal** | [§NFR-9 移行性](proposal/nfr/09-migration.md), [§C-4 スケジュール](proposal/common/04-schedule.md), [§FR-2.3.2.B 既存システムからの移行時のエンドユーザー影響](proposal/fr/02-federation.md) |
+| **関連項目** | [§7.10 移行性 NFR / Vendor Lock-in / Portability](#710-移行性-nfr--vendor-lock-in-回避--portability-旧-85-から-7-非機能群へ移動)（本基盤の出口戦略・将来移行容易性）|
 
 ### 1.7 スコープ宣言（対象外領域）★NEW
 
@@ -179,15 +185,17 @@
 
 ### 2.3 接続アプリ・システム一覧（マスター表 C）
 
-**概要**: アプリ種別 + 認証方式 + JWT 検証場所 + **特殊要件フラグ K1〜K8（Cognito Knockout）** + 既存ローカル認証。
+**概要**: アプリ種別 + 認証方式 + JWT 検証場所 + **特殊要件フラグ K1〜K8（Cognito Knockout）** + 既存ローカル認証 + **ドメイン構成方針**。
+
+> **🎯 ドメイン構成方針（2026-06-04 追加）**: アプリのドメイン構成は **同一親ドメインのサブドメイン（`app1.example.com` 等）を推奨**。SameSite / 現代ブラウザ規制 / BFF / TLS / Cognito Custom Domain 全観点で有利。マスター表 C の補足で **「ドメイン構成 5 項目」** を確認（[hearing-checklist.md B-100 補足](hearing-checklist.md) / [common/subdomain-architecture-notes.md](../common/subdomain-architecture-notes.md)）。
 
 | 種別 | 参考資料 |
 |---|---|
 | **hearing-script** | [01-auth-flow.md マスター表 C + 補足 1〜5](hearing-script/01-auth-flow.md) |
-| **hearing-checklist** | §3.2 (B-100) |
-| **proposal** | [§FR-1.1 認証フロー / Grant Type](proposal/fr/01-auth.md) |
-| **内部** | [common/auth-patterns.md](../common/auth-patterns.md), [reference/cognito-knockout-conditions.md](../reference/cognito-knockout-conditions.md), [hearing-checklist-excel-master-c.tsv](hearing-checklist-excel-master-c.tsv) |
-| **外部** | [OAuth 2.1](https://datatracker.ietf.org/doc/draft-ietf-oauth-v2-1/) / [FAPI 2.0](https://openid.net/specs/fapi-2_0-security-02.html) / RFC: [6749](https://datatracker.ietf.org/doc/html/rfc6749) / [7519](https://datatracker.ietf.org/doc/html/rfc7519) / [8628](https://datatracker.ietf.org/doc/html/rfc8628) / [8693](https://datatracker.ietf.org/doc/html/rfc8693) / [8705](https://datatracker.ietf.org/doc/html/rfc8705) / [9449](https://datatracker.ietf.org/doc/html/rfc9449) |
+| **hearing-checklist** | §3.2 (B-100) + **ドメイン構成 5 項目チェック** |
+| **proposal** | [§FR-1.1 認証フロー / Grant Type](proposal/fr/01-auth.md), [§C-1 ドメイン構成方針](proposal/common/01-architecture.md) |
+| **内部** | [common/auth-patterns.md](../common/auth-patterns.md), [common/subdomain-architecture-notes.md](../common/subdomain-architecture-notes.md), [reference/cognito-knockout-conditions.md](../reference/cognito-knockout-conditions.md), [hearing-checklist-excel-master-c.tsv](hearing-checklist-excel-master-c.tsv) |
+| **外部** | [OAuth 2.1](https://datatracker.ietf.org/doc/draft-ietf-oauth-v2-1/) / [FAPI 2.0](https://openid.net/specs/fapi-2_0-security-02.html) / RFC: [6749](https://datatracker.ietf.org/doc/html/rfc6749) / [7519](https://datatracker.ietf.org/doc/html/rfc7519) / [8628](https://datatracker.ietf.org/doc/html/rfc8628) / [8693](https://datatracker.ietf.org/doc/html/rfc8693) / [8705](https://datatracker.ietf.org/doc/html/rfc8705) / [9449](https://datatracker.ietf.org/doc/html/rfc9449) / [Curity BFF Gold Standard](https://curity.io/resources/learn/the-bff-pattern/) |
 
 ### 2.4 マルチテナント設計（分離粒度 + 規模戦略 + Organization 機能 + 特殊顧客）
 
@@ -221,13 +229,16 @@
 
 ### 3.1 ログイン方式・画面設定
 
-**概要**: IdP 選択 UX（HRD / セレクター / 組織固有 URL）+ Custom Domain + ログイン画面の所在。
+**概要**: IdP 選択 UX（HRD / セレクター / 組織固有 URL）+ Custom Domain + ログイン画面の所在 + **認証基盤のサブドメイン配置**（`auth.example.com` 等）。
+
+> **🎯 ドメイン構成との関連**: 認証基盤の配置 URL（`auth.example.com`）は §2.3 で確認するドメイン構成方針と整合させる。**サブドメイン構成（推奨）の場合、認証基盤も同一親ドメインのサブドメインに配置することで SameSite / SSO / Cookie 設計が綺麗に整理可能**。詳細は [common/subdomain-architecture-notes.md](../common/subdomain-architecture-notes.md)。
 
 | 種別 | 参考資料 |
 |---|---|
 | **hearing-script** | [06-multitenancy.md B-601, B-610](hearing-script/06-multitenancy.md), [02-idp-federation.md B-208](hearing-script/02-idp-federation.md) |
 | **hearing-checklist** | §4.4 (B-601), §3.4 (B-208), §3.5 (B-610) |
-| **proposal** | [§FR-2.3.3 ログイン UX](proposal/fr/02-federation.md) |
+| **proposal** | [§FR-2.3.3 ログイン UX](proposal/fr/02-federation.md), [§C-1 ドメイン構成方針](proposal/common/01-architecture.md) |
+| **内部** | [common/subdomain-architecture-notes.md](../common/subdomain-architecture-notes.md) — サブドメイン構成での Cookie / SameSite / Custom Domain 設計 |
 | **外部** | [IETF / Curity BFF gold standard 2025](https://curity.io/resources/learn/the-bff-pattern/) / [Home Realm Discovery (Shibboleth)](https://shibboleth.atlassian.net/wiki/spaces/SP3/pages/2065335462/HomeRealmDiscovery) |
 
 ### 3.2 MFA 要件（初回認証）
@@ -634,9 +645,30 @@
 | **proposal** | [§NFR-5 DR](proposal/nfr/05-dr.md), [§NFR-6 運用](proposal/nfr/06-operations.md) |
 | **外部** | [AWS Disaster Recovery Strategies](https://docs.aws.amazon.com/whitepapers/latest/disaster-recovery-workloads-on-aws/) / [Keycloak Backup and Restore](https://www.keycloak.org/docs/latest/server_admin/) |
 
+### 7.10 移行性 NFR / Vendor Lock-in 回避 / Portability ★旧 §8.5 から §7 非機能群へ移動
+
+**概要**: **システム NFR としての移行性**（ISO 25010 Portability / IPA D. 移行性）。プラットフォーム選定後の出口戦略 + 将来の Cognito ↔ Keycloak 移行容易性 + ベンダーロックイン回避設計。
+
+> **§1.6 移行プロセスとの違い**: §1.6 は「**既存システム → 本基盤への移行プロセス**」（プロジェクト計画、M1 議論）、本項目 §7.10 は「**本基盤を将来別製品に移行できるかの NFR**」（システム特性、M3 議論）。両者は別概念で議論ステージも異なる。
+>
+> **2026-06-04 移動理由**: 元 §8.5（章 8 開発者体験・UX・プライバシー）に配置されていたが、内容は **非機能要件（NFR）= 移行性 / Portability** であり、業界標準（**IPA 非機能要求グレード D. 移行性** / **ISO 25010 Portability**）と整合する §7 非機能要件群に配置するのが妥当。§8 は UX 軸（開発者体験 + UX + プライバシー）に純化。
+
+**評価軸**:
+- **ユーザー DB のエクスポート形式**（CSV / SCIM 2.0 標準準拠）
+- **設定の IaC 化**（Terraform / CloudFormation で管理することで移行容易）
+- **JWT 署名鍵の portability**（KMS 経由なら鍵自体は移行不要）
+- **監査ログのアーカイブ形式**（標準化された OCSF / CEF 等の中立フォーマット）
+- **プロトコル準拠度**（OIDC / SAML 標準準拠 → 移行時の RP/SP 改修最小化）
+
+| 種別 | 参考資料 |
+|---|---|
+| **proposal** | [§NFR-9 移行性](proposal/nfr/09-migration.md) |
+| **内部** | [common/token-exchange-spec-and-patterns.md](../common/token-exchange-spec-and-patterns.md), [common/auth-patterns.md](../common/auth-patterns.md) |
+| **外部** | [ISO/IEC 25010:2011 Portability](https://www.iso.org/standard/35733.html) / [IPA 非機能要求グレード D. 移行性](https://www.ipa.go.jp/sec/softwareengineering/std/ent03-b.html) / [SCIM 2.0 (RFC 7644) data portability](https://datatracker.ietf.org/doc/html/rfc7644) / [AWS Cognito User Pool Import/Export](https://docs.aws.amazon.com/cognito/latest/developerguide/cognito-user-pools-using-import-tool.html) / [Keycloak Realm Import/Export](https://www.keycloak.org/server/importExport) |
+
 ---
 
-## 8. 開発者体験・UX・プライバシー（5 項目）★旧 §7 から繰下げ
+## 8. 開発者体験・UX・プライバシー（4 項目）★旧 §7 から繰下げ、§8.5 移行性は §7.10 へ移動済
 
 > **本章の意義**: 「機能要件 / 非機能要件」の枠に収まらない、**開発者・エンドユーザー・規制対応**の横断観点を集約。CIAM 業界では「**Developer Experience + Privacy**」が独立評価軸として定着（[Kinde 2026 Top 10 Enterprise Auth Providers](https://www.kinde.com/comparisons/what-are-the-top-10-enterprise-authentication-providers-in-2026/)）。
 
@@ -701,20 +733,7 @@
 | **proposal** | [§NFR-7 コンプライアンス](proposal/nfr/07-compliance.md) |
 | **外部** | [GDPR Article 15-22 Data Subject Rights](https://gdpr-info.eu/chapter-3/) / [Secure Privacy Mobile Consent](https://secureprivacy.ai/blog/mobile-app-sdk-consent-management) / [Microsoft GDPR Compliance](https://learn.microsoft.com/en-us/compliance/regulatory/gdpr) / [個人情報保護法（APPI）](https://www.ppc.go.jp/) |
 
-### 8.5 Vendor Lock-in 回避 / Portability ★NEW
-
-**概要**: プラットフォーム選定後の出口戦略。Cognito → Keycloak 移行（または逆）の容易性。
-
-**評価軸**:
-- **ユーザー DB のエクスポート形式**（CSV / SCIM）
-- **設定の IaC 化**（Terraform / CloudFormation で管理することで移行容易）
-- **JWT 署名鍵の portability**
-- **監査ログのアーカイブ形式**
-
-| 種別 | 参考資料 |
-|---|---|
-| **proposal** | [§NFR-9 移行性](proposal/nfr/09-migration.md) |
-| **外部** | [SCIM 2.0 (RFC 7644) data portability](https://datatracker.ietf.org/doc/html/rfc7644) / [AWS Cognito User Pool Import/Export](https://docs.aws.amazon.com/cognito/latest/developerguide/cognito-user-pools-using-import-tool.html) / [Keycloak Realm Import/Export](https://www.keycloak.org/server/importExport) |
+> **§8.5 Vendor Lock-in / Portability** は **§7.10 移行性 NFR** へ移動済（2026-06-04、業界 NFR 分類と整合）
 
 ---
 
@@ -728,7 +747,7 @@
 | 2 | SSO方針・セッション信頼方針 | **5.1 SSO 方針 + セッション信頼レベル** | ✅ そのまま |
 | 3 | アカウント重複・リンク方針 | **6.4 アカウント重複・リンク方針** | ✅ そのまま |
 | 4 | アカウントロック_侵害検出 | **3.3 ローカルユーザー認証ポリシー**（統合）| ✅ パスワード + ロック + 侵害検出 + Bot を統合 |
-| 5 | 移行方針・リリース計画 | **1.6 移行方針・リリース計画** | ✅ そのまま（+ Vendor Lock-in 追記） |
+| 5 | 移行方針・リリース計画 | **1.6 移行プロセス + リリース計画**（プロジェクト計画）+ **§7.10 移行性 NFR**（システム NFR）| ⚠ 性質で分離（M1 議論 vs M3 議論）|
 | 6 | 規模・規制・コンプライアンス | **2.1 規模・規制・コンプライアンス** | ✅ そのまま（+ A-15 顧客数追記） |
 | 7 | 強制再認証・ステップアップ認証 | **5.6 強制再認証・ステップアップ認証（★NEW 独立章）** | ⚠ §3.2 から独立、ポリシー層として整理 |
 | 8 | クレーム設計 | **4.1 認可スタンス + JWT クレーム設計 + API 認可フロー** | ⚠ #13 と統合 |
@@ -760,6 +779,7 @@
 | **1.7 スコープ宣言** | 対象外領域の明示が抜け | §FR-8.3 PAM / 既存資料に散在 |
 | **3.3 ローカル認証ポリシー（拡張）** | Bot 保護が抜け | C-205-3 想定 |
 | **7.4 ITDR / Identity Security**（**旧 §3.5 から §7 セキュリティ群へ移動**） | 個別検知はあるが統合視点なし | C-217 / 新規 |
+| **7.10 移行性 NFR / Vendor Lock-in / Portability**（**旧 §8.5 から §7 非機能群へ移動、2026-06-04**）| IPA D. 移行性 / ISO 25010 Portability の業界 NFR 分類と整合させるため、章 8（UX）から章 7（NFR）へ移動 | §NFR-9 移行性 |
 | **3.4 認証フロー一覧**（旧 §3.6 から繰上げ） | 元の「構成概要」に含む想定だが詳細別出し推奨 | §FR-1.1 / マスター表 C 補足 |
 | **5.5 セッション TTL 設計**（旧 §4.5 から繰下げ） | C-206 系を独立項目化 | C-206/206-2/206-3 |
 | **5.6 強制再認証・ステップアップ認証** | 元 #7 を §3.2 から独立、システム駆動とアプリ駆動を「追加認証要求」ポリシー層として束ねる | C-216 / B-704 / B-605-3 / 新規 |
@@ -768,7 +788,7 @@
 | **6.8 ユーザーライフサイクル管理（JML）**（旧 §5.8 から繰下げ） | 元 28 項目に**なし**（JML 統合視点）| §FR-7.4 + §FR-2.2.1 |
 | **7.8 監査ログ・コンプラレポート**（旧 §6.7 から繰下げ） | C-203 のみで詳細浅い | §FR-8.2 / §FR-9.2 |
 | **7.9 BCP・DR ランブック**（旧 §6.8 から繰下げ） | 6.1 DR とは別の運用視点 | §NFR-5 + §NFR-6 |
-| **8.1〜8.5（章 8 全体）**（旧 §7 から繰下げ） | 元 28 項目に**なし**（業界標準で必須）| 新規 |
+| **8.1〜8.4（章 8、§8.5 を §7.10 へ移動後）**（旧 §7 から繰下げ）| 元 28 項目に**なし**（業界標準で必須）| 新規 |
 
 ### 統合・改名・分離・移動された項目（5 組）
 
@@ -779,6 +799,7 @@
 | **#7 強制再認証・ステップアップ認証**（元 #1 と統合予定だった）| **5.6 強制再認証・ステップアップ認証（独立）** | 「初回認証 (#1)」と「追加認証要求 (#7)」は性質が異なるため分離 |
 | #9 構成概要 | **1.3 アーキテクチャ方針 + 1.4 構成概要図** | 細分化 |
 | **ITDR**（旧 §3.5 認証群） | **§7.4 Identity Security**（**§7 セキュリティ群へ移動**） | 静的 NFR (§7.3) と動的応答 (§7.4) を「セキュリティ全体像」として隣接配置。業界 ITDR 独立カテゴリ化トレンドに整合 |
+| **Vendor Lock-in / Portability**（旧 §8.5 章 8 UX 群） | **§7.10 移行性 NFR**（**§7 非機能群へ移動、2026-06-04**） | IPA D. 移行性 / ISO 25010 Portability の業界 NFR 分類と整合。章 8 は UX（開発者体験 + アクセシビリティ + i18n + プライバシー）に純化。**§1.6 移行プロセス（プロジェクト計画、M1 議論）と §7.10 移行性 NFR（システム特性、M3 議論）を性質で分離** |
 
 ---
 
@@ -818,8 +839,8 @@
 | **章 4 認可（1）★NEW 独立章** | **M2** | 4.1 | 約 6 枚 |
 | **章 5 SSO・セッション・ログアウト（6）** | **M2 + M3** | M2: 5.1, 5.4 / M3: 5.2, 5.3, 5.5, 5.6 | 約 24 枚 |
 | **章 6 ユーザー管理（8）** | **M2 + M3** | M2: 6.1〜6.5 / M3: 6.6〜6.8 | 約 32 枚 |
-| **章 7 非機能要件（9、★ITDR §7.4 追加）** | **M3** | 7.1〜7.9 全て | 約 36 枚 |
-| **章 8 開発者体験・UX・プライバシー（5）** | **M3** | 8.1〜8.5 全て | 約 20 枚 |
+| **章 7 非機能要件（10、★ITDR §7.4 + ★移行性 §7.10 追加）** | **M3** | 7.1〜7.10 全て | 約 40 枚 |
+| **章 8 開発者体験・UX・プライバシー（4、§8.5 を §7.10 へ移動済）** | **M3** | 8.1〜8.4 | 約 16 枚 |
 
 ### 想定スケジュール（再計算）
 
@@ -827,7 +848,7 @@
 |---|---|---|---|
 | **M1 第 1 回** | 章 1（28 枚）+ 章 2（20 枚）= **48 枚** | 2.5 時間 | PO / 事業企画 + テックリード + 情シス |
 | **M2 第 2 回** | 章 3（16 枚）+ **章 4 認可（6 枚）** + 章 5 前半（8 枚）+ 章 6 前半（20 枚）= **50 枚** | 2.5 時間 | 開発チーム / テックリード中心 |
-| **M3 第 3 回** | 章 5 後半（16 枚、§5.6 含む）+ 章 6 後半（12 枚）+ 章 7（36 枚、§7.4 ITDR 含む）+ 章 8（20 枚）= **84 枚** | 3 時間 | インフラ / SRE / セキュリティ + 意思決定者 |
+| **M3 第 3 回** | 章 5 後半（16 枚、§5.6 含む）+ 章 6 後半（12 枚）+ 章 7（40 枚、§7.4 ITDR + §7.10 移行性 NFR 含む）+ 章 8（16 枚）= **84 枚** | 3 時間 | インフラ / SRE / セキュリティ + 意思決定者 |
 
 → **合計 8 時間**（3 回会議）で全 ~182 枚をカバー。M3 が重いため、章 8（開発者体験・UX）を**事前読み合わせ + Q&A 中心**にすれば短縮可能。
 
@@ -873,3 +894,5 @@
 | 2026-06-03 | **業界標準フレームワーク 8 種照合の結果**、31 項目 → **44 項目（7 章）**に拡張。**章 7「開発者体験・UX・プライバシー」を新設**。元 28 項目とのマッピング表を §8 として追加。Q1（セルフサービス vs パスワードポリシー）/ Q2（全件委譲時の管理）への対応を §5.6 / §5.7 に反映 |
 | 2026-06-03 | **§3.2 と #7 強制再認証・ステップアップ認証の分離**。元の解釈「#7 = ユーザー駆動のステップアップ」を「#7 = システム駆動 (強制再認証) + アプリ駆動 (ステップアップ)」に再定義。**§3.2 を「初回認証」に純化**し、**§4.6「強制再認証・ステップアップ認証」を新設**（44 項目 → 45 項目）。「追加で認証を要求する」テーマを **ポリシー層 (§4.6)** として束ね、実装技術は §4.3 / §4.5 / §3.5 に委譲する構成に再編 |
 | 2026-06-03 | **§3.4 認可 / §3.5 ITDR の構成見直し（章数 7 → 8）**。**(1)** 認可（旧 §3.4）を **§4 認可 / Authorization** として独立章化（業界標準 = 認証 vs 認可は分離、ボリューム実態と整合）。**(2)** ITDR（旧 §3.5）を **§7.4 Identity Security** として §7 非機能セキュリティ群に移動（静的 NFR §7.3 と動的応答 §7.4 で「セキュリティ全体像」を構成、業界 ITDR 独立カテゴリ化トレンドに整合）。**(3)** 旧 §4-§7 を §5-§8 に繰下げ、章番号大幅更新。**スライドファイル名のリネームと参照同期は後続対応**（Phase 2/3）|
+| 2026-06-04 | **ドメイン構成方針（サブドメイン構成推奨）を §C-1 / §2.3 / §3.1 / B-100 補足に反映**。アプリのドメインが同一親ドメインのサブドメイン（`app1.example.com` 等）で構成される場合の本方式適合性を確認 → SameSite / 現代ブラウザ規制 (ITP / 3rd-party Cookie 廃止) / BFF / TLS / Cognito Custom Domain 全観点で有利と判定。新規 [common/subdomain-architecture-notes.md](../common/subdomain-architecture-notes.md) に技術仕様 + 設計原則 + ヒアリング 5 項目を集約 |
+| 2026-06-04 | **§8.5 移行性 / Vendor Lock-in / Portability を §7.10 へ移動**（章 7: 9→10、章 8: 5→4）。IPA 非機能要求グレード D. 移行性 / ISO 25010 Portability の業界 NFR 分類と整合。**「移行」関連の 3 論点を性質で分離**: (A) **§1.6 移行プロセス** = プロジェクト計画（M1 議論）/ (B) **§7.10 移行性 NFR** = システム特性（M3 議論）/ (C) ベンダーロックイン回避 = §7.10 に集約。章 8 は UX 軸（開発者体験 + アクセシビリティ + i18n + プライバシー）に純化 |
