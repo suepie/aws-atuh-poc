@@ -794,11 +794,23 @@ flowchart LR
 
 ## 参考文献
 
+### プロジェクト内 関連ドキュメント
+
+- **[realm-separation-citations.md](realm-separation-citations.md)** — 🔥 **Multi-Realm 物理分離が「システム側ゼロ作業」と両立しない理由の一次資料引用集**（OIDC Core §3.1.3.7 / RFC 9068 / Keycloak 公式 / AWS API Gateway JWT Authorizer の verbatim quote 付き、顧客説明・反論対応テンプレ）
+
+### 外部資料
+
 - [Microsoft Azure Architecture Center - Federated Identity Pattern](https://learn.microsoft.com/en-us/azure/architecture/patterns/federated-identity)
 - [Microsoft - Architectural Considerations for Identity in a Multitenant Solution](https://learn.microsoft.com/en-us/azure/architecture/guide/multitenant/considerations/identity)
 - [AWS Cognito - User pool sign-in with third party identity providers](https://docs.aws.amazon.com/cognito/latest/developerguide/cognito-user-pools-identity-federation.html)
 - [AWS re:Post - Multiple enterprise SAML/OIDC IdPs with Cognito](https://repost.aws/questions/QUV5uXSqPwRtadCFAuHfvjXg)
 - [Keycloak - Identity Brokering](https://www.keycloak.org/docs/latest/server_admin/index.html)
+- [Keycloak - OIDC Endpoints (Securing Apps)](https://www.keycloak.org/securing-apps/oidc-layers)
+- [OpenID Connect Core 1.0 - ID Token Validation §3.1.3.7](https://openid.net/specs/openid-connect-core-1_0.html)
+- [RFC 9068 - JWT Profile for OAuth 2.0 Access Tokens](https://datatracker.ietf.org/doc/html/rfc9068)
+- [RFC 8414 - OAuth 2.0 Authorization Server Metadata](https://datatracker.ietf.org/doc/html/rfc8414)
+- [AWS API Gateway HTTP API JWT Authorizer](https://docs.aws.amazon.com/apigateway/latest/developerguide/http-api-jwt-authorizer.html)
+- [AWS SaaS Lens](https://docs.aws.amazon.com/prescriptive-guidance/latest/architectural-lens-saas/welcome.html)
 - [Phase Two - Keycloak as an Identity Provider Broker](https://phasetwo.io/docs/keycloak/idp/)
 - [LoginRadius - SaaS Identity and Access Management Best Practices](https://www.loginradius.com/blog/engineering/saas-identity-access-management)
 - [Network World - Federate your identity data with a hub](https://www.networkworld.com/article/945406/the-secret-to-a-successful-identity-provider-deployment-federate-your-identity-data-with-a-hub.html)
