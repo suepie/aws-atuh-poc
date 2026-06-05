@@ -96,3 +96,37 @@ variable "rds_snapshot_identifier" {
   type        = string
   default     = ""
 }
+
+# ==============================================================================
+# Stage A-2: HA / Multi-AZ 設定
+# ==============================================================================
+
+variable "keycloak_desired_count" {
+  description = "ECS Service の desired_count 初期値。HA 検証は 2 以上。停止時は 0 を CLI で指定（lifecycle.ignore_changes で Terraform からの変更は無視される）"
+  type        = number
+  default     = 2
+}
+
+variable "keycloak_autoscale_min" {
+  description = "ECS Service Auto Scaling 最小タスク数"
+  type        = number
+  default     = 2
+}
+
+variable "keycloak_autoscale_max" {
+  description = "ECS Service Auto Scaling 最大タスク数"
+  type        = number
+  default     = 4
+}
+
+variable "keycloak_db_pool_max_size" {
+  description = "Keycloak HikariCP の max pool size。RDS max_connections と (タスク数 × プールサイズ) のバランスを取る。db.t4g.micro (max~105) で 2 task なら 30 が安全側"
+  type        = number
+  default     = 30
+}
+
+variable "rds_multi_az" {
+  description = "RDS Multi-AZ 配置（自動フェイルオーバー）。月額 ~$14 → ~$28 に増加"
+  type        = bool
+  default     = true
+}

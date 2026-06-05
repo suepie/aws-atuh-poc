@@ -28,7 +28,7 @@ resource "aws_db_instance" "keycloak" {
   db_subnet_group_name   = aws_db_subnet_group.keycloak.name
   vpc_security_group_ids = [aws_security_group.rds.id]
 
-  multi_az            = false # PoCなのでシングルAZ（DRテスト時にtrueに変更可能）
+  multi_az            = var.rds_multi_az # Stage A-2: 自動フェイルオーバー検証のため Multi-AZ 既定 ON
   publicly_accessible = false
   skip_final_snapshot = true
 

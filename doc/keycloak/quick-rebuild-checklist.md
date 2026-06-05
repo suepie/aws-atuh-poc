@@ -1,5 +1,10 @@
 # Keycloak 再構築チェックリスト（最短10分）
 
+> ⚠ **Phase 10 / Stage A-4 (2026-06-05) 以降、本ファイルの §1〜§5 の手作業は不要になりました**。
+> [keycloak/config/realm-export.json](../../keycloak/config/realm-export.json) が Phase 8/9 の中核設定（Roles / Protocol Mappers / Full Scope / 4 Phase 8/9 テストユーザー）を完全に含む SSOT になり、`--import-realm` で自動再現可能。詳細は [doc/common/phase10-stage-a-verification.md §2](../common/phase10-stage-a-verification.md) を参照。
+>
+> 本ファイルは Phase 7 Auth0 IdP の手動セットアップ手順（環境変数依存のため自動化対象外）と、トラブルシュート手順を残すため維持する。
+
 **目的**: VPC 移行（Option B）で Keycloak を destroy → apply した際に、
 Admin Console で必要な設定を短時間で復元するための手順書。
 

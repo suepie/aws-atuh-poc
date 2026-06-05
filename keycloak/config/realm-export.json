@@ -22,11 +22,14 @@
   "offlineSessionIdleTimeout": 2592000,
   "accessCodeLifespan": 60,
   "accessCodeLifespanUserAction": 300,
+  "attributes": {
+    "userProfileEnabled": "true"
+  },
   "roles": {
     "realm": [
       {
         "name": "user",
-        "description": "一般ユーザー"
+        "description": "一般ユーザー（Phase 6 互換）"
       },
       {
         "name": "admin",
@@ -34,22 +37,38 @@
       },
       {
         "name": "expense-approver",
-        "description": "経費承認者"
+        "description": "経費承認者（Phase 6 互換）"
+      },
+      {
+        "name": "employee",
+        "description": "Phase 8/9: 一般従業員ロール"
+      },
+      {
+        "name": "manager",
+        "description": "Phase 8/9: マネージャーロール"
       }
     ]
   },
   "groups": [
     {
       "name": "expense-users",
-      "realmRoles": ["user"]
+      "realmRoles": [
+        "user"
+      ]
     },
     {
       "name": "expense-approvers",
-      "realmRoles": ["user", "expense-approver"]
+      "realmRoles": [
+        "user",
+        "expense-approver"
+      ]
     },
     {
       "name": "admins",
-      "realmRoles": ["user", "admin"]
+      "realmRoles": [
+        "user",
+        "admin"
+      ]
     }
   ],
   "clients": [
@@ -63,37 +82,204 @@
       "standardFlowEnabled": true,
       "implicitFlowEnabled": false,
       "protocol": "openid-connect",
+      "fullScopeAllowed": false,
       "rootUrl": "http://localhost:5173",
       "baseUrl": "/",
       "redirectUris": [
         "http://localhost:5173/callback",
-        "http://localhost:5173/*"
+        "http://localhost:5173/*",
+        "http://localhost:5174/callback",
+        "http://localhost:5174/*"
       ],
       "webOrigins": [
-        "http://localhost:5173"
+        "http://localhost:5173",
+        "http://localhost:5174"
       ],
       "attributes": {
         "pkce.code.challenge.method": "S256",
-        "post.logout.redirect.uris": "http://localhost:5173/"
+        "post.logout.redirect.uris": "http://localhost:5173/##http://localhost:5174/",
+        "backchannel.logout.session.required": "true",
+        "backchannel.logout.revoke.offline.tokens": "false"
       },
       "defaultClientScopes": [
         "openid",
         "profile",
         "email",
         "roles"
+      ],
+      "protocolMappers": [
+        {
+          "name": "tenant_id",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "introspection.token.claim": "true",
+            "userinfo.token.claim": "false",
+            "user.attribute": "tenant_id",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "tenant_id",
+            "jsonType.label": "String",
+            "multivalued": "false"
+          }
+        },
+        {
+          "name": "roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "consentRequired": false,
+          "config": {
+            "introspection.token.claim": "true",
+            "multivalued": "true",
+            "userinfo.token.claim": "false",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "roles",
+            "jsonType.label": "String"
+          }
+        },
+        {
+          "name": "email",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-property-mapper",
+          "consentRequired": false,
+          "config": {
+            "introspection.token.claim": "true",
+            "userinfo.token.claim": "true",
+            "user.attribute": "email",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "email",
+            "jsonType.label": "String"
+          }
+        }
       ]
     },
     {
       "clientId": "auth-poc-backend",
       "name": "Auth PoC Backend API",
-      "description": "Backend API Client for server-to-server",
+      "description": "Backend API Client for server-to-server (M2M Client Credentials + Token Exchange v2 subject)",
       "enabled": true,
       "publicClient": false,
       "serviceAccountsEnabled": true,
       "standardFlowEnabled": false,
       "directAccessGrantsEnabled": false,
       "protocol": "openid-connect",
-      "secret": "change-me-in-production"
+      "fullScopeAllowed": false,
+      "secret": "change-me-in-production",
+      "attributes": {
+        "standard.token.exchange.enabled": "true",
+        "standard.token.exchange.refresh.enabled": "true"
+      },
+      "protocolMappers": [
+        {
+          "name": "audience-target-api",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "auth-poc-target-api",
+            "id.token.claim": "false",
+            "access.token.claim": "true"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "auth-poc-ssr",
+      "name": "Auth PoC SSR App",
+      "description": "Phase 10 / Stage A-3: SSR Confidential Client (Next.js / Spring Boot 等の server-side web)",
+      "enabled": true,
+      "publicClient": false,
+      "secret": "ssr-poc-secret-change-me",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "implicitFlowEnabled": false,
+      "protocol": "openid-connect",
+      "fullScopeAllowed": false,
+      "rootUrl": "http://localhost:3000",
+      "redirectUris": [
+        "http://localhost:3000/api/auth/callback/keycloak",
+        "http://localhost:3000/callback",
+        "http://localhost:3000/*"
+      ],
+      "webOrigins": [
+        "http://localhost:3000"
+      ],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "http://localhost:3000/",
+        "backchannel.logout.session.required": "true"
+      },
+      "defaultClientScopes": [
+        "openid",
+        "profile",
+        "email",
+        "roles"
+      ],
+      "protocolMappers": [
+        {
+          "name": "tenant_id",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "introspection.token.claim": "true",
+            "userinfo.token.claim": "false",
+            "user.attribute": "tenant_id",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "tenant_id",
+            "jsonType.label": "String",
+            "multivalued": "false"
+          }
+        },
+        {
+          "name": "roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "consentRequired": false,
+          "config": {
+            "introspection.token.claim": "true",
+            "multivalued": "true",
+            "userinfo.token.claim": "false",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "roles",
+            "jsonType.label": "String"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "auth-poc-target-api",
+      "name": "Auth PoC Target API (Token Exchange target)",
+      "description": "Phase 10 / Stage A-3: Token Exchange v2 検証用 target audience client",
+      "enabled": true,
+      "publicClient": false,
+      "bearerOnly": true,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "protocol": "openid-connect",
+      "fullScopeAllowed": false,
+      "attributes": {
+        "standard.token.exchange.enabled": "true"
+      }
+    }
+  ],
+  "scopeMappings": [
+    {
+      "client": "auth-poc-spa",
+      "roles": [
+        "employee",
+        "manager",
+        "admin",
+        "user",
+        "expense-approver"
+      ]
     }
   ],
   "users": [
@@ -111,7 +297,9 @@
           "temporary": false
         }
       ],
-      "groups": ["expense-users"]
+      "groups": [
+        "expense-users"
+      ]
     },
     {
       "username": "approver@example.com",
@@ -127,7 +315,9 @@
           "temporary": false
         }
       ],
-      "groups": ["expense-approvers"]
+      "groups": [
+        "expense-approvers"
+      ]
     },
     {
       "username": "admin@example.com",
@@ -143,13 +333,101 @@
           "temporary": false
         }
       ],
-      "groups": ["admins"]
-    }
-  ],
-  "scopeMappings": [
+      "groups": [
+        "admins"
+      ]
+    },
     {
-      "client": "auth-poc-spa",
-      "roles": ["user", "admin", "expense-approver"]
+      "username": "alice-kc",
+      "email": "alice@acme.com",
+      "emailVerified": true,
+      "enabled": true,
+      "firstName": "Alice",
+      "lastName": "Acme",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "TestPass1!",
+          "temporary": false
+        }
+      ],
+      "attributes": {
+        "tenant_id": [
+          "acme-corp"
+        ]
+      },
+      "realmRoles": [
+        "employee"
+      ]
+    },
+    {
+      "username": "bob-kc",
+      "email": "bob@acme.com",
+      "emailVerified": true,
+      "enabled": true,
+      "firstName": "Bob",
+      "lastName": "Acme",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "TestPass1!",
+          "temporary": false
+        }
+      ],
+      "attributes": {
+        "tenant_id": [
+          "acme-corp"
+        ]
+      },
+      "realmRoles": [
+        "manager"
+      ]
+    },
+    {
+      "username": "carol-kc",
+      "email": "carol@acme.com",
+      "emailVerified": true,
+      "enabled": true,
+      "firstName": "Carol",
+      "lastName": "Acme",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "TestPass1!",
+          "temporary": false
+        }
+      ],
+      "attributes": {
+        "tenant_id": [
+          "acme-corp"
+        ]
+      },
+      "realmRoles": [
+        "admin"
+      ]
+    },
+    {
+      "username": "dave-kc",
+      "email": "dave@globex.com",
+      "emailVerified": true,
+      "enabled": true,
+      "firstName": "Dave",
+      "lastName": "Globex",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "TestPass1!",
+          "temporary": false
+        }
+      ],
+      "attributes": {
+        "tenant_id": [
+          "globex-inc"
+        ]
+      },
+      "realmRoles": [
+        "manager"
+      ]
     }
   ]
 }

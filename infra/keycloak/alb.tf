@@ -28,13 +28,31 @@ resource "aws_lb_target_group" "keycloak" {
   deregistration_delay = 30
 }
 
-# Public ALB Listener（OIDC公開エンドポイント用）
-# JWKS / OIDC Discovery は全IP許可、それ以外（ログイン画面等）は IP制限
-# Default action は 403 で、明示的に許可されたパス/IPのみアクセス可能。
+# Public ALB Listener (HTTP:80)
+# Stage A-1 以降は 80 → 443 へ permanent redirect。HTTPS Listener が正規の入口。
 resource "aws_lb_listener" "http" {
   load_balancer_arn = aws_lb.keycloak.arn
   port              = 80
   protocol          = "HTTP"
+
+  default_action {
+    type = "redirect"
+    redirect {
+      protocol    = "HTTPS"
+      port        = "443"
+      status_code = "HTTP_301"
+    }
+  }
+}
+
+# Stage A-1: Public ALB HTTPS Listener (443)
+# 自己署名証明書（tls.tf）で TLS 終端、バックエンドは HTTP:8080 のまま
+resource "aws_lb_listener" "https" {
+  load_balancer_arn = aws_lb.keycloak.arn
+  port              = 443
+  protocol          = "HTTPS"
+  ssl_policy        = "ELBSecurityPolicy-TLS13-1-2-2021-06"
+  certificate_arn   = aws_acm_certificate.self_signed.arn
 
   default_action {
     type = "fixed-response"
@@ -46,9 +64,12 @@ resource "aws_lb_listener" "http" {
   }
 }
 
+# Stage A-1 以降、Listener Rules は HTTPS Listener (443) に紐づける。
+# HTTP:80 は redirect default のみ（Rules 不要）。
+
 # Rule 1: JWKS / OIDC Discovery エンドポイントは全IP許可（Lambda 等の Resource Server 用）
 resource "aws_lb_listener_rule" "public_oidc_endpoints" {
-  listener_arn = aws_lb_listener.http.arn
+  listener_arn = aws_lb_listener.https.arn
   priority     = 100
 
   action {
@@ -68,7 +89,7 @@ resource "aws_lb_listener_rule" "public_oidc_endpoints" {
 
 # Rule 2: ログイン画面 / token endpoint 等は IP制限（ブラウザユーザーの IP のみ）
 resource "aws_lb_listener_rule" "browser_endpoints_ip_restricted" {
-  listener_arn = aws_lb_listener.http.arn
+  listener_arn = aws_lb_listener.https.arn
   priority     = 200
 
   action {
@@ -121,6 +142,24 @@ resource "aws_lb_listener" "admin_http" {
   load_balancer_arn = aws_lb.keycloak_admin.arn
   port              = 80
   protocol          = "HTTP"
+
+  default_action {
+    type = "redirect"
+    redirect {
+      protocol    = "HTTPS"
+      port        = "443"
+      status_code = "HTTP_301"
+    }
+  }
+}
+
+# Stage A-1: Admin ALB HTTPS Listener (443)
+resource "aws_lb_listener" "admin_https" {
+  load_balancer_arn = aws_lb.keycloak_admin.arn
+  port              = 443
+  protocol          = "HTTPS"
+  ssl_policy        = "ELBSecurityPolicy-TLS13-1-2-2021-06"
+  certificate_arn   = aws_acm_certificate.self_signed.arn
 
   default_action {
     type             = "forward"

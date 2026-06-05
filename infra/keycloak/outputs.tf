@@ -38,7 +38,7 @@ output "commands" {
   description = "Useful commands for cost management"
   value = {
     stop_ecs  = "aws ecs update-service --cluster ${aws_ecs_cluster.keycloak.name} --service ${aws_ecs_service.keycloak.name} --desired-count 0"
-    start_ecs = "aws ecs update-service --cluster ${aws_ecs_cluster.keycloak.name} --service ${aws_ecs_service.keycloak.name} --desired-count 1"
+    start_ecs = "aws ecs update-service --cluster ${aws_ecs_cluster.keycloak.name} --service ${aws_ecs_service.keycloak.name} --desired-count ${var.keycloak_desired_count}"
     stop_rds  = "aws rds stop-db-instance --db-instance-identifier ${aws_db_instance.keycloak.identifier}"
     start_rds = "aws rds start-db-instance --db-instance-identifier ${aws_db_instance.keycloak.identifier}"
   }

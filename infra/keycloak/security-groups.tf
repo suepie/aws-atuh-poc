@@ -4,16 +4,25 @@
 # ==============================================================================
 
 # Public ALB SG
-# L4 では :80 を全開し、L7 Listener Rule（alb.tf）でパスベースの IP 制限を行う。
+# L4 では :80 と :443 を全開し、L7 Listener Rule（alb.tf）でパスベースの IP 制限を行う。
+# Stage A-1: HTTPS:443 を追加、HTTP:80 は 443 へリダイレクト用に維持。
 resource "aws_security_group" "alb" {
   name        = "${local.prefix}-alb-sg"
   description = "Public ALB for Keycloak OIDC endpoints"
   vpc_id      = aws_vpc.main.id
 
   ingress {
-    description = "HTTP from anywhere (OIDC public endpoints, L7 rules restrict)"
+    description = "HTTP from anywhere (redirect to HTTPS)"
     from_port   = 80
     to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    description = "HTTPS from anywhere (OIDC public endpoints, L7 rules restrict)"
+    from_port   = 443
+    to_port     = 443
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
@@ -29,15 +38,24 @@ resource "aws_security_group" "alb" {
 
 # Admin ALB SG（管理者 IP 限定）
 # 本番では internal ALB にして VPN/DirectConnect 経由のアクセスに変更する想定。
+# Stage A-1: HTTPS:443 を追加、HTTP:80 は 443 へリダイレクト用に維持。
 resource "aws_security_group" "alb_admin" {
   name        = "${local.prefix}-alb-admin-sg"
   description = "Admin ALB for Keycloak Admin Console (IP restricted)"
   vpc_id      = aws_vpc.main.id
 
   ingress {
-    description = "HTTP from admin IPs only"
+    description = "HTTP from admin IPs (redirect to HTTPS)"
     from_port   = 80
     to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = distinct(concat([local.my_ip_cidr], var.allowed_cidr_blocks))
+  }
+
+  ingress {
+    description = "HTTPS from admin IPs only"
+    from_port   = 443
+    to_port     = 443
     protocol    = "tcp"
     cidr_blocks = distinct(concat([local.my_ip_cidr], var.allowed_cidr_blocks))
   }
@@ -107,6 +125,29 @@ resource "aws_security_group" "ecs" {
     protocol    = "tcp"
     cidr_blocks = [var.vpc_cidr]
   }
+}
+
+# Stage A-2: Infinispan JGroups TCP（task 間のクラスタメッセージング）
+# jdbc-ping で discovery は DB 経由だが、実際のキャッシュ同期通信は TCP:7800
+# 同一 SG 内 task 間通信を許可（self-referencing rule）
+resource "aws_security_group_rule" "ecs_jgroups_ingress" {
+  type                     = "ingress"
+  from_port                = 7800
+  to_port                  = 7800
+  protocol                 = "tcp"
+  source_security_group_id = aws_security_group.ecs.id
+  security_group_id        = aws_security_group.ecs.id
+  description              = "JGroups cluster messaging (Infinispan) between ECS tasks"
+}
+
+resource "aws_security_group_rule" "ecs_jgroups_egress" {
+  type                     = "egress"
+  from_port                = 7800
+  to_port                  = 7800
+  protocol                 = "tcp"
+  source_security_group_id = aws_security_group.ecs.id
+  security_group_id        = aws_security_group.ecs.id
+  description              = "JGroups cluster messaging (Infinispan) between ECS tasks"
 }
 
 # S3 Gateway Endpoint 経由の S3 アクセスは、destination が S3 のパブリック IP

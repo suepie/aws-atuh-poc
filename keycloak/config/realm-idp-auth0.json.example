@@ -1,0 +1,39 @@
+{
+  "_comment": "Phase 7 Auth0 Identity Brokering の Realm 部分パッチ。Auth0 テナントごとに値が変わるため、実環境では本ファイルをコピーして実値で埋め、kcadm.sh または Admin REST API で適用する。realm-export.json への直接マージは避ける（誤って Git に secret commit するリスクを下げるため）",
+  "_apply_method": "kcadm.sh create identity-provider/instances -r auth-poc -f realm-idp-auth0.json",
+  "_required_env": [
+    "AUTH0_DOMAIN: 例) dev-xxx.us.auth0.com",
+    "AUTH0_CLIENT_ID: Auth0 Application の Client ID",
+    "AUTH0_CLIENT_SECRET: Auth0 Application の Client Secret"
+  ],
+  "_post_setup_steps": [
+    "1. Auth0 Dashboard 側で Callback URL を Keycloak の /realms/auth-poc/broker/auth0/endpoint に登録",
+    "2. Auth0 側で Logout URL を /realms/auth-poc/broker/auth0/endpoint/logout_response に登録",
+    "3. Default Scopes が 'openid profile email' になっていることを確認（'openid' のみだと First Broker Login で email/name が空になる）",
+    "4. 既定 First Broker Login Flow が有効になっていることを確認（review profile / confirm link / verify email or re-auth）"
+  ],
+  "alias": "auth0",
+  "displayName": "Login with Auth0",
+  "providerId": "oidc",
+  "enabled": true,
+  "trustEmail": true,
+  "storeToken": false,
+  "addReadTokenRoleOnCreate": false,
+  "firstBrokerLoginFlowAlias": "first broker login",
+  "config": {
+    "clientId": "${AUTH0_CLIENT_ID}",
+    "clientSecret": "${AUTH0_CLIENT_SECRET}",
+    "clientAuthMethod": "client_secret_post",
+    "issuer": "https://${AUTH0_DOMAIN}/",
+    "authorizationUrl": "https://${AUTH0_DOMAIN}/authorize",
+    "tokenUrl": "https://${AUTH0_DOMAIN}/oauth/token",
+    "userInfoUrl": "https://${AUTH0_DOMAIN}/userinfo",
+    "logoutUrl": "https://${AUTH0_DOMAIN}/v2/logout",
+    "jwksUrl": "https://${AUTH0_DOMAIN}/.well-known/jwks.json",
+    "useJwksUrl": "true",
+    "validateSignature": "true",
+    "defaultScope": "openid profile email",
+    "syncMode": "IMPORT",
+    "backchannelSupported": "false"
+  }
+}
