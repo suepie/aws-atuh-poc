@@ -610,6 +610,468 @@ resource "keycloak_oidc_identity_provider" "entra_id" {
 | JIT 新規作成数 / 日 | タイプ B 顧客の活動量 | Keycloak Event Listener |
 | externalId 後付け成功率 | 移行マージの品質 | マージスクリプトサマリ |
 | Sync Mode 別ユーザー分布 | テナント別の構成把握 | kcadm.sh + 集計 |
+| **未ログイン 90 日超ユーザー数** | PCI DSS 8.2.6 / 定期バッチ deprovisioning 対象 | kcadm.sh + 集計 |
+| **論理削除（enabled=false）ユーザー数の推移** | DB 肥大化監視 | kcadm.sh + 集計 |
+
+### 10.4 JIT 定期バッチ deprovisioning 実装（PCI DSS 8.2.6 / APPI 法 22 条対応）
+
+> **背景**: JIT のみ顧客では「顧客 IdP 側で削除されても Keycloak は関知しない」（[proposal §FR-7.4.5 シーケンス 5](../requirements/proposal/fr/07-user.md)）→ ゴーストユーザー蓄積。**90 日未ログイン User の自動無効化** が必須（PCI DSS 8.2.6）。
+
+#### バッチスクリプト実装例（kcadm.sh + jq）
+
+```bash
+#!/bin/bash
+# inactive-user-disable.sh
+# 90 日以上未ログインのユーザーを enabled=false に変更
+# PCI DSS 8.2.6 適合、APPI 法 22 条 遅滞ない消去対応
+# 実行頻度: 週次 (cron で毎週日曜 02:00)
+
+set -euo pipefail
+
+REALM="${1:-tenant-acme}"
+INACTIVE_DAYS="${INACTIVE_DAYS:-90}"
+DRY_RUN="${DRY_RUN:-false}"   # true = 実行せず一覧のみ
+KC_URL="https://auth.example.com"
+ADMIN_USER="admin"
+ADMIN_PASS="$(vault kv get -field=password secret/keycloak/admin)"
+
+# 閾値タイムスタンプ計算 (90 日前のミリ秒)
+THRESHOLD_MS=$(($(date +%s%3N) - INACTIVE_DAYS * 86400 * 1000))
+
+# kcadm.sh 認証
+/opt/keycloak/bin/kcadm.sh config credentials \
+  --server "$KC_URL" --realm master \
+  --user "$ADMIN_USER" --password "$ADMIN_PASS"
+
+# 全 User を取得（max=10000、必要に応じてページング）
+USERS=$(kcadm.sh get users -r "$REALM" --max 10000 --fields id,username,enabled,createdTimestamp)
+
+# 各 User の lastLogin を Event API から取得して判定
+TARGETS=()
+for USER_ID in $(echo "$USERS" | jq -r '.[] | select(.enabled==true) | .id'); do
+  # 最終ログイン取得 (Event API、type=LOGIN)
+  LAST_LOGIN=$(kcadm.sh get "events?client=auth-poc-spa&type=LOGIN&user=$USER_ID&max=1" -r "$REALM" | jq -r '.[0].time // 0')
+
+  if [ "$LAST_LOGIN" -lt "$THRESHOLD_MS" ]; then
+    USERNAME=$(echo "$USERS" | jq -r ".[] | select(.id==\"$USER_ID\") | .username")
+    TARGETS+=("$USER_ID:$USERNAME:$LAST_LOGIN")
+  fi
+done
+
+echo "Found ${#TARGETS[@]} inactive users (>${INACTIVE_DAYS} days)"
+
+# 除外: サービスアカウント / 管理者ロール持ち
+# 通常は事前にロールベースフィルタを別途実装
+
+# 通知 (7 日前事前通知パターンは別バッチで実装、ここでは即時無効化)
+for ENTRY in "${TARGETS[@]}"; do
+  USER_ID=$(echo "$ENTRY" | cut -d: -f1)
+  USERNAME=$(echo "$ENTRY" | cut -d: -f2)
+
+  if [ "$DRY_RUN" = "true" ]; then
+    echo "DRY_RUN: would disable $USERNAME ($USER_ID)"
+  else
+    # 論理削除（enabled=false）
+    kcadm.sh update users/"$USER_ID" -r "$REALM" -s "enabled=false"
+
+    # 全 Session Revoke (Token も含む)
+    kcadm.sh post users/"$USER_ID"/logout -r "$REALM"
+
+    # 監査ログ送出 (Custom Attribute で記録、Event Listener が拾う)
+    kcadm.sh update users/"$USER_ID" -r "$REALM" \
+      -s "attributes.deprovisioned_at=[\"$(date -Iseconds)\"]" \
+      -s "attributes.deprovisioned_reason=[\"inactive_${INACTIVE_DAYS}d\"]"
+
+    echo "DISABLED: $USERNAME ($USER_ID)"
+  fi
+done
+
+# サマリレポート出力
+echo "Deprovisioning summary: $(date -Iseconds)"
+echo "  Realm: $REALM"
+echo "  Inactive threshold: ${INACTIVE_DAYS} days"
+echo "  Targets: ${#TARGETS[@]}"
+echo "  Mode: $DRY_RUN"
+```
+
+#### CronJob (Kubernetes) 例
+
+```yaml
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: inactive-user-disable
+  namespace: keycloak
+spec:
+  schedule: "0 2 * * 0"   # 毎週日曜 02:00
+  successfulJobsHistoryLimit: 10
+  failedJobsHistoryLimit: 5
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          serviceAccountName: keycloak-deprovision-sa
+          restartPolicy: OnFailure
+          containers:
+          - name: deprovision
+            image: ghcr.io/example/kc-deprovision:latest
+            env:
+            - name: REALM
+              value: "tenant-acme"
+            - name: INACTIVE_DAYS
+              value: "90"
+            - name: DRY_RUN
+              value: "false"
+            envFrom:
+            - secretRef:
+                name: keycloak-admin-credentials
+            resources:
+              limits:
+                memory: 512Mi
+                cpu: 500m
+```
+
+#### 通知 + ロールバック設計
+
+```
+T-7 日: 「7 日後に無効化」メール送信（誤無効化防止）
+        attributes.deprovision_warning_at セット
+T-0:    enabled=false に変更 + Token Revocation + 監査ログ
+        attributes.deprovisioned_at セット
+T+30 日: ロールバック可能期間（管理者が enabled=true 戻し可、Realm 設定）
+T+30 日 〜 T+N 年: 法的保持期間中は論理削除のまま保持
+T+N 年 (PCI DSS=1年 / 一般=7年): 物理削除 or 匿名化バッチ実行
+```
+
+### 10.5 Keycloak DB 保持・削除マトリクス（実装詳細）
+
+| ケース | 影響テーブル | SQL/API 操作 |
+|---|---|---|
+| **JIT 顧客 IdP 削除** | なし（基盤に通知なし） | - |
+| **JIT 定期バッチ無効化**（10.4 のスクリプト）| `user_entity.enabled` = false / `user_attribute` に deprovisioned_at | `UPDATE user_entity SET enabled=false WHERE id=?` |
+| **SCIM DELETE 受信**（デフォルト）| `user_entity.enabled` = false / `user_attribute.scim_deleted` = true | Phase Two SCIM Plugin が自動処理 |
+| **SCIM DELETE + Hard Delete 設定** | `user_entity` 物理削除 + 関連テーブル CASCADE | `DELETE FROM user_entity WHERE id=?`（FK CASCADE）|
+| **管理者手動 Hard Delete** | 同上 | `DELETE /admin/realms/{realm}/users/{id}` |
+| **GDPR Erasure** | 同上 + 監査ログ匿名化 | カスタムスクリプト（個別実装）|
+| **法的保持期間後の自動削除** | 同上 + アーカイブ送信 | バッチ + S3 Glacier Deep Archive |
+
+### 10.6 PCI DSS v4.0 / APPI 適合性チェックリスト
+
+> 詳細な要件マッピングは [proposal §FR-7.4.8](../requirements/proposal/fr/07-user.md) 参照。本セクションは **Keycloak 実装側のチェック項目**。
+
+#### PCI DSS v4.0 適合（CDE 範囲の認証経路がある顧客向け）
+
+| Requirement | Keycloak 実装での対応 |
+|---|---|
+| **8.2.1** ユーザー識別子の一意性 | `user_entity.username` UNIQUE 制約（Realm 内）|
+| **8.2.5** 退職時即時取消 | SCIM DELETE + Token Revocation（K8）+ Back-Channel Logout（K7）|
+| **8.2.6** 90 日未使用無効化 | **§10.4 のバッチスクリプト** 必須 |
+| **8.3.1** MFA 全アクセス | Realm Settings + Conditional Authentication Flow（[§3.2 / §4.6](../requirements/powerpoint-outline-and-references.md) と整合）|
+| **8.5** アクセスレビュー（四半期）| SCIM 採用顧客 = SCIM API でユーザー一覧取得 + 自動レビュー / JIT のみ顧客 = §10.4 バッチで未使用検出 |
+| **10.2** 監査ログ | Event Listener SPI + Phase Two `keycloak-events` で全イベント送出 |
+
+#### APPI 適合（個人データを扱う全顧客向け）
+
+| 法/GL | Keycloak 実装での対応 |
+|---|---|
+| **法 23 条**（安全管理措置）| MFA + SCIM 即時遮断 or §10.4 バッチ + 監査ログ |
+| **法 22 条**（不要保持禁止 / 遅滞ない消去）| §10.4 バッチ + 法的保持期間後の物理削除（§10.5）|
+| **法 25 条**（漏えい等報告）| Event Listener SPI で SIEM 連携 + インシデント対応手順 |
+| **法 26 条**（委託先監督）| 監査ログ全保持 + SLA レポート + 認証取得（SOC2 / ISO27001）|
+| **法 28-30 条**（開示・訂正・利用停止）| SCIM 採用 = 自動応答 API / JIT のみ = Admin API + 30 日以内手動応答 |
+
+### 10.7 SCIM 非対応 IdP 顧客向け Compensating Controls 実装詳細
+
+> **背景**: [proposal §FR-7.4.9](../requirements/proposal/fr/07-user.md) の案 A（短命 Token）+ 案 B（BCL）+ 案 C（認証ログ逆引きバッチ）の **Keycloak 実装目線** 詳細。SCIM 非対応 IdP 顧客でも PCI DSS / APPI 適合可能性を確保する。
+
+#### 10.7.1 案 A: 短命 Access Token + Refresh Token Rotation の Keycloak 設定
+
+**Realm Settings → Tokens タブ**:
+
+```hcl
+# Terraform 例
+resource "keycloak_realm" "tenant_scim_none" {
+  realm        = "tenant-acme"
+  enabled      = true
+
+  # 短命 Access Token
+  access_token_lifespan                  = "15m"   # ★ 15 分
+  access_token_lifespan_for_implicit_flow = "15m"
+
+  # Refresh Token + Rotation
+  sso_session_idle_timeout    = "24h"    # アイドル 24 時間
+  sso_session_max_lifespan    = "30d"    # 絶対 30 日
+
+  # Offline Token (任意、長期 Refresh)
+  offline_session_idle_timeout = "30d"
+  offline_session_max_lifespan_enabled = true
+  offline_session_max_lifespan = "60d"
+
+  # Refresh Token Rotation を有効化
+  refresh_token_max_reuse = 0   # 0 = 1 回のみ使用可、Rotation 必須
+  revoke_refresh_token    = true
+}
+```
+
+#### 10.7.2 短命 Token 環境での Silent Refresh 実装パターン
+
+##### SPA（oidc-client-ts）の Silent Refresh
+
+```typescript
+// authProvider.ts
+import { UserManager, WebStorageStateStore } from "oidc-client-ts";
+
+const userManager = new UserManager({
+  authority: "https://auth.example.com/realms/tenant-acme",
+  client_id: "auth-poc-spa",
+  redirect_uri: window.location.origin + "/callback",
+  silent_redirect_uri: window.location.origin + "/silent-callback",  // ★ Silent Refresh 専用
+  scope: "openid profile email",
+  response_type: "code",
+  loadUserInfo: true,
+  userStore: new WebStorageStateStore({ store: window.localStorage }),
+  automaticSilentRenew: true,                  // ★ 自動 Silent Refresh
+  silentRequestTimeoutInSeconds: 10,
+  accessTokenExpiringNotificationTimeInSeconds: 60,   // ★ 期限 60 秒前に Refresh
+});
+
+// Silent Refresh 失敗時のハンドリング
+userManager.events.addSilentRenewError((error) => {
+  console.warn("Silent renew failed:", error);
+  // ネットワーク断 → 自動リトライ（ライブラリが対応）
+  // Refresh Token 失効 → 再ログインへ
+  if (error.error === "invalid_grant") {
+    userManager.signinRedirect();
+  }
+});
+
+// Token 取得時のラッパ（期限切れチェック）
+export async function getAccessToken(): Promise<string> {
+  const user = await userManager.getUser();
+  if (!user || user.expired) {
+    await userManager.signinSilent();
+    const refreshed = await userManager.getUser();
+    return refreshed!.access_token;
+  }
+  return user.access_token;
+}
+```
+
+##### Multi-Tab UX（BroadcastChannel API）
+
+```typescript
+// tab-sync.ts
+const channel = new BroadcastChannel("auth_sync");
+
+userManager.events.addUserLoaded((user) => {
+  // 他タブへ Token 更新を通知
+  channel.postMessage({ type: "TOKEN_REFRESHED", expires_at: user.expires_at });
+});
+
+channel.onmessage = (event) => {
+  if (event.data.type === "TOKEN_REFRESHED") {
+    // 他タブが Refresh した、自タブも User を再読込
+    userManager.getUser();
+  }
+};
+```
+
+##### SSR (Next.js) の Silent Refresh
+
+```typescript
+// middleware.ts
+import { jwtDecode } from "jwt-decode";
+
+export async function middleware(request: NextRequest) {
+  const accessToken = request.cookies.get("access_token")?.value;
+  if (!accessToken) return NextResponse.redirect("/login");
+
+  const payload = jwtDecode<{ exp: number }>(accessToken);
+  const expiresIn = payload.exp * 1000 - Date.now();
+
+  // 残り 60 秒で Refresh
+  if (expiresIn < 60_000) {
+    const refreshToken = request.cookies.get("refresh_token")?.value;
+    const newTokens = await refreshAccessToken(refreshToken!);
+    const response = NextResponse.next();
+    response.cookies.set("access_token", newTokens.access_token, {
+      httpOnly: true, secure: true, sameSite: "lax",
+      maxAge: 15 * 60,
+    });
+    response.cookies.set("refresh_token", newTokens.refresh_token, {
+      httpOnly: true, secure: true, sameSite: "lax",
+      maxAge: 24 * 60 * 60,
+    });
+    return response;
+  }
+  return NextResponse.next();
+}
+```
+
+#### 10.7.3 長時間タスクの設計（Token 期限切れ対策）
+
+短命 Token 環境では **5-15 分以上かかるタスク** が Token 期限切れで失敗するリスクあり。
+
+| タスク | 設計パターン |
+|---|---|
+| **ファイルアップロード**（数百 MB-GB）| **Multipart Upload + 各パート再認証**（S3 Presigned URL 等で Token 非依存化）|
+| **レポート生成**（数分）| **Background Job 化**（API は Job ID 返却、ポーリング or WebSocket で結果取得）|
+| **長時間 WebSocket 接続** | **Re-auth Frame で Token 更新**（クライアントから期限前に再接続）|
+| **バッチ処理**（CSV 数千件）| **Chunk 分割 + 各 Chunk で Token Refresh** |
+
+#### 10.7.4 案 B: 顧客 IdP からの Back-Channel Logout 受信実装
+
+Keycloak の OIDC Identity Provider 設定で BCL 受信を有効化:
+
+```hcl
+resource "keycloak_oidc_identity_provider" "customer_idp" {
+  realm        = keycloak_realm.tenant_a.id
+  alias        = "customer-adfs-2019"
+  display_name = "Customer ADFS 2019"
+
+  authorization_url = var.customer_authorize_url
+  token_url         = var.customer_token_url
+  logout_url        = var.customer_logout_url
+  client_id         = var.customer_client_id
+  client_secret     = var.customer_client_secret
+
+  # ★ Back-Channel Logout 受信を有効化
+  backchannel_supported = true
+
+  sync_mode         = "FORCE"
+  trust_email       = true
+
+  first_broker_login_flow_alias = "first broker login"
+}
+```
+
+Realm の Client 側でも BCL 送出を有効化:
+
+```hcl
+resource "keycloak_openid_client" "spa" {
+  # ...
+  backchannel_logout_url             = "https://app.example.com/api/backchannel-logout"
+  backchannel_logout_session_required = true
+  backchannel_logout_revoke_offline_sessions = true
+}
+```
+
+#### 10.7.5 案 C: 顧客 IdP 認証ログ逆引きバッチ実装
+
+##### Microsoft Entra ID（Graph API）の例
+
+```bash
+#!/bin/bash
+# entra-signin-log-reverse-lookup.sh
+# Microsoft Graph API でサインインログ取得 → 7 日未認証ユーザーを Keycloak で無効化
+
+set -euo pipefail
+
+REALM="${1:-tenant-acme}"
+INACTIVE_DAYS="${INACTIVE_DAYS:-7}"
+ENTRA_TENANT_ID="${ENTRA_TENANT_ID}"
+ENTRA_CLIENT_ID="${ENTRA_CLIENT_ID}"
+ENTRA_CLIENT_SECRET="${ENTRA_CLIENT_SECRET}"
+
+# Microsoft Graph アクセストークン取得
+ENTRA_TOKEN=$(curl -sf -X POST \
+  "https://login.microsoftonline.com/$ENTRA_TENANT_ID/oauth2/v2.0/token" \
+  -d "grant_type=client_credentials" \
+  -d "client_id=$ENTRA_CLIENT_ID" \
+  -d "client_secret=$ENTRA_CLIENT_SECRET" \
+  -d "scope=https://graph.microsoft.com/.default" \
+  | jq -r '.access_token')
+
+# 全ユーザー取得（Entra ID）
+ENTRA_USERS=$(curl -sf -H "Authorization: Bearer $ENTRA_TOKEN" \
+  "https://graph.microsoft.com/v1.0/users?\$select=id,userPrincipalName,signInActivity")
+
+# 最終サインイン日時を取得 + N 日未認証ユーザーを抽出
+THRESHOLD_DATE=$(date -u -d "$INACTIVE_DAYS days ago" -Iseconds 2>/dev/null || \
+                 date -u -v-${INACTIVE_DAYS}d -Iseconds)
+
+INACTIVE_USERS=$(echo "$ENTRA_USERS" | jq -r --arg threshold "$THRESHOLD_DATE" '
+  .value[] | select(
+    .signInActivity == null or
+    .signInActivity.lastSignInDateTime < $threshold
+  ) | .userPrincipalName')
+
+# Keycloak で対応ユーザーを無効化
+/opt/keycloak/bin/kcadm.sh config credentials --server "$KC_URL" \
+  --realm master --user admin --password "$ADMIN_PASS"
+
+for UPN in $INACTIVE_USERS; do
+  # Keycloak の externalId or email で検索
+  KC_USER=$(kcadm.sh get users -r "$REALM" -q email="$UPN" | jq -r '.[0]')
+  KC_USER_ID=$(echo "$KC_USER" | jq -r '.id // empty')
+
+  if [ -n "$KC_USER_ID" ]; then
+    kcadm.sh update users/"$KC_USER_ID" -r "$REALM" -s "enabled=false"
+    kcadm.sh post users/"$KC_USER_ID"/logout -r "$REALM"
+    echo "DISABLED: $UPN ($KC_USER_ID)"
+  fi
+done
+```
+
+##### Okta（System Log API）の例
+
+```bash
+# Okta System Log API で 7 日内に成功ログインしていないユーザーを抽出
+OKTA_LOGS=$(curl -sf -H "Authorization: SSWS $OKTA_API_TOKEN" \
+  "https://$OKTA_DOMAIN/api/v1/logs?\
+filter=eventType eq \"user.session.start\" and outcome.result eq \"SUCCESS\"&\
+since=$(date -u -d "$INACTIVE_DAYS days ago" -Iseconds)")
+
+# 直近ログインしたユーザーセット
+ACTIVE_USERS=$(echo "$OKTA_LOGS" | jq -r '[.[].actor.alternateId] | unique | .[]')
+
+# Okta 全ユーザーから未認証ユーザーを抽出
+ALL_USERS=$(curl -sf -H "Authorization: SSWS $OKTA_API_TOKEN" \
+  "https://$OKTA_DOMAIN/api/v1/users?limit=200" | jq -r '.[].profile.email')
+
+INACTIVE=$(comm -23 <(echo "$ALL_USERS" | sort) <(echo "$ACTIVE_USERS" | sort))
+
+# Keycloak で無効化（上記同様）
+# ...
+```
+
+#### 10.7.6 UX チェックリスト（短命 Token 採用時）
+
+短命 Token (15 分) 採用時の必須実装項目:
+
+```
+[クライアント側]
+□ Silent Refresh の自動化（残り 60 秒前にトリガー）
+□ Refresh 失敗時の透過的リトライ（指数バックオフ）
+□ Refresh Token 失効時のみ再ログイン UI
+□ Multi-Tab 同期（BroadcastChannel）
+□ オフライン時の Service Worker キャッシュ
+□ 長時間タスクの Background Job 化（Token 非依存）
+□ ファイルアップロードの Presigned URL 化（Token 非依存）
+
+[サーバー側]
+□ Keycloak Token Endpoint の高可用性（Refresh トラフィック増加対応）
+□ Refresh Token Rotation 有効化
+□ Refresh 時に max_age=0 や prompt=login を強制しない（致命的 UX 悪化）
+□ 監査ログで「Refresh ごと再認証強制」を計測（誤設定検知）
+
+[運用]
+□ Token 関連エラーレートのアラート（Refresh 失敗率 > 1% で警告）
+□ 業務系アプリと管理系で別 Realm + 別 TTL（業務 = 8h、管理 = 15min 等）
+□ 長時間バッチ処理は Service Account + Client Credentials で実行
+```
+
+#### 10.7.7 Compensating Controls Worksheet テンプレート（PCI DSS Appendix B）
+
+QSA 申請用のテンプレート例:
+
+| Element | 記載内容 |
+|---|---|
+| **1. 制限事項の文書化** | 顧客 IdP（[IdP 名]）が SCIM 2.0 Provisioning に非対応のため、PCI DSS 8.2.5 の即時取消の厳密適合（数秒〜数十秒）が不可 |
+| **2. 代替手段の効果分析** | (a) Access Token TTL を 15 分に短縮、(b) 顧客 IdP 認証ログ API を毎日逆引きし 7 日未認証ユーザーを論理削除、(c) Refresh ごとに Keycloak DB の `enabled` チェック、(d) ITDR で異常ログイン検知 → 自動アラート + 自動無効化 |
+| **3. 高レベルのリスク** | TTL 15 分間のアクセスリスク残存。推定 deprovisioning（7 日）の誤検知リスク（長期休暇等）。これらを ITDR の異常検知 + 監査ログ完全保持で補完 |
+| **4. 維持手順** | 月次 QSA レポート + Refresh Token Rotation の動作確認 + 認証ログ逆引きバッチの実行ログ確認 + 退職者シナリオの四半期テスト |
+| **5. 検証** | 四半期ペネトレーションテスト + 退職シナリオ模擬テスト + ITDR 検知率測定（false positive < 5%、false negative < 1%）|
 
 ---
 
@@ -637,7 +1099,16 @@ resource "keycloak_oidc_identity_provider" "entra_id" {
 - [Microsoft Entra SCIM Provisioning](https://learn.microsoft.com/en-us/entra/identity/app-provisioning/use-scim-to-provision-users-and-groups)
 - [Okta SCIM Connector Guide](https://developer.okta.com/docs/concepts/scim/)
 
-### 11.4 内部関連ドキュメント
+### 11.4 コンプライアンス（PCI DSS / APPI）
+
+- [PCI DSS v4.0.1（PCI Security Standards Council、2025）](https://www.pcisecuritystandards.org/document_library/)
+- [PCI DSS v4.0 Requirement 8 解説（VistaInfoSec）](https://vistainfosec.com/blog/pci-dss-requirement-8-changes-from-v3-2-1-to-v4-0-explained/)
+- [PCI DSS v4.0.1 Universal MFA 拡大（HYPR）](https://www.hypr.com/blog/pci-dss-4.0.1-what-changed-and-how-is-this-the-next-step-for-universal-mfa)
+- [個人情報保護法ガイドライン（通則編）— 個人情報保護委員会](https://www.ppc.go.jp/personalinfo/legal/guidelines_tsusoku/)
+- [個人情報保護委員会 行政指導動向 2025-03（JPAC）](https://blog.jpac-privacy.jp/administrativeguidancefromppc_202503/)
+- [APPI 2025 三年見直し動向](https://datasign.jp/blog/appi-2025/)
+
+### 11.5 内部関連ドキュメント
 
 - [§FR-7.4 プロビジョニング（proposal）](../requirements/proposal/fr/07-user.md)
 - [§FR-2.2.1 JIT プロビジョニング（proposal）](../requirements/proposal/fr/02-federation.md)
@@ -654,3 +1125,5 @@ resource "keycloak_oidc_identity_provider" "entra_id" {
 ## 改訂履歴
 
 - 2026-06-08: 初版作成。proposal §FR-7.4.5/6/7 の設計判断を Keycloak 26 + Phase Two SCIM 実装目線で詳細化。混在 3 タイプ（A=SCIM 採用 / B=JIT のみ / C=移行期）の Realm/IdP/Mapper 設定 + externalId 突合 Custom Authenticator + Sync Mode 詳細 + First Broker Login Flow 拡張 + マージスクリプト + 落とし穴 7 つを集約
+- 2026-06-08: **§10.4 JIT 定期バッチ deprovisioning 実装** + **§10.5 Keycloak DB 保持・削除マトリクス** + **§10.6 PCI DSS v4.0 / APPI 適合性チェックリスト** を追加。proposal §FR-7.4.6 末尾の保持・削除マトリクス + §FR-7.4.7 末尾の定期バッチ + §FR-7.4.8 PCI DSS/APPI 適合性整理の **実装目線詳細** として対応。kcadm.sh ベースのバッチスクリプト例 + Kubernetes CronJob 例 + PCI DSS Req 8 全要件のマッピング + APPI 法 22/23/25/26/28-30 条のマッピングを集約
+- 2026-06-08: **§10.7 SCIM 非対応 IdP 顧客向け Compensating Controls 実装詳細** を追加（proposal §FR-7.4.9 の Keycloak 実装目線詳細）。短命 Access Token (15min) + Refresh Token Rotation の Keycloak 設定、SPA/SSR の Silent Refresh 実装パターン、Multi-Tab UX、長時間タスク設計、BCL 受信実装、Microsoft Entra Graph API / Okta System Log API 認証ログ逆引きバッチ、UX チェックリスト、Compensating Controls Worksheet テンプレートを集約。**RFC 9700 (2025) OAuth 2.0 Best Current Practice 整合**|
