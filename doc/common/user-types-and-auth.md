@@ -551,6 +551,7 @@ def lambda_handler(event, context):
 | [authz-architecture-design.md](authz-architecture-design.md) | 認可アーキテクチャ | Lambda Authorizer の `user_type` 分岐の前提 |
 | [keycloak-network-architecture.md](keycloak-network-architecture.md) | 本番想定ネットワーク | U1 専用経路の IP 制限 / WAF / VPN |
 | [ADR-009](../adr/009-mfa-responsibility-by-idp.md) | MFA 責務 by IdP | U3 の MFA を IdP 側に委ねる根拠 |
+| [self-service-responsibility.md](self-service-responsibility.md) | セルフサービスの責任配置 — 浅いブローカー設計 | 5 ユーザー種別 × セルフサービス 9 機能の所在マトリクス。ADR-009 の MFA 帰属原則を PW 変更・プロフィール編集・GDPR まで一般化 |
 | [ADR-014](../adr/014-auth-patterns-scope.md) | 認証パターン対応範囲 | 本ドキュメントの 5 ユーザー種別が対象範囲に収まるか |
 | [requirements/platform-selection-decision.md](../requirements/platform-selection-decision.md) | プラットフォーム選定 | §9 の確認事項 Q-U1〜Q-AUDIT-1 を評価に反映 |
 
