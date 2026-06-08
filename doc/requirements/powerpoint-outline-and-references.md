@@ -440,32 +440,21 @@ JWT クレーム（tenant_id, roles, sub 等、最小クレーム原則）
 
 **概要**: 本章の 3 観点（ユーザー管理 CRUD / プロビジョニング / セルフサービス）は、どれも「**誰のために誰が何をするか**」を割り当てる議論。最初に「誰がいるのか」と「その認証ソースは何か」を揃えてから、§5.1 以降の各論に入る。**章を跨いだ前提ズレを早期に検知する目的の前提合意スライド**。
 
-**冒頭 1 枚で示す責任マッピング表**:
-
-| ユーザー種別 | 認証ソース | 管理（CRUD）責任 | プロビジョニング方式 | セルフサービス提供場所 |
-|---|---|---|---|---|
-| **Platform Admin** | Broker (ローカル) | 基盤運用チーム | 手動（Admin Console / kcadm.sh）| Broker |
-| **Tenant Admin (IdP 無)** | Broker (ローカル) | 基盤運用 or 顧客側 | 手動 or 簡易招待 | Broker |
-| **Tenant Admin (IdP 有)** | 顧客 IdP | 顧客 IdP 管理者 | JIT + ロール手動付与 | **顧客 IdP** |
-| **End User (連携)** | 顧客 IdP | 顧客 IdP 管理者 | JIT (or 将来 SCIM) | **顧客 IdP** |
-| **End User (ローカル)** | Broker (ローカル) | 顧客 Tenant Admin | 手動招待 or セルフ登録 | Broker |
-
-**章内サブセクションとの対応**:
-- 3 列目「管理責任」→ §5.4 アカウント重複・リンク / §5.5 属性 SoT / §5.7 委譲管理 / §5.8 JML の議論軸
-- 4 列目「プロビジョニング方式」→ §5.1 JIT/SCIM / §5.2 デフォルト権限 / §5.3 Webhook 通知
-- 5 列目「セルフサービス提供場所」→ §5.6 セルフサービス機能
-
-**顧客との前提合意の使い方**: 初回擦り合わせで「この 5 種別と認証ソースで合っていますか」を確認。「うちは連携ユーザーしかいない」「IdP 無のテナント管理者は想定しない」等の応答で **章を跨いだ範囲縮小** が可能、後続深掘りを要件直結部に集中投下できる。
+> **マッピング表本体（SSOT）**: [common/self-service-responsibility.md §0](../common/self-service-responsibility.md) を参照。本ファイルでは表を再掲せず、スライド構成と参考資料のみ記載。
 
 **スライド構成案**（1 枚）:
 - タイトル: 「ユーザー管理・プロビジョニング・セルフサービスの責任配置 — 章共通の前提」
-- 中央に責任マッピング表（5 行 × 5 列）
-- 下部に「この表のどこを見るかが章の各論」の凡例（3 列目=管理 / 4 列目=プロビ / 5 列目=セルフ）
+- 中央に責任マッピング表（[SSOT](../common/self-service-responsibility.md) の表をそのままスライド化、5 行 × 5 列）
+- 下部に「この表のどこを見るかが章の各論」の凡例:
+  - 3 列目「管理責任」→ §5.4 アカウント重複・リンク / §5.5 属性 SoT / §5.7 委譲管理 / §5.8 JML
+  - 4 列目「プロビジョニング方式」→ §5.1 JIT/SCIM / §5.2 デフォルト権限 / §5.3 Webhook 通知
+  - 5 列目「セルフサービス提供場所」→ §5.6 セルフサービス機能
 - 質疑誘導: 「この 5 種別の中で、御社が想定していない / 別整理したい行はありますか?」
+- 顧客回答に応じた使い方: 「うちは連携ユーザーしかいない」「IdP 無のテナント管理者は想定しない」等の応答で **章を跨いだ範囲縮小** が可能、後続深掘りを要件直結部に集中投下できる
 
 | 種別 | 参考資料 |
 |---|---|
-| **内部** | [common/user-types-and-auth.md](../common/user-types-and-auth.md)（5 ユーザー種別の根拠）, [common/self-service-responsibility.md §0](../common/self-service-responsibility.md)（同マッピング表 + 顧客 IdP / Broker 責任配置の根拠）, [ADR-009 MFA 責務 by IdP](../adr/009-mfa-responsibility-by-idp.md)（責任配置原則の起源）|
+| **内部** | **[common/self-service-responsibility.md §0](../common/self-service-responsibility.md)（責任マッピング表の SSOT）**, [common/user-types-and-auth.md](../common/user-types-and-auth.md)（5 ユーザー種別の根拠）, [ADR-009 MFA 責務 by IdP](../adr/009-mfa-responsibility-by-idp.md)（責任配置原則の起源）|
 | **proposal** | [§FR-7 ユーザー管理 §0](proposal/fr/07-user.md)（章プロローグ）|
 | **関連項目** | §5.1 〜 §5.8 すべての前提として参照される |
 
@@ -956,3 +945,4 @@ JWT クレーム（tenant_id, roles, sub 等、最小クレーム原則）
 | 2026-06-04 | **§8.5 移行性 / Vendor Lock-in / Portability を §7.10 へ移動**（章 7: 9→10、章 8: 5→4）。IPA 非機能要求グレード D. 移行性 / ISO 25010 Portability の業界 NFR 分類と整合。**「移行」関連の 3 論点を性質で分離**: (A) **§1.6 移行プロセス** = プロジェクト計画（M1 議論）/ (B) **§7.10 移行性 NFR** = システム特性（M3 議論）/ (C) ベンダーロックイン回避 = §7.10 に集約。章 8 は UX 軸（開発者体験 + アクセシビリティ + i18n + プライバシー）に純化 |
 | 2026-06-08 | **属性マッピング/クレーム変換を §6.5 から §4.1 認可へ統合**。「属性 → 基盤正規化 → JWT クレーム」の end-to-end パイプラインを §4.1 で一体議論可能化（業界整理 Auth0 Rules/Actions / Okta Claims&Tokens / Entra Token Configuration / Keycloak Protocol Mapper と完全整合）。§6.5 は **「属性更新・Source of Truth」（属性ライフサイクル運用）に純化**。章 4 のスライド数 6→8、章 4 議論時間 10 分→13 分、M2 計 50→52 枚 |
 | 2026-06-08 | **§6 ユーザー管理・プロビジョニング・セルフサービスに §5.0 章プロローグ追加**（8 項目 → 9 項目）。ユーザー種別（5 カテゴリ）× 3 観点（管理・プロビジョニング・セルフサービス）+ 認証ソースの **責任マッピング表 1 枚** を冒頭に提示し、章を跨いだ前提ズレ（end user / admin / 連携 / ローカルの混同）を早期検知可能化。[common/self-service-responsibility.md §0](../common/self-service-responsibility.md) と同マッピング表で同期。章 6 スライド 32→33 枚、議論時間 30→33 分、計 45→46 項目、~182→~183 枚 |
+| 2026-06-08 | **§5.0 のマッピング表 SSOT を [common/self-service-responsibility.md §0](../common/self-service-responsibility.md) に一元化**。本ファイル §5.0 から表本体を削除し参照リンクのみ残置、スライド構成と参考資料セクションは維持。design reference 層を SSOT とすることで、プレゼン版とドキュメント間の同期負担を解消 |
