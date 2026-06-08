@@ -581,15 +581,19 @@ JWT クレーム（tenant_id, roles, sub 等、最小クレーム原則）
 
 ## 7. 非機能要件（9 項目）★旧 §6 から繰下げ、§7.4 ITDR 追加
 
-### 7.1 可用性・SLA・DR
+### 7.1 可用性・SLA・DR 設計（RTO/RPO/HA 構成）★リネーム（2026-06-08）
 
-**概要**: SLA 目標 + RTO + RPO + フェイルオーバー方式 + 計画メンテナンス窓 + Multi-Region vs Multi-AZ。
+**概要**: SLA 目標 + RTO + RPO + フェイルオーバー方式 + 計画メンテナンス窓 + Multi-Region vs Multi-AZ。**設計フェーズで決めるベースライン**（IPA 非機能要求グレード A. 可用性 / ISO 25010 Reliability / AWS Well-Architected Reliability Pillar に対応）。
+
+> **§7.9 BCP・DR 運用ランブックとの関係**: 本項目（§7.1）が「**設計・アーキテクチャ**」（何を作るか）、§7.9 が「**運用・実行**」（作ったものをどう回すか・訓練するか）。同じ DR でも議論軸とステークホルダーが異なる。
+> **§7.4 ITDR との混同回避**: §7.4 の "DR" は **Identity Threat Detection & Response** の略であり、本項目の Disaster Recovery とは**無関係**。
 
 | 種別 | 参考資料 |
 |---|---|
 | **hearing-script** | [09-availability.md C-101〜C-104, C-107](hearing-script/09-availability.md) |
 | **hearing-checklist** | §5.1 |
 | **proposal** | [§NFR-1 可用性](proposal/nfr/01-availability.md), [§NFR-5 DR](proposal/nfr/05-dr.md), [§C-6 §6.2.4 SLA 別必要構成](proposal/common/06-architecture-decision-hybrid.md) |
+| **関連項目** | [§7.9 BCP・DR 運用ランブック](#79-bcpdr-運用ランブック訓練連絡体制-リネーム2026-06-08)（本項目で決めた SLA/RTO/RPO の運用面）|
 | **外部** | [AWS Multi-Region Best Practices](https://docs.aws.amazon.com/wellarchitected/latest/reliability-pillar/welcome.html) / [Keycloak HA Guide](https://www.keycloak.org/server/concepts-cluster) / [IPA 非機能要求グレード A. 可用性](https://www.ipa.go.jp/sec/softwareengineering/std/ent03-b.html) |
 
 ### 7.2 性能・スケール
@@ -620,6 +624,8 @@ JWT クレーム（tenant_id, roles, sub 等、最小クレーム原則）
 
 **概要**: 認証後の**動的な脅威検知 + 自動応答**。個別検知（侵害クレデンシャル C-205-2 / CAEP C-217）を**統合 ITDR 戦略**として整理。認証イベント異常検知 / リアルタイムリスク評価 / 自動レスポンス（強制ログアウト / MFA 要求）/ SOC 連携。
 
+> ⚠ **命名注意**: 本項目の "ITDR" の "DR" は **Identity Threat Detection & Response** の略で、§7.1 / §7.9 の **Disaster Recovery（災害復旧）とは無関係**。字面が紛らわしいが別カテゴリ（§7.1/§7.9 = 可用性軸、§7.4 = セキュリティ軸）。
+>
 > **§7.3 セキュリティ NFR との関係**: §7.3 が「**静的・基盤設計**」（監査ログ / 暗号化 / 鍵管理 等の設計時に決めるベースライン）、§7.4 が「**動的・運用機能**」（運用中のリアルタイム脅威応答）。両者で「セキュリティ全体像」を構成。
 >
 > **§5.6 強制再認証・ステップアップとの関係**: ITDR で脅威検知 → §5.6 強制再認証を発火、という連動関係。CAEP / Shared Signals Framework は両者の橋渡し標準。
@@ -681,14 +687,18 @@ JWT クレーム（tenant_id, roles, sub 等、最小クレーム原則）
 | **proposal** | [§FR-8.2 監査ログ](proposal/fr/08-admin.md), [§FR-9.2 ログ統合](proposal/fr/09-integration.md), [§NFR-7 コンプライアンス](proposal/nfr/07-compliance.md) |
 | **外部** | [Splunk / Datadog SIEM integration patterns](https://www.datadoghq.com/blog/security-monitoring-for-aws-cognito/) / [AWS CloudTrail Best Practices](https://docs.aws.amazon.com/awscloudtrail/latest/userguide/best-practices-security.html) / [Keycloak Event Listener SPI](https://www.keycloak.org/docs/latest/server_development/#_events) |
 
-### 7.9 BCP・DR ランブック
+### 7.9 BCP・DR 運用ランブック（訓練・連絡体制）★リネーム（2026-06-08）
 
-**概要**: 災害復旧手順（Runbook）+ DR 訓練計画 + リハーサル頻度 + 連絡フロー + エスカレーション体制。
+**概要**: 災害復旧手順（Runbook）+ DR 訓練計画 + リハーサル頻度 + 連絡フロー + エスカレーション体制。**運用フェーズで実行する手順**（IPA 非機能要求グレード C. 運用・保守性 / ISO 25010 Maintainability / AWS Well-Architected Operational Excellence Pillar に対応）。
+
+> **§7.1 可用性・SLA・DR 設計との関係**: §7.1 で決めた SLA / RTO / RPO / Multi-Region 構成を **前提として運用に落とし込む** のが本項目。設計値が変われば Runbook も改訂が必要（循環的依存）。
+> **§7.4 ITDR との混同回避**: §7.4 の "DR" は **Identity Threat Detection & Response** の略で、本項目の Disaster Recovery とは**無関係**。
 
 | 種別 | 参考資料 |
 |---|---|
 | **hearing-script** | [11-operations.md C-306](hearing-script/11-operations.md) + 新規（C-306-2 BCP Runbook）|
 | **proposal** | [§NFR-5 DR](proposal/nfr/05-dr.md), [§NFR-6 運用](proposal/nfr/06-operations.md) |
+| **関連項目** | [§7.1 可用性・SLA・DR 設計](#71-可用性sladr-設計rtorpoha-構成-リネーム2026-06-08)（本項目の前提となる設計値）|
 | **外部** | [AWS Disaster Recovery Strategies](https://docs.aws.amazon.com/whitepapers/latest/disaster-recovery-workloads-on-aws/) / [Keycloak Backup and Restore](https://www.keycloak.org/docs/latest/server_admin/) |
 
 ### 7.10 移行性 NFR / Vendor Lock-in 回避 / Portability ★旧 §8.5 から §7 非機能群へ移動
@@ -804,7 +814,7 @@ JWT クレーム（tenant_id, roles, sub 等、最小クレーム原則）
 | 13 | 認可設定（JWTクレーム）| **4.1 に統合** | ⚠ #8 と統合 |
 | 14 | 認証基盤で認証するユーザ | **1.2 認証基盤で認証するユーザ** | ✅ そのまま（P-1〜P-6 + α-δ 拡充） |
 | 15 | 非機能_運用 | **7.5 運用 + IaC + CI/CD** | ✅ 拡張（IaC 明示）|
-| 16 | 非機能_可溶性・SLA・DR | **7.1 可用性・SLA・DR** | ✅ そのまま |
+| 16 | 非機能_可溶性・SLA・DR | **7.1 可用性・SLA・DR 設計（RTO/RPO/HA 構成）** | ✅ 同範囲、命名明確化 |
 | 17 | フェデレーションユーザの権限 | **6.2 フェデユーザ権限（デフォルト権限）** | ✅ そのまま |
 | 18 | フェデレーションユーザの通知 | **6.3 フェデユーザ通知（Webhook）** | ✅ そのまま |
 | 19 | フェデレーションユーザの同期 | **6.1 フェデユーザ同期（JIT / SCIM）** | ✅ そのまま |
@@ -833,7 +843,7 @@ JWT クレーム（tenant_id, roles, sub 等、最小クレーム原則）
 | **6.7 委譲管理（Delegated Admin）**（旧 §5.7 から繰下げ） | 元 28 項目に**なし**（B-404 既存）| §FR-8.3 |
 | **6.8 ユーザーライフサイクル管理（JML）**（旧 §5.8 から繰下げ） | 元 28 項目に**なし**（JML 統合視点）| §FR-7.4 + §FR-2.2.1 |
 | **7.8 監査ログ・コンプラレポート**（旧 §6.7 から繰下げ） | C-203 のみで詳細浅い | §FR-8.2 / §FR-9.2 |
-| **7.9 BCP・DR ランブック**（旧 §6.8 から繰下げ） | 6.1 DR とは別の運用視点 | §NFR-5 + §NFR-6 |
+| **7.9 BCP・DR 運用ランブック（訓練・連絡体制）**（旧 §6.8 から繰下げ） | 7.1 DR 設計とは別の運用視点（IPA C. 運用・保守性） | §NFR-5 + §NFR-6 |
 | **8.1〜8.4（章 8、§8.5 を §7.10 へ移動後）**（旧 §7 から繰下げ）| 元 28 項目に**なし**（業界標準で必須）| 新規 |
 
 ### 統合・改名・分離・移動された項目（5 組）
@@ -946,3 +956,4 @@ JWT クレーム（tenant_id, roles, sub 等、最小クレーム原則）
 | 2026-06-08 | **属性マッピング/クレーム変換を §6.5 から §4.1 認可へ統合**。「属性 → 基盤正規化 → JWT クレーム」の end-to-end パイプラインを §4.1 で一体議論可能化（業界整理 Auth0 Rules/Actions / Okta Claims&Tokens / Entra Token Configuration / Keycloak Protocol Mapper と完全整合）。§6.5 は **「属性更新・Source of Truth」（属性ライフサイクル運用）に純化**。章 4 のスライド数 6→8、章 4 議論時間 10 分→13 分、M2 計 50→52 枚 |
 | 2026-06-08 | **§6 ユーザー管理・プロビジョニング・セルフサービスに §5.0 章プロローグ追加**（8 項目 → 9 項目）。ユーザー種別（5 カテゴリ）× 3 観点（管理・プロビジョニング・セルフサービス）+ 認証ソースの **責任マッピング表 1 枚** を冒頭に提示し、章を跨いだ前提ズレ（end user / admin / 連携 / ローカルの混同）を早期検知可能化。[common/self-service-responsibility.md §0](../common/self-service-responsibility.md) と同マッピング表で同期。章 6 スライド 32→33 枚、議論時間 30→33 分、計 45→46 項目、~182→~183 枚 |
 | 2026-06-08 | **§5.0 のマッピング表 SSOT を [common/self-service-responsibility.md §0](../common/self-service-responsibility.md) に一元化**。本ファイル §5.0 から表本体を削除し参照リンクのみ残置、スライド構成と参考資料セクションは維持。design reference 層を SSOT とすることで、プレゼン版とドキュメント間の同期負担を解消 |
+| 2026-06-08 | **§7 NFR の DR 関連 3 箇所（§7.1 / §7.4 / §7.9）の命名明確化**。(1) §7.1「可用性・SLA・DR」→「**可用性・SLA・DR 設計（RTO/RPO/HA 構成）**」(設計軸 = IPA A. 可用性 / ISO 25010 Reliability)。(2) §7.9「BCP・DR ランブック」→「**BCP・DR 運用ランブック（訓練・連絡体制）**」(運用軸 = IPA C. 運用・保守性 / ISO 25010 Maintainability)。(3) §7.4 ITDR に**命名注意ボックス**追加（"DR" は Identity Threat Detection & Response の略で Disaster Recovery とは無関係）。(4) §7.1 ⇄ §7.9 に**相互参照**追加（設計値 ⇄ 運用ランブックの循環的依存）。業界 NFR タクソノミー（IPA / ISO 25010 / AWS Well-Architected Reliability vs Operational Excellence Pillar）と整合する分離を維持しつつ、命名で誤認回避 |
