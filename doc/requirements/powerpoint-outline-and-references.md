@@ -460,14 +460,17 @@ JWT クレーム（tenant_id, roles, sub 等、最小クレーム原則）
 
 ### 5.1 フェデユーザ同期（JIT / SCIM）
 
-**概要**: JIT 採否 + SCIM 採否 + 既存ユーザー初期投入方法（バルク / SCIM / JIT 任せ）+ 規模感。
+**概要**: JIT 採否 + SCIM 採否 + 既存ユーザー初期投入方法（バルク / SCIM / JIT 任せ）+ 規模感 + **混在環境設計**（顧客 IdP の SCIM 対応バラツキ対応）。
+
+> **🎯 混在環境の詳細（2026-06-08 追加）**: 顧客 IdP の SCIM 対応状況がバラバラな場合（タイプ A=SCIM 採用 / タイプ B=JIT のみ / タイプ C=移行期混在）の **設計判断は [§FR-7.4.5/6/7](proposal/fr/07-user.md)**、**Keycloak 実装目線は [common/jit-scim-coexistence-keycloak.md](../common/jit-scim-coexistence-keycloak.md)** に集約（シーケンス 5 種類 / 競合解決 / 段階移行マージスクリプト / Sync Mode 設定 / First Broker Login Flow 拡張）。
 
 | 種別 | 参考資料 |
 |---|---|
 | **hearing-script** | [04-user-management.md B-401, B-403](hearing-script/04-user-management.md) |
 | **hearing-checklist** | §2.4 |
-| **proposal** | [§FR-7.4 SCIM プロビジョニング](proposal/fr/07-user.md), [§FR-7.4.0 SCIM スタンス](proposal/fr/07-user.md), [§FR-2.2.1 JIT プロビジョニング](proposal/fr/02-federation.md) |
-| **外部** | [SCIM 2.0 (RFC 7644)](https://datatracker.ietf.org/doc/html/rfc7644) / [Keycloak SCIM Plugin](https://github.com/Captain-P-Goldfish/scim-for-keycloak) / [AWS Cognito Bulk Import](https://docs.aws.amazon.com/cognito/latest/developerguide/cognito-user-pools-using-import-tool.html) |
+| **proposal** | [§FR-7.4 SCIM プロビジョニング](proposal/fr/07-user.md), [§FR-7.4.0 SCIM スタンス](proposal/fr/07-user.md), [§FR-7.4.5 混在環境シーケンス](proposal/fr/07-user.md), [§FR-7.4.6 同期競合解決](proposal/fr/07-user.md), [§FR-7.4.7 段階移行運用](proposal/fr/07-user.md), [§FR-2.2.1 JIT プロビジョニング](proposal/fr/02-federation.md) |
+| **内部** | [common/jit-scim-coexistence-keycloak.md](../common/jit-scim-coexistence-keycloak.md) — Keycloak 実装詳細、[common/hook-architecture-keycloak.md §3.6 SCIM 受信プラグイン](../common/hook-architecture-keycloak.md) |
+| **外部** | [SCIM 2.0 (RFC 7644)](https://datatracker.ietf.org/doc/html/rfc7644) / [Phase Two SCIM (Per-org endpoints)](https://phasetwo.io/) / [Keycloak 26.6 SCIM Realm API Experimental](https://www.keycloak.org/2026/04/scim-as-experimental-feature) / [Microsoft Entra SCIM Provisioning](https://learn.microsoft.com/en-us/entra/identity/app-provisioning/use-scim-to-provision-users-and-groups) |
 
 ### 5.2 フェデユーザ権限（デフォルト権限）
 
@@ -954,6 +957,7 @@ JWT クレーム（tenant_id, roles, sub 等、最小クレーム原則）
 | 2026-06-04 | **ドメイン構成方針（サブドメイン構成推奨）を §C-1 / §2.3 / §3.1 / B-100 補足に反映**。アプリのドメインが同一親ドメインのサブドメイン（`app1.example.com` 等）で構成される場合の本方式適合性を確認 → SameSite / 現代ブラウザ規制 (ITP / 3rd-party Cookie 廃止) / BFF / TLS / Cognito Custom Domain 全観点で有利と判定。新規 [common/subdomain-architecture-notes.md](../common/subdomain-architecture-notes.md) に技術仕様 + 設計原則 + ヒアリング 5 項目を集約 |
 | 2026-06-04 | **§8.5 移行性 / Vendor Lock-in / Portability を §7.10 へ移動**（章 7: 9→10、章 8: 5→4）。IPA 非機能要求グレード D. 移行性 / ISO 25010 Portability の業界 NFR 分類と整合。**「移行」関連の 3 論点を性質で分離**: (A) **§1.6 移行プロセス** = プロジェクト計画（M1 議論）/ (B) **§7.10 移行性 NFR** = システム特性（M3 議論）/ (C) ベンダーロックイン回避 = §7.10 に集約。章 8 は UX 軸（開発者体験 + アクセシビリティ + i18n + プライバシー）に純化 |
 | 2026-06-08 | **属性マッピング/クレーム変換を §6.5 から §4.1 認可へ統合**。「属性 → 基盤正規化 → JWT クレーム」の end-to-end パイプラインを §4.1 で一体議論可能化（業界整理 Auth0 Rules/Actions / Okta Claims&Tokens / Entra Token Configuration / Keycloak Protocol Mapper と完全整合）。§6.5 は **「属性更新・Source of Truth」（属性ライフサイクル運用）に純化**。章 4 のスライド数 6→8、章 4 議論時間 10 分→13 分、M2 計 50→52 枚 |
+| 2026-06-08 | **JIT + SCIM 併用環境の詳細設計を追加**: 顧客 IdP の SCIM 対応バラツキ（タイプ A/B/C）対応として **proposal §FR-7.4.5 混在環境シーケンス（5 種類）+ §FR-7.4.6 同期競合解決ルール + §FR-7.4.7 段階移行運用** を [proposal/fr/07-user.md](proposal/fr/07-user.md) に追加。Keycloak 実装目線の詳細（externalId 突合 Custom Authenticator / Sync Mode / First Broker Login Flow 拡張 / マージスクリプト / 落とし穴 7 つ）を **新規 [common/jit-scim-coexistence-keycloak.md](../common/jit-scim-coexistence-keycloak.md)** として集約。§5.1 フェデユーザ同期スライドから参照 |
 | 2026-06-08 | **§6 ユーザー管理・プロビジョニング・セルフサービスに §5.0 章プロローグ追加**（8 項目 → 9 項目）。ユーザー種別（5 カテゴリ）× 3 観点（管理・プロビジョニング・セルフサービス）+ 認証ソースの **責任マッピング表 1 枚** を冒頭に提示し、章を跨いだ前提ズレ（end user / admin / 連携 / ローカルの混同）を早期検知可能化。[common/self-service-responsibility.md §0](../common/self-service-responsibility.md) と同マッピング表で同期。章 6 スライド 32→33 枚、議論時間 30→33 分、計 45→46 項目、~182→~183 枚 |
 | 2026-06-08 | **§5.0 のマッピング表 SSOT を [common/self-service-responsibility.md §0](../common/self-service-responsibility.md) に一元化**。本ファイル §5.0 から表本体を削除し参照リンクのみ残置、スライド構成と参考資料セクションは維持。design reference 層を SSOT とすることで、プレゼン版とドキュメント間の同期負担を解消 |
 | 2026-06-08 | **§7 NFR の DR 関連 3 箇所（§7.1 / §7.4 / §7.9）の命名明確化**。(1) §7.1「可用性・SLA・DR」→「**可用性・SLA・DR 設計（RTO/RPO/HA 構成）**」(設計軸 = IPA A. 可用性 / ISO 25010 Reliability)。(2) §7.9「BCP・DR ランブック」→「**BCP・DR 運用ランブック（訓練・連絡体制）**」(運用軸 = IPA C. 運用・保守性 / ISO 25010 Maintainability)。(3) §7.4 ITDR に**命名注意ボックス**追加（"DR" は Identity Threat Detection & Response の略で Disaster Recovery とは無関係）。(4) §7.1 ⇄ §7.9 に**相互参照**追加（設計値 ⇄ 運用ランブックの循環的依存）。業界 NFR タクソノミー（IPA / ISO 25010 / AWS Well-Architected Reliability vs Operational Excellence Pillar）と整合する分離を維持しつつ、命名で誤認回避 |

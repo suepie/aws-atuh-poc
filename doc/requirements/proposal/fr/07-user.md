@@ -550,6 +550,357 @@ flowchart TD
 | 顧客全体での SCIM 採用見込み比率 | 90%+ / 50-90% / <50% |
 | プラットフォーム選定への影響 | **SCIM 受信実装 Must 化により Cognito でも Lambda 実装で対応可、ただし Keycloak がやや有利**（[§C-2.2](../common/02-platform.md)）|
 
+### §FR-7.4.5 混在環境の認証/プロビジョニング フロー（顧客 IdP 別の SCIM 対応差）
+
+> **本サブセクションで定めること**: §FR-7.4.0.A の「**全部 SCIM 可能**」スタンスの結果、**同一基盤に SCIM 採用顧客と非採用顧客が同居**することになる。両者が同一基盤内でどう振る舞うか、認証/プロビジョニング のシーケンスを **5 パターン** で図解する。
+> **主な判断軸**: 顧客 IdP の SCIM 対応 / 顧客側の SCIM 採用意思 / 既存ユーザーの存在 / 退職反映 SLA
+> **§FR-7.4 全体との関係**: §FR-7.4.0 が「**いつ・誰が・どう使うか**」のスタンス、本サブセクションは「**実際の動作シーケンス**」を補完
+
+#### 混在パターンの 3 分類
+
+| 顧客タイプ | 想定 IdP | SCIM 連携 | JIT 動作 | 主用途 |
+|---|---|:-:|:-:|---|
+| **タイプ A: SCIM 採用** | Entra ID P1+ / Okta / HENNGE / Google Workspace Premium | ✅ Push 受信 | ✅ 補完（SCIM 非対象ユーザーをカバー）| 大口顧客 / 規制業種 / 退職 SLA 厳格 |
+| **タイプ B: JIT のみ** | ADFS / 独自 IdP / Google Workspace Free | ❌ なし | ✅ メイン | 中小規模 / レガシー IdP / コスト重視 |
+| **タイプ C: 移行期混在** | 同一テナント内で SCIM 採用前後 | △ 段階的 | ✅ 常時 | 移行中（→ §FR-7.4.7）|
+
+→ **共通基盤は 3 タイプを同時に収容**（テナント別設定で実現）。
+
+#### シーケンス 1: タイプ A SCIM 採用顧客 — 事前作成 → 初回ログイン
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant HR as 顧客 HR
+    participant CustIdP as 顧客 IdP<br/>(Entra/Okta)
+    participant Core as 共通基盤<br/>SCIM Endpoint
+    participant DB as 基盤 User DB
+    participant Alice as alice@acme
+    participant App as アプリ
+
+    Note over HR,Core: ① 入社処理（ログイン前に SCIM Push）
+    HR->>CustIdP: 入社登録
+    CustIdP->>Core: POST /scim/v2/Users<br/>{externalId:"ent-uuid", userName, email, attrs}
+    Core->>DB: User 作成<br/>(externalId=ent-uuid, status=enabled)
+    Core-->>CustIdP: 201 Created (id=kc-uuid)
+
+    Note over Alice,App: ② Alice が初回ログイン
+    Alice->>App: アクセス
+    App->>Core: OIDC 認可リクエスト
+    Core->>CustIdP: SAML/OIDC 認証要求
+    CustIdP->>Core: Assertion (sub, email, attrs)
+    Note over Core: ユーザー検索<br/>① externalId 突合 → 発見<br/>② SCIM で作成済ユーザーにリンク
+    Note over Core: JIT は実行しない<br/>(既存ユーザー存在のため)
+    Core->>App: JWT 発行
+    Note over App: アプリ JIT (任意): JWT 受信時に独自 DB 作成
+```
+
+→ **SCIM 採用顧客では「JIT による新規作成」は走らない**、既存ユーザーへの**リンクのみ**実行。
+
+#### シーケンス 2: タイプ B JIT のみ顧客 — 初回ログイン時に新規作成
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Bob as bob@globex
+    participant App as アプリ
+    participant Core as 共通基盤
+    participant CustIdP as 顧客 IdP<br/>(ADFS)
+    participant DB as 基盤 User DB
+
+    Bob->>App: 初回アクセス
+    App->>Core: OIDC 認可リクエスト
+    Core->>CustIdP: SAML 認証要求
+    CustIdP->>Core: Assertion (sub, email, attrs)
+    Note over Core: ユーザー検索<br/>① externalId 突合 → なし<br/>② email 突合 → なし
+    Note over Core: JIT 実行<br/>User 作成 (externalId=null, status=enabled)
+    Note over Core: First Broker Login Flow:<br/>属性マッピング + デフォルトロール付与
+    Core->>DB: User 作成
+    Core->>App: JWT 発行
+```
+
+→ SCIM 非対応顧客では **JIT が主用途**、`externalId` は **null** のまま保持。
+
+#### シーケンス 3: タイプ A の Mover（異動） — SCIM PATCH で属性更新
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant HR as 顧客 HR
+    participant CustIdP as 顧客 IdP
+    participant Core as 共通基盤
+    participant DB as 基盤 User DB
+
+    HR->>CustIdP: alice の部署変更 (営業→開発)
+    CustIdP->>Core: PATCH /scim/v2/Users/{kc-uuid}<br/>{department: "engineering"}
+    Note over Core: ユーザー特定 (externalId)<br/>属性上書き (SCIM が SoT)
+    Core->>DB: User 更新
+    Core-->>CustIdP: 200 OK
+
+    Note over Core: 既存 JWT には旧属性が残る<br/>→ Refresh または Token Revocation で反映
+    Note over Core: Webhook (オプション):<br/>アプリへ user.attribute.changed 通知
+```
+
+→ **SCIM が Source of Truth**、基盤側で属性手動編集は**上書きされる**設計（[§FR-7.4.6](#fr-746-同期競合の解決ルール) 参照）。
+
+#### シーケンス 4: タイプ A の Leaver（退職） — SCIM DELETE で即時遮断
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant HR as 顧客 HR
+    participant CustIdP as 顧客 IdP
+    participant Core as 共通基盤
+    participant App as 各 RP
+    participant Audit as 監査ログ
+
+    HR->>CustIdP: 退職処理
+    CustIdP->>Core: DELETE /scim/v2/Users/{kc-uuid}
+    Note over Core: User 無効化 (status=disabled)<br/>全 Refresh Token Revocation<br/>全 Access Token Revocation (K8)
+    Core->>Audit: user.deleted event
+    par Back-Channel Logout 並列通知 (K7)
+        Core->>App: POST backchannel_logout_uri
+        Core->>App: POST backchannel_logout_uri
+    end
+    Core-->>CustIdP: 204 No Content
+    Note over Core: 退職反映 SLA = 数秒〜数十秒
+```
+
+→ **タイプ A の最大価値**: 退職時の即時アクセス遮断（[§5.3 / §6.8](../powerpoint-outline-and-references.md) 連動）。
+
+#### シーケンス 5: タイプ B の Leaver — JIT のみでの deprovisioning（限界あり）
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant HR as 顧客 HR
+    participant CustIdP as 顧客 IdP<br/>(ADFS)
+    participant Core as 共通基盤
+    participant Bob as 退職した bob
+
+    HR->>CustIdP: bob を IdP から削除
+    Note over Core: ★基盤は退職を知り得ない★
+
+    Note over Bob,Core: ① 既存 Access Token 有効期間中
+    Bob->>Core: API 呼出 (旧 Access Token、TTL 内)
+    Core->>Core: JWT 検証 OK → 通過
+    Note over Bob: アクセス可能（脆弱性）
+
+    Note over Bob,CustIdP: ② Token 期限切れ後の再ログイン試行
+    Bob->>CustIdP: SSO ログイン
+    CustIdP->>Bob: 認証失敗 (IdP 側で削除済)
+    Note over Bob: ✅ ここで初めて遮断
+
+    Note over Core: ★定期バッチ deprovisioning（弊社運用）★<br/>顧客 IdP の SCIM API で逆引き or<br/>長期ログインなしユーザーを自動無効化
+```
+
+→ **タイプ B の弱点**: 退職反映が「**次回ログイン拒否**」までかかる。SLA 厳格な場合は**契約で deprovisioning 責任を顧客に明示**するか、**弊社による定期バッチ運用** で補完（[§FR-7.4.0 Q4](#顧客への-qa-4-段階フロー) 参照）。
+
+#### 全体図: 混在テナントの収容
+
+```mermaid
+flowchart LR
+    subgraph TA["タイプ A SCIM 採用顧客 (大口・規制)"]
+        TAIdP[Entra ID]
+        TAHR[HR System]
+        TAHR -->|SCIM| TAIdP
+        TAIdP -->|SCIM Push| Core
+    end
+
+    subgraph TB["タイプ B JIT のみ顧客 (中小・レガシー)"]
+        TBIdP[ADFS]
+        TBIdP -->|SAML 認証時のみ| Core
+    end
+
+    subgraph TC["タイプ C 移行期混在 (§FR-7.4.7)"]
+        TCIdP[Okta]
+        TCIdP -.→ SCIM 段階導入中 .-> Core
+        TCIdP -->|SAML 既存| Core
+    end
+
+    Core[共通認証基盤<br/>SCIM Server + JIT 両対応]
+    DB[(統合 User DB<br/>externalId + JIT 起点を区別)]
+    Core --> DB
+
+    style TA fill:#e8f5e9
+    style TB fill:#fff8e1
+    style TC fill:#fff3e0
+    style Core fill:#e3f2fd
+```
+
+### §FR-7.4.6 同期競合の解決ルール（SCIM vs JIT、Source of Truth ポリシー）
+
+> **本サブセクションで定めること**: 混在環境で **同一ユーザーが SCIM と JIT 両方で接触される** ケースの動作と、属性食い違いの解決優先順位。
+> **主な判断軸**: Source of Truth 設計（IdP vs 基盤 vs アプリ）、Keycloak Sync Mode 選択
+> **§FR-7.4 全体との関係**: §FR-7.4.5 のシーケンスで「Alice が SCIM 事前作成済 + JIT ログイン」「Bob が JIT 作成済 + 後から SCIM Push」が発生 → 本節で解決ルール定義
+
+#### ユーザー突合のキー優先順位
+
+ログイン時 / SCIM 受信時の **ユーザー検索キー優先順位**:
+
+```
+1. externalId (SCIM 由来) ★最優先
+2. email (検証済み email_verified=true のみ)
+3. username (Realm 固有のローカル識別子)
+   ↓ いずれも該当なし
+4. JIT 新規作成 or SCIM POST
+```
+
+| 検索キー | 使用場面 | 優先度 | 注意点 |
+|---|---|:-:|---|
+| **externalId** | SCIM 採用顧客の SCIM Push 時 / SCIM 後の JIT ログイン時 | ⭐ 最優先 | IdP 側の不変 ID（Entra `objectId` / Okta `id`）必須 |
+| **email** | JIT のみ顧客の SAML/OIDC ログイン時 | ◯ | **email_verified=true** が前提（OWASP 推奨）|
+| **username** | ローカル管理者 / Break Glass | △ | 顧客企業横断で衝突しない命名（`<tenant>:<user>`）|
+
+#### 競合パターンと解決
+
+##### パターン 1: SCIM 事前作成 → JIT 初回ログイン
+```
+SCIM POST: {externalId: "ent-uuid-001", email: alice@acme}
+↓ ユーザー作成 (status=enabled, externalId=ent-uuid-001)
+
+Alice が SAML ログイン (Assertion sub = ent-uuid-001)
+↓ externalId 突合 → 既存ユーザー発見
+↓ JIT 新規作成は実行しない
+↓ 属性のみ Sync Mode に従って更新 / リンクのみ
+```
+→ **競合なし**、SCIM が先導し JIT は確認のみ。
+
+##### パターン 2: JIT 既存 → 後から SCIM Push（タイプ C 移行期）
+
+```
+Bob が JIT で作成済 (externalId=null, email=bob@globex)
+↓ 半年後、顧客が SCIM 導入
+
+SCIM POST: {externalId: "ent-uuid-002", email: bob@globex}
+↓ externalId 突合 → なし
+↓ email 突合 → 発見 (email_verified=true 確認)
+↓ 既存ユーザーに externalId 追加付与 (リンクのみ、データ保持)
+```
+→ **既存データは保持**、`externalId` 後付け付与のみ。`email_verified=false` なら衝突エラー → 管理者解決。
+
+##### パターン 3: 属性食い違い（SCIM と JIT で値が違う）
+
+例: SCIM Push で `department=engineering`、その後 IdP 側で SAML Assertion `department=sales`
+
+| Keycloak Sync Mode | 動作 | Source of Truth | 推奨用途 |
+|---|---|---|:-:|
+| **IMPORT**（初回のみ）| JIT 初回作成時のみ反映、以降は基盤側で管理 | 基盤側 | △ セルフサービス重視 |
+| **LEGACY**（都度上書き）| 都度 IdP 値で上書き、基盤側編集不可 | IdP 側 | △ |
+| **FORCE**（毎回強制）| 毎回 IdP 値で強制上書き、基盤側編集も上書き | IdP 側 | **★ 本基盤推奨**（SCIM 採用顧客向け）|
+
+**本基盤のデフォルト方針**:
+- **タイプ A（SCIM 採用）= FORCE モード**（SCIM/IdP が SoT）
+- **タイプ B（JIT のみ）= IMPORT モード**（初回のみ、以降は基盤側でセルフサービス）
+- **属性別の細粒度設定も可能**（email = FORCE、display_name = IMPORT 等）
+
+#### 重複検出時の挙動（OWASP 推奨パターン）
+
+| 状況 | 挙動 |
+|---|---|
+| externalId 一致 + email 不一致 | externalId 優先、email は新値で上書き or 警告 |
+| externalId なし + email 一致 + email_verified=true | 既存ユーザーリンク（externalId 後付け）|
+| externalId なし + email 一致 + email_verified=false | **エラー**、管理者手動解決 |
+| 全キー不一致 | 新規 JIT 作成 / SCIM POST |
+| 同一 email が複数ユーザーで存在 | **設計エラー**、Realm 設定見直し |
+
+詳細は [§FR-2.2.1.A 同一テナント内ユーザー重複](02-federation.md#fr-2-2-1-a-同一テナント内ユーザー重複) と整合。
+
+### §FR-7.4.7 段階移行運用（JIT → SCIM 追加、既存ユーザーマージ）
+
+> **本サブセクションで定めること**: 顧客が「**最初 JIT のみ → 半年後 SCIM 導入**」する移行期の運用手順と既存ユーザーマージ方法。
+> **主な判断軸**: 既存 JIT ユーザーの突合キー、移行期の重複防止、ロールバック容易性
+> **§FR-7.4 全体との関係**: §FR-7.4.5 タイプ C（移行期混在）の具体的運用手順を定義
+
+#### 移行シナリオの典型
+
+```
+時系列:
+├─ Day 0 (顧客契約): JIT のみで運用開始
+│   └─ Bob / Carol / Dave が JIT で作成（externalId=null）
+├─ Month 6 (顧客側 SCIM 導入決定): 移行計画開始
+└─ Month 7 (SCIM 連携開始): 既存ユーザーのマージ + 新規は SCIM 主導
+```
+
+#### 推奨移行手順（3 ステップ）
+
+##### Step 1: 事前準備（顧客側 IdP の SCIM 設定）
+
+| 作業 | 担当 | 内容 |
+|---|---|---|
+| 顧客 IdP の SCIM 機能有効化 | 顧客情シス | Entra: Enterprise App 追加 / Okta: SCIM Provisioning 設定 |
+| 共通基盤の SCIM Token 発行 | 弊社 | テナント別 Bearer Token、Vault 保管 |
+| Attribute Mapping 設計 | 双方 | IdP 属性 → 基盤属性 / `externalId` ソース確定（Entra `objectId` 等）|
+| **テスト用ダミー Push** | 双方 | 1 ユーザーで動作確認、突合・競合ルール検証 |
+
+##### Step 2: 既存ユーザーマージ（最重要）
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Custom as 顧客 IdP
+    participant Core as 共通基盤
+    participant DB as User DB
+
+    Note over Custom,Core: ① 顧客 IdP 側で全ユーザー SCIM Push
+    loop 全ユーザー
+        Custom->>Core: POST /scim/v2/Users<br/>{externalId, email, attrs}
+        Note over Core: 突合ロジック実行<br/>(§FR-7.4.6)
+        alt externalId 一致
+            Note over Core: 通常更新
+        else externalId なし、email 一致 (email_verified=true)
+            Note over Core: ★既存 JIT ユーザーに externalId 後付け
+            Core->>DB: UPDATE SET externalId={ent-uuid}
+        else email 一致 (email_verified=false)
+            Note over Core: ❌ エラー、管理者通知<br/>(手動マージ or 別ユーザー扱い)
+        else 全不一致
+            Note over Core: 新規ユーザー作成 (JIT で未作成だったユーザー)
+        end
+    end
+
+    Note over Core: マージ結果サマリ:<br/>- existed_merged: N1 件 (externalId 後付け)<br/>- created: N2 件 (新規)<br/>- conflict: N3 件 (要手動解決)
+```
+
+**移行前後の状態**:
+
+| 状態 | externalId | email_verified | 同期方向 | Sync Mode |
+|---|:-:|:-:|---|---|
+| **移行前**（JIT のみ）| null | true / false 混在 | IdP → 基盤（ログイン時のみ）| IMPORT |
+| **移行後**（SCIM 採用）| ent-uuid 付与済 | **true 必須** | IdP → 基盤（SCIM Push + ログイン）| FORCE |
+
+##### Step 3: 切替後の運用切り替え
+
+| 設定 | 移行前 | 移行後 |
+|---|---|---|
+| 顧客 IdP の SCIM Provisioning | OFF | **ON** |
+| Sync Mode | IMPORT | **FORCE** |
+| 退職反映 | 次回ログイン時拒否 | **数秒〜数十秒（SCIM DELETE）**|
+| Deprovisioning 責任 | 顧客側 / 定期バッチ | **SCIM Push 経由で自動**|
+| 監査ログ | ログインイベントのみ | **SCIM 全操作 + ログインイベント**|
+
+#### 移行期の重複防止策
+
+| リスク | 対策 |
+|---|---|
+| **email_verified=false な既存 JIT ユーザー多数** | 移行前にメール検証キャンペーン実施（リマインドメール送信、未検証ユーザーに promptly 警告）|
+| **顧客 IdP 側のメール変更で突合不能** | externalId 後付け前に IdP 側で email 整合性確認、Excel 突合表で事前検証 |
+| **マージ中の新規ログインで重複ユーザー作成** | Step 2 実行中は新規 JIT を一時無効化（Realm 設定 or Maintenance Mode）|
+| **マージ失敗の手動解決負担** | 移行ツール（kcadm.sh + SCIM API ラッパー）でバッチ実行、サマリレポート生成 |
+
+#### ロールバック可能性
+
+| 問題 | ロールバック |
+|---|---|
+| SCIM Push 障害 | 顧客 IdP 側で SCIM Provisioning OFF → JIT のみ運用に戻る |
+| マージ失敗 | externalId 後付けを `UPDATE SET externalId=null` で削除（JIT のみ状態に戻る、データ保持）|
+| 完全失敗 | 全 externalId 削除 + Sync Mode を IMPORT に戻す（5 分作業）|
+
+→ **段階移行は逆方向にも戻せる**設計、リスクは限定的。
+
+### 参考: Keycloak 実装目線の詳細
+
+本サブセクション §FR-7.4.5 / §FR-7.4.6 / §FR-7.4.7 の **Keycloak 実装観点での詳細**（Identity Provider Mapper / First Broker Login Flow / Sync Mode 設定 / externalId 突合実装 / テナント別 SCIM 有効化）は **[doc/common/jit-scim-coexistence-keycloak.md](../../../common/jit-scim-coexistence-keycloak.md)** に集約。
+
 ---
 
 ### 参考資料（§FR-7 全体）
