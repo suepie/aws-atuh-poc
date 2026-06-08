@@ -14,12 +14,12 @@
 | 1 | 7 | 全体方針・前提 | 28 | 30 分 |
 | 2 | 5 | 接続元・対象 | 20 | 30 分 |
 | 3 | 4 | **認証**（Authentication）| 16 | 18 分 |
-| 4 | 1 | **認可**（Authorization、★NEW 独立章）| 6 | 10 分 |
+| 4 | 1 | **認可**（Authorization、★NEW 独立章、★属性マッピング/クレーム変換 統合）| 8 | 13 分 |
 | 5 | 6 | SSO・セッション・ログアウト | 24 | 28 分 |
-| 6 | 8 | ユーザー管理・プロビジョニング・セルフサービス | 32 | 30 分 |
+| 6 | 9 | ユーザー管理・プロビジョニング・セルフサービス（★5.0 章プロローグ追加）| 33 | 33 分 |
 | 7 | 10 | 非機能要件（★ITDR/Identity Security + ★移行性 NFR 追加）| 40 | 35 分 |
 | 8 | 4 | 開発者体験・UX・プライバシー | 16 | 18 分 |
-| **計** | **45** | - | **~182** | **~199 分（3.3 時間）** |
+| **計** | **46** | - | **~183** | **~202 分（3.4 時間）** |
 
 > **改訂履歴**: 初版 31 項目 → 2026-06-03 業界標準フレームワーク照合 **44 項目** → 2026-06-03 強制再認証/ステップアップ独立 **45 項目** → 2026-06-03 **認可を §3.4 から §4 独立章化 + ITDR を §3.5 から §7.4 セキュリティ群へ移動**（章数 7 → 8）→ 2026-06-04 **§8.5 移行性/Vendor Lock-in を §7.10 へ移動**（IPA D. 移行性 NFR 業界分類と整合、§8 を UX に純化）。詳細は §13 改訂履歴。
 
@@ -299,29 +299,42 @@
 
 ---
 
-## 4. 認可 / Authorization（1 項目、★NEW 独立章）
+## 4. 認可 / Authorization（1 項目、★NEW 独立章、★属性マッピング/クレーム変換 統合）
 
-> **2026-06-03 新設**: 元 §3.4 認可スタンス + JWT クレーム設計 + API 認可フローを **§3 認証から独立**。理由:
-> - **業界標準** で認証 (Authentication) と認可 (Authorization) は明確に分離される概念（Microsoft Entra / Okta / Gartner 整理に整合）
-> - **ボリューム**（スライド 6 枚 × ~20KB）が §3 内 1 項目では実態と乖離していた
-> - **議論の独立性**: 認可スタンス・JWT 設計・API 認可は **認証方式とは別軸の意思決定**（Bearer JWT vs Introspection / クレーム最小化 vs 充実 / アプリ側 vs Authorizer 認可 等）
+> **2026-06-03 新設**: 元 §3.4 認可スタンス + JWT クレーム設計 + API 認可フローを **§3 認証から独立**。
+> **2026-06-08 拡張**: 元 §6.5 の「属性マッピング・クレーム変換」部分を **§4.1 に統合**（顧客 IdP の属性 → 基盤の正規化属性 → JWT クレーム の end-to-end パイプラインとして一体議論可能化）。**§6.5 は属性更新・Source of Truth（ライフサイクル運用）に純化**。
+>
+> **業界整理との整合**: Auth0 Rules/Actions、Okta Claims & Tokens、Microsoft Entra Token Configuration、Keycloak Protocol Mapper の全社共通で「クレーム変換 = 認可・JWT 設計の一部」と整理されている。
 
-### 4.1 認可スタンス + JWT クレーム設計 + API 認可フロー
+### 4.1 認可スタンス + JWT クレーム設計 + 属性マッピング/クレーム変換 + API 認可フロー
 
-**概要**: 認可の 2 つの意味 + JWT クレーム + 認可粒度 + Bearer JWT / JWKS 標準動作 + Token Introspection 代替 + Token Exchange（K1）。
+**概要**: 認可の 2 つの意味 + JWT クレーム + 認可粒度 + **顧客 IdP 命名差異の正規化（属性マッピング/クレーム変換）** + **HRD 解決ルール** + Bearer JWT / JWKS 標準動作 + Token Introspection 代替 + Token Exchange（K1）。
+
+**「属性 → クレーム」end-to-end パイプライン**:
+
+```
+顧客 IdP の属性（Entra "tid" / Okta "org_id" / HENNGE 独自）
+  ↓ [属性マッピング/クレーム変換] ← Keycloak Identity Provider Mapper SPI
+基盤内部の正規化属性（tenant_id 等）
+  ↓ [JWT クレーム設計] ← Keycloak Protocol Mapper SPI
+JWT クレーム（tenant_id, roles, sub 等、最小クレーム原則）
+  ↓ [API 認可フロー] ← Bearer JWT + JWKS / Token Introspection 例外
+アプリの認可判定
+```
 
 > **将来の細分化候補**（議論ボリュームが増えた場合）:
 > - §4.1 認可スタンス（基盤側 vs アプリ側の責任分界）
-> - §4.2 JWT クレーム設計（最小クレーム vs 充実 / カスタムクレーム）
-> - §4.3 API 認可フロー（JWKS / Bearer JWT / Token Introspection 例外）
+> - §4.2 属性マッピング・クレーム変換（顧客 IdP 命名差異対応 / HRD）
+> - §4.3 JWT クレーム設計（最小クレーム vs 充実 / カスタムクレーム）
+> - §4.4 API 認可フロー（JWKS / Bearer JWT / Token Introspection 例外）
 
 | 種別 | 参考資料 |
 |---|---|
-| **hearing-script** | [03-authz-jwt.md B-301, B-302, B-305](hearing-script/03-authz-jwt.md), [01-auth-flow.md マスター表 C 補足 2 K1](hearing-script/01-auth-flow.md) |
-| **hearing-checklist** | §4.2 |
-| **proposal** | [§FR-6.0.A 認可スタンス](proposal/fr/06-authz.md), [§FR-6.1.A 最小クレーム設計](proposal/fr/06-authz.md), [§C-1.2.D Bearer JWT / JWKS / 認可フロー 6 種](proposal/common/01-architecture.md) |
-| **内部** | [common/authz-architecture-design.md](../common/authz-architecture-design.md), [common/token-exchange-spec-and-patterns.md](../common/token-exchange-spec-and-patterns.md), [terms-and-codes-reference.md §16, §20, §21](terms-and-codes-reference.md) |
-| **外部** | RFC: [6750 Bearer](https://datatracker.ietf.org/doc/html/rfc6750) / [7519 JWT](https://datatracker.ietf.org/doc/html/rfc7519) / [7517 JWKS](https://datatracker.ietf.org/doc/html/rfc7517) / [7662 Introspection](https://datatracker.ietf.org/doc/html/rfc7662) / [8693 Token Exchange](https://datatracker.ietf.org/doc/html/rfc8693) |
+| **hearing-script** | [03-authz-jwt.md B-301, B-302, B-305](hearing-script/03-authz-jwt.md), [01-auth-flow.md マスター表 C 補足 2 K1](hearing-script/01-auth-flow.md), [06-multitenancy.md B-604, B-604-2, B-605, B-610](hearing-script/06-multitenancy.md)（属性マッピング/HRD）|
+| **hearing-checklist** | §4.2, §3.5（属性マッピング関連 B-604/605/610）|
+| **proposal** | [§FR-6.0.A 認可スタンス](proposal/fr/06-authz.md), [§FR-6.1.A 最小クレーム設計](proposal/fr/06-authz.md), [§FR-2.2.2 属性マッピング](proposal/fr/02-federation.md), [§C-1.2.D Bearer JWT / JWKS / 認可フロー 6 種](proposal/common/01-architecture.md) |
+| **内部** | [common/authz-architecture-design.md](../common/authz-architecture-design.md), [common/token-exchange-spec-and-patterns.md](../common/token-exchange-spec-and-patterns.md), [common/hook-architecture-keycloak.md §2.3 Protocol Mapper / Identity Provider Mapper SPI](../common/hook-architecture-keycloak.md), [terms-and-codes-reference.md §16, §20, §21](terms-and-codes-reference.md) |
+| **外部** | RFC: [6750 Bearer](https://datatracker.ietf.org/doc/html/rfc6750) / [7519 JWT](https://datatracker.ietf.org/doc/html/rfc7519) / [7517 JWKS](https://datatracker.ietf.org/doc/html/rfc7517) / [7662 Introspection](https://datatracker.ietf.org/doc/html/rfc7662) / [8693 Token Exchange](https://datatracker.ietf.org/doc/html/rfc8693) / [SAML Attribute Mapping (Shibboleth)](https://shibboleth.atlassian.net/wiki/spaces/IDP30/pages/2065335462/AttributeMapping) / [OIDC Standard Claims](https://openid.net/specs/openid-connect-core-1_0.html#StandardClaims) / [Microsoft Entra B2B Claims Customization](https://learn.microsoft.com/en-us/entra/identity-platform/saml-claims-customization) |
 
 ---
 
@@ -423,6 +436,39 @@
 
 ## 6. ユーザー管理・プロビジョニング・セルフサービス（8 項目）★旧 §5 から繰下げ
 
+### 5.0 章プロローグ：ユーザー種別 × 3 観点 責任マッピング ★NEW（2026-06-08）
+
+**概要**: 本章の 3 観点（ユーザー管理 CRUD / プロビジョニング / セルフサービス）は、どれも「**誰のために誰が何をするか**」を割り当てる議論。最初に「誰がいるのか」と「その認証ソースは何か」を揃えてから、§5.1 以降の各論に入る。**章を跨いだ前提ズレを早期に検知する目的の前提合意スライド**。
+
+**冒頭 1 枚で示す責任マッピング表**:
+
+| ユーザー種別 | 認証ソース | 管理（CRUD）責任 | プロビジョニング方式 | セルフサービス提供場所 |
+|---|---|---|---|---|
+| **Platform Admin** | Broker (ローカル) | 基盤運用チーム | 手動（Admin Console / kcadm.sh）| Broker |
+| **Tenant Admin (IdP 無)** | Broker (ローカル) | 基盤運用 or 顧客側 | 手動 or 簡易招待 | Broker |
+| **Tenant Admin (IdP 有)** | 顧客 IdP | 顧客 IdP 管理者 | JIT + ロール手動付与 | **顧客 IdP** |
+| **End User (連携)** | 顧客 IdP | 顧客 IdP 管理者 | JIT (or 将来 SCIM) | **顧客 IdP** |
+| **End User (ローカル)** | Broker (ローカル) | 顧客 Tenant Admin | 手動招待 or セルフ登録 | Broker |
+
+**章内サブセクションとの対応**:
+- 3 列目「管理責任」→ §5.4 アカウント重複・リンク / §5.5 属性 SoT / §5.7 委譲管理 / §5.8 JML の議論軸
+- 4 列目「プロビジョニング方式」→ §5.1 JIT/SCIM / §5.2 デフォルト権限 / §5.3 Webhook 通知
+- 5 列目「セルフサービス提供場所」→ §5.6 セルフサービス機能
+
+**顧客との前提合意の使い方**: 初回擦り合わせで「この 5 種別と認証ソースで合っていますか」を確認。「うちは連携ユーザーしかいない」「IdP 無のテナント管理者は想定しない」等の応答で **章を跨いだ範囲縮小** が可能、後続深掘りを要件直結部に集中投下できる。
+
+**スライド構成案**（1 枚）:
+- タイトル: 「ユーザー管理・プロビジョニング・セルフサービスの責任配置 — 章共通の前提」
+- 中央に責任マッピング表（5 行 × 5 列）
+- 下部に「この表のどこを見るかが章の各論」の凡例（3 列目=管理 / 4 列目=プロビ / 5 列目=セルフ）
+- 質疑誘導: 「この 5 種別の中で、御社が想定していない / 別整理したい行はありますか?」
+
+| 種別 | 参考資料 |
+|---|---|
+| **内部** | [common/user-types-and-auth.md](../common/user-types-and-auth.md)（5 ユーザー種別の根拠）, [common/self-service-responsibility.md §0](../common/self-service-responsibility.md)（同マッピング表 + 顧客 IdP / Broker 責任配置の根拠）, [ADR-009 MFA 責務 by IdP](../adr/009-mfa-responsibility-by-idp.md)（責任配置原則の起源）|
+| **proposal** | [§FR-7 ユーザー管理 §0](proposal/fr/07-user.md)（章プロローグ）|
+| **関連項目** | §5.1 〜 §5.8 すべての前提として参照される |
+
 ### 5.1 フェデユーザ同期（JIT / SCIM）
 
 **概要**: JIT 採否 + SCIM 採否 + 既存ユーザー初期投入方法（バルク / SCIM / JIT 任せ）+ 規模感。
@@ -468,16 +514,27 @@
 | **内部** | project_account_linking_investigation.md |
 | **外部** | [OWASP Identity Linking](https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html) / [Microsoft Account Linking Best Practices](https://learn.microsoft.com/en-us/entra/identity/users/users-restrict-guest-permissions) |
 
-### 5.5 属性マッピング・更新
+### 5.5 属性更新・Source of Truth ★改名（2026-06-08、属性マッピング/クレーム変換は §4.1 へ移動）
 
-**概要**: 顧客 IdP 命名差異への対応 + 実属性名サンプル取得手順 + 属性更新タイミング + Source of Truth + HRD 解決ルール。
+**概要**: **属性ライフサイクル運用の議論に純化**。属性更新タイミング（IdP 変更時の反映）+ Source of Truth（属性の真の所有者）+ Force/Import モード選択（§6.8 Mover と連動）+ 古い属性のキャッシュ無効化。
+
+> **2026-06-08 構成変更**: 旧「属性マッピング・更新」のうち、**マッピング設計とクレーム変換の議論は §4.1 認可へ統合**（顧客 IdP の属性 → JWT クレーム の end-to-end パイプライン議論を一体化）。本項目は **運用ガバナンス側面（属性 SoT / 更新タイミング / ライフサイクル）** に純化。
+>
+> **§4.1 との切り分け**: 「属性 → クレーム変換の設計」= §4.1 認可 / 「属性更新の運用ガバナンス」= 本項目 §6.5 ユーザー管理
+
+**含まれる議論項目**:
+- **属性更新タイミング**（即時 / 次回ログイン時 / バッチ）
+- **Source of Truth**（顧客 IdP がマスター / 基盤側で上書き可 / アプリ側で上書き可）
+- **Force/Import モード**（Keycloak Sync Mode）
+- **古い属性のキャッシュ無効化**（Token TTL / Refresh タイミング）
 
 | 種別 | 参考資料 |
 |---|---|
-| **hearing-script** | [06-multitenancy.md B-604, B-604-2, B-605, B-605-2, B-610](hearing-script/06-multitenancy.md) |
-| **hearing-checklist** | §3.5 |
-| **proposal** | [§FR-2.2.2 属性マッピング](proposal/fr/02-federation.md), [§FR-2.2.4 属性ライフサイクル設計](proposal/fr/02-federation.md) |
-| **外部** | [SAML Attribute Mapping (Shibboleth)](https://shibboleth.atlassian.net/wiki/spaces/IDP30/pages/2065335462/AttributeMapping) / [OIDC Standard Claims](https://openid.net/specs/openid-connect-core-1_0.html#StandardClaims) / [Microsoft Entra B2B Claims Mapping](https://learn.microsoft.com/en-us/entra/identity-platform/saml-claims-customization) |
+| **hearing-script** | [06-multitenancy.md B-605-2, B-605-3, B-610](hearing-script/06-multitenancy.md)（運用側面）|
+| **hearing-checklist** | §3.5（B-605-2/3 のみ、B-604 系は §4.1 へ）|
+| **proposal** | [§FR-2.2.4 属性ライフサイクル設計](proposal/fr/02-federation.md) |
+| **関連項目** | [§4.1 属性マッピング/クレーム変換の設計](#41-認可スタンス--jwt-クレーム設計--属性マッピングクレーム変換--api-認可フロー), [§6.8 JML ライフサイクル（Mover 連動）](#68-ユーザーライフサイクル管理jml-joinermoverleaver-統合視点-new) |
+| **外部** | [Keycloak Identity Provider Sync Mode](https://www.keycloak.org/docs/latest/server_admin/#general-identity-provider-configuration) / [NIST SP 800-53 AC-2 Account Management](https://csrc.nist.gov/projects/cprt/catalog) |
 
 ### 5.6 セルフサービス機能 ★NEW
 
@@ -766,7 +823,7 @@
 | 21 | ローカル認証_パスワードポリシー | **3.3 ローカルユーザー認証ポリシー**（統合改名）| ⚠ #4 と統合（後述 Q1）|
 | 22 | ログアウト方針 | **5.2 ログアウト方針 + 5.3 SLO** | ⚠ 細分化 |
 | 23 | ログイン方式・画面設定 | **3.1 ログイン方式・画面設定** | ✅ そのまま |
-| 24 | 属性マッピング・更新 | **6.5 属性マッピング・更新** | ✅ そのまま |
+| 24 | 属性マッピング・更新 | **§4.1 属性マッピング/クレーム変換**（設計）+ **§6.5 属性更新・Source of Truth**（運用）| ⚠ 2 章に分離（設計 = 認可と一体 / 運用 = ユーザー管理）|
 | 25 | 非機能_運用体制 | **7.6 運用体制** | ✅ そのまま（#15 とは別に保持）|
 | 26 | 非機能_コスト・予算 | **7.7 コスト・予算** | ✅ そのまま |
 | 27 | 非機能_性能・スケール | **7.2 性能・スケール** | ✅ そのまま |
@@ -800,6 +857,7 @@
 | #9 構成概要 | **1.3 アーキテクチャ方針 + 1.4 構成概要図** | 細分化 |
 | **ITDR**（旧 §3.5 認証群） | **§7.4 Identity Security**（**§7 セキュリティ群へ移動**） | 静的 NFR (§7.3) と動的応答 (§7.4) を「セキュリティ全体像」として隣接配置。業界 ITDR 独立カテゴリ化トレンドに整合 |
 | **Vendor Lock-in / Portability**（旧 §8.5 章 8 UX 群） | **§7.10 移行性 NFR**（**§7 非機能群へ移動、2026-06-04**） | IPA D. 移行性 / ISO 25010 Portability の業界 NFR 分類と整合。章 8 は UX（開発者体験 + アクセシビリティ + i18n + プライバシー）に純化。**§1.6 移行プロセス（プロジェクト計画、M1 議論）と §7.10 移行性 NFR（システム特性、M3 議論）を性質で分離** |
+| **属性マッピング・クレーム変換**（旧 §6.5 ユーザー管理群）| **§4.1 認可へ統合**（**設計部分、2026-06-08**）+ **§6.5 属性更新・SoT に純化**（運用部分）| 「属性 → 基盤正規化 → JWT クレーム」の end-to-end パイプラインを §4.1 で一体議論。業界整理（Auth0 Rules/Actions / Okta Claims&Tokens / Entra Token Configuration / Keycloak Protocol Mapper）と完全整合。属性更新の運用ガバナンス（SoT / 更新タイミング）は §6.5 に残存 |
 
 ---
 
@@ -836,7 +894,7 @@
 | **章 1 全体方針・前提（7）** | **M1** | 1.1〜1.7 全て | 約 28 枚 |
 | **章 2 接続元・対象（5）** | **M1** | 2.1〜2.5 全て | 約 20 枚 |
 | **章 3 認証（4）** | **M2** | 3.1〜3.4 | 約 16 枚 |
-| **章 4 認可（1）★NEW 独立章** | **M2** | 4.1 | 約 6 枚 |
+| **章 4 認可（1、★属性マッピング/クレーム変換 統合）** | **M2** | 4.1 | 約 8 枚 |
 | **章 5 SSO・セッション・ログアウト（6）** | **M2 + M3** | M2: 5.1, 5.4 / M3: 5.2, 5.3, 5.5, 5.6 | 約 24 枚 |
 | **章 6 ユーザー管理（8）** | **M2 + M3** | M2: 6.1〜6.5 / M3: 6.6〜6.8 | 約 32 枚 |
 | **章 7 非機能要件（10、★ITDR §7.4 + ★移行性 §7.10 追加）** | **M3** | 7.1〜7.10 全て | 約 40 枚 |
@@ -847,7 +905,7 @@
 | 回 | スライド範囲 | 時間 | 主な対象者 |
 |---|---|---|---|
 | **M1 第 1 回** | 章 1（28 枚）+ 章 2（20 枚）= **48 枚** | 2.5 時間 | PO / 事業企画 + テックリード + 情シス |
-| **M2 第 2 回** | 章 3（16 枚）+ **章 4 認可（6 枚）** + 章 5 前半（8 枚）+ 章 6 前半（20 枚）= **50 枚** | 2.5 時間 | 開発チーム / テックリード中心 |
+| **M2 第 2 回** | 章 3（16 枚）+ **章 4 認可（8 枚、★属性マッピング/クレーム変換 統合）** + 章 5 前半（8 枚）+ 章 6 前半（20 枚）= **52 枚** | 2.5 時間 | 開発チーム / テックリード中心 |
 | **M3 第 3 回** | 章 5 後半（16 枚、§5.6 含む）+ 章 6 後半（12 枚）+ 章 7（40 枚、§7.4 ITDR + §7.10 移行性 NFR 含む）+ 章 8（16 枚）= **84 枚** | 3 時間 | インフラ / SRE / セキュリティ + 意思決定者 |
 
 → **合計 8 時間**（3 回会議）で全 ~182 枚をカバー。M3 が重いため、章 8（開発者体験・UX）を**事前読み合わせ + Q&A 中心**にすれば短縮可能。
@@ -896,3 +954,5 @@
 | 2026-06-03 | **§3.4 認可 / §3.5 ITDR の構成見直し（章数 7 → 8）**。**(1)** 認可（旧 §3.4）を **§4 認可 / Authorization** として独立章化（業界標準 = 認証 vs 認可は分離、ボリューム実態と整合）。**(2)** ITDR（旧 §3.5）を **§7.4 Identity Security** として §7 非機能セキュリティ群に移動（静的 NFR §7.3 と動的応答 §7.4 で「セキュリティ全体像」を構成、業界 ITDR 独立カテゴリ化トレンドに整合）。**(3)** 旧 §4-§7 を §5-§8 に繰下げ、章番号大幅更新。**スライドファイル名のリネームと参照同期は後続対応**（Phase 2/3）|
 | 2026-06-04 | **ドメイン構成方針（サブドメイン構成推奨）を §C-1 / §2.3 / §3.1 / B-100 補足に反映**。アプリのドメインが同一親ドメインのサブドメイン（`app1.example.com` 等）で構成される場合の本方式適合性を確認 → SameSite / 現代ブラウザ規制 (ITP / 3rd-party Cookie 廃止) / BFF / TLS / Cognito Custom Domain 全観点で有利と判定。新規 [common/subdomain-architecture-notes.md](../common/subdomain-architecture-notes.md) に技術仕様 + 設計原則 + ヒアリング 5 項目を集約 |
 | 2026-06-04 | **§8.5 移行性 / Vendor Lock-in / Portability を §7.10 へ移動**（章 7: 9→10、章 8: 5→4）。IPA 非機能要求グレード D. 移行性 / ISO 25010 Portability の業界 NFR 分類と整合。**「移行」関連の 3 論点を性質で分離**: (A) **§1.6 移行プロセス** = プロジェクト計画（M1 議論）/ (B) **§7.10 移行性 NFR** = システム特性（M3 議論）/ (C) ベンダーロックイン回避 = §7.10 に集約。章 8 は UX 軸（開発者体験 + アクセシビリティ + i18n + プライバシー）に純化 |
+| 2026-06-08 | **属性マッピング/クレーム変換を §6.5 から §4.1 認可へ統合**。「属性 → 基盤正規化 → JWT クレーム」の end-to-end パイプラインを §4.1 で一体議論可能化（業界整理 Auth0 Rules/Actions / Okta Claims&Tokens / Entra Token Configuration / Keycloak Protocol Mapper と完全整合）。§6.5 は **「属性更新・Source of Truth」（属性ライフサイクル運用）に純化**。章 4 のスライド数 6→8、章 4 議論時間 10 分→13 分、M2 計 50→52 枚 |
+| 2026-06-08 | **§6 ユーザー管理・プロビジョニング・セルフサービスに §5.0 章プロローグ追加**（8 項目 → 9 項目）。ユーザー種別（5 カテゴリ）× 3 観点（管理・プロビジョニング・セルフサービス）+ 認証ソースの **責任マッピング表 1 枚** を冒頭に提示し、章を跨いだ前提ズレ（end user / admin / 連携 / ローカルの混同）を早期検知可能化。[common/self-service-responsibility.md §0](../common/self-service-responsibility.md) と同マッピング表で同期。章 6 スライド 32→33 枚、議論時間 30→33 分、計 45→46 項目、~182→~183 枚 |
