@@ -24,6 +24,7 @@ Cognito / Keycloak 横断の全体設計・比較・管理。
 | [system-design-patterns.md](system-design-patterns.md) | システム設計パターン 8 種（IdP × SPA/SSR × DR）：構成図・通信フロー・プロトコル・選定ガイド |
 | [user-types-and-auth.md](user-types-and-auth.md) | ユーザー種別 5 カテゴリ（Platform Admin / Tenant Admin / End User Fed / End User Local / External）と認証方式・JWT クレーム・5 経路集約構成図 |
 | [self-service-responsibility.md](self-service-responsibility.md) | **セルフサービスの責任配置 — 浅いブローカー設計での割切り**：パスワード変更・MFA 登録・プロフィール編集等 9 機能 × 5 ユーザー種別の所在マトリクス + broker 側に残る 3 例外（ローカルユーザー / セッション管理 / GDPR）+ アンチパターン + Keycloak 実装上の打ち手 + PowerPoint 構成案 |
+| [pci-dss-appi-compliance-gap.md](pci-dss-appi-compliance-gap.md) | **PCI DSS v4.0.1 + APPI 準拠ギャップ分析 — 一次資料引用集 + 必須対応リスト**：PCI DSS v4.0.1 PDF (`doc/old/`、gitignore 済) と PPC ガイドライン 通則編 PDF を pdftotext で実取得・原文照合した verbatim quote 集。Req 8 (認証) / 10.5.1 (ログ 12ヶ月) / 11.4 (ペネトレ)、APPI 法 22-28 + 33-35 + 規則 7・8 条。現状 Stage A × 規制マッピング + 必須対応 Top 12 + 要件定義 10 ゲーティング論点 |
 | [destroy-guide.md](destroy-guide.md) | 環境削除・残存リソース確認手順 |
 | [devcontainer-corporate-cert-setup.md](devcontainer-corporate-cert-setup.md) | Dev Container に企業プロキシ(Netskope等)のルートCA証明書を組み込む手順（日英併記） |
 | [claude-code-communication-flow.md](claude-code-communication-flow.md) | Claude Code (Dev Container) の通信フロー・OAuth 認証・Netskope 対策の関係（日英併記） |

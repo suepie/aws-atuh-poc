@@ -224,6 +224,19 @@ flowchart LR
 
 ## 参考資料
 
+### プロジェクト内 関連ドキュメント
+
+- **[common/pci-dss-appi-compliance-gap.md](../../../common/pci-dss-appi-compliance-gap.md)** — 🔥 **PCI DSS v4.0.1 + APPI 準拠ギャップ分析**：一次資料 (PCI DSS PDF + PPC ガイドライン PDF) verbatim quote 集 + 現状 Stage A × 規制マッピング + 必須対応 Top 12 + 要件定義 10 ゲーティング論点
+- [§FR-7.4.8 PCI DSS / APPI 適合性整理（JIT/SCIM 選定への影響）](../fr/07-user.md)
+
+### 外部資料
+
+- [PCI DSS v4.0.1 (June 2024)](https://www.pcisecuritystandards.org/document_library/) — PCI Security Standards Council 公式（無料登録後 DL）
+- [個人情報の保護に関する法律 (e-Gov)](https://laws.e-gov.go.jp/document?lawid=415AC0000000057)
+- [PPC ガイドライン 通則編](https://www.ppc.go.jp/files/pdf/260401_guidelines01.pdf) — 個人情報保護委員会
+- [PPC 漏えい等の対応](https://www.ppc.go.jp/personalinfo/legal/leakAction/)
+- [PPC 外国にある第三者への提供編](https://www.ppc.go.jp/files/pdf/251212_guidelines02.pdf)
+- [NIST SP 800-63B Rev 4 - Authentication](https://pages.nist.gov/800-63-4/sp800-63b.html)
 - [GDPR Article 17 - Right to Erasure](https://gdpr.eu/article-17-right-to-be-forgotten/)
 - [EDPB CEF 2025-2026 Erasure Enforcement](https://www.mccannfitzgerald.com/knowledge/data-privacy-and-cyber-risk/delete-and-disclose-edpb-cef-2025-2026)
 - [11 SSO Compliance Requirements Compared - Security Boulevard 2026](https://securityboulevard.com/2026/04/11-sso-compliance-requirements-compared-soc-2-iso-27001-hipaa-pci-dss-and-gdpr/)
