@@ -796,6 +796,7 @@ flowchart LR
 
 ### プロジェクト内 関連ドキュメント
 
+- **[broker-data-model.md](broker-data-model.md)** — **浅いブローカーが保持するデータモデル**（Keycloak DB スキーマ実態の 7 カテゴリ + 持たないもの対比 + JWT クレームへの反映 + ER 図）。本ドキュメントが Broker パターン全体像、broker-data-model.md が DB スキーマレベルの詳細
 - **[realm-separation-citations.md](realm-separation-citations.md)** — 🔥 **Multi-Realm 物理分離が「システム側ゼロ作業」と両立しない理由の一次資料引用集**（OIDC Core §3.1.3.7 / RFC 9068 / Keycloak 公式 / AWS API Gateway JWT Authorizer の verbatim quote 付き、顧客説明・反論対応テンプレ）
 
 ### 外部資料
