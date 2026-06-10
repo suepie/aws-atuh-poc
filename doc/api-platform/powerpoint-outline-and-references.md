@@ -280,11 +280,12 @@
 | **関連 SSOT** | [../requirements/](../requirements/00-index.md) 共有認証基盤の要件定義 |
 | **外部** | [Control access to HTTP APIs with JWT authorizers](https://docs.aws.amazon.com/apigateway/latest/developerguide/http-api-jwt-authorizer.html) |
 
-### 4.2 Partner 認証（OAuth Client Credentials デフォルト / API Key Legacy / mTLS 規制対応）★ 全面刷新
+### 4.2 Partner 認証（OAuth Client Credentials デフォルト / API Key Legacy / mTLS 規制対応）★ 全面刷新 + §2.2.7 リファレンス実装
 
 **概要**: B2B Partner 向けの認証標準を **OAuth Client Credentials（業界主流：Salesforce / Microsoft Graph / Stripe モダン版）をデフォルト** に確定。API Key は Legacy / Trial 用途に退き、mTLS は規制業界の escalation。
+**追加 (2026-06-10)**：§2.2.7「Partner 認証 詳細フロー（リファレンス実装）」を proposal に追加。Partner 開発者向けのリファレンス、Service Catalog 製品の元仕様。
 
-#### スライド構成案（5 枚）
+#### スライド構成案（5 枚 + リファレンス補足 3 枚）
 
 | # | スライド | 内容 |
 |---|---|---|
@@ -293,13 +294,19 @@
 | 3 | Partner identity モデル | Per-Partner-App × Per-Environment（業界標準）、共有認証基盤側で M2M Client 管理 |
 | 4 | クレデンシャルライフサイクル | 発行 → 配布 → ローテーション → Overlap 24-72h → Revocation 24h |
 | 5 | Partner-tier 別構成例 | Bronze（API Key）/ Silver（OAuth）/ Gold（OAuth+mTLS+FAPI 2.0）|
+| **R1** | **API Key + OAuth 併用の必要性**（§2.2.7.1 / §2.2.7.2）| API Key = 識別、OAuth = 認証 の役割分担、AWS 公式の明記 |
+| **R2** | **詳細フロー シーケンス図**（§2.2.7.3）| セットアップ + 実行時 + Token Refresh、mermaid 図 |
+| **R3** | **アンチパターン / 推奨 SDK**（§2.2.7.7 / §2.2.7.10）| ✗ vs ✓ の対比表、推奨 SDK ライブラリ一覧 |
+
+→ R1〜R3 は Partner 開発者向け補足、または社内技術者・Service Catalog 製品設計者向けの深掘り資料。
 
 | 種別 | 参考資料 |
 |---|---|
-| **proposal** | [proposal/fr/02-authn-authz.md §2.2 Partner 認証](proposal/fr/02-authn-authz.md) / [proposal/common/03-shared-auth-boundary.md §C-3.1 C. Partner M2M Client 管理機能](proposal/common/03-shared-auth-boundary.md) |
+| **proposal** | [proposal/fr/02-authn-authz.md §2.2 Partner 認証](proposal/fr/02-authn-authz.md) / **[§2.2.7 Partner 認証 詳細フロー（リファレンス実装）](proposal/fr/02-authn-authz.md)** ⭐ / [proposal/common/03-shared-auth-boundary.md §C-3.1 C. Partner M2M Client 管理機能](proposal/common/03-shared-auth-boundary.md) |
 | **hearing-checklist** | **B-211** ⭐, B-212, B-214, B-215, B-216, B-217, B-218, B-219, B-220, D-241 |
 | **hearing-script** | [02-authn-authz.md](hearing-script/02-authn-authz.md) |
-| **外部** | [OAuth 2.0 Client Credentials (RFC 6749 §4.4)](https://datatracker.ietf.org/doc/html/rfc6749#section-4.4) / [OAuth 2.0 JWT Bearer (RFC 7523)](https://datatracker.ietf.org/doc/html/rfc7523) / [OAuth 2.0 Mutual-TLS (RFC 8705)](https://datatracker.ietf.org/doc/html/rfc8705) / [FAPI 2.0 Security Profile](https://openid.net/specs/fapi-2_0-security-profile.html) / [Stripe API Authentication](https://docs.stripe.com/api/authentication) / [Salesforce OAuth 2.0 Client Credentials](https://help.salesforce.com/s/articleView?id=sf.remoteaccess_oauth_client_credentials_flow.htm) / [AWS Marketplace SaaS Listings](https://docs.aws.amazon.com/marketplace/latest/userguide/saas-listings.html) |
+| **外部** | [OAuth 2.0 Client Credentials (RFC 6749 §4.4)](https://datatracker.ietf.org/doc/html/rfc6749#section-4.4) / [OAuth 2.0 JWT Bearer (RFC 7523)](https://datatracker.ietf.org/doc/html/rfc7523) / [OAuth 2.0 Mutual-TLS (RFC 8705)](https://datatracker.ietf.org/doc/html/rfc8705) / [FAPI 2.0 Security Profile](https://openid.net/specs/fapi-2_0-security-profile.html) / [Stripe API Authentication](https://docs.stripe.com/api/authentication) / [Salesforce OAuth 2.0 Client Credentials](https://help.salesforce.com/s/articleView?id=sf.remoteaccess_oauth_client_credentials_flow.htm) / [AWS Marketplace SaaS Listings](https://docs.aws.amazon.com/marketplace/latest/userguide/saas-listings.html) / [Usage Plans and API Keys for REST APIs](https://docs.aws.amazon.com/apigateway/latest/developerguide/api-gateway-api-usage-plans.html) — "Don't use API keys for authentication" 公式明記 |
+| **推奨 SDK**（§2.2.7.7）| [Spring Security OAuth2 Client (Java)](https://docs.spring.io/spring-security/reference/servlet/oauth2/client/index.html) / [openid-client (Node)](https://github.com/panva/openid-client) / [requests-oauthlib (Python)](https://github.com/requests/requests-oauthlib) / [golang.org/x/oauth2/clientcredentials (Go)](https://pkg.go.dev/golang.org/x/oauth2/clientcredentials) / [MSAL.NET (.NET)](https://learn.microsoft.com/en-us/entra/msal/dotnet/) |
 
 ### 4.3 IAM auth（Internal / Private 向け）
 
@@ -809,3 +816,4 @@
 | 2026-06-03 | 初版作成。ユーザー要望 6 テーマ → 36 項目（10 章）に再編成。SSR モノリス対応（§2 アーキパターン選定、§6.3 モノリス vs マイクロサービス、§4.4 / §5 / §8 でモノリス論点反映）。3 回ヒアリング対応 + 認証側との narrative 差分明示。業界標準（Netflix Paved Road / Spotify Golden Path / Guardrails-not-Gates）を §1.1 検討方針の根拠として組み込み |
 | 2026-06-03 | **Public 2 段階細分化**（Public-Authenticated / Public-Unauthenticated）+ **アプリ UI を持たないデフォルト**（§3.1 4 枚、§4.4 4 枚に拡張）+ **Partner 認証 OAuth Client Credentials デフォルト化**（§4.2 5 枚に全面刷新、業界主流に整合）+ **§C-API-3 §C-3.1 認証基盤契約の B/C 追加**（Hosted UI 提供 + Partner M2M Client 管理を申し送り、§10.1 4 枚に拡張）。ヒアリング項目追加：B-103, B-107 ⭐, B-108, B-211 ⭐（修正）, B-214〜B-220, D-241, D-1402-α |
 | 2026-06-10 | **公開範囲を「信頼プロファイル」として統合概念化**：ネットワーク × 認証 × 既定 WAF の 3 要素を 1 つのパッケージとして束ね、Profile 名を日本語化（パブリック（認証有 / オープン）、社内、パートナー、社内限定）。§3.1 を 4 枚 → 5 枚（概念定義 → 統合表 → 決定木 → チューニング軸 → モノリス特記）に再編。章タイトル「公開範囲 → 公開範囲（信頼プロファイル）」|
+| 2026-06-10 | **§2.2.7 Partner 認証 詳細フロー（リファレンス実装）正式組込み**：API Key と OAuth の役割分担、4 つの併用パターン、シーケンス図（セットアップ / 実行時 / Token Refresh）、リクエスト具体例、エラーケース、API Gateway 設定、Token Cache 戦略、推奨 SDK、監査ログ識別、mTLS 併用、アンチパターン。PowerPoint §4.2 にリファレンス補足スライド R1〜R3 を追加 |

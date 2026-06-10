@@ -42,6 +42,7 @@
 |---|---|---|
 | §2.1 | 共有認証基盤との連携 | JWT 検証・JWKS 取得・クレーム利用 |
 | **§2.2** | **Partner 認証（OAuth Client Credentials デフォルト / API Key / mTLS）** | **OAuth Client Credentials 標準、API Key legacy/trial 用、mTLS 規制対応** |
+| ↳ §2.2.7 | **Partner 認証 詳細フロー（リファレンス実装）** | 併用フロー・シーケンス図・リクエスト具体例・SDK・監査ログ |
 | §2.3 | IAM auth（Internal/Private 向け） | SigV4・VPC Lattice Auth Policy |
 | §2.4 | Authorizer 選定 | マネージド vs Lambda Authorizer の判断 |
 | §2.A | SSR モノリスでの留意点 | ALB + Cognito session、ALB Authentication |
@@ -82,7 +83,15 @@
 
 **このサブセクションで定めること**：B2B Partner との M2M（Machine-to-Machine）認証の標準。
 **主な判断軸**：信頼レベル × 業界標準 × 運用負荷。**OAuth Client Credentials が業界主流**（Salesforce / Microsoft Graph / Stripe モダン版）。
-**§2 全体との関係**：Partner 区分での標準。§3 流量制御・§4 課金とセットで運用。
+**§2 全体との関係**：Partner 公開範囲での標準。§3 流量制御・§4 課金とセットで運用。
+
+**本サブセクション内の構成**：
+
+| § | 内容 | レベル |
+|---|---|---|
+| §2.2.0 | Partner B2B M2M スコープ確認（前提） | 要件 |
+| §2.2.1〜§2.2.6 | 認証方式選定・Identity モデル・構成テンプレ・ライフサイクル・tier・TBD | 要件 / 方針 |
+| **§2.2.7** | **Partner 認証 詳細フロー（リファレンス実装）** | **実装詳細**（Partner 開発者向け、Service Catalog 製品の元仕様） |
 
 ### §2.2.0 ⚠ 前提：Partner B2B M2M がスコープに含まれるかを先に確認
 
@@ -99,11 +108,11 @@
 
 ```mermaid
 flowchart TD
-    Q1{Partner B2B M2M\n連携の現状 or 想定\nあり?}
-    Q1 -->|No (両方なし)| Skip[§2.2 全体スキップ\nPartner 区分は §1.1 で定義のみ残す]
-    Q1 -->|Yes (現状あり or 将来想定)| Q2{要件規模は?}
-    Q2 -->|単発 / 小規模| Lite[§2.2.1〜§2.2.5 軽量版\nAPI Key + Usage Plan で当面対応]
-    Q2 -->|複数 Partner / 継続| Full[§2.2.1〜§2.2.6 フル適用\nOAuth Client Credentials デフォルト]
+    Q1{Partner B2B M2M<br/>連携の現状 or 想定<br/>あり?}
+    Q1 -->|"No（両方なし）"| Skip["§2.2 全体スキップ<br/>Partner 公開範囲は §1.1 で定義のみ残す"]
+    Q1 -->|"Yes（現状あり or 将来想定）"| Q2{要件規模は?}
+    Q2 -->|"単発 / 小規模"| Lite["§2.2.1〜§2.2.5 軽量版<br/>API Key + Usage Plan で当面対応"]
+    Q2 -->|"複数 Partner / 継続"| Full["§2.2.1〜§2.2.6 フル適用<br/>OAuth Client Credentials デフォルト"]
 
     style Skip fill:#f5f5f5,stroke:#9e9e9e
     style Lite fill:#fff3e0,stroke:#e65100
@@ -203,6 +212,307 @@ Partner → Custom Domain (mTLS Listener) → CloudFront 不可（mTLS なら直
 - Q: 既存 Partner の認証方式（互換性維持の要否）→ `API-B-219`
 - Q: mTLS 採用時の証明書発行元（自社 PKI / AWS Private CA / Partner 側 CA）→ `API-B-220`（旧 API-B-213）
 - Q: FAPI 2.0 など規制業界準拠の Partner 要件 → `API-D-241`
+
+---
+
+## §2.2.7 Partner 認証 詳細フロー（リファレンス実装）
+
+> **位置付け**：§2.2.1〜§2.2.6 で決めた **「OAuth Client Credentials + API Key 併用」標準パターン** の **実装レベル詳細**。Partner 開発者向けのリファレンス、社内 Service Catalog 製品の元仕様、PowerPoint 補足資料として活用。
+> **対象読者**：Partner 開発者、本標準の Service Catalog 製品設計者、認証基盤側との合議メンバー。
+
+### §2.2.7.1 API Key と認証の役割分担
+
+「**API Key だけ**」または「**Bearer Token だけ**」では Partner B2B として不十分。両者を併用する理由：
+
+| 観点 | API Key | OAuth Bearer Token / mTLS |
+|---|:---:|:---:|
+| **利用者識別**（誰か）| ✅ Usage Plan / 課金按分 / ログ識別 | ✅ JWT クレーム or 証明書 Subject |
+| **認証**（本当に本人か）| ❌ **暗号学的検証なし**、リプレイ可能 | ✅ 署名検証 / 期限あり |
+| 流量制御の単位 | ✅ Usage Plan 直結 | △ JWT クレームで自前実装可 |
+| 期限管理 | ❌ 手動ローテーションのみ | ✅ TTL 自動失効（OAuth: 1h 標準）|
+| 漏洩リスク | ⚠ 文字列のみ、漏れたら即悪用可 | ✅ 短期 token なら被害限定 |
+
+**AWS 公式明記**："Don't use API keys for authentication or authorization to control access to your APIs"（[Usage Plans and API Keys docs](https://docs.aws.amazon.com/apigateway/latest/developerguide/api-gateway-api-usage-plans.html)）
+
+→ **API Key = 識別用（Usage Plan / 課金）**、**OAuth Bearer Token または mTLS = 認証用（暗号学的検証）** の役割分担で組み合わせる。
+
+### §2.2.7.2 4 つの併用パターン
+
+| # | パターン | 適用 | API Gateway 種別 | 位置付け |
+|---|---|---|:---:|---|
+| **1** | API Key + OAuth Client Credentials ⭐ | 新規 Partner デフォルト | REST API | **本標準の推奨**（§2.2.3 A）|
+| 2 | API Key + Lambda Authorizer（HMAC 等）| 特殊検証 | REST API | 例外承認制 |
+| 3 | API Key + mTLS（+ OAuth）| 規制業界・最高信頼 | REST API | escalation（§2.2.3 C） |
+| 4 | OAuth のみ（API Key なし）| HTTP API 採用時 | HTTP API | Usage Plan 不要なら |
+
+### §2.2.7.3 標準パターン（OAuth Client Credentials）の詳細フロー
+
+#### A. フェーズ A：一度限りのセットアップ
+
+```mermaid
+sequenceDiagram
+    participant SecOps as SecOps/Platform
+    participant Auth as 共有認証基盤<br/>(Cognito/Keycloak)
+    participant APIGW as 各アプリ AWS<br/>API Gateway
+    participant Partner as Partner システム
+    participant SM as Secrets Manager
+
+    SecOps->>Auth: Partner 申請承認後<br/>M2M App Client 作成<br/>(例: Acme Mobile prod)
+    Auth-->>SecOps: client_id + client_secret 発行
+    SecOps->>APIGW: API Key 発行 + Usage Plan 紐付け<br/>+ Scope 割当
+    APIGW-->>SecOps: api_key 発行
+    SecOps->>SM: client_secret + api_key を<br/>セキュアに格納
+    SecOps->>Partner: client_id + client_secret + api_key を<br/>セキュアチャネル配布<br/>(暗号化メール/PrivateLink share)
+    Partner->>Partner: 自社 Secrets 管理に格納
+```
+
+**発行されるもの 3 点**：
+
+| アイテム | 性質 | 取り扱い |
+|---|---|---|
+| `client_id` | Partner App 識別子（公開可）| ログに出してよい |
+| `client_secret` | 認証用シークレット | **絶対秘匿**、Secrets Manager 等で管理 |
+| `api_key` | Usage Plan 識別子（識別 + 流量制御用）| Secrets Manager 管理推奨、リクエストヘッダで送信 |
+
+#### B. フェーズ B：実行時フロー
+
+```mermaid
+sequenceDiagram
+    participant P as Partner システム
+    participant Cache as Token Cache<br/>(Partner 側)
+    participant Auth as 共有認証基盤<br/>/oauth2/token
+    participant CF as CloudFront
+    participant WAF as AWS WAF
+    participant APIGW as API Gateway
+    participant Authz as JWT Authorizer
+    participant Lambda as Lambda/ECS
+
+    Note over P,Lambda: Step 1: Access Token 取得（初回 or 期限切れ時）
+    P->>Cache: access_token がキャッシュにあるか?
+    Cache-->>P: ない or 期限切れ
+    P->>Auth: POST /oauth2/token<br/>Authorization: Basic base64(client_id:client_secret)<br/>grant_type=client_credentials<br/>scope=orders:read orders:write
+    Auth-->>P: {access_token: "eyJ...", expires_in: 3600}
+    P->>Cache: token を保存（TTL 3600s - margin 60s）
+
+    Note over P,Lambda: Step 2: API 呼び出し（複数回、token 有効期間中）
+    P->>CF: POST /api/v1/orders<br/>x-api-key: [api_key]<br/>Authorization: Bearer [access_token]
+    CF->>WAF: WAF Managed Rules 評価
+    WAF->>APIGW: 通過
+    APIGW->>APIGW: API Key 検証<br/>(Usage Plan throttle/quota)
+    APIGW->>Authz: JWT Authorizer 起動
+    Authz->>Authz: JWT 署名検証 (JWKS)<br/>iss, aud, exp, scope 検証
+    Authz-->>APIGW: Allow + client_id, scope を context に
+    APIGW->>Lambda: invoke with context
+    Lambda-->>P: 200 OK
+```
+
+#### C. フェーズ C：Token Refresh 戦略
+
+Access Token は **1 時間 TTL が標準**。Partner システムは：
+
+| 戦略 | タイミング | 適用 |
+|---|---|---|
+| **Lazy refresh** | API 呼出前に期限チェック、期限が近ければ /oauth2/token 再取得 | シンプル、低頻度呼出 |
+| **Proactive refresh** | バックグラウンドジョブで期限 5 分前に refresh | 高頻度呼出、レイテンシ要件厳しい |
+| **On 401** | API が 401 を返したら refresh + 1 回 retry | フォールバック / 例外処理 |
+
+→ **本標準推奨**：**Lazy refresh + On 401 retry** の組合せ。SDK 利用なら自動実装される（§2.2.7.7）。
+
+### §2.2.7.4 リクエスト・レスポンス具体例
+
+#### A. Token 取得
+
+**リクエスト**：
+```http
+POST /oauth2/token HTTP/1.1
+Host: auth.example.com
+Authorization: Basic YWNtZS1tb2JpbGUtcHJvZC1hYmMxMjM6c2VjcmV0LXJhbmRvbS0xMjg=
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=client_credentials&scope=orders%3Aread%20orders%3Awrite
+```
+
+**レスポンス**：
+```http
+HTTP/1.1 200 OK
+Content-Type: application/json
+Cache-Control: no-store
+
+{
+  "access_token": "eyJraWQiOiI3M...（JWT）",
+  "token_type": "Bearer",
+  "expires_in": 3600,
+  "scope": "orders:read orders:write"
+}
+```
+
+**JWT の中身**（decode した payload 例）：
+```json
+{
+  "iss": "https://auth.example.com",
+  "sub": "acme-mobile-prod-abc123",
+  "aud": "https://api.example.com",
+  "exp": 1717689600,
+  "iat": 1717686000,
+  "client_id": "acme-mobile-prod-abc123",
+  "scope": "orders:read orders:write",
+  "tenant_id": "acme-corp",
+  "env": "prod"
+}
+```
+
+#### B. API 呼び出し
+
+**リクエスト**：
+```http
+POST /api/v1/orders HTTP/1.1
+Host: api.example.com
+x-api-key: 0123456789abcdef0123456789abcdef
+Authorization: Bearer eyJraWQiOiI3M...
+Content-Type: application/json
+
+{"product_id": "prod-1", "quantity": 5}
+```
+
+**成功レスポンス**：
+```http
+HTTP/1.1 201 Created
+Content-Type: application/json
+X-Request-Id: 7f3e4a5b-...
+X-RateLimit-Remaining: 999
+
+{"order_id": "ord-12345", "status": "created"}
+```
+
+#### C. エラーケース一覧
+
+| シナリオ | ステータス | 原因 | 対処（Partner 側）|
+|---|:---:|---|---|
+| API Key 不正・欠落 | `403 Forbidden`（API Gateway） | x-api-key 未送信 / 無効 | client_id を確認、Secrets 再確認 |
+| Bearer 欠落 / 不正署名 | `401 Unauthorized`（Authorizer） | Authorization ヘッダ不正 | 認証フロー再実行（/oauth2/token） |
+| token 期限切れ | `401 Unauthorized` | exp 過ぎ | refresh → retry |
+| scope 不足 | `403 Forbidden`（Authorizer） | 必要な scope が token に含まれない | 必要な scope を申請、token 再取得 |
+| Usage Plan quota 超過 | `429 Too Many Requests` | 月次 / 日次 quota 到達 | 翌期間まで待つ / quota 上限見直し |
+| Throttle 超過（短期スパイク）| `429 Too Many Requests` | rate / burst 超過 | Exponential backoff |
+
+### §2.2.7.5 API Gateway 側の設定
+
+**REST API のリソース設定例**：
+
+```
+[Resource: /api/v1/orders]
+├ Method: POST
+│  ├ API Key Required: ✅ true                ← Usage Plan 識別
+│  ├ Authorization: COGNITO_USER_POOLS         ← Cognito M2M Authorizer
+│  │  or CUSTOM (Lambda Authorizer)
+│  └ Authorization Scopes: orders:write        ← scope 検証
+
+[Usage Plan: partner-silver]
+├ Throttle: 1000 req/s burst 2000
+├ Quota: 1,000,000 req/month
+└ API Keys:
+    ├ key_acme-mobile-prod (associated with Partner App)
+    └ key_globex-web-prod
+```
+
+### §2.2.7.6 Token Cache 戦略の重要性
+
+毎リクエストで /oauth2/token を叩くと：
+
+- 認証基盤側に巨大な負荷（1 リクエストにつき 1 token 取得 = 倍のリクエスト）
+- レイテンシ +200ms ペナルティ毎回
+- /oauth2/token 自体の rate limit に引っかかる
+
+**標準のキャッシュ戦略**（Partner システム実装ガイドライン）：
+
+| 規模 | 推奨キャッシュ |
+|---|---|
+| 小規模（単一インスタンス）| **in-memory cache**（言語標準のオブジェクト保持）|
+| 中規模（複数インスタンス）| **共有 cache**（Redis / DynamoDB）|
+| TTL 設定 | `expires_in - 60秒`（マージン）|
+
+### §2.2.7.7 推奨 SDK ライブラリ
+
+業界では Auth Library が標準化されており、**token cache / 自動 refresh / 401 リトライ** を内蔵。本標準では以下を推奨：
+
+| 言語 | 推奨ライブラリ |
+|---|---|
+| Java | [Spring Security OAuth2 Client](https://docs.spring.io/spring-security/reference/servlet/oauth2/client/index.html) |
+| Node.js / TypeScript | [openid-client](https://github.com/panva/openid-client) |
+| Python | [requests-oauthlib](https://github.com/requests/requests-oauthlib), [Authlib](https://docs.authlib.org/) |
+| Go | [`golang.org/x/oauth2/clientcredentials`](https://pkg.go.dev/golang.org/x/oauth2/clientcredentials) |
+| .NET | [Microsoft.Identity.Client (MSAL.NET)](https://learn.microsoft.com/en-us/entra/msal/dotnet/) |
+| Ruby | [oauth2 gem](https://github.com/oauth-xx/oauth2) |
+
+→ Partner 開発者向けドキュメントには「**これらの SDK を使うことを強く推奨**（手書き実装は token cache・refresh・401 リトライの抜けによる事故が多発）」と明記。
+
+### §2.2.7.8 監査ログでの識別
+
+各 API 呼び出しのアクセスログには以下フィールドを必須化：
+
+| フィールド | 内容 | 用途 |
+|---|---|---|
+| `requestId` | リクエスト一意 ID | トレース |
+| `apiKeyId` | API Key（マスク：先頭 4 + 末尾 4）| Usage Plan / 課金按分 |
+| `clientId` | JWT クレーム `client_id` | Partner App 識別 |
+| `tenantId` | JWT クレーム `tenant_id` | Partner 所属識別 |
+| `scope` | 使用された scope | 認可監査 |
+| `wafResponseCode` | WAF 評価結果 | セキュリティ監査 |
+| `statusCode` | HTTP ステータス | 成功/エラー判定 |
+| `latency` | レイテンシ | パフォーマンス |
+
+**異常検知ルール例**：
+- `apiKeyId` と `clientId` が **一致しない**呼び出し → anomaly alert（例：A 社の API Key で B 社の token が来る）
+- 同一 `clientId` で **複数の IP / リージョン** → クレデンシャル漏洩疑い
+- 期限直前 token の **大量取得**（DDoS や Stress test）
+
+### §2.2.7.9 mTLS 併用パターン（規制業界向け）
+
+mTLS は **TLS handshake で証明書検証** されるので、HTTP リクエストの Bearer Token とは別レイヤー：
+
+```mermaid
+flowchart LR
+    P[Partner] -->|"① TLS handshake（client cert）"| TLS[TLS Layer]
+    TLS -->|"② cert 検証（Truststore）"| HTTP[HTTP Layer]
+    P -->|"③ x-api-key + Bearer token"| HTTP
+    HTTP -->|"④ Lambda Authorizer"| Verify[3 重検証]
+    Verify -->|"a) TLS Subject DN ↔ JWT client_id 一致"| Allow[Allow]
+    Verify -->|"b) JWT 署名・exp・aud"| Allow
+    Verify -->|"c) scope"| Allow
+    Allow --> Lambda["Lambda / ECS"]
+```
+
+**3 重防御の意義**：
+- a) TLS 証明書持参（**物理的に証明書を持っている**）
+- b) JWT 署名（**client_secret を知っている**）
+- c) Usage Plan API Key（**識別 + 流量制御**）
+
+→ FAPI 2.0 等の規制業界要件で必要。証明書発行元・CRL 運用は §2.2.6 → `API-B-220` で確定。
+
+### §2.2.7.10 アンチパターン / 注意点
+
+| ❌ アンチパターン | ✅ 正しいパターン |
+|---|---|
+| API Key だけで認証扱い | API Key（識別）+ Bearer Token（認証）の併用 |
+| 毎回 /oauth2/token を叩く | Token cache + Lazy refresh |
+| `client_secret` をコード / Git に書く | Secrets Manager / Vault 等で管理 |
+| `client_secret` をログ出力 | マスク（先頭 4 + 末尾 4）|
+| Bearer Token を URL クエリパラメータで送信 | `Authorization: Bearer ...` ヘッダで送信 |
+| API Key を URL クエリパラメータで送信 | `x-api-key` ヘッダで送信 |
+| token を localStorage / Cookie に置く（M2M 用途） | サーバサイドメモリ / Secrets Manager |
+| 同一 client_secret を prod / stg で使い回し | Per-Environment 単位で分離（§2.2.2）|
+| Refresh Token も Client Credentials で取得しようとする | M2M に Refresh Token は不要（client_secret で再取得）|
+
+### §2.2.7.11 関連項目への参照
+
+- §2.2.0 Partner B2B M2M スコープ確認（前提）
+- §2.2.1〜§2.2.6 認証方式選定・ライフサイクル・TBD
+- §2.4 Authorizer 選定（JWT Authorizer vs Lambda Authorizer）
+- [§C-API-3 §C-3.1 C 認証基盤側 Partner M2M Client 管理機能](../common/03-shared-auth-boundary.md)
+- [escalation-to-auth.md §1.1](../../escalation-to-auth.md) — 認証側への申し送り
+- §FR-API-3 流量制御 — Usage Plan 設定
+- §FR-API-4 利用者識別 — `client_id` / `tenant_id` の課金按分活用
+- §FR-API-8 観測性 — 監査ログ設計
 
 ---
 
