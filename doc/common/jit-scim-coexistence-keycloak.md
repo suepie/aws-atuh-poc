@@ -1073,6 +1073,267 @@ QSA 申請用のテンプレート例:
 | **4. 維持手順** | 月次 QSA レポート + Refresh Token Rotation の動作確認 + 認証ログ逆引きバッチの実行ログ確認 + 退職者シナリオの四半期テスト |
 | **5. 検証** | 四半期ペネトレーションテスト + 退職シナリオ模擬テスト + ITDR 検知率測定（false positive < 5%、false negative < 1%）|
 
+### 10.8 MFA 強制 + 保持データ最小化の Keycloak 実装
+
+> **背景**: [proposal §FR-3.4](../requirements/proposal/fr/03-mfa.md) の信頼レベル評価方式（amr 評価 + 必要時のみ基盤側 MFA）を Keycloak で実装する際の **データ最小化** に向けた具体設定。WebAuthn / Passkey 主体採用で「持つデータは公開鍵のみ」を実現。
+
+#### 10.8.1 Keycloak の Credential テーブル構造と保管方式
+
+Keycloak の `credential` テーブルに以下が保存される（PostgreSQL）:
+
+| Credential タイプ | `credential_data` | `secret_data` | 保護方式 |
+|---|---|---|---|
+| **`password`**（ローカルユーザーのみ）| アルゴリズム指定（bcrypt / Argon2id / PBKDF2）| ハッシュ + ソルト | bcrypt / Argon2id |
+| **`otp`**（TOTP）| アルゴリズム / 桁数 / 周期 | **TOTP Secret**（Base32）| **Realm Key で AES-GCM 暗号化** |
+| **`webauthn`** / **`webauthn-passwordless`**（Passkey）| Credential ID + Public Key + Attestation Statement | - | **公開鍵のため平文**（漏洩しても無効）|
+| **`recovery-authn-codes`** | コード数 / アルゴリズム | **bcrypt ハッシュ** | bcrypt |
+
+→ **WebAuthn のみ採用すれば、`secret_data` は実質空** = データ最小化達成。
+
+#### 10.8.2 KMS 連動による Realm Key の保護（§7.3 連動）
+
+デフォルトの Realm Key は Keycloak 内部 DB に保存されるが、AWS KMS と連動して 2 重保護:
+
+```hcl
+# Terraform 例 (Realm Key 設定)
+resource "keycloak_realm_keystore_aes_generated" "realm_key" {
+  realm_id  = keycloak_realm.tenant_acme.id
+  name      = "aes-generated"
+  enabled   = true
+  active    = true
+  priority  = 100
+  secret_size = 16    # 128-bit AES
+}
+
+# AWS KMS で TOTP Secret 暗号化（カスタム実装、Vault SPI 経由）
+# Keycloak Standard では Realm Key で暗号化、AWS KMS 連動は Custom Provider 必要
+# 実装例: https://github.com/keycloak-extensions/aws-kms-vault-spi (コミュニティ拡張)
+```
+
+**保護階層**:
+```
+TOTP Secret（plain）
+  ↓ Realm Key (AES-256) で暗号化
+DB 保存（暗号化済）
+  ↓ Realm Key 自体を AWS KMS CMK で更に暗号化（オプション）
+KMS 保護
+```
+
+→ **DB 漏洩しても TOTP Secret 復号には Realm Key + KMS Access が両方必要**、現実的に突破困難。
+
+#### 10.8.3 信頼レベル評価方式の Authentication Flow（Terraform）
+
+```hcl
+# Realm Settings: WebAuthn / Passkey 推奨設定
+resource "keycloak_realm" "tenant_acme" {
+  realm = "tenant-acme"
+
+  otp_policy_type    = "totp"
+  otp_policy_digits  = 6
+  otp_policy_period  = 30
+
+  # WebAuthn / Passkey 設定（passwordless 推奨）
+  web_authn_passwordless_policy {
+    relying_party_entity_name = "Acme Auth"
+    signature_algorithms      = ["ES256", "RS256", "Ed25519"]
+    attestation_conveyance_preference = "not specified"
+    authenticator_attachment  = "not specified"   # cross-platform + platform 両対応
+    require_resident_key      = "Yes"             # Discoverable Credential
+    user_verification_requirement = "preferred"
+  }
+}
+
+# カスタム Authentication Flow（amr 評価 + WebAuthn）
+resource "keycloak_authentication_flow" "trust_level_assessment" {
+  realm_id    = keycloak_realm.tenant_acme.id
+  alias       = "browser-with-trust-level-mfa"
+  description = "顧客 IdP amr 評価 + 必要時のみ WebAuthn 補完"
+}
+
+# Step 1: 既存 Flow（顧客 IdP 認証）
+resource "keycloak_authentication_execution" "idp_redirect" {
+  realm_id          = keycloak_realm.tenant_acme.id
+  parent_flow_alias = keycloak_authentication_flow.trust_level_assessment.alias
+  authenticator     = "identity-provider-redirector"
+  requirement       = "ALTERNATIVE"
+}
+
+# Step 2: Conditional Authenticator（amr 評価）
+resource "keycloak_authentication_subflow" "conditional_mfa" {
+  realm_id          = keycloak_realm.tenant_acme.id
+  parent_flow_alias = keycloak_authentication_flow.trust_level_assessment.alias
+  alias             = "conditional-mfa-by-amr"
+  requirement       = "CONDITIONAL"
+}
+
+# Step 3: amr 評価 Custom Authenticator
+resource "keycloak_authentication_execution" "check_amr" {
+  realm_id          = keycloak_realm.tenant_acme.id
+  parent_flow_alias = keycloak_authentication_subflow.conditional_mfa.alias
+  authenticator     = "amr-conditional-authenticator"   # Custom SPI（10.8.5 参照）
+  requirement       = "REQUIRED"
+}
+
+# Step 4: WebAuthn 主体（amr 評価で必要と判断された場合のみ実行）
+resource "keycloak_authentication_execution" "webauthn" {
+  realm_id          = keycloak_realm.tenant_acme.id
+  parent_flow_alias = keycloak_authentication_subflow.conditional_mfa.alias
+  authenticator     = "webauthn-authenticator"
+  requirement       = "ALTERNATIVE"
+}
+
+# Step 5: TOTP フォールバック（WebAuthn 不可ユーザー向け）
+resource "keycloak_authentication_execution" "otp_fallback" {
+  realm_id          = keycloak_realm.tenant_acme.id
+  parent_flow_alias = keycloak_authentication_subflow.conditional_mfa.alias
+  authenticator     = "auth-otp-form"
+  requirement       = "ALTERNATIVE"
+}
+```
+
+#### 10.8.4 Trust Device 機能（UX 改善、業務 PC 用途）
+
+```hcl
+# Realm Settings: Trusted Device 30 日 MFA スキップ
+resource "keycloak_realm" "tenant_acme" {
+  # ...
+  # Browser Flow で remember_me を有効化
+  remember_me = true
+
+  # Cookie ベースで 30 日記憶
+  attributes = {
+    "rememberMeUserCookieMaxAge" = "2592000"   # 30 日（秒）
+  }
+}
+
+# WebAuthn の場合は端末バインドで自動的に「信頼デバイス」化
+# Touch ID / Face ID / Windows Hello = 物理デバイス紐付け
+```
+
+#### 10.8.5 amr 評価 Custom Authenticator SPI 実装スケルトン
+
+[§6 externalId 突合](#6-externalid-突合実装の詳細) と同様のパターンで実装:
+
+```java
+public class AmrConditionalAuthenticator implements Authenticator {
+
+    // 信頼する amr 値（OIDC RFC 8176 標準値 + 業界主要 IdP の実装値）
+    private static final Set<String> TRUSTED_AMR_VALUES = Set.of(
+        "mfa",   // 一般的 MFA
+        "otp",   // OTP
+        "hwk",   // ハードウェアキー
+        "mca",   // Multi-Channel Auth
+        "fpt",   // 指紋
+        "face",  // 顔認証
+        "iris",  // 虹彩
+        "swk"    // Software Key
+        // 不採用: "pwd"（単要素）、"pin"（単要素）、"sms"（NIST 非推奨）
+    );
+
+    @Override
+    public void authenticate(AuthenticationFlowContext context) {
+        // 直前の IdP Assertion から brokered context を取得
+        SerializedBrokeredIdentityContext brokerContext = (SerializedBrokeredIdentityContext)
+            context.getAuthenticationSession().getAuthNote(BROKERED_CONTEXT_NOTE);
+
+        if (brokerContext == null) {
+            // IdP 経由でないログイン（ローカルユーザー等）→ MFA 必須
+            context.attempted();
+            return;
+        }
+
+        BrokeredIdentityContext bic = brokerContext.deserialize(
+            context.getSession(), context.getAuthenticationSession());
+
+        // amr クレームを取得
+        Object amrClaim = bic.getContextData().get("amr");
+        List<String> amrValues = parseAmrAsList(amrClaim);
+
+        // ホワイトリスト評価
+        boolean idpHasTrustedMfa = amrValues.stream()
+            .anyMatch(TRUSTED_AMR_VALUES::contains);
+
+        if (idpHasTrustedMfa) {
+            // 顧客 IdP 側で信頼できる MFA 実施済 → 基盤側 MFA スキップ
+            // データを持たない経路
+            context.getEvent().detail("mfa_decision", "skipped_by_idp_amr");
+            context.success();
+        } else {
+            // amr 不信頼 → 次の Authenticator (WebAuthn / OTP) へ
+            context.getEvent().detail("mfa_decision", "fallback_to_base_mfa");
+            context.attempted();
+        }
+    }
+
+    private List<String> parseAmrAsList(Object amrClaim) {
+        if (amrClaim == null) return List.of();
+        if (amrClaim instanceof List) {
+            return ((List<?>) amrClaim).stream()
+                .map(Object::toString)
+                .collect(Collectors.toList());
+        }
+        return List.of(amrClaim.toString());
+    }
+
+    // ... 残りのインターフェース実装
+}
+```
+
+`META-INF/services/org.keycloak.authentication.AuthenticatorFactory` に Factory 登録。
+
+#### 10.8.6 データ最小化の検証手順
+
+```bash
+# Realm 内の MFA Credential 統計を取得（運用監視向け）
+kcadm.sh get users -r tenant-acme --fields id,credentials \
+  | jq '[.[] | {
+      id: .id,
+      has_password: (.credentials // [] | map(.type) | index("password") != null),
+      has_otp: (.credentials // [] | map(.type) | index("otp") != null),
+      has_webauthn: (.credentials // [] | map(.type) | index("webauthn-passwordless") != null)
+    }]' \
+  | jq '[
+      .[] | {
+        password: (if .has_password then 1 else 0 end),
+        otp: (if .has_otp then 1 else 0 end),
+        webauthn: (if .has_webauthn then 1 else 0 end)
+      }
+    ] | {
+      password_count: (map(.password) | add),
+      otp_count: (map(.otp) | add),
+      webauthn_count: (map(.webauthn) | add),
+      total: length
+    }'
+
+# 期待: webauthn_count >> otp_count >> password_count（数十倍差）
+```
+
+#### 10.8.7 MFA データ最小化チェックリスト
+
+```
+[Realm 設定]
+□ WebAuthn / Passkey を有効化（Passwordless Policy 設定済）
+□ TOTP は補助として有効化
+□ SMS OTP は無効化（Disabled、不採用方針）
+□ Realm Key の鍵長 = AES-256
+
+[Authentication Flow]
+□ Identity Provider Redirector → amr Conditional Authenticator の順序
+□ amr 評価 SPI の信頼値ホワイトリスト（mfa/otp/hwk/mca/fpt/face/iris/swk）
+□ amr 不信頼時の Subflow に WebAuthn → TOTP の順で配置
+□ Trust Device (Remember Me) 30 日
+
+[KMS 連動（オプション、高セキュリティ要件時）]
+□ AWS KMS CMK 作成（FIPS 140-2 Level 2）
+□ Keycloak Vault SPI で KMS 連動
+
+[監視メトリクス]
+□ MFA Credential 種別の分布（kcadm.sh 統計）
+□ webauthn 比率を月次測定（目標: 70%+）
+□ TOTP Secret 保有数の推移
+□ amr 評価で skipped vs fallback の比率
+```
+
 ---
 
 ## 11. リファレンス
@@ -1127,3 +1388,4 @@ QSA 申請用のテンプレート例:
 - 2026-06-08: 初版作成。proposal §FR-7.4.5/6/7 の設計判断を Keycloak 26 + Phase Two SCIM 実装目線で詳細化。混在 3 タイプ（A=SCIM 採用 / B=JIT のみ / C=移行期）の Realm/IdP/Mapper 設定 + externalId 突合 Custom Authenticator + Sync Mode 詳細 + First Broker Login Flow 拡張 + マージスクリプト + 落とし穴 7 つを集約
 - 2026-06-08: **§10.4 JIT 定期バッチ deprovisioning 実装** + **§10.5 Keycloak DB 保持・削除マトリクス** + **§10.6 PCI DSS v4.0 / APPI 適合性チェックリスト** を追加。proposal §FR-7.4.6 末尾の保持・削除マトリクス + §FR-7.4.7 末尾の定期バッチ + §FR-7.4.8 PCI DSS/APPI 適合性整理の **実装目線詳細** として対応。kcadm.sh ベースのバッチスクリプト例 + Kubernetes CronJob 例 + PCI DSS Req 8 全要件のマッピング + APPI 法 22/23/25/26/28-30 条のマッピングを集約
 - 2026-06-08: **§10.7 SCIM 非対応 IdP 顧客向け Compensating Controls 実装詳細** を追加（proposal §FR-7.4.9 の Keycloak 実装目線詳細）。短命 Access Token (15min) + Refresh Token Rotation の Keycloak 設定、SPA/SSR の Silent Refresh 実装パターン、Multi-Tab UX、長時間タスク設計、BCL 受信実装、Microsoft Entra Graph API / Okta System Log API 認証ログ逆引きバッチ、UX チェックリスト、Compensating Controls Worksheet テンプレートを集約。**RFC 9700 (2025) OAuth 2.0 Best Current Practice 整合**|
+- 2026-06-08: **§10.8 MFA 強制 + 保持データ最小化の Keycloak 実装** を追加（proposal §FR-3.4 の Keycloak 実装目線詳細）。Credential テーブル構造（password/otp/webauthn/recovery）+ KMS 連動による Realm Key 保護 + 信頼レベル評価方式（amr 評価）の Authentication Flow Terraform + Trust Device 設定 + amr 評価 Custom Authenticator SPI 実装スケルトン（RFC 8176 信頼値ホワイトリスト）+ データ最小化検証 kcadm.sh 統計 + チェックリストを集約。**WebAuthn / Passkey 主体採用で「持つデータは公開鍵のみ = 実質ゼロ価値」を実現** |

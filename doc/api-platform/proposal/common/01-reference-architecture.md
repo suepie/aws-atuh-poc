@@ -11,7 +11,7 @@
 
 | 用語 | 定義 |
 |---|---|
-| **4 層モデル** | 公開境界 / 認証認可 / 流量制御 / 実装ランタイム の層構造。**AWS が公式に命名したフレームワークではなく**、API Gateway Developer Guide / Well-Architected Serverless Lens / Prescriptive Guidance / 業界標準の API Gateway パターン等に共通する論述順を抽出した本標準の合成（根拠は [SSOT 付録 A.0](../../requirements-document-structure.md)） |
+| **4 層モデル** | 公開範囲 / 認証認可 / 流量制御 / 実装ランタイム の層構造。**AWS が公式に命名したフレームワークではなく**、API Gateway Developer Guide / Well-Architected Serverless Lens / Prescriptive Guidance / 業界標準の API Gateway パターン等に共通する論述順を抽出した本標準の合成（根拠は [SSOT 付録 A.0](../../requirements-document-structure.md)） |
 | **Landing Zone** | AWS Organizations + Control Tower + 標準アカウント体系の総称 |
 | **共有認証基盤アカウント** | OIDC/OAuth 認可サーバを提供する集中アカウント |
 | **監査アカウント** | FMS Delegated Admin、CloudTrail / Config 集約先 |
@@ -58,7 +58,7 @@ flowchart TB
     end
 
     subgraph App[各アプリ AWS アカウント]
-        subgraph L1[公開境界層 §FR-API-1]
+        subgraph L1[公開範囲層 §FR-API-1<br/>信頼プロファイル]
             CF[CloudFront + WAF]
             APIGW[API Gateway]
             ALB[ALB]
@@ -126,7 +126,7 @@ flowchart TB
 **主な判断軸**：マネージド優先、低コスト。
 **§C-1 全体との関係**：§C-1.1 を Serverless で具現化したもの。
 
-### §C-1.2.1 公開境界別 Serverless 構成
+### §C-1.2.1 公開範囲別 Serverless 構成
 
 ```mermaid
 flowchart LR
@@ -164,7 +164,7 @@ flowchart LR
 **主な判断軸**：Fargate 既定、Service Connect / Lattice。
 **§C-1 全体との関係**：§C-1.1 を Container で具現化したもの。
 
-### §C-1.3.1 公開境界別 Container 構成
+### §C-1.3.1 公開範囲別 Container 構成
 
 ```mermaid
 flowchart LR

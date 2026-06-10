@@ -14,7 +14,7 @@
 |:-:|:-:|---|:-:|:-:|
 | 1 | 5 | 全体方針・前提（検討方針 / 基本方針 / スコープ / 4 層モデル / ナラティブ）| 24 | 30 分 |
 | 2 | 3 | **アーキパターン選定**（ステップ ⓪、SPA+API / SSR+API / SSR モノリス）| 14 | 20 分 |
-| 3 | 3 | 公開境界（ステップ ①、Public / Internal / Partner / Private）| 12 | 18 分 |
+| 3 | 3 | 公開範囲（信頼プロファイル）（ステップ ①、5 Profile 統合概念）| 14 | 20 分 |
 | 4 | 4 | 認証認可（ステップ ②、共有認証基盤連携 / API Key / mTLS / IAM）| 16 | 24 分 |
 | 5 | 2 | 流量制御・課金（ステップ ③）| 10 | 18 分 |
 | 6 | 4 | 実装ランタイム（ステップ ④、Serverless / Container / モノリス / 選定基準）| 16 | 24 分 |
@@ -31,7 +31,7 @@
 | 文書 | 主読者 | 提示順序 | narrative |
 |---|---|---|---|
 | **PowerPoint（本文書）** | 関係者（経営層 / Platform / SecOps / アプリオーナー）| **検討方針 → 基本方針 → スコープ → アーキパターン → 個別要件** | 「**範囲を絞り、必要な統制と共通ルールは守らせ、それ以外はアプリ裁量に委ねる**」 |
-| **proposal/ 提示版** | アプリ開発リード + アーキテクト | 6 ステップ ナラティブ（⓪〜⑥）に沿った技術論述 | 「アーキパターン → 公開境界 → 認証 → 流量 → ランタイム → ガードレール → 観測性」（[proposal/00-index.md](proposal/00-index.md) §1）|
+| **proposal/ 提示版** | アプリ開発リード + アーキテクト | 6 ステップ ナラティブ（⓪〜⑥）に沿った技術論述 | 「アーキパターン → 公開範囲 → 認証 → 流量 → ランタイム → ガードレール → 観測性」（[proposal/00-index.md](proposal/00-index.md) §1）|
 | **requirements-document-structure.md SSOT** | プロジェクト管理者・進捗追跡 | 7 ステップ + ドキュメント体系 + 状態ダッシュボード | 「全体構造・依存関係・進捗の単一情報源」|
 
 **両者の関係**: **要件内容は同じ**。**見せ方の順序のみ違う**。PowerPoint は「**経営層が納得する順序（方針 → スコープ → 個別）**」、社内 SSOT は「**技術論述の順序（ステップ ⓪〜⑥）**」。詳細は §1.1 / §1.4。
@@ -107,7 +107,7 @@
 
 ### 1.4 4 層モデル + 横串（論述構造）
 
-**概要**: 「公開境界 → 認証認可 → 流量制御 → 実装ランタイム + 横串（観測性・ガードレール・コスト）」の論述構造。**AWS 公式に「4 層モデル」と名付けたフレームワークではなく、複数の AWS 公式 doc + 業界標準に共通する論述順を抽出した本標準の合成・命名**である点を明示。
+**概要**: 「公開範囲 → 認証認可 → 流量制御 → 実装ランタイム + 横串（観測性・ガードレール・コスト）」の論述構造。**AWS 公式に「4 層モデル」と名付けたフレームワークではなく、複数の AWS 公式 doc + 業界標準に共通する論述順を抽出した本標準の合成・命名**である点を明示。
 
 #### スライド構成案（3 枚）
 
@@ -128,7 +128,7 @@
 **概要**: 検討の論理順序を 7 ステップ（⓪〜⑥）で示す。提示版（proposal/）はこのステップに沿って構成。
 
 ```
-⓪ アーキパターン選定 → ① 公開境界 → ② 認証認可 → ③ 流量制御・課金
+⓪ アーキパターン選定 → ① 公開範囲 → ② 認証認可 → ③ 流量制御・課金
 → ④ 実装ランタイム → ⑤ ガードレール → ⑥ 観測性
 ```
 
@@ -157,7 +157,7 @@
 | # | スライド | 内容 |
 |---|---|---|
 | 1 | 3 パターン全体図 | 各構成のブロック図（クライアント → LB → 実装の流れ）|
-| 2 | 詳細比較表 | 観点 × A/B/C パターン（公開境界・認証・流量・課金・実装・スキル・コスト・適性）|
+| 2 | 詳細比較表 | 観点 × A/B/C パターン（公開範囲・認証・流量・課金・実装・スキル・コスト・適性）|
 | 3 | アーキ別の留意点 | A: 業界主流 / B: SEO+モバイル / C: フルスタック・小中規模 |
 | 4 | 本標準のスタンス | 「3 つすべてサポート、選定は各アプリに委ねる、決定木で支援」|
 
@@ -185,7 +185,7 @@
 
 ### 2.3 SSR モノリス特有の論点 ★ 新規追加
 
-**概要**: SSR モノリス採用時、API Gateway 系と異なる **5 つの観点の手段差分**（公開境界 / 認証 / 流量 / 課金 / 観測性）を整理。
+**概要**: SSR モノリス採用時、API Gateway 系と異なる **5 つの観点の手段差分**（公開範囲 / 認証 / 流量 / 課金 / 観測性）を整理。
 
 #### スライド構成案（3 枚）
 
@@ -204,26 +204,36 @@
 
 ---
 
-## 3. 公開境界（ステップ ①、3 項目）
+## 3. 公開範囲（信頼プロファイル）（ステップ ①、3 項目）
 
-### 3.1 4 区分の定義（Public / Internal / Partner / Private）
+### 3.1 公開範囲（信頼プロファイル）★ 統合概念化
 
-**概要**: 公開境界を 4 区分で標準化。区分の判定フロー + 各区分の代表構成。
+**概要**: 公開範囲を **「ネットワーク × 認証 × 既定 WAF」の 3 要素を 1 つのパッケージにした信頼プロファイル**として再定義。5 つの Profile から 1 つを選べば、3 要素の既定セットが自動で決まる。Service Catalog 製品と 1:1 で対応。
 
-#### スライド構成案（3 枚）
+#### スライド構成案（5 枚）★ 概念定義 → 統合表 → 決定木 → チューニング軸 → モノリス特記
 
 | # | スライド | 内容 |
 |---|---|---|
-| 1 | 4 区分定義表 | 区分 × 想定呼出元 × 認証 × WAF × 例 |
-| 2 | 判定フロー（決定木） | 「インターネット公開？」「外部 Partner？」「同 AWS Org？」|
-| 3 | 区分別の代表構成 | Public: CF+WAF+API GW / Internal: PrivateLink / Partner: API Key+WAF / Private: Resource Policy |
+| 1 | **概念定義**：信頼プロファイル | 公開範囲 = ① ネットワーク到達範囲 + ② 認証要件 + ③ 既定 WAF プロファイル を **1 つに束ねた概念**、3 要素を別々に選ぶのではなく **Profile を 1 つ選べば既定が決まる** |
+| 2 | **5 Profile 統合表** | **パブリック（認証有）/ パブリック（オープン）/ 社内 / パートナー / 社内限定** × ①②③ |
+| 3 | **Profile 選定フロー（決定木）** | インターネット？ → 認証必要？ → 同 Org？ → 5 Profile に到達 |
+| 4 | **チューニング可能軸** | Profile = 既定値、別軸（流量閾値・Bot Control 採用・mTLS escalation・アプリ独自 WAF）で個別調整可能 |
+| 5 | **「パブリック（オープン）」の扱い** | 「アプリ UI を持たない」デフォルト、ランディング・マーケのみ、認証フローは認証基盤 Hosted UI 委譲 |
+
+#### 重要メッセージング
+
+| 言ってはいけない | 言うべき |
+|---|---|
+| ❌ 「ネットワークと認証と WAF を別々に決めます」（複雑、組合せ破綻）| ✅ 「**Profile を 1 つ選べば 3 要素の既定が決まります**」（シンプル、業界主流）|
+| ❌ 「5 区分の組合せで設計を考えてください」 | ✅ 「**1 つの Profile が 1 つの Service Catalog 製品に対応**します」 |
+| ❌ 「カスタマイズは Profile を作るときに全部決めます」 | ✅ 「**Profile = 既定値、業務要件で別軸チューニング可能**」|
 
 | 種別 | 参考資料 |
 |---|---|
-| **proposal** | [proposal/fr/01-exposure-boundary.md §1.1](proposal/fr/01-exposure-boundary.md) |
-| **hearing-checklist** | B-101, B-102 |
-| **hearing-script** | [01-exposure-boundary.md](hearing-script/01-exposure-boundary.md) |
-| **外部** | [API Gateway Endpoint Types](https://docs.aws.amazon.com/apigateway/latest/developerguide/api-gateway-api-endpoint-types.html) / [Protect APIs with API Gateway and perimeter protection (AWS Security Blog)](https://aws.amazon.com/blogs/security/protect-apis-with-amazon-api-gateway-and-perimeter-protection-services/) |
+| **proposal** | [proposal/fr/01-exposure-boundary.md §1.0 / §1.1 信頼プロファイル統合定義](proposal/fr/01-exposure-boundary.md) / [proposal/fr/02-authn-authz.md §2.B 未認証エンドポイントの標準保護](proposal/fr/02-authn-authz.md) |
+| **hearing-checklist** | B-101, B-102, B-103, B-107, B-108 |
+| **hearing-script** | [01-exposure-boundary.md](hearing-script/01-exposure-boundary.md), [02-authn-authz.md](hearing-script/02-authn-authz.md) |
+| **外部** | [API Gateway Endpoint Types](https://docs.aws.amazon.com/apigateway/latest/developerguide/api-gateway-api-endpoint-types.html) / [Protect APIs with API Gateway and perimeter protection (AWS Security Blog)](https://aws.amazon.com/blogs/security/protect-apis-with-amazon-api-gateway-and-perimeter-protection-services/) / [Stripe API Authentication](https://docs.stripe.com/api/authentication) / [AWS Well-Architected Security Pillar - Identity and Access Management](https://docs.aws.amazon.com/wellarchitected/latest/security-pillar/identity-and-access-management.html) |
 
 ### 3.2 ネットワーク構成（HTTP API / REST API / CloudFront / PrivateLink）
 
@@ -238,7 +248,7 @@
 
 ### 3.3 区分変更プロセス（昇格・降格）
 
-**概要**: 公開境界の昇格（Internal → Public）/ 降格（Partner → Internal）の承認プロセス + リードタイム + 緊急時。
+**概要**: 公開範囲の昇格（Internal → Public）/ 降格（Partner → Internal）の承認プロセス + リードタイム + 緊急時。
 
 | 種別 | 参考資料 |
 |---|---|
@@ -270,16 +280,26 @@
 | **関連 SSOT** | [../requirements/](../requirements/00-index.md) 共有認証基盤の要件定義 |
 | **外部** | [Control access to HTTP APIs with JWT authorizers](https://docs.aws.amazon.com/apigateway/latest/developerguide/http-api-jwt-authorizer.html) |
 
-### 4.2 API Key と mTLS（Partner 向け）
+### 4.2 Partner 認証（OAuth Client Credentials デフォルト / API Key Legacy / mTLS 規制対応）★ 全面刷新
 
-**概要**: B2B Partner 向けの認証標準。API Key + Usage Plan + WAF / または mTLS。
+**概要**: B2B Partner 向けの認証標準を **OAuth Client Credentials（業界主流：Salesforce / Microsoft Graph / Stripe モダン版）をデフォルト** に確定。API Key は Legacy / Trial 用途に退き、mTLS は規制業界の escalation。
+
+#### スライド構成案（5 枚）
+
+| # | スライド | 内容 |
+|---|---|---|
+| 1 | 認証方式 5 種類の比較 | API Key / API Key + IP / OAuth Client Credentials / JWT Bearer / mTLS の信頼レベル × 業界実例 |
+| 2 | 本標準のデフォルト推奨 | **OAuth Client Credentials を新規デフォルト**、API Key Legacy 用、mTLS 規制対応 |
+| 3 | Partner identity モデル | Per-Partner-App × Per-Environment（業界標準）、共有認証基盤側で M2M Client 管理 |
+| 4 | クレデンシャルライフサイクル | 発行 → 配布 → ローテーション → Overlap 24-72h → Revocation 24h |
+| 5 | Partner-tier 別構成例 | Bronze（API Key）/ Silver（OAuth）/ Gold（OAuth+mTLS+FAPI 2.0）|
 
 | 種別 | 参考資料 |
 |---|---|
-| **proposal** | [proposal/fr/02-authn-authz.md §2.2](proposal/fr/02-authn-authz.md) |
-| **hearing-checklist** | B-211, B-212, B-213 |
+| **proposal** | [proposal/fr/02-authn-authz.md §2.2 Partner 認証](proposal/fr/02-authn-authz.md) / [proposal/common/03-shared-auth-boundary.md §C-3.1 C. Partner M2M Client 管理機能](proposal/common/03-shared-auth-boundary.md) |
+| **hearing-checklist** | **B-211** ⭐, B-212, B-214, B-215, B-216, B-217, B-218, B-219, B-220, D-241 |
 | **hearing-script** | [02-authn-authz.md](hearing-script/02-authn-authz.md) |
-| **外部** | [Usage plans and API keys (AWS Docs)](https://docs.aws.amazon.com/apigateway/latest/developerguide/api-gateway-api-usage-plans.html) / [API Gateway Mutual TLS Authentication](https://docs.aws.amazon.com/apigateway/latest/developerguide/rest-api-mutual-tls.html) / [AWS Private CA](https://docs.aws.amazon.com/privateca/) |
+| **外部** | [OAuth 2.0 Client Credentials (RFC 6749 §4.4)](https://datatracker.ietf.org/doc/html/rfc6749#section-4.4) / [OAuth 2.0 JWT Bearer (RFC 7523)](https://datatracker.ietf.org/doc/html/rfc7523) / [OAuth 2.0 Mutual-TLS (RFC 8705)](https://datatracker.ietf.org/doc/html/rfc8705) / [FAPI 2.0 Security Profile](https://openid.net/specs/fapi-2_0-security-profile.html) / [Stripe API Authentication](https://docs.stripe.com/api/authentication) / [Salesforce OAuth 2.0 Client Credentials](https://help.salesforce.com/s/articleView?id=sf.remoteaccess_oauth_client_credentials_flow.htm) / [AWS Marketplace SaaS Listings](https://docs.aws.amazon.com/marketplace/latest/userguide/saas-listings.html) |
 
 ### 4.3 IAM auth（Internal / Private 向け）
 
@@ -292,16 +312,25 @@
 | **hearing-script** | [02-authn-authz.md](hearing-script/02-authn-authz.md) |
 | **外部** | [API Gateway IAM Authentication](https://docs.aws.amazon.com/apigateway/latest/developerguide/permissions.html) / [VPC Lattice Auth Policies](https://docs.aws.amazon.com/vpc-lattice/latest/ug/auth-policies.html) |
 
-### 4.4 Authorizer 選定 + SSR モノリス認証
+### 4.4 Authorizer 選定 + SSR モノリス認証 + 未認証エンドポイント保護
 
-**概要**: Authorizer 4 種（IAM / Cognito / JWT / Lambda）の選定基準 + SSR モノリスでは ALB + Cognito session が第一選択。
+**概要**: Authorizer 4 種（IAM / Cognito / JWT / Lambda）の選定基準 + SSR モノリスでは ALB + Cognito session が第一選択 + **未認証エンドポイント保護パターン**（§2.B、アプリ UI を持たないデフォルト）。
+
+#### スライド構成案（4 枚）
+
+| # | スライド | 内容 |
+|---|---|---|
+| 1 | Authorizer 4 種選定 | IAM / Cognito / JWT / Lambda の使い分け |
+| 2 | SSR モノリス認証 | ALB + Cognito session の第一選択 |
+| 3 | 未認証エンドポイント保護（§2.B）| **「アプリ UI を持たない」デフォルト**、Hosted UI / IdP-Initiated 委譲、業界主流 5 パターン（Salesforce / Workday / Slack / Notion / Microsoft 365）|
+| 4 | サインアップ要否判断 | B2B + IdP 連携なら JIT で不要、B2C / Trial / SMB のみ必要 |
 
 | 種別 | 参考資料 |
 |---|---|
-| **proposal** | [proposal/fr/02-authn-authz.md §2.4, §2.A モノリスでの留意点](proposal/fr/02-authn-authz.md) |
-| **hearing-checklist** | B-241, B-242, B-243, B-002（モノリス認証）|
-| **hearing-script** | [02-authn-authz.md](hearing-script/02-authn-authz.md), [12-architecture-pattern.md](hearing-script/12-architecture-pattern.md) |
-| **外部** | [ALB Authenticate-OIDC](https://docs.aws.amazon.com/elasticloadbalancing/latest/application/listener-authenticate-users.html) / [AWS Verified Permissions](https://docs.aws.amazon.com/verifiedpermissions/) |
+| **proposal** | [proposal/fr/02-authn-authz.md §2.4, §2.A モノリス, §2.B 未認証保護](proposal/fr/02-authn-authz.md) |
+| **hearing-checklist** | B-241, B-242, B-243, B-002（モノリス認証）, **B-107** ⭐, B-108, D-1402-α |
+| **hearing-script** | [02-authn-authz.md](hearing-script/02-authn-authz.md), [01-exposure-boundary.md](hearing-script/01-exposure-boundary.md), [12-architecture-pattern.md](hearing-script/12-architecture-pattern.md) |
+| **外部** | [ALB Authenticate-OIDC](https://docs.aws.amazon.com/elasticloadbalancing/latest/application/listener-authenticate-users.html) / [AWS Verified Permissions](https://docs.aws.amazon.com/verifiedpermissions/) / [AWS WAF ATP (Account Takeover Prevention)](https://docs.aws.amazon.com/waf/latest/developerguide/aws-managed-rule-groups-atp.html) / [AWS WAF ACFP (Account Creation Fraud Prevention)](https://docs.aws.amazon.com/waf/latest/developerguide/aws-managed-rule-groups-acfp.html) |
 
 ---
 
@@ -574,14 +603,24 @@
 
 ### 10.1 共有認証基盤との接続点（§C-API-3）
 
-**概要**: 認証基盤側の契約（OIDC Discovery / JWKS / 鍵ローテーション）、本標準側の検証動作、障害分離・縮退運転。
+**概要**: 認証基盤側の契約（OIDC Discovery / JWKS / 鍵ローテーション + **Hosted UI 提供 + Partner M2M Client 管理**）、本標準側の検証動作、障害分離・縮退運転。
+
+#### スライド構成案（4 枚）
+
+| # | スライド | 内容 |
+|---|---|---|
+| 1 | OIDC / OAuth 基本契約 | Discovery / JWKS / Token / Logout / Authorization Code Flow |
+| 2 | Hosted UI 提供（B 追加項目）| Hosted UI / サインアップ UI / HRD ページ / パスワードリセット UI の提供有無、認証側に申し送り |
+| 3 | Partner M2M Client 管理（C 追加項目）| App Client 台帳 / Client Credentials 発行 / Scope 管理 / Token endpoint / Revocation API、認証側に申し送り |
+| 4 | 障害分離・縮退運転 | JWKS キャッシュ TTL / 認証基盤側障害時の API 挙動（401 / 503）|
 
 | 種別 | 参考資料 |
 |---|---|
-| **proposal** | [proposal/common/03-shared-auth-boundary.md](proposal/common/03-shared-auth-boundary.md) |
-| **hearing-checklist** | C-2001, C-2002 + B-201, B-202, B-203 |
-| **hearing-script** | [02-authn-authz.md](hearing-script/02-authn-authz.md) |
+| **proposal** | [proposal/common/03-shared-auth-boundary.md §C-3.1 A / B / C](proposal/common/03-shared-auth-boundary.md) |
+| **hearing-checklist** | C-2001, C-2002, B-201, B-202, B-203, **B-107** ⭐, B-108, B-211 ⭐, B-214, D-1402-α |
+| **hearing-script** | [02-authn-authz.md](hearing-script/02-authn-authz.md), [01-exposure-boundary.md](hearing-script/01-exposure-boundary.md) |
 | **関連 SSOT** | [../requirements/](../requirements/00-index.md) 共有認証基盤の要件定義 |
+| **認証側に申し送る論点** | (1) Hosted UI 提供有無、(2) サインアップ UI 提供有無、(3) HRD ページ所在、(4) Partner M2M App Client 管理機能、(5) Partner App 識別単位（Per-Partner-App × Per-Env） |
 
 ### 10.2 監査アカウントとのガバナンス境界（§C-API-4）
 
@@ -621,7 +660,7 @@
 
 | # | ユーザー要望 6 テーマ | 新項目 | 状態 |
 |:-:|---|---|:-:|
-| 1 | 公開範囲ルール（Public / Internal）| **3.1 4 区分の定義** + **3.2 ネットワーク構成** + **3.3 区分変更プロセス** | ✅ 拡張（4 区分 + 判定フロー + プロセス）|
+| 1 | 公開範囲ルール（Public / Internal）| **3.1 信頼プロファイル統合定義（5 Profile）** + **3.2 ネットワーク構成** + **3.3 Profile 変更プロセス** | ✅ 拡張（信頼プロファイル統合概念に再定義）|
 | 2 | 流量制限・課金管理 | **5.1 流量制御** + **5.2 利用者識別・課金按分** | ✅ 2 項目に分離 |
 | 3 | 監査アカウントの FirewallManager 説明と運用 | **7.1 FMS** + **7.2 SCP/Config** + **10.2 監査ガバナンス境界** | ✅ 3 項目に分離（配信機構 + 横断ガバナンス）|
 | 4 | 標準アーキ（Serverless / ECS）| **6.1 Serverless** + **6.2 Container** + **6.3 モノリス vs マイクロサービス** + **6.4 選定基準** | ✅ 拡張（モノリスサブパターン追加）|
@@ -688,7 +727,7 @@
 |---|---|---|---|
 | **章 1 全体方針・前提（5）** | **M1** | 1.1〜1.5 全て | 約 24 枚 |
 | **章 2 アーキパターン選定（3）** | **M1** ★ 中核 | 2.1〜2.3 全て | 約 14 枚 |
-| **章 3 公開境界（3）** | **M2** | 3.1〜3.3 全て | 約 12 枚 |
+| **章 3 公開範囲（3）** | **M2** | 3.1〜3.3 全て | 約 12 枚 |
 | **章 4 認証認可（4）** | **M2** | 4.1〜4.4 全て | 約 16 枚 |
 | **章 5 流量制御・課金（2）** | **M2** | 5.1〜5.2 全て | 約 10 枚 |
 | **章 6 実装ランタイム（4）** | **M2** | 6.1〜6.4 全て | 約 16 枚 |
@@ -713,7 +752,7 @@
 |---|---|---|
 | 章 1.1〜1.5 | **Phase A** | 既存現状・前提共有、検討方針合意 |
 | 章 2 | **Phase B-0** ⭐ | アーキパターン選定（中核判断） |
-| 章 3〜6 | **Phase B-1〜5** | 技術中核（公開境界・認証・流量・ランタイム） |
+| 章 3〜6 | **Phase B-1〜5** | 技術中核（公開範囲・認証・流量・ランタイム） |
 | 章 7〜8 | **Phase C / D** | ガードレール・観測性（運用視点）|
 | 章 9 | **Phase C / D** | 非機能要件 |
 | 章 10 | **Phase D** | 最終判断（境界 / 監査 / 提供物） |
@@ -768,3 +807,5 @@
 | 日付 | 内容 |
 |---|---|
 | 2026-06-03 | 初版作成。ユーザー要望 6 テーマ → 36 項目（10 章）に再編成。SSR モノリス対応（§2 アーキパターン選定、§6.3 モノリス vs マイクロサービス、§4.4 / §5 / §8 でモノリス論点反映）。3 回ヒアリング対応 + 認証側との narrative 差分明示。業界標準（Netflix Paved Road / Spotify Golden Path / Guardrails-not-Gates）を §1.1 検討方針の根拠として組み込み |
+| 2026-06-03 | **Public 2 段階細分化**（Public-Authenticated / Public-Unauthenticated）+ **アプリ UI を持たないデフォルト**（§3.1 4 枚、§4.4 4 枚に拡張）+ **Partner 認証 OAuth Client Credentials デフォルト化**（§4.2 5 枚に全面刷新、業界主流に整合）+ **§C-API-3 §C-3.1 認証基盤契約の B/C 追加**（Hosted UI 提供 + Partner M2M Client 管理を申し送り、§10.1 4 枚に拡張）。ヒアリング項目追加：B-103, B-107 ⭐, B-108, B-211 ⭐（修正）, B-214〜B-220, D-241, D-1402-α |
+| 2026-06-10 | **公開範囲を「信頼プロファイル」として統合概念化**：ネットワーク × 認証 × 既定 WAF の 3 要素を 1 つのパッケージとして束ね、Profile 名を日本語化（パブリック（認証有 / オープン）、社内、パートナー、社内限定）。§3.1 を 4 枚 → 5 枚（概念定義 → 統合表 → 決定木 → チューニング軸 → モノリス特記）に再編。章タイトル「公開範囲 → 公開範囲（信頼プロファイル）」|

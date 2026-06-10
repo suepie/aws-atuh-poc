@@ -20,7 +20,7 @@
 | `Project` | `proj-checkout-api` | プロジェクト |
 | `Environment` | `prod`, `stg`, `dev` | 環境 |
 | `Application` | `app-billing` | アプリ |
-| `Exposure` | `public`, `internal`, `partner`, `private` | 公開境界 |
+| `Exposure` | `public-auth`, `public-open`, `internal`, `partner`, `private` | 公開範囲（信頼プロファイル ID）|
 | `Tenant` | `tenant-xxxx` | テナント |
 | `DataClassification` | `pii`, `internal`, `public` | データ分類 |
 

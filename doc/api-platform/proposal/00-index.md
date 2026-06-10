@@ -25,7 +25,7 @@
 
 ```mermaid
 flowchart LR
-    S0["⓪<br/>アーキパターン選定<br/>(§C-API-2 §C-2.1)"] --> S1["①<br/>公開境界<br/>(§FR-API-1)"]
+    S0["⓪<br/>アーキパターン選定<br/>(§C-API-2 §C-2.1)"] --> S1["①<br/>公開範囲<br/>（信頼プロファイル）<br/>(§FR-API-1)"]
     S1 --> S2["②<br/>認証認可<br/>(§FR-API-2)"]
     S2 --> S3["③<br/>流量制御・課金<br/>(§FR-API-3/4)"]
     S3 --> S4["④<br/>実装ランタイム<br/>(§FR-API-5/6)"]
@@ -38,7 +38,7 @@ flowchart LR
 | Step | 章 | 答える問い |
 |:---:|---|---|
 | ⓪ | [§C-API-2 §C-2.1 アーキパターン選定](common/02-runtime-selection-criteria.md) | フロント・バックエンドをどう分けるか？ SPA+API / SSR+API / SSR モノリスの 3 パターン |
-| ① | [§FR-API-1 公開境界](fr/01-exposure-boundary.md) | どの境界に出す API か？ Public / Internal / Partner / Private |
+| ① | [§FR-API-1 公開範囲（信頼プロファイル）](fr/01-exposure-boundary.md) | どの Profile に出す API か？ パブリック（認証有/オープン）/ 社内 / パートナー / 社内限定 |
 | ② | [§FR-API-2 認証認可](fr/02-authn-authz.md) | 誰が呼ぶか？ 共有認証基盤連携・API Key・mTLS・IAM auth |
 | ③ | [§FR-API-3 流量制御](fr/03-throttling-quota.md) / [§FR-API-4 課金](fr/04-metering-billing.md) | どれだけ使えるか？ 誰がどれだけ使ったか？ |
 | ④ | [§FR-API-5 Serverless](fr/05-serverless-standard.md) / [§FR-API-6 Container](fr/06-container-standard.md) | どう実装するか？ 2 系統標準と選定基準（モノリス vs マイクロサービス含む） |
@@ -55,7 +55,7 @@ flowchart LR
 
 | 章 | タイトル |
 |---|---|
-| [§FR-API-1](fr/01-exposure-boundary.md) | 公開境界（Public / Internal / Partner / Private） |
+| [§FR-API-1](fr/01-exposure-boundary.md) | 公開範囲（信頼プロファイル）— 5 Profile を統合概念で扱う |
 | [§FR-API-2](fr/02-authn-authz.md) | 認証認可（共有認証基盤連携 / API Key / mTLS / IAM） |
 | [§FR-API-3](fr/03-throttling-quota.md) | 流量制御・クォータ |
 | [§FR-API-4](fr/04-metering-billing.md) | 利用者識別・課金按分 |

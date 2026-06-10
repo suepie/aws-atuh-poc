@@ -9,7 +9,7 @@
 
 | § | 章 | 主題 | 状態 |
 |---|---|---|:---:|
-| [§FR-API-1](01-exposure-boundary.md) | 公開境界 | Public / Internal / Partner / Private の区分と判定 | 🚧 |
+| [§FR-API-1](01-exposure-boundary.md) | 公開範囲（信頼プロファイル）| 5 Profile（パブリック認証有/オープン、社内、パートナー、社内限定）— ネットワーク × 認証 × 既定 WAF を統合 | 🚧 |
 | [§FR-API-2](02-authn-authz.md) | 認証認可 | 共有認証基盤連携 / API Key / mTLS / IAM auth / Authorizer 選定 | 🚧 |
 | [§FR-API-3](03-throttling-quota.md) | 流量制御 | throttle / burst / quota / 超過時挙動 | 🚧 |
 | [§FR-API-4](04-metering-billing.md) | 利用者識別・課金 | 識別子体系 / 計測 / cost allocation / 按分 | 🚧 |
@@ -26,7 +26,7 @@
 
 | カテゴリ | 接頭辞 |
 |---|---|
-| 公開境界 | `FR-API-EXP-*` |
+| 公開範囲（信頼プロファイル） | `FR-API-EXP-*` |
 | 認証認可 | `FR-API-AUTH-*` |
 | 流量制御 | `FR-API-RATE-*` |
 | 利用者識別・課金 | `FR-API-MTR-*` |

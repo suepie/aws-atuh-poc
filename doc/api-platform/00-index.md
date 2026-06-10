@@ -39,18 +39,20 @@
 AWS 公式ドキュメント（API Gateway Developer Guide / Well-Architected Serverless Lens / Prescriptive Guidance「Multi-tenant SaaS API access」）および業界標準（API Gateway パターン）に共通する **論述順を抽出すると、4 層 + 横串** の構造に整理できる。**AWS が公式に「4 層モデル」と命名しているわけではなく、本標準が複数ソースから抽出・合成した分解**である（根拠は [requirements-document-structure.md 付録 A.0](requirements-document-structure.md) 参照）。
 
 ```
-[公開境界層]      Who can reach the API?         Public / Internal / Partner / Private
+[公開範囲層]      What's the trust profile?      パブリック（認証有/オープン）/ 社内 / パートナー / 社内限定
 [認証認可層]      Who is the caller?              共有認証基盤 / API Key / mTLS / IAM
 [流量制御層]      How much can the caller use?    Throttle / Quota / 利用者識別 / 課金按分
 [実装ランタイム層] How is the API served?         Serverless（API GW + Lambda）/ Container（ECS）
 └横串：観測性（ログ・トレース・メトリクス）／コスト按分／ガードレール（監査アカウント FMS）
+
+> **§FR-API-1 公開範囲（信頼プロファイル）** は **ネットワーク × 認証 × 既定 WAF** の 3 要素を **1 つのパッケージ** として束ねる統合概念。
 ```
 
 初期 6 テーマはこの 4 層に以下のようにマップされる：
 
 | 要望テーマ | 4 層モデルでの位置 | 章 |
 |---|---|---|
-| 公開範囲ルール（Public / Internal） | 公開境界層 | [§FR-API-1](proposal/fr/01-exposure-boundary.md) |
+| 公開範囲ルール（Public / Internal） | 公開範囲層 | [§FR-API-1](proposal/fr/01-exposure-boundary.md) — 信頼プロファイルとして統合 |
 | 流量制限・課金管理 | 流量制御層 | [§FR-API-3](proposal/fr/03-throttling-quota.md) / [§FR-API-4](proposal/fr/04-metering-billing.md) |
 | 監査アカウント FMS | 横串：ガードレール | [§FR-API-7](proposal/fr/07-guardrails.md) |
 | 標準アーキ（Serverless / ECS） | 実装ランタイム層 | [§FR-API-5](proposal/fr/05-serverless-standard.md) / [§FR-API-6](proposal/fr/06-container-standard.md) |

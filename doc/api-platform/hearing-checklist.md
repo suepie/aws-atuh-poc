@@ -13,7 +13,7 @@
 | Phase | 主題 | 想定対象 | 想定時間 |
 |---|---|---|---|
 | **Phase A** | 既存アプリ現状・前提（共通） | アプリリード + Platform | 60-90 分 |
-| **Phase B** | 技術要件（公開境界 / 認証 / 流量 / ランタイム / 観測性） | アプリリード + アーキテクト | 120-180 分 |
+| **Phase B** | 技術要件（公開範囲 / 認証 / 流量 / ランタイム / 観測性） | アプリリード + アーキテクト | 120-180 分 |
 | **Phase C** | 運用・セキュリティ・コンプラ・コスト | SecOps + 運用 + 経営層 | 90-120 分 |
 | **Phase D** | 最終判断（ガードレール承認 / 移行計画 / 体制） | 経営層 + SecOps + Platform | 60 分 |
 
@@ -33,7 +33,7 @@
 |---|---|---|:---:|:---:|
 | API-A-101 | 標準化対象とする既存アプリ AWS アカウントの一覧と数 | §FR-API-1〜8 全般 | 🔥 | ⏳ |
 | API-A-102 | 各アプリの現状実装（Serverless / Container / 混在 / その他）の概況 | §FR-API-5, §FR-API-6 | 🔥 | ⏳ |
-| API-A-103 | 既存 API の公開境界区分の現状（明確 / 曖昧）と曖昧な API の再評価可否 | §FR-API-1 | 🟡 | ⏳ |
+| API-A-103 | 既存 API の公開範囲区分の現状（明確 / 曖昧）と曖昧な API の再評価可否 | §FR-API-1 | 🟡 | ⏳ |
 | API-A-104 | 既存 API の月間リクエスト数・ピーク TPS の実測有無 | §NFR-API-2, §NFR-API-3 | 🟡 | ⏳ |
 | API-A-105 | 既存アプリの AWS アカウント数と OU 構成 | §C-API-1 §C-1.4 | 🟡 | ⏳ |
 | API-A-106 | Landing Zone Accelerator (LZA) / Control Tower の導入状況 | §C-API-1 §C-1.4 | 🟡 | ⏳ |
@@ -43,6 +43,8 @@
 | API-A-110 | 本標準の対象範囲（全アプリ / 新規のみ / Critical のみ） | §NFR-API-9 | 🔥 | ⏳ |
 | API-A-111 | 新規アプリで採用予定のアーキパターン（SPA+API / SSR+API / SSR モノリス）の想定分布 | §C-API-2 §C-2.1 | 🔥 | ⏳ |
 | API-A-102-α | 既存アプリのうち SSR モノリス構成（Next.js full-stack / Rails / Spring Boot 等）の割合 | §C-API-2, §FR-API-6 | 🔥 | ⏳ |
+| API-A-112 ⭐ | **Partner B2B API（外部企業からの M2M 呼び出し）連携の現状** — 該当アプリの有無、Partner 数 | §FR-API-1 §1.1, §FR-API-2 §2.2 | 🔥 | ⏳ |
+| API-A-113 ⭐ | **Partner B2B API の新規想定** — 将来 1〜3 年で M2M 連携要件が発生する可能性 | §FR-API-1 §1.1, §FR-API-2 §2.2 | 🔥 | ⏳ |
 
 ---
 
@@ -60,15 +62,18 @@
 | API-B-004 | SSR モノリスでの **per-tenant 課金按分**の要件（EMF カスタム次元 / CUR タグ集計） | §FR-API-4 §4.A | 🟡 | ⏳ |
 | API-B-005 | SSR モノリスの **観測性スタック**標準化（OpenTelemetry SDK + ADOT Collector サイドカー） | §FR-API-8 §8.A | 🟡 | ⏳ |
 
-### B-1: 公開境界（§FR-API-1）
+### B-1: 公開範囲（§FR-API-1）
 
 | ID | 質問 | 関連 FR/NFR | 優先度 | 状態 |
 |---|---|---|:---:|:---:|
 | API-B-101 | 「Internal だが将来 Public 化可能性あり」の API は初期から Public 構成か Internal で組むか | §FR-API-1 §1.1 | 🟡 | ⏳ |
 | API-B-102 | 「IP allowlist のみで Public」を許容するか（本標準は Partner 区分推奨） | §FR-API-1 §1.1 | 🟡 | ⏳ |
+| API-B-103 ⭐ | **未認証アクセスが必須のエンドポイント棚卸し**（ランディング / マーケ / 公開データ API のリスト）| §FR-API-1 §1.1, §FR-API-2 §2.B | 🔥 | ⏳ |
 | API-B-104 | HTTP API / REST API のデフォルト選定方針 | §FR-API-1 §1.2 / §FR-API-5 §5.1 | 🔥 | ⏳ |
 | API-B-105 | CloudFront を全 Public API で必須化するか | §FR-API-1 §1.2 | 🔥 | ⏳ |
 | API-B-106 | VPC Lattice の採用範囲（クロスアカウント Internal で標準化するか） | §FR-API-1, §FR-API-6 | 🟡 | ⏳ |
+| API-B-107 ⭐ | **サインイン / サインアップ UI をアプリで持つ標準アプリの有無**（認証側方針と連動、原則 Hosted UI 委譲）| §FR-API-1 §1.1, §FR-API-2 §2.B, §C-API-3 | 🔥 | ⏳ |
+| API-B-108 | サインアップフローの所在（IdP 連携 JIT / 認証基盤 Hosted / アプリ実装）| §FR-API-2 §2.B, §C-API-3 | 🟡 | ⏳ |
 
 ### B-2: 認証認可（§FR-API-2）
 
@@ -77,9 +82,15 @@
 | API-B-201 | API 認証に Access Token / ID Token のどちらを使うか | §FR-API-2 §2.1 / §C-API-3 | 🔥 | ⏳ |
 | API-B-202 | 必須検証するクレームリスト（iss, aud, exp + α）| §FR-API-2 §2.1 / §C-API-3 | 🔥 | ⏳ |
 | API-B-203 | 共有認証基盤の JWKS が Private のとき、本標準側でどう取得するか | §FR-API-2 §2.1 / §C-API-3 | 🔥 | ⏳ |
-| API-B-211 | Partner 区分のデフォルトは API Key + WAF か mTLS か | §FR-API-2 §2.2 | 🟡 | ⏳ |
-| API-B-212 | API Key の有効期限・ローテーションポリシー | §FR-API-2 §2.2 / §NFR-API-4 §4.2 | 🟡 | ⏳ |
-| API-B-213 | mTLS 証明書発行・配布元（自社 PKI / AWS Private CA / Partner 側） | §FR-API-2 §2.2 | 🟡 | ⏳ |
+| API-B-211 ⭐ | **【A-112/A-113 で Partner B2B M2M 要件確認後】** Partner 新規デフォルト認証は OAuth Client Credentials で確定するか、API Key 互換性も標準に残すか | §FR-API-2 §2.2 | 🔥 | ⏳ |
+| API-B-212 | API Key の有効期限・ローテーションポリシー（Legacy/Trial 用途）| §FR-API-2 §2.2 / §NFR-API-4 §4.2 | 🟡 | ⏳ |
+| API-B-214 | Partner identity 識別単位（Per-Org / Per-App / Per-App×Env、業界標準は後者）| §FR-API-2 §2.2, §C-API-3 | 🟡 | ⏳ |
+| API-B-215 | Partner Scope / Permission の細粒度（OAuth scope のみ / Verified Permissions 併用）| §FR-API-2 §2.2, §FR-API-2 §2.4 | 🟡 | ⏳ |
+| API-B-216 | Partner クレデンシャルのローテーション周期 + Overlap period（24-72h 標準）| §FR-API-2 §2.2 / §NFR-API-4 | 🟡 | ⏳ |
+| API-B-217 | Partner オンボーディングフロー（自社ポータル / AWS Marketplace / 個別契約）| §FR-API-2 §2.2 | 🟡 | ⏳ |
+| API-B-218 | Partner-tier の差別化（Bronze / Silver / Gold）を持つか | §FR-API-2 §2.2 | 🟢 | ⏳ |
+| API-B-219 | 既存 Partner の認証方式と互換性維持の要否 | §FR-API-2 §2.2, §NFR-API-9 | 🟡 | ⏳ |
+| API-B-220 | mTLS 採用時の証明書発行元（自社 PKI / AWS Private CA / Partner 側 CA、旧 API-B-213）| §FR-API-2 §2.2 | 🟡 | ⏳ |
 | API-B-221 | Internal 区分の標準は IAM auth か JWT か（混在許容） | §FR-API-2 §2.3 | 🟡 | ⏳ |
 | API-B-222 | Cross-account IAM 信頼関係を Service Catalog で配布するか | §FR-API-2 §2.3 | 🟢 | ⏳ |
 | API-B-241 | Lambda Authorizer の使用を例外承認制にするか | §FR-API-2 §2.4 | 🟡 | ⏳ |
@@ -227,13 +238,15 @@
 
 > 対象: 経営層 + SecOps + Platform リーダー
 
-### D-1: 公開境界・区分管理（§FR-API-1）
+### D-1: 公開範囲・区分管理（§FR-API-1）
 
 | ID | 質問 | 関連 | 優先度 | 状態 |
 |---|---|---|:---:|:---:|
-| API-D-101 | 公開境界昇格の承認権限者（SecOps / アーキ委員会 / オーナー） | §FR-API-1 §1.3 | 🔥 | ⏳ |
+| API-D-101 | 公開範囲昇格の承認権限者（SecOps / アーキ委員会 / オーナー） | §FR-API-1 §1.3 | 🔥 | ⏳ |
 | API-D-102 | 昇格申請のリードタイム目標 | §FR-API-1 §1.3 | 🟡 | ⏳ |
 | API-D-103 | 緊急昇格のエスケープハッチ許容 | §FR-API-1 §1.3 | 🟡 | ⏳ |
+| API-D-241 | FAPI 2.0 など規制業界準拠の Partner 要件 | §FR-API-2 §2.2 / §NFR-API-7 | 🟡 | ⏳ |
+| API-D-1402-α | HRD（Home Realm Discovery）ページの所在（認証基盤 / アプリ）| §FR-API-2 §2.B, §C-API-3 | 🟡 | ⏳ |
 
 ### D-2: タグ・課金按分（§FR-API-4）
 
@@ -367,7 +380,7 @@
 | Phase D | 47 | 14 |
 | **合計** | **144** | **30** |
 
-### Stage 1（最優先 25 項目）を先行確認することで、本標準の中核判断（公開境界の判定 / プラットフォーム選定の方針 / 監査アカウント役割 / ガードレールの範囲）が早期確定できる。
+### Stage 1（最優先 25 項目）を先行確認することで、本標準の中核判断（公開範囲の判定 / プラットフォーム選定の方針 / 監査アカウント役割 / ガードレールの範囲）が早期確定できる。
 
 ---
 

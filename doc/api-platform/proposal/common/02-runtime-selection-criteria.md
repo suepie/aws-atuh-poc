@@ -71,7 +71,7 @@ flowchart LR
 |---|---|---|---|
 | **構成** | フロント (S3+CloudFront) + バックエンド API（別サービス） | SSR フロント (Lambda/ECS) + バックエンド API（別サービス） | フロント + ビジネスロジックが 1 プロセス |
 | **代表例** | React/Vue SPA + REST/GraphQL API | Next.js + 別 API、Nuxt + 別 API | Next.js full-stack、Rails、Spring Boot + Thymeleaf |
-| **公開境界 §FR-API-1** | フロントは CloudFront、API は Regional API GW | フロント・API で別境界 | **ALB 1 つで両方**、path-based |
+| **公開範囲 §FR-API-1** | フロントは CloudFront、API は Regional API GW | フロント・API で別境界 | **ALB 1 つで両方**、path-based |
 | **認証認可 §FR-API-2** | Browser で JWT 保持、API は JWT Authorizer | Session cookie + サーバ側 JWT 保持 | **ALB + Cognito** または **アプリ内 session** |
 | **流量制御 §FR-API-3** | API GW Usage Plan / WAF | API GW Usage Plan / WAF | **WAF rate-based のみ**（API GW Usage Plan 不可） |
 | **課金按分 §FR-API-4** | per-tenant API Key 容易 | 同左 | **per-tenant は session ID / JWT クレーム計測** |

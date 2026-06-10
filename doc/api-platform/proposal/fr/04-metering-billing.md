@@ -112,7 +112,7 @@ flowchart LR
 | `Project` | `proj-checkout-api` | プロジェクト単位 |
 | `Environment` | `prod`, `stg`, `dev` | 環境別コスト追跡 |
 | `Application` | `app-billing` | アプリ単位 |
-| `Exposure` | `public`, `internal`, `partner`, `private` | §1 公開境界連動、FMS 配信のキー |
+| `Exposure` | `public`, `internal`, `partner`, `private` | §1 公開範囲連動、FMS 配信のキー |
 | `Tenant` | `tenant-xxxx` | マルチテナント運用時のテナント単位 |
 | `DataClassification` | `pii`, `internal`, `public` | ログ・暗号化方針の決定 |
 
