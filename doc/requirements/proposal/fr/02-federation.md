@@ -133,8 +133,11 @@ flowchart LR
 | **OIDC 1.0** | 認証 + ID | **発行** (アプリ向け) | 各アプリへ JWT 発行 | ✅ | ✅ | §FR-2.0.B |
 | **SAML 2.0 SP** | 認証 | **受信** (顧客 IdP) | SAML 顧客 IdP（HENNGE 等）からの受信 | ✅ | ✅ | §FR-2.1 |
 | **SAML 2.0 IdP** | 認証 | **発行** (アプリ向け) | 既存 SAML SP アプリへの発行 | ❌ **K-11** | ✅ | B-202 |
+| **OAuth 2.0 Broker** ★NEW | 認可フロー | **受信** (OIDC 非対応 OAuth 2.0 IdP) | 純粋 OAuth 2.0 IdP からの受信（Keycloak 26.x で追加）| ❌ | ✅ | §FR-2.1 |
+| **Social Login**（Google / Microsoft / Apple / Facebook / GitHub 等）★NEW | OIDC ベース | **受信** | B2C ユーザー（P-6）/ ゲスト（P-5）対応 | ✅ | ✅ | §FR-1.2 |
 | **LDAP / LDAPS** | ディレクトリ認証 | **受信** (顧客 AD) | 顧客 AD への直接バインド | ❌ **K-12** | ✅ | §FR-2.1 |
-| **Kerberos / SPNEGO** | チケット認証 | **受信** (顧客 AD) | Windows 統合認証 | ❌ **K-13** | ✅ | §FR-2.1 |
+| **Kerberos / SPNEGO** | チケット認証 | **受信** (顧客 AD) | Windows 統合認証（社内 PC SSO）| ❌ **K-13** | ✅ | §FR-2.1 |
+| **WS-Federation** ★NEW | レガシー認証 | **受信** (古い ADFS) | 古い ADFS 環境（Microsoft も Entra ID 移行推奨）| ❌ | ⚠ extension | §FR-2.0.D |
 
 #### Tier 2: OAuth 2.0/2.1 系（認可フロー / 発行側）
 
@@ -172,8 +175,9 @@ flowchart LR
 | Tier | 必須度 | 採否判断 |
 |---|---|---|
 | **必須対応**（① OIDC 受信・発行 / OAuth Code+PKCE / Client Credentials / JWKS / Discovery）| 全顧客で使う | **Cognito / Keycloak どちらも対応** |
-| **Should**（② SAML SP / WebAuthn / TOTP / SCIM 受信）| 多くの顧客で必要 | **Cognito / Keycloak どちらも対応** |
-| **Conditional Must**（③ SAML IdP / LDAP / Device Code / Token Exchange / mTLS / DPoP / Back-Channel Logout / Kerberos / Access Token Revocation）| 顧客要件次第で必須化 | **1 つでも該当すれば Keycloak 必須化** |
+| **Should**（② SAML SP / Social Login / WebAuthn / TOTP / SCIM 受信）| 多くの顧客で必要（B2C 対応含む）| **Cognito / Keycloak どちらも対応** |
+| **Conditional Must**（③ SAML IdP / LDAP / Device Code / Token Exchange / mTLS / DPoP / Back-Channel Logout / Kerberos / Access Token Revocation / OAuth 2.0 Broker）| 顧客要件次第で必須化 | **1 つでも該当すれば Keycloak 必須化** |
+| **Could (extension)**（WS-Federation）| 古い ADFS 環境のみ、推奨は SAML/OIDC 移行 | extension 採用 or 顧客に IdP 変更依頼 |
 | **オプション・非推奨**（④ SMS OTP / Email OTP）| レガシー互換のみ | NIST 非推奨、新規実装では Passkey 推奨 |
 
 #### プラットフォーム別カバー率
@@ -188,6 +192,44 @@ flowchart LR
 → **「結局どれに対応するか」= 上記 22 プロトコル**（重複含む方向別カウント）。そのうち **必須・Should は両プラットフォーム共通**、**Conditional Must の領域は顧客要件次第で Keycloak 必須化** という構造。
 
 → Cognito 不可マーク（**K-XX**）の詳細は [reference/cognito-knockout-conditions.md](../../../reference/cognito-knockout-conditions.md) を参照。
+
+### §FR-2.0.D 不採用プロトコルと判断根拠（ヒアリングで挙がっても採用しない）
+
+> **本サブセクションで定めること**: §FR-2.0.C で採用対象外とした **業界既知だが本基盤で採用しないプロトコル** と、その判断根拠を明示。顧客ヒアリングで挙がった場合の即答資料 + 設計判断の整合性を確保。
+> **主な判断軸**: 業界利用実態 / 後継プロトコル存在 / セキュリティ / Keycloak 対応状況
+> **§FR-2.0 全体との関係**: §FR-2.0.C「採用するプロトコル」の対をなすセクション
+
+#### 不採用プロトコル 6 種と判断根拠
+
+| プロトコル | 状況 | 不採用理由 | 代替手段 |
+|---|---|---|---|
+| **WS-Trust** | Microsoft 系レガシー、Active Federation（API ベース）| ❌ ほぼ使われていない、業界トレンド = OIDC/SAML 移行 | SAML / OIDC へ移行依頼 |
+| **OpenID 1.0 / 2.0** | OIDC の前身、廃止済 | ❌ **2014 年に OIDC が後継として標準化、既に廃止** | OIDC 採用 |
+| **CAS** (Central Authentication Service) | 学術系 SSO プロトコル | ❌ 学術用途のみ、B2B SaaS では極めて稀 | SAML（Shibboleth）で代替 |
+| **PKI / X.509 クライアント証明書** | 政府 / 金融 / 軍事の高セキュリティ用途 | ⚠ **別軸の認証**（フェデレーション ではない）、本基盤では mTLS（§FR-1.1）でカバー | mTLS Client Auth (RFC 8705) |
+| **Smart Card** | 政府 / 軍事 | ⚠ **別軸の認証**、ユーザー直接認証手段 | 該当顧客なら mTLS + PKI |
+| **HTTP Basic Auth / Digest Auth** | レガシー Web 認証 | ❌ **平文 / 弱ハッシュ、TLS 必須**、フェデレーションには不向き | OIDC / SAML へ移行 |
+
+#### 顧客ヒアリングで挙がった場合の対応指針
+
+| 顧客の発言 | 推奨回答 |
+|---|---|
+| 「**WS-Trust を使いたい**」 | 「WS-Trust はほぼ使われていないため対応していません。SAML / OIDC への移行をご検討ください」 |
+| 「**OpenID 2.0 のままです**」 | 「OpenID 2.0 は廃止されており、OIDC への移行が業界標準です。Entra / Google Workspace への移行で対応可能」 |
+| 「**CAS を使っています**」 | 「CAS は学術系の SSO プロトコルです。多くの IdP（Shibboleth / Keycloak 等）が SAML 2.0 も同時提供しているため、SAML 経由での接続をご提案します」 |
+| 「**PKI / Smart Card で認証したい**」 | 「PKI / Smart Card は本基盤のフェデレーション層ではなく、**ユーザー直接認証層**で対応します（mTLS Client Auth, FR-1.1）」 |
+| 「**WS-Federation のみの古い ADFS です**」 | 「ADFS 2019+ なら OIDC / SAML 対応可能ですので、ADFS のバージョンアップをご検討ください。やむを得ない場合は WS-Federation extension で対応可能（Keycloak 26.x）」 |
+
+#### 採用プロトコルへの誘導戦略
+
+| 現状の顧客 IdP | 推奨移行先 | 移行のメリット |
+|---|---|---|
+| WS-Federation（古い ADFS）| ADFS 2019+ で OIDC/SAML、または Entra ID 移行 | ✅ Microsoft 自身が推奨 / 新機能利用 |
+| OpenID 2.0 | OIDC 採用 IdP（Auth0 / Okta / Google Workspace）| ✅ 業界標準 / 機能豊富 |
+| CAS | Shibboleth SAML 2.0 | ✅ 学術界主流、本基盤対応 |
+| HTTP Basic Auth | OIDC / SAML / SAML Sign-In | ✅ セキュリティ大幅向上 |
+
+→ **本基盤の方針**: 「**OIDC + SAML 2.0 + Social Login + LDAP + Kerberos の組合せで業界 95%+ をカバー**」、不採用プロトコル要望には**代替手段を提案して顧客 IdP の近代化を支援**。
 
 ### 本章で扱うサブセクション
 

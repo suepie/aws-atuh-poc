@@ -173,15 +173,17 @@
 
 ### 2.2 顧客 IdP 一覧（マスター表 B）
 
-**概要**: 事業者 IdP + 顧客企業 IdP の統合表。**LDAP 直結 = Keycloak 必須化**。
+**概要**: 事業者 IdP + 顧客企業 IdP の統合表。**LDAP 直結 = Keycloak 必須化** + **Federation プロトコル網羅性確認**（OIDC + SAML 2.0 + LDAP + Kerberos + Social Login + WS-Federation の 6 軸）。
+
+> **🎯 Federation プロトコル網羅性（2026-06-11 追加、[§FR-2.0.C / §FR-2.0.D](proposal/fr/02-federation.md) 連動）**: 顧客 IdP のプロトコルは OIDC + SAML 2.0 で 90%+ カバー。**追加で考慮すべきもの**: LDAP / AD（オンプレ AD 顧客）/ Kerberos（社内 PC SSO）/ Social Login（B2C）/ WS-Federation（古い ADFS）。**不採用プロトコル**: WS-Trust / OpenID 1.0/2.0 / CAS（業界トレンドで代替推奨）。ヒアリング 6 項目 B-IdP-Protocol-1〜6 で確認。
 
 | 種別 | 参考資料 |
 |---|---|
 | **hearing-script** | [02-idp-federation.md マスター表 B](hearing-script/02-idp-federation.md) |
-| **hearing-checklist** | §3.1 (B-200, A-13, A-6, B-609, B-615-617) |
-| **proposal** | [§FR-2.1 IdP 接続種別](proposal/fr/02-federation.md) |
-| **内部** | [common/identity-broker-multi-idp.md](../common/identity-broker-multi-idp.md), [hearing-checklist-excel-master-b.tsv](hearing-checklist-excel-master-b.tsv) |
-| **外部** | [Microsoft Entra ID](https://learn.microsoft.com/en-us/entra/) / [Okta Workforce](https://www.okta.com/products/) / [HENNGE One](https://hennge.com/jp/) / [AD FS Deployment Guide](https://learn.microsoft.com/en-us/windows-server/identity/ad-fs/) |
+| **hearing-checklist** | §3.1 (B-200, A-13, A-6, B-609, B-615-617, **B-IdP-Protocol-1〜6**) |
+| **proposal** | [§FR-2.1 IdP 接続種別](proposal/fr/02-federation.md), [§FR-2.0.C 12 プロトコル × 4 Tier 早見表](proposal/fr/02-federation.md), [§FR-2.0.D 不採用プロトコルと判断根拠](proposal/fr/02-federation.md) |
+| **内部** | [common/identity-broker-multi-idp.md](../common/identity-broker-multi-idp.md), [common/jit-scim-coexistence-keycloak.md §10.8.5.C OIDC/SAML 統合評価](../common/jit-scim-coexistence-keycloak.md), [hearing-checklist-excel-master-b.tsv](hearing-checklist-excel-master-b.tsv) |
+| **外部** | [Microsoft Entra ID](https://learn.microsoft.com/en-us/entra/) / [Okta Workforce](https://www.okta.com/products/) / [HENNGE One](https://hennge.com/jp/) / [AD FS Deployment Guide](https://learn.microsoft.com/en-us/windows-server/identity/ad-fs/) / [WorkOS: OIDC vs SAML 2026](https://workos.com/blog/oidc-vs-saml-two-decade-old-protocol-dominates-identity-federation) / [SSOJet: 7 Identity Federation Protocols](https://ssojet.com/blog/identity-federation-protocols-platform-architects) |
 
 ### 2.3 接続アプリ・システム一覧（マスター表 C）
 
@@ -289,13 +291,15 @@
 | **SAML 2.0** | ✅ SAML SP モード（両製品対応）| ⚠ SAML IdP モード（**K5**、Keycloak のみ）|
 | **OIDC** | ✅ OIDC RP モード（両製品対応）| ✅ OIDC OP モード（**標準・推奨**）|
 
+> **🎯 Federation プロトコル網羅性（2026-06-11 追加、[§FR-2.0.C](proposal/fr/02-federation.md) 連動）**: 受信側プロトコルは OIDC + SAML 2.0 + LDAP + Kerberos + Social Login + WS-Federation の 6 軸で網羅。発行側プロトコルは OIDC 推奨（D-7、§4.1）+ SAML IdP（K5、Keycloak のみ）。**不採用**: WS-Trust / OpenID 1.0/2.0 / CAS / HTTP Basic（§FR-2.0.D 参照）。
+
 | 種別 | 参考資料 |
 |---|---|
 | **hearing-script** | [01-auth-flow.md マスター表 C 補足 1〜5](hearing-script/01-auth-flow.md) |
-| **hearing-checklist** | [D-7 内側 OIDC 推奨合意](hearing-checklist.md), [B-100 マスター表 C](hearing-checklist.md) |
-| **proposal** | [§FR-1.1 認証フロー / Grant Type](proposal/fr/01-auth.md), [§C-1 内側プロトコル方針](proposal/common/01-architecture.md) |
+| **hearing-checklist** | [D-7 内側 OIDC 推奨合意](hearing-checklist.md), [B-100 マスター表 C](hearing-checklist.md), [B-IdP-Protocol-1〜6 プロトコル網羅性確認](hearing-checklist.md) |
+| **proposal** | [§FR-1.1 認証フロー / Grant Type](proposal/fr/01-auth.md), [§C-1 内側プロトコル方針](proposal/common/01-architecture.md), [§FR-2.0.C 12 プロトコル × 4 Tier 早見表](proposal/fr/02-federation.md), [§FR-2.0.D 不採用プロトコルと判断根拠](proposal/fr/02-federation.md) |
 | **内部** | [terms-and-codes-reference.md §7 末尾 OIDC 推奨方針](terms-and-codes-reference.md) |
-| **外部** | [OAuth 2.0 Best Current Practice (RFC 8252)](https://datatracker.ietf.org/doc/html/rfc8252) / [OIDC Core 1.0](https://openid.net/specs/openid-connect-core-1_0.html) |
+| **外部** | [OAuth 2.0 Best Current Practice (RFC 8252)](https://datatracker.ietf.org/doc/html/rfc8252) / [OIDC Core 1.0](https://openid.net/specs/openid-connect-core-1_0.html) / [WorkOS: OIDC vs SAML 2026](https://workos.com/blog/oidc-vs-saml-two-decade-old-protocol-dominates-identity-federation) / [SSOJet: 7 Identity Federation Protocols](https://ssojet.com/blog/identity-federation-protocols-platform-architects) / [AuthX: WS-Federation Explained & Alternatives](https://www.authx.com/blog/what-is-ws-federation/) |
 
 ---
 
@@ -958,6 +962,7 @@ JWT クレーム（tenant_id, roles, sub 等、最小クレーム原則）
 | 2026-06-04 | **§8.5 移行性 / Vendor Lock-in / Portability を §7.10 へ移動**（章 7: 9→10、章 8: 5→4）。IPA 非機能要求グレード D. 移行性 / ISO 25010 Portability の業界 NFR 分類と整合。**「移行」関連の 3 論点を性質で分離**: (A) **§1.6 移行プロセス** = プロジェクト計画（M1 議論）/ (B) **§7.10 移行性 NFR** = システム特性（M3 議論）/ (C) ベンダーロックイン回避 = §7.10 に集約。章 8 は UX 軸（開発者体験 + アクセシビリティ + i18n + プライバシー）に純化 |
 | 2026-06-08 | **属性マッピング/クレーム変換を §6.5 から §4.1 認可へ統合**。「属性 → 基盤正規化 → JWT クレーム」の end-to-end パイプラインを §4.1 で一体議論可能化（業界整理 Auth0 Rules/Actions / Okta Claims&Tokens / Entra Token Configuration / Keycloak Protocol Mapper と完全整合）。§6.5 は **「属性更新・Source of Truth」（属性ライフサイクル運用）に純化**。章 4 のスライド数 6→8、章 4 議論時間 10 分→13 分、M2 計 50→52 枚 |
 | 2026-06-08 | **JIT + SCIM 併用環境の詳細設計を追加**: 顧客 IdP の SCIM 対応バラツキ（タイプ A/B/C）対応として **proposal §FR-7.4.5 混在環境シーケンス（5 種類）+ §FR-7.4.6 同期競合解決ルール + §FR-7.4.7 段階移行運用** を [proposal/fr/07-user.md](proposal/fr/07-user.md) に追加。Keycloak 実装目線の詳細（externalId 突合 Custom Authenticator / Sync Mode / First Broker Login Flow 拡張 / マージスクリプト / 落とし穴 7 つ）を **新規 [common/jit-scim-coexistence-keycloak.md](../common/jit-scim-coexistence-keycloak.md)** として集約。§5.1 フェデユーザ同期スライドから参照 |
+| 2026-06-11 | **Federation プロトコル網羅性確認の追加**: OIDC + SAML 2.0 だけで十分かの疑問に対し、**proposal §FR-2.0.C 既存 12 プロトコル × 4 Tier 早見表に Social Login + WS-Federation + OAuth 2.0 Broker を追加** + **§FR-2.0.D 不採用プロトコルと判断根拠を新設**（WS-Trust / OpenID 1.0/2.0 / CAS / HTTP Basic 等、顧客ヒアリングで挙がった場合の対応指針付き）。hearing-checklist.md に **B-IdP-Protocol-1〜6** 6 項目追加（顧客 IdP プロトコル / LDAP 統合 / Kerberos / Social Login / WS-Federation / 独自プロトコル）。§2.2 顧客 IdP 一覧 + §3.4 認証フロー一覧の参考資料リンクを拡張。**OIDC + SAML 2.0 で 90%+ カバー、用途次第で LDAP / Kerberos / Social Login の追加検討** を確定 |
 | 2026-06-08 | **§6 ユーザー管理・プロビジョニング・セルフサービスに §5.0 章プロローグ追加**（8 項目 → 9 項目）。ユーザー種別（5 カテゴリ）× 3 観点（管理・プロビジョニング・セルフサービス）+ 認証ソースの **責任マッピング表 1 枚** を冒頭に提示し、章を跨いだ前提ズレ（end user / admin / 連携 / ローカルの混同）を早期検知可能化。[common/self-service-responsibility.md §0](../common/self-service-responsibility.md) と同マッピング表で同期。章 6 スライド 32→33 枚、議論時間 30→33 分、計 45→46 項目、~182→~183 枚 |
 | 2026-06-08 | **§5.0 のマッピング表 SSOT を [common/self-service-responsibility.md §0](../common/self-service-responsibility.md) に一元化**。本ファイル §5.0 から表本体を削除し参照リンクのみ残置、スライド構成と参考資料セクションは維持。design reference 層を SSOT とすることで、プレゼン版とドキュメント間の同期負担を解消 |
 | 2026-06-08 | **§7 NFR の DR 関連 3 箇所（§7.1 / §7.4 / §7.9）の命名明確化**。(1) §7.1「可用性・SLA・DR」→「**可用性・SLA・DR 設計（RTO/RPO/HA 構成）**」(設計軸 = IPA A. 可用性 / ISO 25010 Reliability)。(2) §7.9「BCP・DR ランブック」→「**BCP・DR 運用ランブック（訓練・連絡体制）**」(運用軸 = IPA C. 運用・保守性 / ISO 25010 Maintainability)。(3) §7.4 ITDR に**命名注意ボックス**追加（"DR" は Identity Threat Detection & Response の略で Disaster Recovery とは無関係）。(4) §7.1 ⇄ §7.9 に**相互参照**追加（設計値 ⇄ 運用ランブックの循環的依存）。業界 NFR タクソノミー（IPA / ISO 25010 / AWS Well-Architected Reliability vs Operational Excellence Pillar）と整合する分離を維持しつつ、命名で誤認回避 |

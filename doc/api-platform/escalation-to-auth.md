@@ -220,6 +220,60 @@
 
 ---
 
+### 1.8 JWT クレーム仕様の安定性・SCIM Webhook・userinfo endpoint
+
+> **発生章**：[proposal/fr/02-authn-authz.md §2.5 アプリ側認可モデル & ユーザオンボーディング](proposal/fr/02-authn-authz.md) / [proposal/common/03-shared-auth-boundary.md §C-3.4 ユーザプロビジョニング・権限マッピング境界](proposal/common/03-shared-auth-boundary.md)
+> **状態**：認証側に追加要件として申し送り
+> **新規追加**：2026-06-11 Hybrid 認可モデル確定
+
+#### 認証側現状調査結果（2026-06-11 時点）
+
+[認証側 §FR-6.1.A](../requirements/proposal/fr/06-authz.md) 等の調査結果：
+
+| 観点 | 認証側現状 | 本標準ニーズ | ギャップ |
+|---|---|---|:---:|
+| JWT 最小クレーム（`sub`, `iss`, `aud`, `exp`） | ✅ §FR-6.1 A 段階 | 同左 | ✅ |
+| `tenant_id` クレーム | ✅ §FR-6.1 B 段階 | 必須利用 | ✅ |
+| `roles` / `groups` クレーム（オプション） | ✅ §FR-6.1 C 段階 | デフォルト推奨利用 | ✅ |
+| Hybrid モデル（基盤最小 + アプリ補完） | ✅ §FR-6.0.A スタンス明記 | 完全整合 | ✅ |
+| Token Exchange（マイクロサービス間）| ✅ §FR-6.3 K-01 | 同左 | ✅ |
+| カスタムクレーム追加機構（Pre Token Lambda / Protocol Mapper）| ✅ §FR-6.1.A | 必要時利用 | ✅ |
+| **クレーム仕様の安定性保証**（変更通知期間）| ⚠ 明示要 | 30 日前通知必要 | 🔴 |
+| **SCIM Webhook** の発行仕様 | ⚠ 部分 §FR-7 / §FR-2.3 | アプリ DB 同期に必要 | 🟡 |
+| **userinfo endpoint** の本標準アプリ利用 | ⚠ グレー | PII 別取得に必要 | 🟡 |
+
+→ 本標準 Hybrid モデル（§2.5）は認証側設計と **基本適合**。残ギャップは 3 項目（安定性、SCIM、userinfo）のみ。
+
+#### 申し送り項目
+
+1. **クレーム仕様の安定性保証**
+   - JWT クレーム構造の変更は **30 日前通知**を必須化
+   - Breaking change は半年〜1 年の併存期間
+   - 通知手段：認証側 SSOT 改訂履歴 + 直接連絡
+   - **配置**：認証側 §FR-9 統合 / §C-API-3 §C-3.1.2 SLA
+
+2. **SCIM Webhook の仕様策定**
+   - 認証基盤 → 本標準アプリへの user lifecycle event 配信仕様
+   - Webhook endpoint 形式（POST /webhooks/scim/users 等）
+   - イベント種別（created / updated / suspended / deleted）
+   - Retry / 再送ポリシー、Webhook signature 検証
+   - **配置**：認証側 §FR-7 ユーザ管理 / §FR-9 統合 拡張
+
+3. **userinfo endpoint の本標準アプリからの利用許可**
+   - JWT に `email` 等の PII を含めず、別途取得する場合の OIDC userinfo endpoint
+   - 本標準アプリは access_token で userinfo を呼ぶ
+   - rate limit、SLA
+   - **配置**：認証側 §FR-6.1.A 削り判定 + §C-API-3 §C-3.1 契約
+
+#### 進捗管理
+
+- [ ] 認証側でクレーム仕様の安定性保証ポリシー策定
+- [ ] 認証側で SCIM Webhook 仕様策定（payload / signature / retry）
+- [ ] 認証側で userinfo endpoint の本標準アプリ利用可否確定
+- [ ] 本標準 §C-3.4.5 を確定値で更新
+
+---
+
 ## 2. 申し送りプロセス
 
 ### 2.1 タイミング
@@ -263,3 +317,4 @@
 |---|---|
 | 2026-06-03 | 初版作成。Partner M2M Client 管理（条件付き、M2M 要件化の場合のみ）/ Hosted UI 提供 / JWKS プライベート化 / 認証側 SLA の 4 項目を申し送り SSOT 化 |
 | 2026-06-10 | **Path C 確定により大規模追記**：§1.5 Token Exchange を Partner で正式採用要請（Silver 主流、§FR-6 と整合）/ §1.6 `/oauth2/token` 保護要件（Dedicated /token + WAF + Pool/Realm 分離、Defense-in-depth 層 1・層 2）/ §1.7 Federation B 長期 ADR 案（Multi-Issuer hybrid モデル、Phase 2〜4 ロードマップ）|
+| 2026-06-11 | **Hybrid 認可モデル確定により §1.8 追記**：JWT クレーム仕様の安定性保証（30 日前通知）/ SCIM Webhook 仕様策定（payload / signature / retry）/ userinfo endpoint の本標準アプリ利用許可（PII 別取得）。認証側調査の結果、本標準 Hybrid モデル（§2.5）は §FR-6.0.A スタンスと完全整合 |

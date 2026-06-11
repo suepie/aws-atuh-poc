@@ -15,7 +15,7 @@
 | 1 | 5 | 全体方針・前提（検討方針 / 基本方針 / スコープ / 4 層モデル / ナラティブ）| 24 | 30 分 |
 | 2 | 3 | **アーキパターン選定**（ステップ ⓪、SPA+API / SSR+API / SSR モノリス）| 14 | 20 分 |
 | 3 | 3 | 公開範囲（信頼プロファイル）（ステップ ①、5 Profile 統合概念）| 14 | 20 分 |
-| 4 | 4 | 認証認可（ステップ ②、共有認証基盤連携 / API Key / mTLS / IAM）| 16 | 24 分 |
+| 4 | 6 | 認証認可（ステップ ②、共有認証基盤連携 / Partner / IAM / Authorizer / **アプリ側認可モデル** / **Permission ストレージ**）| 24 | 36 分 |
 | 5 | 2 | 流量制御・課金（ステップ ③）| 10 | 18 分 |
 | 6 | 4 | 実装ランタイム（ステップ ④、Serverless / Container / モノリス / 選定基準）| 16 | 24 分 |
 | 7 | 3 | ガードレール（ステップ ⑤、FMS / SCP / Service Catalog）| 12 | 18 分 |
@@ -258,7 +258,7 @@
 
 ---
 
-## 4. 認証認可（ステップ ②、4 項目）
+## 4. 認証認可（ステップ ②、6 項目）
 
 ### 4.1 共有認証基盤との連携
 
@@ -349,6 +349,56 @@
 | **hearing-checklist** | B-241, B-242, B-243, B-002（モノリス認証）, **B-107** ⭐, B-108, D-1402-α |
 | **hearing-script** | [02-authn-authz.md](hearing-script/02-authn-authz.md), [01-exposure-boundary.md](hearing-script/01-exposure-boundary.md), [12-architecture-pattern.md](hearing-script/12-architecture-pattern.md) |
 | **外部** | [ALB Authenticate-OIDC](https://docs.aws.amazon.com/elasticloadbalancing/latest/application/listener-authenticate-users.html) / [AWS Verified Permissions](https://docs.aws.amazon.com/verifiedpermissions/) / [AWS WAF ATP (Account Takeover Prevention)](https://docs.aws.amazon.com/waf/latest/developerguide/aws-managed-rule-groups-atp.html) / [AWS WAF ACFP (Account Creation Fraud Prevention)](https://docs.aws.amazon.com/waf/latest/developerguide/aws-managed-rule-groups-acfp.html) |
+
+### 4.5 アプリ側認可モデル & ユーザオンボーディング ★ Hybrid モデル正式採用
+
+**概要**: 認証基盤から受け取った最小限の JWT クレーム（`sub`/`tenant_id`/`roles`）を、アプリ側でどう **業務認可** に繋げるか。**業界主流の Hybrid モデル（粗粒度 role = 認証基盤、細粒度 permission = アプリ DB）を本標準デフォルト** に確定。認証側 §FR-6.0.A スタンス（基盤は最小限、アプリで補完）と完全整合。
+
+#### スライド構成案（5 枚）
+
+| # | スライド | 内容 |
+|---|---|---|
+| 1 | **認可情報の所在モデル 3 パターン** | 中央集権 / 分散 / Hybrid。業界実例（Auth0 / Cognito / Keycloak / Azure AD / Salesforce）|
+| 2 | **本標準のデフォルト：Hybrid（C）** | 役割分担表（認証基盤 = identity + 粗粒度 role、アプリ = 細粒度 permission） |
+| 3 | **アプリ側で必須となる 6 つの処理** | JWT 検証 / テナント境界 / role→permission マッピング / 細粒度判定 / JIT 作成 / 監査ログ |
+| 4 | **初回ログイン JIT オンボーディングフロー** | mermaid シーケンス図、サンプルコード |
+| 5 | **認可実装の 3 パターン** | Pattern 1（JWT 単独）/ Pattern 2（JWT + DB）⭐ / Pattern 3（Policy Engine: Verified Permissions） |
+
+#### 重要メッセージング
+
+| 言ってはいけない | 言うべき |
+|---|---|
+| ❌ 「認証基盤に全権限情報を入れます」 | ✅ 「**認証基盤は identity と粗粒度 role、アプリが細粒度 permission を持つ**（業界主流）」 |
+| ❌ 「SCIM が必須です」 | ✅ 「**JIT がデフォルト、SCIM は退職即時削除要件があれば escalation**」 |
+| ❌ 「アプリ側の認可実装は軽微です」 | ✅ 「**最小限クレーム前提のため、アプリ側の認可コストは相応に重い**（細粒度認可は完全アプリ責任）」 |
+
+| 種別 | 参考資料 |
+|---|---|
+| **proposal** | [proposal/fr/02-authn-authz.md §2.5](proposal/fr/02-authn-authz.md) / [proposal/common/03-shared-auth-boundary.md §C-3.4](proposal/common/03-shared-auth-boundary.md) |
+| **hearing-checklist** | **B-244** ⭐, **B-245** ⭐, B-246, B-247, B-248, D-245 |
+| **hearing-script** | [02-authn-authz.md](hearing-script/02-authn-authz.md) |
+| **認証側との整合** | §FR-6.0.A 認可スタンス、§FR-6.1 段階拡張クレーム設計、authz-architecture-design.md §3 |
+| **escalation-to-auth.md** | [§1.8 クレーム仕様の安定性 + SCIM Webhook + userinfo](escalation-to-auth.md) |
+| **外部** | [Auth0 Authorization Models](https://auth0.com/docs/manage-users/access-control) / [Cognito Authorization](https://docs.aws.amazon.com/cognito/latest/developerguide/) / [Keycloak Authorization Services](https://www.keycloak.org/docs/latest/authorization_services/) / [SCIM 2.0 (RFC 7644)](https://datatracker.ietf.org/doc/html/rfc7644) / [OIDC Core - UserInfo](https://openid.net/specs/openid-connect-core-1_0.html#UserInfo) |
+
+### 4.6 Permission ストレージの標準パターン
+
+**概要**: §4.5 Hybrid モデルで「アプリ DB に持つ permission」の具体的スキーマ標準。DynamoDB（Lambda 系）/ Aurora（ECS 系）のリファレンス + Cedar / Verified Permissions の選定基準。
+
+#### スライド構成案（3 枚）
+
+| # | スライド | 内容 |
+|---|---|---|
+| 1 | DynamoDB スキーマ標準 | users / user_permissions テーブル + GSI、JIT 初期化クエリ |
+| 2 | Aurora スキーマ標準 | users / user_permissions / role_permission_mappings、トランザクション例 |
+| 3 | Cedar / Verified Permissions パターン | policy-as-code 採用判断、規模・複雑度別の選定 |
+
+| 種別 | 参考資料 |
+|---|---|
+| **proposal** | [proposal/fr/02-authn-authz.md §2.6](proposal/fr/02-authn-authz.md) |
+| **hearing-checklist** | B-243（既存）, D-245（Cedar 採用判断）|
+| **hearing-script** | [02-authn-authz.md](hearing-script/02-authn-authz.md) |
+| **外部** | [AWS Verified Permissions](https://docs.aws.amazon.com/verifiedpermissions/) / [Cedar Language](https://www.cedarpolicy.com/) / [Open Policy Agent (OPA)](https://www.openpolicyagent.org/) |
 
 ---
 
@@ -850,3 +900,4 @@
 | 2026-06-10 | **§2.2.7 Partner 認証 詳細フロー（リファレンス実装）正式組込み**：API Key と OAuth の役割分担、4 つの併用パターン、シーケンス図（セットアップ / 実行時 / Token Refresh）、リクエスト具体例、エラーケース、API Gateway 設定、Token Cache 戦略、推奨 SDK、監査ログ識別、mTLS 併用、アンチパターン。PowerPoint §4.2 にリファレンス補足スライド R1〜R3 を追加 |
 | 2026-06-10 | **Path C 確定：認証側 Federation B 衝突を踏まえた tier 戦略の正式化**：§2.2.7 を Bronze fallback 化、§2.2.8 Silver 主流 Token Exchange（§FR-6 K-01 と完全整合）、§2.2.9 Federation B 長期 ADR placeholder、§2.2.10 Defense-in-depth 4 層防御を proposal に追加。§4.2 PowerPoint を tier 別整理に刷新。**§2.3 を AWS ネイティブ / 非 AWS に分割**、§2.3.A 「非 AWS Internal の認証」新設（GitHub Actions OIDC / IRSA / mTLS / OAuth M2M / External ID / API Key legacy の 6 カテゴリ）、§4.3 PowerPoint を 4 枚に拡張。ヒアリング項目 A-115（非 AWS Internal 棚卸）+ B-225（GitHub Actions OIDC 必須化）+ B-226（on-prem mTLS/OAuth）+ B-227（Vendor External ID）+ B-228（レガシー移行期限）を追加。escalation-to-auth.md §1.5〜§1.7（Token Exchange 採用要請、`/token` 保護要件、Federation B ADR 案）追記 |
 | 2026-06-10 | **ALB only vs API Gateway + ALB 選定基準を正式整理**：§FR-API-6 §6.2.A「ALB only vs API Gateway + ALB の選定基準」新設（Pattern X / Pattern Y 比較表、選定マトリクス、デフォルト推奨）。§6.1.A.5「モノリスでの API GW 利用留意」追加（HTML 配信不適・タイムアウト・ペイロード制約）。§C-API-2 §C-2.1.5「パターン A サブパターン A-1/A-2/A-3」+ 決定木追加。§C-API-1 §C-1.3.4「ECS バックエンド + API GW 参照アーキ」追加。§FR-API-5 / §FR-API-6 境界を「Serverless = API GW + Lambda 密結合、Container = ALB or API GW 任意選択」と明文化。PowerPoint §6.2 を 4 枚 + リファレンス補足 R1（選定基準）/ R2（モノリス非推奨）に拡張。ヒアリング項目 B-623（ECS 前段デフォルト）⭐ + B-624（Partner B2B API GW 必須化）追加 |
+| 2026-06-11 | **アプリ側認可モデル Hybrid（C）を正式採用**：認証側現状調査の結果、§FR-6.0.A スタンス（最小限クレーム + 段階拡張）と完全整合。§FR-API-2 §2.5「アプリ側認可モデル & ユーザオンボーディング」新設（Hybrid 役割分担、6 必須処理、JIT/SCIM/Invitation/Self-Service、Pattern 1/2/3、デフォルト permission マッピング）+ §2.6「Permission ストレージ標準パターン」新設（DynamoDB/Aurora スキーマ、Cedar）。§C-API-3 §C-3.4「ユーザプロビジョニング・権限マッピング境界」新設（情報の所在マトリクス、JIT/SCIM フロー、認証側依存事項）。PowerPoint §4 を 4 項目→6 項目に拡張（§4.5 アプリ側認可モデル + §4.6 Permission ストレージ）。ヒアリング項目 B-244（認可パターン）⭐ + B-245（プロビジョニング）⭐ + B-246（退職追従）+ B-247（permission マッピング規約）+ B-248（オンボーディング UX）+ D-245（Cedar 採用判断）追加。escalation-to-auth.md §1.8（クレーム仕様の安定性 + SCIM Webhook + userinfo endpoint）追記 |

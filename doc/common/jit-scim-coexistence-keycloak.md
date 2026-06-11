@@ -1210,7 +1210,118 @@ resource "keycloak_realm" "tenant_acme" {
 # Touch ID / Face ID / Windows Hello = 物理デバイス紐付け
 ```
 
-#### 10.8.5 amr 評価 Custom Authenticator SPI 実装スケルトン
+#### 10.8.5 amr 評価の実装手法 3 選択肢（重要訂正、2026-06-11 追加）
+
+> **重要訂正**: 初版で「amr 評価には Custom Authenticator SPI が必須」と記載したが、これは**不正確**。Keycloak 標準機能のみで実装可能な手法（手法 A）が存在し、これが**第 1 推奨**となる。Custom SPI（手法 B）は複雑要件時の選択肢。
+
+##### 比較サマリー
+
+| 手法 | プログラム | 柔軟性 | 本番採用 | 本基盤での推奨 |
+|:-:|:-:|:-:|:-:|---|
+| **A. Identity Provider Mapper + Conditional User Attribute** | ❌ 不要 | 中 | ✅ | ⭐ **第 1 推奨**（標準機能で十分）|
+| **B. Custom Authenticator SPI** | ✅ Java | 高 | ✅ | ⭐ 第 2 推奨（複雑要件時）|
+| **C. Script Authenticator** | △ JavaScript | 中 | ❌ | 非採用（公式非推奨）|
+
+##### 手法 A: Identity Provider Mapper + Conditional User Attribute（標準機能のみ、★第 1 推奨）
+
+**動作概要**:
+```
+顧客 IdP からの amr クレーム
+  ↓ Identity Provider Mapper でコピー
+Keycloak User Attribute (idp_amr)
+  ↓ Conditional Authenticator が評価
+  ├─ amr に "mfa" / "otp" / "hwk" 等含む → MFA Sub-flow スキップ
+  └─ amr に MFA 系値なし or 属性自体なし → 基盤側 MFA 補完
+```
+
+**Terraform 実装**:
+
+```hcl
+# Step 1: Identity Provider Mapper: amr → User Attribute コピー
+resource "keycloak_attribute_importer_identity_provider_mapper" "amr_to_attribute" {
+  realm                   = keycloak_realm.tenant_a.id
+  name                    = "amr-to-user-attribute"
+  identity_provider_alias = keycloak_oidc_identity_provider.customer_idp.alias
+
+  claim_name              = "amr"          # IdP の amr クレーム
+  user_attribute          = "idp_amr"      # Keycloak User Attribute
+
+  extra_config = {
+    syncMode = "FORCE"   # 毎回最新値で上書き（古い属性が残らないように）
+  }
+}
+
+# Step 2: Authentication Flow 設計
+resource "keycloak_authentication_flow" "browser_with_amr_eval" {
+  realm_id    = keycloak_realm.tenant_a.id
+  alias       = "browser-with-amr-evaluation"
+  description = "amr 評価 (標準機能のみ) + 未済時 WebAuthn 補完"
+}
+
+# Step 3: Conditional Sub-flow（MFA 補完）
+resource "keycloak_authentication_subflow" "conditional_mfa_supplement" {
+  realm_id          = keycloak_realm.tenant_a.id
+  parent_flow_alias = keycloak_authentication_flow.browser_with_amr_eval.alias
+  alias             = "conditional-mfa-supplement"
+  requirement       = "CONDITIONAL"
+}
+
+# Step 4: Condition - User Attribute（amr に mfa 含まない場合 true）
+resource "keycloak_authentication_execution" "condition_amr_lacks_mfa" {
+  realm_id          = keycloak_realm.tenant_a.id
+  parent_flow_alias = keycloak_authentication_subflow.conditional_mfa_supplement.alias
+  authenticator     = "conditional-user-attribute"
+  requirement       = "REQUIRED"
+  # GUI で設定:
+  # - Attribute name: idp_amr
+  # - Attribute expected value: mfa
+  # - Negate output: ON  ← 「mfa を含まない」時に true
+}
+
+# Step 5: WebAuthn 補完（条件 true 時のみ実行）
+resource "keycloak_authentication_execution" "webauthn_supplement" {
+  realm_id          = keycloak_realm.tenant_a.id
+  parent_flow_alias = keycloak_authentication_subflow.conditional_mfa_supplement.alias
+  authenticator     = "webauthn-authenticator"
+  requirement       = "ALTERNATIVE"
+}
+
+# Step 6: TOTP フォールバック
+resource "keycloak_authentication_execution" "otp_fallback" {
+  realm_id          = keycloak_realm.tenant_a.id
+  parent_flow_alias = keycloak_authentication_subflow.conditional_mfa_supplement.alias
+  authenticator     = "auth-otp-form"
+  requirement       = "ALTERNATIVE"
+}
+```
+
+**動作確認**:
+
+| 顧客 IdP の `amr` | `idp_amr` 属性 | Condition 結果 | 動作 |
+|---|---|:-:|---|
+| `["pwd", "mfa"]` | `["pwd", "mfa"]` | mfa 含む → Negate で false | ✅ MFA Sub-flow スキップ |
+| `["pwd", "otp"]` | `["pwd", "otp"]` | mfa 含まない → Negate で true | ⚠ MFA 補完（otp は別途評価必要、下記参照）|
+| `["pwd"]` | `["pwd"]` | mfa 含まない → true | ✅ 基盤側 MFA 補完 |
+| 不送出 / null | 属性なし | 属性なし → true | ✅ 基盤側 MFA 補完 |
+
+**複数信頼値の OR 評価（手法 A の限界）**:
+
+Conditional - User Attribute は **単一値の equals 評価のみ**サポート。「`mfa` または `otp` または `hwk` 含む」を 1 Sub-flow で評価できない。
+
+→ 対応策:
+- **オプション 1**: 複数 Conditional Sub-flow を直列配置（`mfa` → `otp` → `hwk` で順次評価、設定がやや煩雑）
+- **オプション 2**: IdP Mapper で `amr` 値の正規化を実施し、単一属性（例: `has_strong_mfa` = "true" / "false"）を生成（IdP 側の amr 仕様に依存）
+- **オプション 3**: 複雑な OR ロジックが必要な場合は手法 B（Custom SPI）に移行
+
+##### 手法 B: Custom Authenticator SPI（複雑要件時の選択肢）
+
+「複数信頼値のホワイトリスト OR 評価」「動的判定」「Risk Score 連動」等の高度要件がある場合は Custom SPI が現実的。実装スケルトンは下記 §10.8.5.B 参照。
+
+##### 手法 C: Script Authenticator（非採用）
+
+`--features=scripts` 有効化必須、本番非推奨派あり。本基盤では非採用方針。
+
+#### 10.8.5.B amr 評価 Custom Authenticator SPI 実装スケルトン（手法 B 採用時）
 
 [§6 externalId 突合](#6-externalid-突合実装の詳細) と同様のパターンで実装:
 
@@ -1280,6 +1391,174 @@ public class AmrConditionalAuthenticator implements Authenticator {
 ```
 
 `META-INF/services/org.keycloak.authentication.AuthenticatorFactory` に Factory 登録。
+
+#### 10.8.5.C OIDC + SAML 統合評価の実装（統一 mfa_indicator 属性正規化、★第 1 推奨）
+
+> **背景**: 本基盤は **OIDC + SAML 両プロトコル**の顧客 IdP を受信。SAML 経由では `amr` クレームが存在しないため、**AuthnContextClassRef + authnmethodsreferences** を別途評価する必要がある（[proposal §FR-3.5.6](../requirements/proposal/fr/03-mfa.md) 参照）。本セクションは Keycloak 実装目線の詳細。
+
+##### 設計方針: 統一 User Attribute `mfa_indicator` への正規化
+
+複数のクレーム / 属性を Identity Provider Mapper で**統一 User Attribute** にコピーし、Conditional Authenticator は単一属性のみ評価:
+
+```
+OIDC IdP (amr)                          ─┐
+SAML IdP (AuthnContextClassRef)          ├─→ Identity Provider Mapper
+SAML IdP (authnmethodsreferences)       ─┘    で統一コピー
+                                                ↓
+                                         User Attribute: mfa_indicator
+                                                ↓
+                                         Conditional Authenticator
+                                         (mfa_indicator 評価)
+                                                ↓
+                                         ├─ MFA 系値含む → スキップ
+                                         └─ なし → MFA 補完
+```
+
+##### Terraform 実装例（3 IdP プロトコル対応）
+
+```hcl
+# ============================================
+# Case 1: OIDC IdP（Entra OIDC / Okta OIDC / Google Workspace）
+# ============================================
+resource "keycloak_oidc_identity_provider" "customer_entra_oidc" {
+  realm        = keycloak_realm.tenant_a.id
+  alias        = "customer-entra-oidc"
+  enabled      = true
+  # ... (設定省略)
+}
+
+# amr → mfa_indicator
+resource "keycloak_attribute_importer_identity_provider_mapper" "oidc_amr_to_indicator" {
+  realm                   = keycloak_realm.tenant_a.id
+  name                    = "oidc-amr-to-mfa-indicator"
+  identity_provider_alias = keycloak_oidc_identity_provider.customer_entra_oidc.alias
+
+  claim_name              = "amr"
+  user_attribute          = "mfa_indicator"
+
+  extra_config = {
+    syncMode = "FORCE"
+  }
+}
+
+# ============================================
+# Case 2: SAML IdP（標準: Okta SAML / Google Workspace SAML / Shibboleth）
+# ============================================
+resource "keycloak_saml_identity_provider" "customer_okta_saml" {
+  realm        = keycloak_realm.tenant_a.id
+  alias        = "customer-okta-saml"
+  enabled      = true
+  # ... (設定省略)
+}
+
+# AuthnContextClassRef → mfa_indicator
+resource "keycloak_saml_user_attribute_protocol_mapper" "saml_acr_to_indicator" {
+  realm                      = keycloak_realm.tenant_a.id
+  name                       = "saml-acr-to-mfa-indicator"
+  identity_provider_alias    = keycloak_saml_identity_provider.customer_okta_saml.alias
+
+  attribute_name             = "Saml.AuthnContextClassRef"   # Keycloak 特殊 claim name
+  user_attribute             = "mfa_indicator"
+
+  extra_config = {
+    syncMode = "FORCE"
+  }
+}
+
+# ============================================
+# Case 3: SAML IdP（Microsoft Entra SAML、authnmethodsreferences 評価）
+# ============================================
+resource "keycloak_saml_identity_provider" "customer_entra_saml" {
+  realm        = keycloak_realm.tenant_a.id
+  alias        = "customer-entra-saml"
+  enabled      = true
+  # ... (設定省略)
+}
+
+# authnmethodsreferences → mfa_indicator
+# (Microsoft 拡張、Entra SAML 接続時に評価)
+resource "keycloak_saml_user_attribute_protocol_mapper" "entra_authn_methods_to_indicator" {
+  realm                      = keycloak_realm.tenant_a.id
+  name                       = "entra-saml-authnmethods-to-mfa-indicator"
+  identity_provider_alias    = keycloak_saml_identity_provider.customer_entra_saml.alias
+
+  # Microsoft Entra SAML が送出する authnmethodsreferences 属性
+  attribute_name             = "http://schemas.microsoft.com/claims/authnmethodsreferences"
+  user_attribute             = "mfa_indicator"
+
+  extra_config = {
+    syncMode = "FORCE"
+  }
+}
+
+# ============================================
+# Conditional Authenticator: mfa_indicator 単一属性で統合評価
+# ============================================
+resource "keycloak_authentication_execution" "condition_mfa_indicator_check" {
+  realm_id          = keycloak_realm.tenant_a.id
+  parent_flow_alias = keycloak_authentication_subflow.conditional_mfa_supplement.alias
+  authenticator     = "conditional-user-attribute"
+  requirement       = "REQUIRED"
+  # GUI で設定:
+  # - Attribute name: mfa_indicator
+  # - Attribute expected value: mfa
+  # - Negate output: ON  ← 「mfa を含まない」時に true (= 基盤側 MFA 補完)
+}
+```
+
+##### 動作確認マトリクス（プロトコル × IdP 別）
+
+| 顧客 IdP | プロトコル | 送出される値 | mfa_indicator | Condition 結果 | 動作 |
+|---|:-:|---|---|:-:|---|
+| Entra OIDC（MFA 設定済）| OIDC | `amr=["pwd","mfa"]` | `["pwd","mfa"]` | mfa 含む → false | ✅ スキップ |
+| Entra OIDC（MFA 未設定）| OIDC | `amr=["pwd"]` | `["pwd"]` | mfa なし → true | ⚠ MFA 補完 |
+| Okta SAML（MFA 設定済）| SAML | `AuthnContextClassRef=urn:...:MultiFactorContract` | `urn:...:MultiFactorContract` | mfa 含まない (※下記) → true | ⚠ MFA 補完 |
+| **Entra SAML（MFA 設定済）**| SAML | `authnmethodsreferences=[mfa, multipleauthn]` | `["mfa", "multipleauthn"]` | mfa 含む → false | ✅ スキップ |
+| ADFS（amr 不送出 + AuthnContextClassRef なし）| OIDC/SAML | （なし）| 属性なし | 属性なし → true | ⚠ MFA 補完 |
+
+##### 複数信頼値の OR 評価（重要、Okta SAML 対応のため）
+
+SAML 標準値 `urn:oasis:names:tc:SAML:2.0:ac:classes:MultiFactorContract` は `mfa` 文字列を直接含まないため、`Conditional - User Attribute` で `mfa` 単一値の equals 評価では検出不可。
+
+**対応策**:
+
+| 案 | 内容 |
+|---|---|
+| **案 A. Mapper 段階で文字列置換**（限定的）| 標準 Mapper は値の変換不可、要 Script Mapper か Custom Mapper |
+| **案 B. 複数 Conditional Sub-flow を直列配置** | `mfa` 評価 → `MultiFactorContract` 評価 → `multipleauthn` 評価 を順次、いずれかで MFA 確認できればスキップ |
+| **案 C. Custom Authenticator SPI**（手法 B、§10.8.5.B）| ホワイトリスト OR 評価を Java で実装 |
+
+→ **案 B が標準機能のみで実現可能、案 C は複雑要件時の選択肢**。
+
+##### 設定変更時の影響範囲（新規 IdP 追加など）
+
+| 追加要素 | 設定変更箇所 |
+|---|---|
+| 新規 OIDC IdP | Identity Provider Mapper で amr → mfa_indicator のみ |
+| 新規 SAML IdP（標準）| Identity Provider Mapper で AuthnContextClassRef → mfa_indicator のみ |
+| 新規 SAML IdP（Microsoft 系）| Identity Provider Mapper で authnmethodsreferences → mfa_indicator のみ |
+| Conditional Authenticator | **変更不要**（mfa_indicator を見るだけ）|
+
+→ **新規顧客 IdP 追加時の影響範囲が IdP 設定内に閉じる**、保守性が高い。
+
+##### ADFS の SAML 設定例（顧客に依頼する場合、任意）
+
+ADFS は **デフォルトで amr / AuthnContextClassRef / authnmethodsreferences のいずれも送出しない**。明示的に Claim Rule で設定が必要:
+
+```powershell
+# ADFS PowerShell: authnmethodsreferences クレームを SAML で発行する Claim Rule
+$rule = @'
+@RuleTemplate = "AuthenticationMethodsReferences"
+@RuleName = "Issue AuthnMethodsReferences Claim (SAML)"
+c:[Type == "http://schemas.microsoft.com/claims/authnmethodsreferences"]
+ => issue(claim = c);
+'@
+
+Add-AdfsRelyingPartyTrust -Name "Common-Auth-Platform" `
+  -IssuanceTransformRules $rule
+```
+
+→ **設定不要、未設定の場合は本基盤側で「未済」扱い → 基盤側 MFA 補完**（[§FR-3.5.1.A](../requirements/proposal/fr/03-mfa.md) パターン A 参照）。
 
 #### 10.8.6 データ最小化の検証手順
 
@@ -1389,3 +1668,5 @@ kcadm.sh get users -r tenant-acme --fields id,credentials \
 - 2026-06-08: **§10.4 JIT 定期バッチ deprovisioning 実装** + **§10.5 Keycloak DB 保持・削除マトリクス** + **§10.6 PCI DSS v4.0 / APPI 適合性チェックリスト** を追加。proposal §FR-7.4.6 末尾の保持・削除マトリクス + §FR-7.4.7 末尾の定期バッチ + §FR-7.4.8 PCI DSS/APPI 適合性整理の **実装目線詳細** として対応。kcadm.sh ベースのバッチスクリプト例 + Kubernetes CronJob 例 + PCI DSS Req 8 全要件のマッピング + APPI 法 22/23/25/26/28-30 条のマッピングを集約
 - 2026-06-08: **§10.7 SCIM 非対応 IdP 顧客向け Compensating Controls 実装詳細** を追加（proposal §FR-7.4.9 の Keycloak 実装目線詳細）。短命 Access Token (15min) + Refresh Token Rotation の Keycloak 設定、SPA/SSR の Silent Refresh 実装パターン、Multi-Tab UX、長時間タスク設計、BCL 受信実装、Microsoft Entra Graph API / Okta System Log API 認証ログ逆引きバッチ、UX チェックリスト、Compensating Controls Worksheet テンプレートを集約。**RFC 9700 (2025) OAuth 2.0 Best Current Practice 整合**|
 - 2026-06-08: **§10.8 MFA 強制 + 保持データ最小化の Keycloak 実装** を追加（proposal §FR-3.4 の Keycloak 実装目線詳細）。Credential テーブル構造（password/otp/webauthn/recovery）+ KMS 連動による Realm Key 保護 + 信頼レベル評価方式（amr 評価）の Authentication Flow Terraform + Trust Device 設定 + amr 評価 Custom Authenticator SPI 実装スケルトン（RFC 8176 信頼値ホワイトリスト）+ データ最小化検証 kcadm.sh 統計 + チェックリストを集約。**WebAuthn / Passkey 主体採用で「持つデータは公開鍵のみ = 実質ゼロ価値」を実現** |
+| 2026-06-11 | **§10.8.5 重要訂正**: 初版で「amr 評価には Custom SPI 必須」と記載したが、**Keycloak 標準機能のみで実装可能**（手法 A: Identity Provider Mapper + Conditional User Attribute）を **第 1 推奨** として明示。Custom Authenticator SPI（手法 B）は「複雑要件時の選択肢」に位置付け変更し §10.8.5.B にリネーム。手法 A の Terraform 完全実装例 + 動作確認マトリクス + 複数信頼値 OR 評価の限界と対応策を追加 |
+- 2026-06-11: **§10.8.5.C 新設「OIDC + SAML 統合評価の実装（統一 mfa_indicator 属性正規化）」**（proposal §FR-3.5.6/7 連動）。**SAML 経由では amr が存在せず、AuthnContextClassRef + authnmethodsreferences の評価が必要**を明示。Microsoft Entra SAML の特殊仕様（AuthnContextClassRef は MFA 判定不可、authnmethodsreferences で `multipleauthn` 等を送出）対応。OIDC IdP / SAML 標準 IdP / SAML Microsoft IdP の 3 プロトコル別 Terraform 実装例 + 動作確認マトリクス + 複数信頼値 OR 評価の対応策（複数 Sub-flow 直列配置 or Custom SPI）+ ADFS Claim Rule 設定例を集約

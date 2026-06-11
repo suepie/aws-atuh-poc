@@ -229,8 +229,16 @@
 | **B-616** | `[B]` | 🟡 | **エンドユーザー周知のリードタイム期待値** | FR-FED-011 / NFR-MIG / NFR-OPS | §FR-2.3.2.B, §NFR-9.3 | 移行時のエンドユーザー周知リードタイム?（業界標準: 切替 2-4 週間前 + 当日サポート）。**パスワード or MFA 再登録が発生する場合は 2 週間以下は推奨外**。周知チャネル（顧客 IT メール / 社内ポータル / アプリ内バナー / ヘルプデスク 24h / SOC 事前共有）| リードタイム + チャネル + 該当変化項目 | | ⏳ |
 | **B-617** | `[B]` | 🟢 | **顧客 IdP 管理者向け手順書テンプレ提供** | FR-FED-011 / FR-ADMIN-011 | §FR-2.3.2.A | 顧客 IdP 管理者向けに「本基盤を SP/RP として登録する手順書」テンプレを弊社で整備するか?（A: IdP 別 5-7 種 / B: 主要 3 種のみ / C: 不要・登録項目リストのみ / D: 将来セルフサービスポータル）。Layer 1 サポート体制の確定 | 整備方針 | | ⏳ |
 | **B-618** | `[B]` | 🟡 | **IdP 選択 UX のハイブリッド構成採用方針** | FR-FED-013 / FR-FED-014 | §FR-2.3.3.C | **B-601 で A 案（HRD）を採用しつつ、大口顧客のみ C 案（組織固有 URL）を併用するハイブリッド構成**を採用するか?（基本は A、特定顧客のみ C 適用）。**Cognito Custom Domain 4/Region Hard Limit に注意**。Keycloak ならハイブリッド構成リファレンスは [§FR-2.3.3.C](proposal/fr/02-federation.md#fr-233c-keycloak-でのハイブリッド構成リファレンス基本-a--大口顧客のみ-c) 参照。**B-607 物理分離（L3）とは別軸**（C 経由でも Single Realm 維持が標準）| 採用 / 採用しない / 検討中 + C 経由顧客の見込み数（0 / 数社 / 10 社+）| | ⏳ |
+| **B-IdP-Protocol-1** | `[B]` | 🔥 | **顧客 IdP のプロトコル**（網羅性確認、2026-06-11 追加）| FR-FED-001 | §FR-2.0.C, §FR-2.0.D | 顧客 IdP のプロトコルは?（**OIDC** / **SAML 2.0** / WS-Federation / カスタム / 未定）。**OIDC + SAML 2.0 で 90%+ カバー**、WS-Federation のみ環境は ADFS 2019+ への移行 or extension 採用判断 | プロトコル一覧 + 顧客割合 | | ⏳ |
+| **B-IdP-Protocol-2** | `[B]` | 🟡 | **既存 Active Directory / LDAP との統合** | FR-FED-001 | §FR-2.0.C Tier 1 | オンプレ AD / LDAP との統合は必要か?（User Storage 連携 / なし）。**必要なら Keycloak User Storage SPI 採用、Cognito 不可（K-12）**。社内 IdP として AD を直接利用する場合の認証バックエンド | 必要 / 不要 + 製品名 | | ⏳ |
+| **B-IdP-Protocol-3** | `[B]` | 🟢 | **Kerberos / Windows 統合認証（社内 PC SSO）** | FR-FED-001 | §FR-2.0.C Tier 1 | 社内 PC からのシームレス SSO 要望は?（Kerberos Bridge / SPNEGO）。**Cognito 不可（K-13）、Keycloak は SPNEGO 標準対応**。業務系 / オンプレ環境の顧客に多い要望 | 必要 / 不要 + 対象顧客数 | | ⏳ |
+| **B-IdP-Protocol-4** | `[B]` | 🟡 | **Social Login**（B2C 用途 / ゲスト対応）| FR-FED-001 | §FR-2.0.C Tier 1, §FR-1.2 | B2C ユーザー（P-6）or ゲスト（P-5）対応の場合、Social Login は必要か?（Google / Microsoft / Apple / Facebook / GitHub / その他）。**Keycloak / Cognito 両方標準対応** | 必要 / 不要 + プロバイダ一覧 | | ⏳ |
+| **B-IdP-Protocol-5** | `[B]` | 🟢 | **WS-Federation のみ対応の古い ADFS 環境** | FR-FED-001 | §FR-2.0.D | WS-Federation のみ対応の古い ADFS 環境はあるか?（**Microsoft 自身が Entra ID 移行推奨、ADFS 2019+ なら OIDC/SAML 対応**）。やむを得ない場合は Keycloak extension で対応 | 該当 / 非該当 + 移行可否 | | ⏳ |
+| **B-IdP-Protocol-6** | `[B]` | 🟢 | **独自プロトコル / カスタム IdP** | FR-FED-001 | §FR-2.1 | 独自プロトコル or カスタム IdP の使用はあるか?（仕様 / プロトコル名 / 顧客内開発か商用か）。**標準プロトコル（OIDC/SAML）への移行を強く推奨**、やむを得ない場合は Identity Provider SPI で Custom 実装 | 該当 / 非該当 + 仕様詳細 | | ⏳ |
 
 > **ID リネーム注記**（2026-05-25）: 旧 B-200-B → **B-200** に統合（B-200 が事業者 + 顧客の統合表）。旧 B-612/613/614（移行・周知系、§3.1 配下）は **B-615/616/617** にリネーム（§3.4 の B-612 ログイン画面ブランディングとの ID 衝突回避）。
+>
+> **B-IdP-Protocol-1〜6 追加注記**（2026-06-11）: §FR-2.0.C 12 プロトコル網羅性 + §FR-2.0.D 不採用プロトコル根拠との整合のため、ヒアリング項目を追加。OIDC + SAML 2.0 + LDAP + Kerberos + Social Login + WS-Federation の 6 軸で網羅性を確認、不採用プロトコル（WS-Trust / OpenID 2.0 / CAS 等）への対応指針も明示。
 
 ### §3.2 マスター表 C: 御社アプリ・システム構成リスト
 
