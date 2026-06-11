@@ -45,6 +45,7 @@
 | API-A-102-α | 既存アプリのうち SSR モノリス構成（Next.js full-stack / Rails / Spring Boot 等）の割合 | §C-API-2, §FR-API-6 | 🔥 | ⏳ |
 | API-A-112 ⭐ | **Partner B2B API（外部企業からの M2M 呼び出し）連携の現状** — 該当アプリの有無、Partner 数 | §FR-API-1 §1.1, §FR-API-2 §2.2 | 🔥 | ⏳ |
 | API-A-113 ⭐ | **Partner B2B API の新規想定** — 将来 1〜3 年で M2M 連携要件が発生する可能性 | §FR-API-1 §1.1, §FR-API-2 §2.2 | 🔥 | ⏳ |
+| API-A-115 ⭐ | **非 AWS Internal 呼び出し元の現状棚卸し**（GitHub Actions / SaaS / on-prem / レガシーの内訳）| §FR-API-2 §2.3.A | 🔥 | ⏳ |
 
 ---
 
@@ -91,11 +92,20 @@
 | API-B-218 | Partner-tier の差別化（Bronze / Silver / Gold）を持つか | §FR-API-2 §2.2 | 🟢 | ⏳ |
 | API-B-219 | 既存 Partner の認証方式と互換性維持の要否 | §FR-API-2 §2.2, §NFR-API-9 | 🟡 | ⏳ |
 | API-B-220 | mTLS 採用時の証明書発行元（自社 PKI / AWS Private CA / Partner 側 CA、旧 API-B-213）| §FR-API-2 §2.2 | 🟡 | ⏳ |
-| API-B-221 | Internal 区分の標準は IAM auth か JWT か（混在許容） | §FR-API-2 §2.3 | 🟡 | ⏳ |
+| API-B-221 | 社内 Profile の標準は IAM auth か JWT か（混在許容） | §FR-API-2 §2.3 | 🟡 | ⏳ |
 | API-B-222 | Cross-account IAM 信頼関係を Service Catalog で配布するか | §FR-API-2 §2.3 | 🟢 | ⏳ |
+| API-B-225 ⭐ | **GitHub Actions / GitLab CI で OIDC Federation 必須化するか**（Access Key 直接埋め込み禁止）| §FR-API-2 §2.3.A | 🔥 | ⏳ |
+| API-B-226 | on-prem 認証は **mTLS / OAuth Client Credentials どちらをデフォルト**にするか | §FR-API-2 §2.3.A | 🟡 | ⏳ |
+| API-B-227 | Vendor SaaS（Datadog / Splunk 等）の **External ID 必須化** スコープ | §FR-API-2 §2.3.A | 🟡 | ⏳ |
+| API-B-228 | **レガシー API Key 認証**の許容範囲・移行期限 | §FR-API-2 §2.3.A, §NFR-API-9 | 🟡 | ⏳ |
 | API-B-241 | Lambda Authorizer の使用を例外承認制にするか | §FR-API-2 §2.4 | 🟡 | ⏳ |
 | API-B-242 | Lambda Authorizer のキャッシュ TTL 標準値 | §FR-API-2 §2.4 / §C-API-3 | 🟢 | ⏳ |
 | API-B-243 | AWS Verified Permissions（Cedar）の採用範囲 | §FR-API-2 §2.4 | 🟢 | ⏳ |
+| API-B-244 ⭐ | **アプリ側認可は JWT クレーム単独 / JWT + アプリ DB / Policy Engine のどれをデフォルトとするか** | §FR-API-2 §2.5 | 🔥 | ⏳ |
+| API-B-245 ⭐ | **ユーザプロビジョニング標準（JIT / SCIM / Invitation / Self-Service）の使い分け基準** | §FR-API-2 §2.5, §C-API-3 §C-3.4 | 🔥 | ⏳ |
+| API-B-246 | 退職者の即時削除要件（SCIM 必須化 vs 次回ログイン無効化で OK）| §FR-API-2 §2.5, §C-API-3 §C-3.4 / §NFR-API-7 | 🟡 | ⏳ |
+| API-B-247 | 認証基盤 roles → アプリ permissions のマッピング規約（標準テンプレ提供か、アプリ判断か）| §FR-API-2 §2.5 | 🟡 | ⏳ |
+| API-B-248 | 初回ログイン時のプロフィール完成 UX 必須化スコープ | §FR-API-2 §2.5 | 🟢 | ⏳ |
 
 ### B-3: 流量制御・課金（§FR-API-3, §FR-API-4）
 
@@ -142,6 +152,8 @@
 | API-B-602 | Spot タスクの採用範囲 | §FR-API-6 §6.1 / §NFR-API-8 | 🟢 | ⏳ |
 | API-B-621 | 共有 ALB の運用単位（プロジェクト / アカウント） | §FR-API-6 §6.2 / §NFR-API-8 | 🟡 | ⏳ |
 | API-B-622 | ALB 認証統合（Cognito / OIDC）を標準扱いするか | §FR-API-6 §6.2 / §FR-API-2 | 🟡 | ⏳ |
+| API-B-623 ⭐ | **ECS バックエンドの前段に ALB only / API GW + ALB のどちらをデフォルトとするか**（Pattern X / Pattern Y）| §FR-API-6 §6.2.A, §C-API-2 §C-2.1.5 | 🔥 | ⏳ |
+| API-B-624 | Partner B2B が要件化された ECS バックエンドは API GW REST 必須化するか | §FR-API-6 §6.2.A, §FR-API-2 §2.2 | 🟡 | ⏳ |
 | API-B-631 | Cloud Map / 自前 Consul 等からの Service Connect / Lattice 移行ロードマップ | §FR-API-6 §6.3 | 🟡 | ⏳ |
 | API-B-632 | Service Connect / Lattice の mTLS 設定を標準化するか | §FR-API-6 §6.3 / §NFR-API-4 | 🟢 | ⏳ |
 | API-B-641 | Task Role の粒度標準化 | §FR-API-6 §6.4 | 🟡 | ⏳ |
@@ -246,6 +258,7 @@
 | API-D-102 | 昇格申請のリードタイム目標 | §FR-API-1 §1.3 | 🟡 | ⏳ |
 | API-D-103 | 緊急昇格のエスケープハッチ許容 | §FR-API-1 §1.3 | 🟡 | ⏳ |
 | API-D-241 | FAPI 2.0 など規制業界準拠の Partner 要件 | §FR-API-2 §2.2 / §NFR-API-7 | 🟡 | ⏳ |
+| API-D-245 | AWS Verified Permissions / Cedar を本標準のデフォルトに含めるか（escalation 扱い vs 標準採用）| §FR-API-2 §2.5, §FR-API-2 §2.6 | 🟡 | ⏳ |
 | API-D-1402-α | HRD（Home Realm Discovery）ページの所在（認証基盤 / アプリ）| §FR-API-2 §2.B, §C-API-3 | 🟡 | ⏳ |
 
 ### D-2: タグ・課金按分（§FR-API-4）

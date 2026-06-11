@@ -26,6 +26,15 @@
 
 Container 側は §FR-API-6 で別建てとし、選択肢として共存する。
 
+#### §5 と §6 の境界整理（API Gateway の扱い）
+
+| ランタイム | API Gateway の位置 | 説明 |
+|---|---|---|
+| **Serverless（§5）** | **API GW + Lambda が密結合の標準セット**（事実上一体） | API GW なしの Lambda は Function URL（限定用途）か Step Functions など特殊形のみ |
+| **Container（§6）**| **ALB と API GW + ALB のどちらかを選択**（疎結合） | ALB only がデフォルト、Usage Plan 等が必要な場合のみ API GW + ALB（[§6.2.A 選定基準](06-container-standard.md)）|
+
+→ Serverless = API GW 必須、Container = API GW 任意（要件次第）。Container で API GW を使う構成（[§C-API-2 §C-2.1.5 サブパターン A-3](../common/02-runtime-selection-criteria.md)）は **本章ではなく §FR-API-6 §6.2.A** で扱う。
+
 ### §5.0.3 §5.0.A 本標準のスタンス
 
 | 基本方針 | 本章での具体化 |

@@ -217,7 +217,47 @@ flowchart LR
 
 → 詳細は [§FR-API-6 §6.1.A モノリス vs マイクロサービス](../fr/06-container-standard.md) 参照。
 
-### §C-1.3.4 TBD / 要確認
+### §C-1.3.4 ECS バックエンド + API Gateway パターン参照アーキ
+
+[§C-API-2 §C-2.1.5](02-runtime-selection-criteria.md) のサブパターン **A-3（SPA + ECS バックエンド + API GW + ALB）** を採用する場合の参照アーキ：
+
+```mermaid
+flowchart LR
+    Internet --> CF[CloudFront]
+    CF --> WAF[AWS WAF]
+    WAF --> APIGW[API Gateway<br/>REST or HTTP]
+
+    APIGW -.JWT Authorizer.-> Auth[共有認証基盤]
+    APIGW -.Usage Plan + API Key.-> Usage[Partner B2B]
+    APIGW --> VPCLink[VPC Link v2]
+    VPCLink --> ALB[Internal ALB]
+    ALB --> ECS[ECS Fargate Service<br/>Backend API only<br/>Spring Boot / Express / FastAPI 等]
+    ECS --> DB[RDS / Aurora / DynamoDB]
+
+    ECS -.ADOT sidecar.-> CW[CloudWatch + ADOT]
+    ECS -.firelens.-> CWL[CloudWatch Logs]
+```
+
+#### ECS バックエンド + API GW パターンの標準要素
+
+- **CloudFront / WAF**：Public は前段必須
+- **API Gateway**：REST（Usage Plan / API Key 必要時）or HTTP（マネージド JWT Authorizer）
+- **VPC Link v2**：ALB 統合（2020 GA）、HTTP API は直接 ALB 統合可
+- **Internal ALB**：path / host based routing、VPC 内部のみ
+- **ECS Fargate**：純粋 JSON バックエンド API（HTML 配信なし）
+- **DB**：要件次第（DynamoDB / Aurora 等）
+
+#### A-2（ALB only）vs A-3（API GW + ALB）の選定
+
+- Partner B2B Usage Plan 必要 → **A-3 必須**
+- マルチテナント per-tenant throttle 必要 → **A-3 必須**
+- AWS Marketplace SaaS 公開 → **A-3 必須**
+- 純粋 B2C / 内部 + トラフィック大 → **A-2 推奨**（コスト優位）
+- WebSocket / Streaming / 大容量 → **A-2 必須**
+
+→ 詳細は [§FR-API-6 §6.2.A ALB only vs API Gateway + ALB の選定基準](../fr/06-container-standard.md) 参照。
+
+### §C-1.3.5 TBD / 要確認
 
 - Q: Service Connect vs VPC Lattice の **デフォルト境界**確定 → `API-B-106`（§FR-API-1 と同じ）
 - Q: モノリスパターン用 **Service Catalog 製品**の整備優先度 → `API-D-2201-α`

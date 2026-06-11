@@ -49,6 +49,36 @@ ALB の認証統合（Cognito / OIDC を ALB レベルで実装、`X-Amzn-Oidc-*
 
 ---
 
+### 【ECS バックエンドの前段 LB デフォルト】 (API-B-623, 🔥)
+
+ECS バックエンド（フロントエンドが SPA や別 SSR で分離されている構成、[§C-API-2 §C-2.1 パターン A / B](../proposal/common/02-runtime-selection-criteria.md)）の **前段ロードバランサ**として、本標準のデフォルトをどちらにする方針が望ましいかご教示ください。
+
+選択肢:
+- **Pattern X：ALB only**（CloudFront + WAF + ALB + ECS）
+  - 低コスト（特に >100M req/月）、レイテンシ低、Streaming / WebSocket / 大容量レスポンス対応
+  - Usage Plan / API Key 機能なし
+- **Pattern Y：API Gateway + ALB**（CloudFront + WAF + API GW + VPC Link + ALB + ECS）
+  - Usage Plan / API Key / Stage 管理 / Canary deployments 機能あり
+  - per-request 課金、29 秒タイムアウト、10 MB ペイロード上限、Streaming / WebSocket 制約
+- 用途別判断（Partner B2B あれば API GW、それ以外は ALB 等）
+
+**目的**: [§FR-API-6 §6.2.A](../proposal/fr/06-container-standard.md) の前段選定基準確定。本標準の Service Catalog 製品ラインナップが決まります。一般的には **「ALB only がデフォルト、Partner B2B / マルチテナント throttle 等の要件で API GW + ALB に escalation」** が業界主流です（[§6.2.A 選定マトリクス](../proposal/fr/06-container-standard.md) 参照）。
+
+---
+
+### 【Partner B2B 対応 ECS バックエンドの API GW 必須化】 (API-B-624, 🟡)
+
+Partner B2B 連携（OAuth Client Credentials + Usage Plan / API Key）が要件化された ECS バックエンドアプリの場合、**API Gateway REST API + Usage Plan の利用を必須化**する方針でよろしいかご確認ください。
+
+選択肢:
+- 必須化（Partner B2B 要件なら自動的に API GW REST 採用）
+- 任意（ALB + Lambda Authorizer + 自前 throttle で対応可）
+- アプリ判断
+
+**目的**: [§FR-API-6 §6.2.A / §FR-API-2 §2.2](../proposal/fr/02-authn-authz.md) の Partner 認証と前段選定の整合。Usage Plan の代替自前実装は運用負荷が高いため、Partner B2B あれば API GW REST 必須化が自然です。
+
+---
+
 ### 【サービス間通信の移行ロードマップ】 (API-B-631, 🟡)
 
 既存の Cloud Map / 自前 Consul / 自前 sidecar service mesh から、本標準の **ECS Service Connect / VPC Lattice** への移行ロードマップ方針をご教示ください。

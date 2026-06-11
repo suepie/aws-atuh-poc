@@ -280,10 +280,10 @@
 | **関連 SSOT** | [../requirements/](../requirements/00-index.md) 共有認証基盤の要件定義 |
 | **外部** | [Control access to HTTP APIs with JWT authorizers](https://docs.aws.amazon.com/apigateway/latest/developerguide/http-api-jwt-authorizer.html) |
 
-### 4.2 Partner 認証（OAuth Client Credentials デフォルト / API Key Legacy / mTLS 規制対応）★ 全面刷新 + §2.2.7 リファレンス実装
+### 4.2 Partner 認証（Tier 別：Bronze OAuth / Silver Token Exchange / Gold mTLS）★ Path C 確定
 
-**概要**: B2B Partner 向けの認証標準を **OAuth Client Credentials（業界主流：Salesforce / Microsoft Graph / Stripe モダン版）をデフォルト** に確定。API Key は Legacy / Trial 用途に退き、mTLS は規制業界の escalation。
-**追加 (2026-06-10)**：§2.2.7「Partner 認証 詳細フロー（リファレンス実装）」を proposal に追加。Partner 開発者向けのリファレンス、Service Catalog 製品の元仕様。
+**概要**: B2B Partner 向けの認証標準を tier 別に整理。**Silver 主流 = Token Exchange (RFC 8693)**（認証側 §FR-6.0.B / K-01 と完全整合）、**Bronze fallback = OAuth Client Credentials**（Partner が IdP 持たない場合）、**Gold escalation = mTLS / PrivateLink**（規制業界）。**Federation B（/token 露出ゼロの究極形）は認証側 ADR として長期戦略に温存**。
+**追加 (2026-06-10)**：§2.2.7（Bronze）/ §2.2.8（Silver Token Exchange）/ §2.2.9（Federation B ADR）/ §2.2.10（Defense-in-depth 4 層防御）を proposal に追加。
 
 #### スライド構成案（5 枚 + リファレンス補足 3 枚）
 
@@ -302,22 +302,33 @@
 
 | 種別 | 参考資料 |
 |---|---|
-| **proposal** | [proposal/fr/02-authn-authz.md §2.2 Partner 認証](proposal/fr/02-authn-authz.md) / **[§2.2.7 Partner 認証 詳細フロー（リファレンス実装）](proposal/fr/02-authn-authz.md)** ⭐ / [proposal/common/03-shared-auth-boundary.md §C-3.1 C. Partner M2M Client 管理機能](proposal/common/03-shared-auth-boundary.md) |
+| **proposal** | [proposal/fr/02-authn-authz.md §2.2 Partner 認証 全体](proposal/fr/02-authn-authz.md) / **§2.2.7 Bronze fallback** / **§2.2.8 Silver Token Exchange ⭐** / **§2.2.9 Federation B 長期 ADR** / **§2.2.10 Defense-in-depth 4 層** / [proposal/common/03-shared-auth-boundary.md §C-3.1 C. Partner M2M Client 管理機能](proposal/common/03-shared-auth-boundary.md) / [escalation-to-auth.md §1.5〜§1.7](escalation-to-auth.md) |
 | **hearing-checklist** | **B-211** ⭐, B-212, B-214, B-215, B-216, B-217, B-218, B-219, B-220, D-241 |
 | **hearing-script** | [02-authn-authz.md](hearing-script/02-authn-authz.md) |
-| **外部** | [OAuth 2.0 Client Credentials (RFC 6749 §4.4)](https://datatracker.ietf.org/doc/html/rfc6749#section-4.4) / [OAuth 2.0 JWT Bearer (RFC 7523)](https://datatracker.ietf.org/doc/html/rfc7523) / [OAuth 2.0 Mutual-TLS (RFC 8705)](https://datatracker.ietf.org/doc/html/rfc8705) / [FAPI 2.0 Security Profile](https://openid.net/specs/fapi-2_0-security-profile.html) / [Stripe API Authentication](https://docs.stripe.com/api/authentication) / [Salesforce OAuth 2.0 Client Credentials](https://help.salesforce.com/s/articleView?id=sf.remoteaccess_oauth_client_credentials_flow.htm) / [AWS Marketplace SaaS Listings](https://docs.aws.amazon.com/marketplace/latest/userguide/saas-listings.html) / [Usage Plans and API Keys for REST APIs](https://docs.aws.amazon.com/apigateway/latest/developerguide/api-gateway-api-usage-plans.html) — "Don't use API keys for authentication" 公式明記 |
+| **認証側との整合** | §FR-6.0.B / §FR-6.3 Token Exchange Knockout K-01（Keycloak 必須化要因）と完全整合 |
+| **外部** | [OAuth 2.0 Token Exchange (RFC 8693)](https://datatracker.ietf.org/doc/html/rfc8693) ⭐ / [OAuth 2.0 Client Credentials (RFC 6749 §4.4)](https://datatracker.ietf.org/doc/html/rfc6749#section-4.4) / [OAuth 2.0 JWT Bearer (RFC 7523)](https://datatracker.ietf.org/doc/html/rfc7523) / [OAuth 2.0 Mutual-TLS (RFC 8705)](https://datatracker.ietf.org/doc/html/rfc8705) / [FAPI 2.0 Security Profile](https://openid.net/specs/fapi-2_0-security-profile.html) / [Stripe API Authentication](https://docs.stripe.com/api/authentication) / [Salesforce OAuth 2.0 Client Credentials](https://help.salesforce.com/s/articleView?id=sf.remoteaccess_oauth_client_credentials_flow.htm) / [AWS Marketplace SaaS Listings](https://docs.aws.amazon.com/marketplace/latest/userguide/saas-listings.html) / [Usage Plans and API Keys for REST APIs](https://docs.aws.amazon.com/apigateway/latest/developerguide/api-gateway-api-usage-plans.html) — "Don't use API keys for authentication" 公式明記 / [AWS WAF ATP](https://docs.aws.amazon.com/waf/latest/developerguide/aws-managed-rule-groups-atp.html) |
 | **推奨 SDK**（§2.2.7.7）| [Spring Security OAuth2 Client (Java)](https://docs.spring.io/spring-security/reference/servlet/oauth2/client/index.html) / [openid-client (Node)](https://github.com/panva/openid-client) / [requests-oauthlib (Python)](https://github.com/requests/requests-oauthlib) / [golang.org/x/oauth2/clientcredentials (Go)](https://pkg.go.dev/golang.org/x/oauth2/clientcredentials) / [MSAL.NET (.NET)](https://learn.microsoft.com/en-us/entra/msal/dotnet/) |
 
-### 4.3 IAM auth（Internal / Private 向け）
+### 4.3 IAM auth（AWS ネイティブ Internal / Private 向け）+ §2.3.A 非 AWS Internal の認証 ★ 拡張
 
-**概要**: AWS 内部からの呼出向け IAM auth（SigV4） + Cross-account Resource Policy + VPC Lattice Auth Policy。
+**概要**: 「社内 / Internal」呼び出し元を 2 カテゴリに分けて整理。**AWS ネイティブ（Lambda/ECS/EC2 等）= IAM auth（SigV4）** + **非 AWS（GitHub Actions / Vendor SaaS / on-prem / Kubernetes 等）= OIDC Federation / IRSA / mTLS / OAuth M2M / External ID / API Key legacy の 6 カテゴリ**。
+**追加 (2026-06-10)**：§2.3.A「非 AWS Internal の認証」を新設。CI/CD パイプラインの Access Key 直接埋め込みアンチパターン → OIDC Federation 必須化を業界標準として提示。
+
+#### スライド構成案（4 枚）
+
+| # | スライド | 内容 |
+|---|---|---|
+| 1 | Internal 呼び出し元の 2 カテゴリ | AWS ネイティブ vs 非 AWS の判定軸、IAM Principal の有無 |
+| 2 | AWS ネイティブ Internal（§2.3）| SigV4 / Cross-account Resource Policy / VPC Lattice Auth Policy |
+| 3 | **非 AWS Internal の 6 カテゴリ**（§2.3.A）| GitHub Actions OIDC ⭐ / IRSA / mTLS / OAuth M2M / External ID / API Key legacy |
+| 4 | GitHub Actions OIDC 必須化推奨 | Access Key 埋め込みアンチパターン → AssumeRoleWithWebIdentity への移行 |
 
 | 種別 | 参考資料 |
 |---|---|
-| **proposal** | [proposal/fr/02-authn-authz.md §2.3](proposal/fr/02-authn-authz.md) |
-| **hearing-checklist** | B-221, B-222 |
-| **hearing-script** | [02-authn-authz.md](hearing-script/02-authn-authz.md) |
-| **外部** | [API Gateway IAM Authentication](https://docs.aws.amazon.com/apigateway/latest/developerguide/permissions.html) / [VPC Lattice Auth Policies](https://docs.aws.amazon.com/vpc-lattice/latest/ug/auth-policies.html) |
+| **proposal** | [proposal/fr/02-authn-authz.md §2.3 AWS ネイティブ](proposal/fr/02-authn-authz.md) / **[§2.3.A 非 AWS Internal](proposal/fr/02-authn-authz.md)** ⭐ |
+| **hearing-checklist** | B-221, B-222, **A-115** ⭐, **B-225** ⭐, B-226, B-227, B-228 |
+| **hearing-script** | [00-common.md](hearing-script/00-common.md), [02-authn-authz.md](hearing-script/02-authn-authz.md) |
+| **外部** | [API Gateway IAM Authentication](https://docs.aws.amazon.com/apigateway/latest/developerguide/permissions.html) / [VPC Lattice Auth Policies](https://docs.aws.amazon.com/vpc-lattice/latest/ug/auth-policies.html) / [GitHub Actions OIDC Federation (AWS Blog)](https://aws.amazon.com/blogs/security/use-iam-roles-to-connect-github-actions-to-actions-in-aws/) ⭐ / [IRSA (IAM Roles for Service Accounts)](https://docs.aws.amazon.com/eks/latest/userguide/iam-roles-for-service-accounts.html) / [AWS Cross-account Trust with External ID](https://docs.aws.amazon.com/IAM/latest/UserGuide/confused-deputy.html) — confused deputy 防止 |
 
 ### 4.4 Authorizer 選定 + SSR モノリス認証 + 未認証エンドポイント保護
 
@@ -396,16 +407,36 @@
 | **hearing-script** | [05-serverless-standard.md](hearing-script/05-serverless-standard.md) |
 | **外部** | [Powertools for AWS Lambda](https://aws.amazon.com/powertools-for-aws-lambda/) / [Serverless Applications Lens](https://docs.aws.amazon.com/wellarchitected/latest/serverless-applications-lens/welcome.html) / [Aurora Serverless v2](https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/aurora-serverless-v2.html) |
 
-### 6.2 Container 標準（ECS Fargate）
+### 6.2 Container 標準（ECS Fargate）+ §6.2.A ALB vs API GW 選定基準 ★ 拡張
 
 **概要**: Fargate デフォルト、共有 ALB、Service Connect / VPC Lattice、Task Role 最小権限、Blue/Green デプロイ。
+**追加 (2026-06-10)**：§6.2.A 「ALB only vs API Gateway + ALB の選定基準」新設。ECS バックエンドの前段選定（Pattern X vs Pattern Y）を明文化。SSR モノリスでの API GW 利用に関する留意（§6.1.A.5）も追加。
+
+#### スライド構成案（4 枚 + 選定基準補足 2 枚）
+
+| # | スライド | 内容 |
+|---|---|---|
+| 1 | Container 標準（ECS Fargate）全体図 | Fargate / ALB / Service Connect / VPC Lattice / Task Role / Blue/Green |
+| 2 | 共有 ALB 戦略 | Project / Account 単位の共有、コスト密度向上 |
+| 3 | サービス間通信（Service Connect / Lattice）| 同一 VPC = Service Connect、クロス VPC/Account = Lattice |
+| 4 | デプロイ戦略 | Rolling vs Blue/Green、CodeDeploy 連携 |
+| **R1** | **ALB only vs API GW + ALB**（§6.2.A）★ | Pattern X / Pattern Y 比較表、選定マトリクス、デフォルト推奨 |
+| **R2** | **SSR モノリスでの API GW 非推奨**（§6.1.A.5）| HTML 配信のコスト・タイムアウト・ペイロード制約、例外パターン（Partner B2B path のみ切り出し）|
+
+#### 重要メッセージング
+
+| 言ってはいけない | 言うべき |
+|---|---|
+| ❌ 「ECS には常に API Gateway を被せます」 | ✅ 「**ECS バックエンドは ALB only がデフォルト、Partner B2B 等で API GW + ALB に escalation**」 |
+| ❌ 「SSR モノリスに API Gateway も使えます」 | ✅ 「**SSR モノリスは ALB 直接接続、API Gateway は HTML 配信に不適**」 |
+| ❌ 「API Gateway = ECS でも Lambda でも標準」 | ✅ 「**Serverless = API GW + Lambda 密結合、Container = ALB or API GW 任意選択**」 |
 
 | 種別 | 参考資料 |
 |---|---|
-| **proposal** | [proposal/fr/06-container-standard.md §6.1〜§6.5](proposal/fr/06-container-standard.md) |
-| **hearing-checklist** | B-601〜B-652 |
+| **proposal** | [proposal/fr/06-container-standard.md §6.1〜§6.5](proposal/fr/06-container-standard.md) / **[§6.1.A.5 モノリスでの API GW 利用留意](proposal/fr/06-container-standard.md)** / **[§6.2.A ALB vs API GW 選定基準](proposal/fr/06-container-standard.md)** ⭐ / [proposal/common/01-reference-architecture.md §C-1.3.4 ECS バックエンド + API GW パターン](proposal/common/01-reference-architecture.md) / [proposal/common/02-runtime-selection-criteria.md §C-2.1.5 サブパターン A-2 / A-3](proposal/common/02-runtime-selection-criteria.md) |
+| **hearing-checklist** | B-601〜B-652, **B-623** ⭐, B-624 |
 | **hearing-script** | [06-container-standard.md](hearing-script/06-container-standard.md) |
-| **外部** | [ECS Best Practices](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/ecs-best-practices.html) / [ECS Service Connect](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/service-connect.html) / [VPC Lattice for ECS](https://aws.amazon.com/blogs/containers/build-secure-multi-account-multi-vpc-connectivity-for-your-applications-with-amazon-vpc-lattice/) |
+| **外部** | [ECS Best Practices](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/ecs-best-practices.html) / [ECS Service Connect](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/service-connect.html) / [VPC Lattice for ECS](https://aws.amazon.com/blogs/containers/build-secure-multi-account-multi-vpc-connectivity-for-your-applications-with-amazon-vpc-lattice/) / [API Gateway VPC Link v2 (Private Integration)](https://docs.aws.amazon.com/apigateway/latest/developerguide/http-api-private-integration.html) / [API Gateway HTTP API integrations](https://docs.aws.amazon.com/apigateway/latest/developerguide/http-api-develop-integrations.html) |
 
 ### 6.3 モノリス vs マイクロサービス ★ 新規追加
 
@@ -817,3 +848,5 @@
 | 2026-06-03 | **Public 2 段階細分化**（Public-Authenticated / Public-Unauthenticated）+ **アプリ UI を持たないデフォルト**（§3.1 4 枚、§4.4 4 枚に拡張）+ **Partner 認証 OAuth Client Credentials デフォルト化**（§4.2 5 枚に全面刷新、業界主流に整合）+ **§C-API-3 §C-3.1 認証基盤契約の B/C 追加**（Hosted UI 提供 + Partner M2M Client 管理を申し送り、§10.1 4 枚に拡張）。ヒアリング項目追加：B-103, B-107 ⭐, B-108, B-211 ⭐（修正）, B-214〜B-220, D-241, D-1402-α |
 | 2026-06-10 | **公開範囲を「信頼プロファイル」として統合概念化**：ネットワーク × 認証 × 既定 WAF の 3 要素を 1 つのパッケージとして束ね、Profile 名を日本語化（パブリック（認証有 / オープン）、社内、パートナー、社内限定）。§3.1 を 4 枚 → 5 枚（概念定義 → 統合表 → 決定木 → チューニング軸 → モノリス特記）に再編。章タイトル「公開範囲 → 公開範囲（信頼プロファイル）」|
 | 2026-06-10 | **§2.2.7 Partner 認証 詳細フロー（リファレンス実装）正式組込み**：API Key と OAuth の役割分担、4 つの併用パターン、シーケンス図（セットアップ / 実行時 / Token Refresh）、リクエスト具体例、エラーケース、API Gateway 設定、Token Cache 戦略、推奨 SDK、監査ログ識別、mTLS 併用、アンチパターン。PowerPoint §4.2 にリファレンス補足スライド R1〜R3 を追加 |
+| 2026-06-10 | **Path C 確定：認証側 Federation B 衝突を踏まえた tier 戦略の正式化**：§2.2.7 を Bronze fallback 化、§2.2.8 Silver 主流 Token Exchange（§FR-6 K-01 と完全整合）、§2.2.9 Federation B 長期 ADR placeholder、§2.2.10 Defense-in-depth 4 層防御を proposal に追加。§4.2 PowerPoint を tier 別整理に刷新。**§2.3 を AWS ネイティブ / 非 AWS に分割**、§2.3.A 「非 AWS Internal の認証」新設（GitHub Actions OIDC / IRSA / mTLS / OAuth M2M / External ID / API Key legacy の 6 カテゴリ）、§4.3 PowerPoint を 4 枚に拡張。ヒアリング項目 A-115（非 AWS Internal 棚卸）+ B-225（GitHub Actions OIDC 必須化）+ B-226（on-prem mTLS/OAuth）+ B-227（Vendor External ID）+ B-228（レガシー移行期限）を追加。escalation-to-auth.md §1.5〜§1.7（Token Exchange 採用要請、`/token` 保護要件、Federation B ADR 案）追記 |
+| 2026-06-10 | **ALB only vs API Gateway + ALB 選定基準を正式整理**：§FR-API-6 §6.2.A「ALB only vs API Gateway + ALB の選定基準」新設（Pattern X / Pattern Y 比較表、選定マトリクス、デフォルト推奨）。§6.1.A.5「モノリスでの API GW 利用留意」追加（HTML 配信不適・タイムアウト・ペイロード制約）。§C-API-2 §C-2.1.5「パターン A サブパターン A-1/A-2/A-3」+ 決定木追加。§C-API-1 §C-1.3.4「ECS バックエンド + API GW 参照アーキ」追加。§FR-API-5 / §FR-API-6 境界を「Serverless = API GW + Lambda 密結合、Container = ALB or API GW 任意選択」と明文化。PowerPoint §6.2 を 4 枚 + リファレンス補足 R1（選定基準）/ R2（モノリス非推奨）に拡張。ヒアリング項目 B-623（ECS 前段デフォルト）⭐ + B-624（Partner B2B API GW 必須化）追加 |

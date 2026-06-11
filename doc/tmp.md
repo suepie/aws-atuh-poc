@@ -1,30 +1,41 @@
 ```mermaid
 sequenceDiagram
-    participant User as 👤 エンドユーザー
-    participant Hub as 🏢 本基盤<br/>(auth.example.com)
-    participant IdP as 🏢 顧客 IdP<br/>(login.microsoftonline.com 等)
+    participant U as ユーザ
+    participant IdP as 顧客 IdP<br/>(Entra/Okta/Google等)
+    participant Auth as 共有認証基盤<br/>(Cognito/Keycloak)
+    participant APIGW as API Gateway
+    participant Authz as JWT Authorizer
+    participant App as アプリ Lambda/ECS
+    participant DB as アプリ DB
 
-    rect rgb(255, 243, 224)
-    Note over Hub: ❶ 本基盤の IdP セレクター画面<br/>← 本基盤チーム管轄、カスタマイズ可
-    Hub->>User: IdP 選択 or HRD メール入力
-    User->>Hub: 選択 / メール入力
+    Note over U,IdP: SSO 認証
+    U->>IdP: 認証
+    IdP->>Auth: SAML / OIDC で federation
+    Auth->>Auth: 顧客 IdP claims を本基盤の<br/>roles/tenant_id にマッピング<br/>(認証側 §FR-2.3 / §FR-2.2)
+    Auth-->>U: JWT (sub=usr-abc, tenant_id=acme,<br/>roles=["user"])
+
+    Note over U,App: アプリ API 呼び出し
+    U->>APIGW: Bearer JWT
+    APIGW->>Authz: 検証
+    Authz-->>APIGW: Allow + claims を context に
+    APIGW->>App: invoke + context
+
+    Note over App,DB: ★ ここがオンボーディング判定
+    App->>DB: SELECT * FROM users WHERE user_id = 'usr-abc'
+    DB-->>App: 結果
+
+    alt 初回（レコードなし）
+        App->>App: JIT user 作成
+        App->>DB: INSERT users (user_id, tenant_id, roles)<br/>+ デフォルト permission 付与
+        App->>DB: INSERT user_permissions<br/>(role=user → ["order:read", "self:edit"])
+        Note over App: 任意：プロフィール完成画面へ
+        App-->>U: 200 (初回フラグ含む)
+    else 既存ユーザ
+        App->>DB: SELECT permissions FROM user_permissions
+        App->>App: permission check (request_action ⊆ permissions?)
+        App-->>U: 200 or 403
     end
 
-    Hub->>IdP: フェデ要求
-
-    rect rgb(227, 242, 253)
-    Note over IdP: ❷ 顧客 IdP のログイン画面<br/>← 顧客 IT 部門管轄、本基盤からは触れない
-    IdP->>User: ID/PW + MFA 入力画面
-    User->>IdP: 認証情報入力
-    end
-
-    IdP->>Hub: assertion
-
-    rect rgb(255, 243, 224)
-    Note over Hub: ❸ 本基盤の補完画面<br/>(同意 / プロファイル補完 / アカウントリンク確認)<br/>← 本基盤チーム管轄、カスタマイズ可
-    Hub->>User: 補完画面（必要時のみ）
-    User->>Hub: 確認・入力
-    end
 ```
 
 ```mermaid

@@ -154,6 +154,64 @@ Cross-account API 呼び出し（Account A → Account B の API）のための 
 
 ---
 
+### 【GitHub Actions / GitLab CI で OIDC Federation 必須化するか】 (API-B-225, 🔥)
+
+CI/CD パイプライン（GitHub Actions、GitLab CI、Bitbucket Pipelines 等）から AWS API を呼び出す際の認証を、**OIDC Federation（AssumeRoleWithWebIdentity）必須化**する方針でよろしいかご確認ください。
+
+AWS 公式推奨パターン（2022〜）は：
+- パイプラインで **永続 AWS Access Key を埋め込まない**（Secrets に長期保存しない）
+- 代わりに **CI/CD プロバイダの OIDC token** を使い、AWS STS で **一時 credentials（15 分〜1h TTL）** を取得
+- Trust Policy で repo / branch / environment 単位の細粒度制御
+
+選択肢:
+- **新規 CI/CD は OIDC 必須化、既存も N ヶ月以内に移行**
+- 新規のみ OIDC、既存は維持
+- 任意（Access Key 直接埋め込みも許容、本標準推奨と乖離）
+
+**目的**: [§FR-API-2 §2.3.A.2 §2.3.A.3](../proposal/fr/02-authn-authz.md) の CI/CD 認証標準。Access Key 直接埋め込みは漏洩リスクが高く、業界アンチパターンとされています。
+
+---
+
+### 【on-prem 認証のデフォルト】 (API-B-226, 🟡)
+
+社内 on-prem サーバから AWS API を呼び出す場合、**mTLS** と **OAuth Client Credentials**（共有認証基盤利用、§2.3.A.5）のどちらをデフォルトとする方針が望ましいかご教示ください。
+- **mTLS**：既存 PKI 資産があれば自然、エンタープライズ標準
+- **OAuth Client Credentials**：PKI 不要、共有認証基盤 1 箇所で管理
+- 用途別判断（PKI ある資産は mTLS、新規は OAuth 等）
+
+**目的**: [§FR-API-2 §2.3.A.2 §2.3.A.5](../proposal/fr/02-authn-authz.md) の on-prem 認証標準。既存 PKI 資産の有無で判断が変わります。
+
+---
+
+### 【Vendor SaaS の External ID 必須化】 (API-B-227, 🟡)
+
+Vendor SaaS（Datadog / Splunk / New Relic / Snyk 等）と AWS の連携で **External ID 必須化**するスコープをご教示ください。
+
+External ID は Vendor 発行のランダム文字列を Trust Policy に埋め込み、**confused deputy 攻撃**（他顧客の Trust Policy 流用）を防ぐ AWS 公式パターンです。
+
+選択肢:
+- 全 Vendor 連携で必須化（Trust Policy 標準テンプレで配布）
+- 主要 Vendor のみ必須（Datadog / Splunk 等）
+- Vendor 側が要求するもののみ（既存維持）
+
+**目的**: [§FR-API-2 §2.3.A.2 §2.3.A.4](../proposal/fr/02-authn-authz.md) の Vendor 連携セキュリティ最低ライン。Trust Policy 標準テンプレ化なら Service Catalog 配布対象になります。
+
+---
+
+### 【レガシー API Key 認証の許容範囲・移行期限】 (API-B-228, 🟡)
+
+レガシーシステム（モダン認証非対応、API Key 直接埋め込み等）の **本標準への移行期限**をご教示ください。
+
+選択肢:
+- 半年以内に全件移行（厳格）
+- 1 年以内、Tier 別優先順位（Critical 優先）
+- 個別判断（システム廃止予定があれば現状維持等）
+- 移行期限なし（永久に許容しない方針なら例外申請制）
+
+**目的**: [§FR-API-2 §2.3.A.6 §2.3.A.7 / §NFR-API-9](../proposal/nfr/09-compatibility.md) の移行戦略。API Key 直接埋め込みは漏洩リスクが高く、本標準の死守事項（§NFR-API-4）と矛盾するため移行が前提です。
+
+---
+
 ### 【Lambda Authorizer の使用制限】 (API-B-241, 🟡)
 
 Lambda Authorizer（カスタムロジックでの認証認可）の使用を、**例外承認制**（標準は IAM auth / マネージド JWT Authorizer）にする方針はいかがでしょうか。

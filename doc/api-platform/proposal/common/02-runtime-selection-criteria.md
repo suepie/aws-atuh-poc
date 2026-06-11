@@ -140,11 +140,47 @@ flowchart TD
 - [ ] **将来モバイルアプリ等で API 切り出し要件が生じる可能性が低い**
 - [ ] Container（ECS Fargate）運用ができる
 
-### §C-2.1.5 TBD / 要確認
+### §C-2.1.5 パターン A バックエンド実装のサブパターン（ECS バックエンドの前段選定）
+
+**パターン A（SPA + 別 API）のバックエンド実装**は、**[§C-2.2 実装ランタイム選定](#c-22-実装ランタイム選定serverless--container)** で Serverless（Lambda + API GW）/ Container（ECS）のどちらかを選ぶ。Container を選んだ場合、さらに **ECS 前段の LB 選定** が必要：
+
+| サブパターン | 構成 | 適用 |
+|---|---|---|
+| **A-1: バックエンド Serverless** | SPA + API GW + Lambda | サーバレス親和、変動費 |
+| **A-2: バックエンド Container + ALB** | SPA + ALB + ECS（**Pattern X**） | 純粋 JSON API、トラフィック大、Streaming 必要、コスト最適化 |
+| **A-3: バックエンド Container + API GW + ALB** | SPA + API GW + VPC Link + ALB + ECS（**Pattern Y**） | **Partner B2B Usage Plan 必要**、JWT Authorizer マネージド利用、マルチテナント throttle |
+
+→ **A-2 / A-3 の選定基準**は [§FR-API-6 §6.2.A ALB only vs API Gateway + ALB の選定基準](../fr/06-container-standard.md) を参照。
+
+#### サブパターン選定の決定木
+
+```mermaid
+flowchart TD
+    Start{バックエンド Container?}
+    Start -->|No, Serverless| A1[A-1: SPA + API GW + Lambda]
+    Start -->|Yes, ECS| Q1{Partner B2B<br/>Usage Plan 必要?}
+    Q1 -->|Yes| A3[A-3: SPA + API GW + VPC Link + ALB + ECS<br/>Pattern Y]
+    Q1 -->|No| Q2{マルチテナント<br/>per-tenant throttle 必要?}
+    Q2 -->|Yes| A3
+    Q2 -->|No| Q3{Streaming /<br/>WebSocket /<br/>大容量レスポンス?}
+    Q3 -->|Yes| A2[A-2: SPA + ALB + ECS<br/>Pattern X]
+    Q3 -->|No| Q4{トラフィック規模<br/>>100M req/月?}
+    Q4 -->|Yes| A2
+    Q4 -->|No| Either[A-2 or A-3 どちらでも<br/>※ デフォルトは A-2 ALB only]
+
+    style A1 fill:#e3f2fd,stroke:#1565c0
+    style A2 fill:#fff3e0,stroke:#e65100
+    style A3 fill:#fff3e0,stroke:#e65100
+    style Either fill:#fff3e0,stroke:#e65100
+```
+
+### §C-2.1.6 TBD / 要確認
 
 - Q: **3 パターンすべてサポート**の方針確定 → `API-B-001`
 - Q: SSR モノリスの **将来マイクロ化リスク** をどう扱うか → `API-B-001-α`
 - Q: パターン C の **規模上限**（タスク数 / TPS）の目安設定 → `API-B-001-β`
+- Q: **ECS バックエンドの前段（A-2 vs A-3、ALB only vs API GW + ALB）のデフォルト**確定 → `API-B-623` ⭐
+- Q: Partner B2B が要件化された ECS バックエンドは API GW REST 必須化するか → `API-B-624`
 
 ---
 

@@ -127,6 +127,99 @@
 
 ---
 
+### 1.5 Token Exchange (RFC 8693) を Partner で正式採用要請（Silver 主流）
+
+> **発生章**：[proposal/fr/02-authn-authz.md §2.2.8 Partner 認証 詳細フロー：Token Exchange](proposal/fr/02-authn-authz.md)
+> **状態**：✅ 認証側 §FR-6.0.B / §FR-6.3 で要件化済（K-01 Keycloak 必須化要因）、本標準でも正式に Partner Silver 主流として採用
+> **新規追加**：2026-06-10 Path C 確定
+
+#### 認証側 既存要件との整合確認
+
+| 観点 | 認証側現状 | 本標準 §2.2.8 要件 | 整合 |
+|---|---|---|:---:|
+| Token Exchange プロトコル対応 | ✅ §FR-6.0.B / §FR-6.3 で K-01 として要件化 | Silver 主流として利用 | ✅ |
+| Partner IdP 信頼台帳機能 | ⚠ identity-broker-multi-idp.md で部分的、明示要件なし | Partner オンボーディング時の登録 API 必要 | 🟡 拡張要 |
+| Token Exchange エンドポイント運用 | 認証側で提供（Keycloak/Cognito で実装） | 本標準アプリは利用するのみ | ✅ |
+| audience 制御 | グレー | Partner ごとに `aud=本標準アプリ識別子` 設定 | 🟡 確認要 |
+
+#### 認証側に追加で要請すべき事項
+
+1. **Partner IdP 信頼台帳の管理機能**
+   - 認証側 §FR-2.3 マルチテナント運用 + §FR-8.1 基盤設定管理に **Partner IdP 軸**を追加
+   - 台帳項目：`iss` / JWKS URL / 許可 audience / 許可 scope / Partner Org ID / 有効期限
+2. **Token Exchange レスポンスの追加クレーム**
+   - `partner_idp`：原 Partner IdP の iss
+   - `original_subject`：Partner IdP token の sub
+3. **Partner IdP 撤回 API**：信頼台帳から Partner IdP を削除する operations API
+
+#### 進捗管理
+
+- [ ] 認証側で Partner IdP 信頼台帳 API 仕様確定
+- [ ] Token Exchange `partner_idp` / `original_subject` クレーム仕様確定
+- [ ] 本標準 §2.2.8 を確定仕様で更新
+
+---
+
+### 1.6 `/oauth2/token` 保護要件（Defense-in-depth 層 1・層 2）
+
+> **発生章**：[proposal/fr/02-authn-authz.md §2.2.10 Defense-in-depth 4 層](proposal/fr/02-authn-authz.md)
+> **状態**：認証側に正式要件として申し送り
+> **新規追加**：2026-06-10 Path C 確定
+
+#### 申し送り項目（認証側 §NFR-4 セキュリティ拡張要請）
+
+| # | 項目 | 詳細 | 認証側で配置すべき章 |
+|---|---|---|---|
+| **層 1** | **Dedicated Partner `/oauth2/token`** | Partner 用と Internal user 用でホスト分離。Partner 用は `partner-auth.example.com` 等。Internal user 用は VPC 内のみ。 | §FR-1（認証フロー）+ §NFR-4（セキュリティ）|
+| **層 1** | **Partner /token への WAF 強化** | Managed Rules（OWASP）+ Rate-based（100 req/5min/IP）+ **AWS WAF ATP（Account Takeover Prevention）** | §NFR-4 |
+| **層 2** | **Partner 専用 Pool/Realm 分離** | Cognito：Partner 専用 User Pool / Keycloak：Partner 専用 Realm。Partner Org 間も内部論理分離。 | §FR-2.3 マルチテナント運用 |
+
+#### 進捗管理
+
+- [ ] 認証側 §NFR-4 / §FR-1 に Partner `/token` 保護要件追加
+- [ ] 認証側 §FR-2.3 に Partner 専用 Pool/Realm 分離方針追加
+- [ ] 本標準 §2.2.10 を確定要件で更新
+
+---
+
+### 1.7 Federation B：Multi-Issuer at API（長期 ADR 案）
+
+> **発生章**：[proposal/fr/02-authn-authz.md §2.2.9 Federation B（長期 ADR placeholder）](proposal/fr/02-authn-authz.md)
+> **状態**：📋 長期戦略、認証側 ADR として提起
+> **新規追加**：2026-06-10 Path C 確定
+
+#### 提起する ADR の趣旨
+
+**現状の認証側 Identity Broker 単一 issuer 集約モデルを、長期的に Multi-Issuer hybrid モデルへ拡張する**ことで、Partner B2B M2M における `/oauth2/token` 露出を完全に排除する。
+
+#### ADR 案：「ADR-XXX：Identity Broker から Multi-Issuer Hybrid への移行戦略」
+
+| 項目 | 内容 |
+|---|---|
+| **背景** | Partner B2B M2M で `/oauth2/token` 露出 = 共有認証基盤への DDoS・他テナント波及・0-day 影響面拡大の懸念 |
+| **現状** | Identity Broker 単一 issuer モデル（全 token は共有基盤発行）。Partner も同じ /token を経由 |
+| **提案** | API 層で **Multi-Issuer Authorizer**（Partner IdP の iss を直接受容）を導入。Broker 経由 token と Partner IdP 直接 token の両方をサポート |
+| **影響** | API GW / Lambda Authorizer の大幅変更、Partner IdP 信頼台帳の正式 API 化、JWKS 並列キャッシュ戦略の見直し |
+| **代替案** | Token Exchange 継続 + Defense-in-depth 4 層で軽減（短期解）|
+| **判断** | 長期戦略として Phase 2（2027〜2028）に検討開始、Phase 3（2028〜）で Gold tier 限定提供、Phase 4（2029〜）で Silver tier 標準化 |
+
+#### 必要な認証側拡張
+
+1. **Multi-Issuer Lambda Authorizer テンプレート**
+2. **Partner IdP 信頼台帳 API**（CRUD endpoint）
+3. **複数 JWKS URL の並列キャッシュ戦略**
+4. **監査ログでの `iss` 識別追加**
+5. **失効通知メカニズム**（Partner IdP 撤回 → 信頼台帳更新）
+
+#### 進捗管理
+
+- [ ] 認証側に ADR 案を正式提起
+- [ ] 認証側 ADR で議論・判定
+- [ ] Phase 2 移行スケジュール確定（採用された場合）
+- [ ] 本標準 §2.2.9 を Phase 2/3/4 進捗で更新
+
+---
+
 ## 2. 申し送りプロセス
 
 ### 2.1 タイミング
@@ -169,3 +262,4 @@
 | 日付 | 内容 |
 |---|---|
 | 2026-06-03 | 初版作成。Partner M2M Client 管理（条件付き、M2M 要件化の場合のみ）/ Hosted UI 提供 / JWKS プライベート化 / 認証側 SLA の 4 項目を申し送り SSOT 化 |
+| 2026-06-10 | **Path C 確定により大規模追記**：§1.5 Token Exchange を Partner で正式採用要請（Silver 主流、§FR-6 と整合）/ §1.6 `/oauth2/token` 保護要件（Dedicated /token + WAF + Pool/Realm 分離、Defense-in-depth 層 1・層 2）/ §1.7 Federation B 長期 ADR 案（Multi-Issuer hybrid モデル、Phase 2〜4 ロードマップ）|

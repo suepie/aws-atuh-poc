@@ -46,6 +46,7 @@ flowchart LR
 | §C-3.1 | 認証基盤側が提供する契約 |
 | §C-3.2 | 本標準側が取る動作 |
 | §C-3.3 | 障害分離・縮退運転 |
+| **§C-3.4** | **ユーザプロビジョニング・権限マッピング境界** ⭐ 情報の所在マトリクス、JIT / SCIM フロー、認証側依存事項 |
 
 ---
 
@@ -187,8 +188,102 @@ flowchart LR
 
 ---
 
+## §C-3.4 ユーザプロビジョニング・権限マッピング境界
+
+**このサブセクションで定めること**：認証基盤と本標準アプリの間で、**「誰が誰の情報を持ち、誰がどう更新するか」**の責務分担。
+**主な判断軸**：認証側「最小限クレーム + 段階拡張」設計（§FR-6.1.A）と本標準 Hybrid モデル（§FR-API-2 §2.5）の整合。
+**§C-3 全体との関係**：§C-3.1〜§C-3.3 は token / JWKS の流通、本サブセクションは **ユーザ情報・認可情報の流通** を扱う。
+
+### §C-3.4.1 情報の所在マトリクス
+
+| 情報 | 認証基盤 | 本標準アプリ | 流通方法 |
+|---|:---:|:---:|---|
+| `sub` / `iss` / `aud` / `exp` | ✅ 発行 | ✅ 検証 | JWT クレーム |
+| `tenant_id` | ✅ 発行 | ✅ 検証 + 業務利用 | JWT クレーム |
+| `roles` / `groups`（粗粒度） | ✅ 発行（オプション） | ✅ 受信 + permission マッピング | JWT クレーム |
+| `email` | ✅ 発行 or userinfo endpoint | ✅ 表示 / 通知 | JWT クレーム or API |
+| ユーザライフサイクル状態（active / suspended）| ✅ master | △ snapshot | SCIM / Webhook |
+| **アプリ固有 permission**（細粒度）| – | **✅ master** | アプリ DB |
+| **アプリ固有設定**（preferences、UI） | – | ✅ master | アプリ DB |
+| Onboarding 状態 | – | ✅ master | アプリ DB |
+| 業務監査ログ | 認証イベントのみ | 業務イベント | CloudTrail + アプリログ |
+
+### §C-3.4.2 プロビジョニングフロー（4 パターン）
+
+#### A. JIT（Just-In-Time）⭐ 本標準デフォルト
+
+```mermaid
+flowchart LR
+    User[ユーザ] --> Auth[共有認証基盤<br/>SSO 認証]
+    Auth --> JWT[JWT 発行]
+    JWT --> App[本標準アプリ]
+    App --> Check{アプリ DB に<br/>user 存在?}
+    Check -->|No| JIT[JIT 作成<br/>+ デフォルト permission]
+    Check -->|Yes| Use[既存 permission 利用]
+    JIT --> Process[業務処理]
+    Use --> Process
+```
+
+- **責任分担**：認証基盤がユーザ作成・更新、アプリは「初回ログイン時」に DB へ反映
+- **適用**：中小規模、業界主流
+
+#### B. SCIM 同期（escalation）
+
+```mermaid
+flowchart LR
+    CIdP[顧客 IdP<br/>Entra/Okta] -->|SCIM PUSH<br/>POST/PATCH/DELETE| Auth[共有認証基盤<br/>SCIM Receiver]
+    Auth --> Update[内部 user 台帳更新]
+    Update -->|Webhook| Hook[Webhook Receiver<br/>本標準側]
+    Hook --> AppDB[アプリ DB 更新]
+    AppDB --> Cleanup[deleted user は<br/>permission 即無効化]
+```
+
+- **責任分担**：認証基盤が SCIM 受信主体、アプリは Webhook 受信エンドポイントを提供
+- **適用**：退職即時削除要件、大規模
+
+### §C-3.4.3 認証側に依存する事項（責務確認）
+
+本標準 Hybrid モデルが成立するには、認証側で以下が成立している必要がある：
+
+| # | 認証側要件 | 現状 | 章 / 状態 |
+|---|---|---|---|
+| 1 | JWT に `sub` 必須含有 | ✅ | §FR-6.1 ベースライン |
+| 2 | JWT に `tenant_id` 必須含有（B2B SaaS） | ✅ | §FR-6.1 B 段階 |
+| 3 | JWT に `roles` / `groups` オプション含有 | ✅ | §FR-6.1 C 段階 |
+| 4 | クレーム仕様の安定性（年数回の変更のみ）| ⚠ 明示要 | TBD |
+| 5 | カスタムクレーム追加機構（Pre Token Lambda / Protocol Mapper） | ✅ | §FR-6.1.A |
+| 6 | 顧客 IdP からの SCIM 受信 + Webhook 発行 | ⚠ 部分 | §FR-7 / §FR-2.3 |
+| 7 | userinfo endpoint 提供（email 等の PII 別取得）| ⚠ グレー | TBD |
+| 8 | Token Exchange サポート（マイクロサービス間）| ✅ | §FR-6.3 K-01 |
+
+→ **1〜3, 5, 8 は既に対応済**。**4, 6, 7 は escalation-to-auth.md §1.8 として申し送り**（後述）。
+
+### §C-3.4.4 アプリで必須となる処理（再掲）
+
+[§FR-API-2 §2.5.5](../fr/02-authn-authz.md) の **6 つの処理** をアプリ側で実装：
+
+1. JWT 署名検証 + iss/aud/exp 検証
+2. テナント境界チェック（tenant_id 突合）
+3. role → permission マッピング
+4. 細粒度 permission 判定
+5. JIT ユーザ作成
+6. 監査ログ
+
+→ Service Catalog 製品（§C-API-5）の **Lambda Authorizer / middleware テンプレ** にこれらを組み込む。
+
+### §C-3.4.5 TBD / 要確認
+
+- Q: クレーム仕様の **変更通知期間**（30 日前等）→ 認証側に申し送り（escalation §1.8）
+- Q: SCIM Webhook の **エンドポイント仕様**（POST /webhooks/scim/users 等）→ 認証側と合意
+- Q: userinfo endpoint の **本標準アプリからの利用可否**（PII 別取得）→ 認証側と合意
+
+---
+
 ## §C-3.x 関連ドキュメント
 
 - [../../../requirements/](../../../requirements/00-index.md) — 共有認証基盤の要件定義（境界の対面）
 - [§FR-API-2 認証認可](../fr/02-authn-authz.md) — 認証方式の詳細
+- [§FR-API-2 §2.5 アプリ側認可モデル & オンボーディング](../fr/02-authn-authz.md) — Hybrid モデル詳細
+- [§FR-API-2 §2.6 Permission ストレージの標準パターン](../fr/02-authn-authz.md) — DB スキーマ例
 - [§NFR-API-1 可用性](../nfr/01-availability.md) — 依存先障害耐性
+- [escalation-to-auth.md §1.8](../../escalation-to-auth.md) — JWT クレーム仕様の安定性要求
