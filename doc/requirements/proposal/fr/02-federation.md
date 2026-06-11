@@ -2745,6 +2745,75 @@ flowchart LR
 
 [^cognito-q12-fr233c]: [cognito-knockout-conditions.md Q-12](../../../reference/cognito-knockout-conditions.md)
 
+#### §FR-2.3.3.D Keycloak HRD 実装方式選定（Universal Login + 4 オプション + 単一テナント複数 IdP 対応）
+
+> **このサブ・サブセクションで定めること**: HRD（A 案）を採用する場合の **実装層の選定**。具体的には (1) アーキテクチャモデル（Universal Login vs アプリ主導）、(2) Keycloak での HRD 実装 4 オプションの選定、(3) 単一テナントが複数 IdP を持つ場合の対応パターン を要件として確定する。
+> **主な判断軸**: RHBK 採用予定の有無、Elastic License v2 受容可否、v26 Organizations の採用方針、想定される単一テナント複数 IdP シナリオ
+> **§FR-2.3.3 内の位置付け**: §FR-2.3.3 で「A 案 HRD 推奨」が決まった後の **実装層の設計判断**。§FR-2.3.3.C ハイブリッド構成の HRD 部分の実装方法。
+> **詳細実装リファレンス**: [common/hrd-implementation-keycloak.md](../../../common/hrd-implementation-keycloak.md)（realm.json サンプル + Browser Flow 設定 + Stage B 検証推奨項目）
+
+##### ベースライン: Universal Login（アプリ主導 HRD は採らない）
+
+| 観点 | アプリ主導 HRD | **Universal Login（ベースライン）** | Identity-First Login（**UX 最適化として推奨**）|
+|---|---|---|---|
+| メアド入力フィールドの場所 | 各アプリの画面 | 認証基盤の `/auth` ページ | アプリ側 + 認証基盤両方 |
+| マッピング知識の所在 | アプリに分散 | **認証基盤に集約** | 認証基盤に集約 |
+| 顧客追加時の変更箇所 | 各アプリ | **認証基盤 1 箇所** | 認証基盤 1 箇所 |
+
+→ **Identity Broker パターン採用以上、Universal Login が論理的帰結**。アプリ主導 HRD は「顧客追加で各システム変更不要」要件（§FR-2.3）と矛盾するため非採用。
+
+**アプリ UX 最適化を求める場合**: Identity-First Login を選択。アプリのランディング画面にメアド入力フィールドだけ置き、OIDC `login_hint` パラメータで認証基盤にメアドを渡す。マッピング知識は基盤集約のまま、UX 体験はアプリ側で完結。
+
+##### Keycloak での HRD 実装 4 オプション
+
+| # | オプション | 工数 | ライセンス | RHBK サポート | 単一テナント複数 IdP | 本基盤推奨度 |
+|---|---|---|---|:---:|:---:|:---:|
+| ① | **Keycloak v26 Organizations（ネイティブ）** | ◎ 設定のみ | ✅ 公式 | ✅ 対象 | ✅ ネイティブ | ★★★★★ |
+| ② | コミュニティプラグイン `keycloak-home-idp-discovery` | ◎ JAR 配置 | ⚠ Elastic License v2 | ❌ 対象外 | ⚠ 別途設定 | ★★★★ |
+| ③ | 自前 Authenticator SPI（Java 実装）| ❌ 1-2 週間 | ✅ 自社所有 | ❌ 対象外 | ⚠ 実装次第 | ★★ |
+| ④ | アプリ主導 + `kc_idp_hint` URL パラメータ | ◎ ゼロ | ✅ 標準 | ✅ 対象 | ❌ アプリで処理 | ★（ハイブリッド C 経路の裏で使用のみ）|
+
+**ベースライン**: **① Keycloak v26 Organizations**。RHBK 採用予定の有無に関わらず第一推奨。理由:
+- v25 Preview / v26 GA で Red Hat 公式ロードマップに乗る本命機能
+- プラグイン不要、ライセンス問題なし、Red Hat サポート対象（RHBK 採用時）
+- **単一テナント複数 IdP のケースでデフォルトで 2 段階セレクターに分岐するネイティブ動作**
+
+**例外的に ② プラグインを採る場合**: Elastic License v2 が受容可能で、v25 以前への互換性が必要なケース。  
+**例外的に ③ 自前 SPI を採る場合**: ヘルスケア・政府機関等で OSS plugin の採用が政策上不可なケース。
+
+##### 単一テナントが複数 IdP を持つ場合（4 パターン）
+
+| パターン | シナリオ | Keycloak Organizations での対応 |
+|---|---|---|
+| **A. ドメインサブ分割** | `@hq.acme.com` → Entra ID / `@sub.acme.com` → Okta | Organization の `domains` ↔ `identityProviders` マッピングで自動振り分け |
+| **B. テナント確定後セレクター**（**本命**）| `@acme.com` の中に Entra ID 派 + Okta 派が混在（移行期 / 子会社統合等）| Organizations が複数 IdP を持つ Org で **デフォルトで 2 段階フロー（メアド → そのテナントの IdP セレクター）に自動分岐** |
+| C. 既存ユーザーの前回 IdP 直行 | リピーターはセレクター省略 | Browser Flow に `Detect Existing Broker User` + 強制切替パラメータを組合せ |
+| D. アプリ主導の明示指定 | 特権ユース（普段 Entra、特権操作で Okta）| アプリのリンク URL に `?kc_idp_hint=...` を埋め込み |
+
+**ベースライン**: **A + B を主、C + D を補助** とする運用。Organizations 採用なら A も B も自動で動作する。
+
+##### 既存設計との整合性
+
+| 既存設計 | 本選定との整合 |
+|---|---|
+| [§FR-2.3.3 A 案 HRD 推奨](#fr-233-ログイン画面で-idp-選択-ux--home-realm-discoveryfr-fed-013)（メールドメインベース）| ✅ 本選定は A 案実装の選択肢を定義 |
+| [§FR-2.3.3.C A+C ハイブリッド](#fr-233c-keycloak-でのハイブリッド構成リファレンス基本-a--大口顧客のみ-c) | ✅ A 経路の実装方式として Organizations を採用、C 経路は CloudFront Function で `kc_idp_hint` 付与 |
+| [§FR-2.3.A 単一 Pool/Realm + 複数 IdP](#fr-23a-アーキテクチャ判断単一-poolrealm--複数-idp-を採用) | ✅ Single Realm 維持、Organizations は Realm 内のサブ単位として共存 |
+| [§FR-2.3.A.1 論理分離（`tenant_id`）](#fr-23a1-何が分離共有されているか--論理分離の実態顧客が必ず聞く論点) | ✅ Organization 属性 → user attribute の Mapper で `tenant_id` クレームを自動注入可能 |
+| [§FR-2.2.1.A 同一テナント内ユーザー重複](#fr-221a-同一テナント内ユーザー重複の扱い) | ✅ First Broker Login Flow と整合、パターン C（前回 IdP 記憶）と連動可 |
+| [B-618 A+C ハイブリッド採用方針](../../hearing-checklist.md) | 本選定（実装方式）はその裏付け |
+
+##### 推奨初期ロールアウト（[§FR-2.3.3.C](#fr-233c-keycloak-でのハイブリッド構成リファレンス基本-a--大口顧客のみ-c) と連動）
+
+| フェーズ | 内容 | 時期 |
+|---|---|---|
+| **Phase 1** | Keycloak v26 + Organizations feature flag 有効化 + 1 Organization で fresh import 検証 | Stage B 期間 |
+| **Phase 2** | 実顧客の Organization 追加（ドメインサブ分割 = パターン A） | リリース時 |
+| **Phase 3** | 単一ドメイン内に複数 IdP のテナント（移行期顧客等）が発生 = パターン B | 顧客発生時 |
+| **Phase 4** | 大口顧客向け組織固有 URL（[§FR-2.3.3.C](#fr-233c-keycloak-でのハイブリッド構成リファレンス基本-a--大口顧客のみ-c)）= A+C ハイブリッド完成 | 大口受注後 |
+
+→ 詳細な Stage B 検証推奨項目（HRD-B1〜B7）は [hrd-implementation-keycloak.md §6](../../../common/hrd-implementation-keycloak.md) 参照。
+
 #### TBD / 要確認
 
 | 確認項目 | 回答例 |
@@ -2755,6 +2824,8 @@ flowchart LR
 | ログイン画面のブランディング | 共通 UI / 顧客企業ごとカスタマイズ |
 | **カスタマイズの所在**（§FR-2.3.3.A）| **認証基盤側のみ（A 推奨）/ 一部認証基盤（B）/ 全面（C）** |
 | **A + C ハイブリッド構成採用方針**（[B-618](../../hearing-checklist.md) / §FR-2.3.3.C）| 採用（大口顧客のみ C） / 採用しない（全顧客 A 一律） / 検討中 |
+| **HRD 実装方式**（§FR-2.3.3.D）| ① v26 Organizations（推奨） / ② sventorben プラグイン / ③ 自前 SPI / ④ kc_idp_hint（基盤 HRD 無し）|
+| **単一テナント複数 IdP の想定**（§FR-2.3.3.D）| 想定あり（ドメイン分割可） / 想定あり（同一ドメイン内多 IdP）/ 想定なし |
 
 ---
 
