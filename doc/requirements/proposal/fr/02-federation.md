@@ -1890,20 +1890,24 @@ flowchart LR
 
 ### §FR-2.3.3 ログイン画面で IdP 選択 UX / Home Realm Discovery（→ FR-FED-013）
 
-> **このサブ・サブセクションで定めること**: ユーザーがログイン画面に来た時、**どの IdP に振り分けるか**の UX 設計（メールドメイン HRD / IdP セレクター / 組織固有 URL）。   
-> **主な判断軸**: 推奨 UX パターン、メールドメイン → IdP 解決ルール、複数テナント所属時の選択 UI、ブランディング要件   
-> **§FR-2.3 内の位置付け**: §FR-2.3.1 並行運用・§FR-2.3.2 オンボーディングを**エンドユーザー体験**として完成させる UX 層
+> **このサブ・サブセクションで定めること**: ユーザーがログイン画面に来た時、**どの IdP に振り分けるか**の UX 設計（メールドメイン HRD / IdP セレクター / 組織固有 URL / 識別子先行 / kc_idp_hint）。   
+> **主な判断軸**: 推奨 UX パターン、メールドメイン → IdP 解決ルール、複数テナント所属時の選択 UI、ブランディング要件、**ヒントキーの選択（email vs 顧客独自 ID vs テナントコード）**   
+> **§FR-2.3 内の位置付け**: §FR-2.3.1 並行運用・§FR-2.3.2 オンボーディングを**エンドユーザー体験**として完成させる UX 層   
+> **⚠ 前提依存**: A 案（メールドメイン HRD）は**ユーザーが email を持つことを前提**とする。[§FR-1.2.0.D](01-auth.md#fr-120d-ユーザー識別子戦略--メール非保有顧客独自-id-への対応) で確定したように email 非保有ユーザー（フィールドワーカー / 工場 / 病院 / 小売 / 教育）を収容する場合、A 案単独では破綻する。**email 非保有時の HRD ヒントキー拡張は [§FR-2.3.3.E](#fr-233e-email-非保有時の-hrd-パターン拡張--ヒントキーの選択) を参照**
 
-#### 3 案併記（要件次第で選定、ハイブリッド併用も可）
+#### 5 案併記（要件次第で選定、ハイブリッド併用も可）
 
-| 案 | UX | 実装 | 採用例 |
-|---|:---:|---|---|
-| **A. メールドメインベース HRD**（推奨）| ◎ ユーザーは email だけ入れれば OK | 基盤側にドメイン → IdP マッピングテーブル | Auth0、Entra ID、Notion |
-| B. IdP セレクター | ○ ボタン選択 | Keycloak 標準 / Cognito Hosted UI カスタム | Google、多くの SaaS |
-| C. 組織固有ログイン URL | ◎ ブランディング両立 | Custom Domain（[§FR-2.1](#31-idp-接続種別-fr-fed-21)）+ ルーティング | Slack、Figma |
-| **A + C ハイブリッド**（**複数顧客 × 複数サービス時の業界実用解**）| 基本 A、大口顧客のみ C | Single Realm + Front Proxy で URL → `kc_idp_hint` 自動付与 | Microsoft 365 + Enterprise オプション、Atlassian Cloud |
+| 案 | ヒントキー | UX | 実装 | 採用例 | email 非保有時 |
+|---|---|:---:|---|---|:---:|
+| **A. メールドメインベース HRD**（email あり時の推奨）| email の @domain | ◎ ユーザーは email だけ入れれば OK | 基盤側にドメイン → IdP マッピングテーブル | Auth0、Entra ID、Notion | ❌ **破綻** |
+| B. IdP セレクター（ボタン選択）| ユーザーが選択 | ○ ボタン選択 | Keycloak 標準 / Cognito Hosted UI カスタム | Google、多くの SaaS | ✅ 動作可 |
+| C. 組織固有ログイン URL（サブドメイン / パス）| URL 自体 | ◎ ブランディング両立 | Custom Domain（[§FR-2.1](#31-idp-接続種別-fr-fed-21)）+ ルーティング | Slack（`workspace.slack.com`）、Figma、Atlassian Cloud | ✅ 動作可（**email 非保有時の第一推奨**）|
+| **D. 識別子先行（Identifier-First）**| 顧客独自 ID パターン | ○ ユーザー ID 入力 | 基盤側に「ID パターン → IdP」マッピング（例：`ACME-*` → Acme IdP）| Microsoft 365 sign-in name、Auth0 Identifier-First | ✅ 動作可 |
+| **E. `kc_idp_hint` URL パラメータ**（ポータル / SPA から hint 注入）| URL クエリパラメータ | ◎ Keycloak ログイン画面スキップ | Keycloak 標準 `?kc_idp_hint=acme` | 自社ポータル経由のディープリンク | ✅ 動作可 |
+| **A + C ハイブリッド**（複数顧客 × 複数サービス時の業界実用解）| email + URL | 基本 A、大口顧客のみ C | Single Realm + Front Proxy で URL → `kc_idp_hint` 自動付与 | Microsoft 365 + Enterprise オプション、Atlassian Cloud | C 部分のみ ✅ |
+| **A + C + D ハイブリッド**（email-mix 顧客対応版）| email or 独自 ID | email 顧客は A、email 非保有顧客は D / C | Identifier-First + ドメイン判定 fallback + 組織固有 URL | LinkedIn / Workday の混在モデル | ✅ 完全対応 |
 
-→ 上記 3 案は**相互排他ではない**。複数顧客 × 複数サービスのシナリオでは **A 基本 + 大口エンタープライズ顧客のみ C 併用** が実用解。Keycloak での具体構成は [§FR-2.3.3.C Keycloak でのハイブリッド構成リファレンス](#fr-233c-keycloak-でのハイブリッド構成リファレンス基本-a--大口顧客のみ-c)、採用方針確認は [B-618](../../hearing-checklist.md) を参照。
+→ 上記は**相互排他ではない**。**顧客に email 非保有ユーザーが含まれる場合、A 案単独は不採用**。複数顧客 × 複数サービスのシナリオでは **A 基本 + email 非保有顧客は D or C 併用** が実用解（[§FR-2.3.3.E](#fr-233e-email-非保有時の-hrd-パターン拡張--ヒントキーの選択)）。Keycloak での具体構成は [§FR-2.3.3.C](#fr-233c-keycloak-でのハイブリッド構成リファレンス基本-a--大口顧客のみ-c)、採用方針確認は [B-618](../../hearing-checklist.md) / [B-IDM-2](../../hearing-checklist.md) を参照。
 
 #### A 案（メールドメイン HRD）のフロー
 
@@ -2963,11 +2967,238 @@ flowchart LR
 
 → 詳細な Stage B 検証推奨項目（HRD-B1〜B7）は [hrd-implementation-keycloak.md §6](../../../common/hrd-implementation-keycloak.md) 参照。
 
+---
+
+#### §FR-2.3.3.E email 非保有時の HRD パターン拡張 — ヒントキーの選択
+
+> **このサブ・サブセクションで定めること**: [§FR-1.2.0.D](01-auth.md#fr-120d-ユーザー識別子戦略--メール非保有顧客独自-id-への対応) で確定した「email 非保有ユーザーを収容する」前提に対する HRD 設計の対応。**HRD の本質は「ヒントキー → IdP マッピング」であり、ヒントキーは email ドメインに限らない**ことを明示し、5 つの代替パターンを定義する。   
+> **主な判断軸**: 顧客側 email 保有率（B-IDM-1 / B-IDM-10）、顧客独自 ID 体系（B-IDM-2）、テナント数規模、ユーザーの認知負荷許容度   
+> **§FR-2.3.3 内の位置付け**: §FR-2.3.3 メインの 5 案併記表で **A 案（メールドメイン HRD）が破綻するシナリオ** の代替を確定する
+
+##### HRD の本質：ヒントキーは「email ドメイン」とは限らない
+
+HRD（Home Realm Discovery）の業界一般定義（Auth0 / Microsoft / Scalekit）は次の通り:
+
+> **HRD = ユーザーがどの IdP / realm に属するかを認証情報の入力前に判定する仕組み**
+
+ヒントキーの選択肢は次の通り（Auth0 公式は **3 アプローチ**、Microsoft Entra B2C は **5 アプローチ** を列挙）:
+
+| ヒントキー | 取得タイミング | email 非保有時 | 例 |
+|---|---|:---:|---|
+| ① email ドメイン（`@acme.com`）| ユーザー入力 | ❌ | A 案 |
+| ② 顧客独自 ID パターン（`ACME-EMP-0042` → `ACME-` プレフィックス）| ユーザー入力 | ✅ | D 案 |
+| ③ テナントコード / ワークスペース名 | ユーザー入力 | ✅ | Slack 形式 |
+| ④ URL（サブドメイン / パス）| URL 自体 | ✅ | C 案 |
+| ⑤ URL パラメータ `kc_idp_hint`（SPA / ポータル注入）| 呼出元 SPA | ✅ | E 案 |
+| ⑥ クライアント Cookie（前回選択記憶）| ブラウザ | ✅ | 補助 |
+| ⑦ IP / CIDR ベース | ネットワーク | ✅ | 補助、企業内 NW |
+
+→ **ヒントキー = email ドメイン**は**ヒントキー選択肢の 1 つに過ぎない**。打ち合わせ前の暗黙の前提だった「HRD = email ドメイン HRD」は再定義が必要。
+
+##### 顧客状況別の推奨パターン
+
+| 顧客状況（B-IDM-1 / B-IDM-10 連動）| 推奨 HRD パターン | 補助手段 |
+|---|---|---|
+| **全員 email 保有 + 1 顧客 = 1 ドメイン** | A（email ドメイン HRD）| Cookie 記憶（⑥）|
+| **全員 email 保有 + 1 顧客 = 複数ドメイン** | A + 複数ドメイン → 同一 IdP マッピング | Cookie 記憶（⑥）|
+| **email 一部のみ保有（混在）** | **D + A ハイブリッド**（識別子先行で判定、email 形式なら A、ID 形式なら D）| C を大口顧客に追加 |
+| **全員 email 非保有 + 単一顧客** | **C（組織固有 URL）**（`acme.basis.example.com`）| Cookie 記憶（⑥）|
+| **全員 email 非保有 + 複数顧客** | **C（組織固有 URL）+ E（kc_idp_hint）** | テナントコード（③）バックアップ |
+| **ポータル経由ディープリンクが主** | **E（kc_idp_hint）**（ポータル側でテナント認識済）| C をフォールバック |
+
+##### D 案（識別子先行 / Identifier-First）の実装
+
+```mermaid
+sequenceDiagram
+    participant U as ユーザー
+    participant Login as ログイン画面<br/>(認証基盤)
+    participant Resolver as ヒントキー解決<br/>(基盤側 Custom Authenticator)
+    participant IdP as 顧客 IdP
+
+    U->>Login: 識別子入力 (例: ACME-EMP-0042 or alice@acme.com)
+    Login->>Resolver: 識別子を解決依頼
+    alt 識別子が email 形式
+        Resolver->>Resolver: A 案: @domain → IdP マッピング
+    else 識別子がパターンマッチ
+        Resolver->>Resolver: D 案: 接頭辞 (ACME-) → IdP マッピング
+    else 識別子が tenant_id + sub 形式
+        Resolver->>Resolver: 複合キー検索
+    end
+    Resolver-->>Login: Acme IdP に転送
+    Login->>IdP: 認証要求 (identity_provider=acme)
+    IdP->>U: 顧客固有のログイン画面
+    IdP->>Login: 認証成功
+```
+
+##### C 案（組織固有 URL）の email-less シナリオでの実装
+
+- **URL の例**: `acme.basis.example.com` / `basis.example.com/t/acme` / `basis.example.com/acme/login`
+- **Front Proxy**（CloudFront / ALB / nginx）でテナント識別子を抽出し、Keycloak への認可要求に `kc_idp_hint=acme` を自動付与
+- ユーザーは何も入力せずに顧客 IdP に直接転送される（**email も独自 ID も入力不要**でゼロ知識）
+- 顧客のブランディング（ロゴ / 色 / フッター）が URL 単位で確定
+- **email 非保有顧客で全社員が同一の URL から入る** B2E モデルに最適（Slack workspace、Figma org スペース）
+
+##### E 案（`kc_idp_hint` URL パラメータ）の使い所
+
+Keycloak の `kc_idp_hint` は OAuth/OIDC 認可要求の **オプションパラメータ**として扱われ、Keycloak のログイン画面をスキップして指定 IdP へ直接転送する標準機能（Keycloak 公式機能）。
+
+| ユースケース | E 案が刺さる場面 |
+|---|---|
+| 自社ポータル / SPA がテナントを認識済 | ポータル側で `?kc_idp_hint=acme` を付けてディープリンクすると、ユーザーは Keycloak 画面を見ずに Acme IdP へ直行 |
+| QR コード / バッジログイン | QR の中に `kc_idp_hint` を埋め込む |
+| メール招待リンク（基盤内招待）| 招待 URL に `kc_idp_hint` を付与 |
+| C 案（組織固有 URL）の裏で使用 | Front Proxy がサブドメインを抽出して `kc_idp_hint` 化 |
+
+##### 5 案のフォールバック設計（ヒントキー欠落時）
+
+各案でヒントキーが取れない場合の動作:
+
+| 案 | ヒントキー欠落時の動作 | 推奨フォールバック |
+|---|---|---|
+| A | email が入力されない / 未登録ドメイン | B（IdP セレクター）に降格 |
+| B | — | （フォールバック先） |
+| C | URL にテナント識別子なし（裸の `basis.example.com`）| ランディング画面で「組織コードを入力してください」（③）or B |
+| D | パターンマッチ失敗（unknown ID）| B + ヘルプリンク |
+| E | `kc_idp_hint` 不正 / 未設定 | A or B（Keycloak は自動的にログイン画面表示） |
+
+→ **すべての案で「最終的に B（IdP セレクター）にフォールバック」する設計が業界標準**。これにより HRD は「**第一推奨ヒントキーの判定**」、B は「**汎用安全網**」として共存する。
+
+##### 我々のスタンス
+
+| 状況 | 推奨方針 |
+|---|---|
+| 顧客打ち合わせ前の暫定 | **D（識別子先行）+ C（組織固有 URL）+ B（フォールバック）** をデフォルト構成として提示。A は email 保有顧客のみオプション扱い |
+| 顧客が「email ドメイン HRD で十分」と回答（B-IDM-1 = なし） | A + C + B（従来 §FR-2.3.3.C 構成）|
+| 顧客が「email 非保有ユーザーあり」と回答（B-IDM-1 = あり） | **D + C + B**（A は使わない or email 顧客分のみ）|
+| 混在顧客あり | **D（識別子の形式で email / 独自 ID を自動判定）+ A + C + B** の 4 段構え |
+
+##### 参考資料
+
+- [Auth0: B2B Authentication — Home Realm Discovery 3 アプローチ](https://auth0.com/docs/get-started/architecture-scenarios/business-to-business/authentication)
+- [Microsoft Entra B2C: Advanced Home Realm Discovery](https://techcommunity.microsoft.com/t5/azure-developer-community-blog/advanced-home-realm-discovery-in-azure-ad-b2c/ba-p/482788)
+- [Scalekit: B2B Auth — Universal vs Org-Specific Logins](https://www.scalekit.com/blog/designing-b2b-authentication-experiences-universal-vs-organization-specific-login)
+- [SkyCloak: Use kc_idp_hint in Keycloak](https://skycloak.io/blog/use-kc_idp_hint-to-choose-identity-provider-in-keycloak/)
+- [Kinde: Home realm or IdP discovery](https://docs.kinde.com/authenticate/enterprise-connections/home-realm-discovery/)
+
+---
+
+#### §FR-2.3.3.F フェデユーザー + ローカルユーザー混在時の Identifier-First 設計（Keycloak v26 Organizations 標準動作）
+
+> **このサブ・サブセクションで定めること**: 1 つの認証基盤に **フェデユーザー（顧客 IdP 経由）とローカルユーザー（共通基盤 DB 直接登録）が同居する**シナリオで、共通ログイン画面が両方を**同じ画面で安全に振り分ける** UX 設計と、Keycloak v26 Organizations 機能でどこまで標準実装できるかを確定する。   
+> **主な判断軸**: ローカルユーザーの存在範囲（[§FR-1.2.0.0](01-auth.md#fr-1200-ローカルユーザーとは何か--利用者カテゴリ別の分析) シナリオ γ / β）、混在時の同一画面振り分け要件、Keycloak v26 Organizations 採用方針（[§FR-2.3.3.D ①](#fr-233d-keycloak-hrd-実装方式選定universal-login--4-オプション--単一テナント複数-idp-対応)）、ヒントキー戦略（[§FR-2.3.3.E](#fr-233e-email-非保有時の-hrd-パターン拡張--ヒントキーの選択)）   
+> **§FR-2.3.3 内の位置付け**: §FR-2.3.3.E でヒントキーを決めた後の **「ヒントキー判定後の分岐ロジック」** を確定。フェデ経路とローカル経路を同一ログイン画面で扱う設計
+
+##### 重要発見：Keycloak v26 Organizations の標準動作が混在を最初から想定している
+
+Keycloak 公式ブログ（2024-06 Organizations 発表）からの引用:
+
+> "The main change to the browser flow is that it **defaults to an identity-first login** so that users are identified before prompting for their credentials. During login, the user provides an email address. Keycloak analyzes its domain and automatically assigns the user to the appropriate organization."
+
+> "A user will act as **an existing realm user that has an email that matches one of the domains set to an organization but is not yet a member of the organization**. This user could have been created through **self-registration, or by integrating with a custom identity store, or even federated from an identity provider available from the realm**."
+
+→ つまり Keycloak v26 Organizations は次の 3 つを同じ Browser Flow で扱う前提で設計されている:
+1. **Organization に IdP が紐付いている** → フェデ経路（IdP に強制 redirect）
+2. **Organization に IdP が紐付いていないが、ユーザーは Organization メンバー** → ローカル経路（PW プロンプト）
+3. **Organization メンバーでないが realm に既存ユーザーとして存在** → ローカル経路（PW プロンプト、Organization 非依存）
+
+##### 標準フローの分岐ロジック（v26 Organizations）
+
+```mermaid
+flowchart TB
+    Start[ユーザー: 識別子入力]
+    Start --> Lookup[Keycloak が識別子を解析]
+    Lookup --> M1{email ドメイン<br/>→ Organization<br/>マッチ?}
+
+    M1 -->|マッチ + IdP 紐付け| Fed[IdP に強制 redirect<br/>= フェデ経路]
+    M1 -->|マッチ + IdP なし<br/>+ Org メンバー| Local1[ローカル PW プロンプト<br/>= Org 内ローカル]
+    M1 -->|マッチなし + 既存 realm ユーザー| Local2[ローカル PW プロンプト<br/>= realm 既存ユーザー]
+    M1 -->|マッチなし + 未登録| Fallback[エラー or IdP セレクター<br/>= フォールバック B 案]
+
+    Fed --> Done[認証成功]
+    Local1 --> Done
+    Local2 --> Done
+
+    style Fed fill:#e3f2fd
+    style Local1 fill:#e8f5e9
+    style Local2 fill:#e8f5e9
+    style Fallback fill:#fff3e0
+```
+
+##### 業界実例：混在ハンドリング UI
+
+| サービス | UI パターン | 出典 |
+|---|---|---|
+| **Notion** | email / password を**分離フィールド表示**、Identifier-First で HRD | Scalekit Blog |
+| **Dropbox** | email 入力でエンタープライズ認証が判定されたら **password フィールドを隠す** | 同上 |
+| **Freshworks** | email でテナント特定後、**組織固有ログインページに redirect** | 同上 |
+| **Microsoft 365** | sign-in name 入力 → managed / federated を判定 → 適切なログイン画面に遷移 | Microsoft Learn |
+
+→ いずれも「**email/識別子先行 → 判定 → 適切な経路に分岐**」という **Identifier-First** が業界標準。
+
+##### Keycloak での 4 つの実装パス（混在ハンドリング目線）
+
+| 実装パス | Keycloak 機能 | 工数 | email 非保有対応 | 推奨度 |
+|---|---|---|:---:|:---:|
+| **① v26 Organizations 標準**（推奨）| 公式機能 | ◎ 設定のみ | ❌ email ドメイン依存 | ★★★★★（email あり時）|
+| ② Conditional Authenticator（公式）| Browser Flow + 公式 Condition - User Configured | ◎ 設定で組合せ | ⚠ 標準条件式の範囲 | ★★★★ |
+| ③ Custom Conditional Authenticator SPI | Java 実装 | ❌ 1-2 週間 | ✅ **D 案（識別子先行）はこれが必要** | ★★（email 非保有時）|
+| ④ コミュニティ `keycloak-home-idp-discovery` | OSS プラグイン | ◎ JAR 配置 | ⚠ Elastic License v2、RHBK 対象外 | ★★（RHBK 不採用時のみ）|
+
+##### 推奨実装（顧客状況別）
+
+| 顧客状況 | 推奨実装パス | 理由 |
+|---|---|---|
+| **全員 email 保有** | **① v26 Organizations 標準** | 設定のみで Identifier-First + 混在ハンドリングが揃う |
+| **email 一部のみ保有（混在）** | **① + ③ Custom Authenticator** | email 形式なら ① の Organization マッチ、独自 ID 形式なら ③ Custom Conditional でルーティング |
+| **全員 email 非保有** | **③ Custom Authenticator + C 案 URL** | Front Proxy が URL → `kc_idp_hint` 化、Keycloak は混在判定スキップ |
+| **ローカルユーザーゼロ（フェデ専用）**（[§FR-1.2.0.0](01-auth.md#fr-1200-ローカルユーザーとは何か--利用者カテゴリ別の分析) シナリオ δ Break Glass のみ）| **① + IdP セレクター B 案** | 混在判定不要、IdP 選択のみ |
+
+##### Identifier-First で「password フィールドを後から表示」UX を Keycloak で実現する方法
+
+Notion / Dropbox 的な「email 入力 → enterprise なら hide password / local なら show password」UX:
+
+| Keycloak バージョン | 実装方法 |
+|---|---|
+| **v26.x + Organizations 有効** | **デフォルトで Identifier-First**。Browser Flow を変更せず Theme でフィールド表示制御 |
+| v25 以前 | Browser Flow を「Username Password Form」→「Identity First Form + Conditional Password」に書き換え |
+| v26 のまま Theme カスタマイズ | `login-username.ftl` で email 入力 → JS で `/realms/{realm}/login-actions/authenticate` 経由判定 → password フィールド動的表示 |
+
+→ **v26 Organizations を採用すれば、Theme 微調整のみで Notion / Dropbox 風の UX が実現できる**。
+
+##### 「混在を許す realm」での運用上の注意
+
+| 注意点 | 対策 |
+|---|---|
+| **同一 email がフェデユーザーとローカルユーザーで重複** | [§FR-2.2.1.A](#fr-2.2.1.a-同一テナント内ユーザー重複の扱い) と連動。**Layer A `sub` で完全分離、Layer B email は補助属性**（[§FR-1.2.0.D](01-auth.md#fr-120d-ユーザー識別子戦略--メール非保有顧客独自-id-への対応)）|
+| **ローカルユーザーが Organization の IdP 経由で別 sub になる** | First Broker Login Flow で既存ローカルユーザー検出 → アカウントリンク or 拒否 |
+| **Organization メンバーかつローカル PW を持つユーザー** | 「フェデ強制」か「ローカル PW 残置」かの**ポリシー選択**が必要（B-622 で確認）|
+| **realm 既存ユーザーで Organization 非所属** | デフォルトは「ローカル PW プロンプト」。**「フェデ強制」したい場合は Organization 紐付けを Required にする** |
+| **未登録 email でアクセス**（不正フィッシング含む）| `User not found` の即座表示は user enumeration リスク。**Generic error + 一定待機**（業界標準）|
+
+##### 我々のスタンス
+
+| 基本方針の柱 | Identifier-First 混在設計での実現 |
+|---|---|
+| **絶対安全** | Layer A `sub` 中心の突合（[§FR-1.2.0.D](01-auth.md#fr-120d-ユーザー識別子戦略--メール非保有顧客独自-id-への対応)）、user enumeration 対策、未登録への generic error |
+| **どんなアプリでも** | フェデユーザー / ローカルユーザー / 混在 を 1 つのログイン画面で完結 |
+| **効率よく認証** | Keycloak v26 Organizations の **標準動作で 90% カバー**、Custom SPI は email 非保有顧客分のみ |
+| **運用負荷・コスト最小** | プラグイン不要、ライセンス問題なし、Red Hat サポート対象（RHBK 採用時） |
+
+##### 参考資料
+
+- [Keycloak Organizations 発表（2024-06）](https://www.keycloak.org/2024/06/announcement-keycloak-organizations) — Identifier-First 標準化の根拠
+- [Red Hat build of Keycloak 26.0 Managing Organizations](https://docs.redhat.com/en/documentation/red_hat_build_of_keycloak/26.0/html/server_administration_guide/managing_organizations)
+- [Inero Software: Organizations in Keycloak — Management and Customization](https://inero-software.com/organizations-in-keycloak-management-and-customization-of-authentication/)
+- [Karelics: Building a custom conditional authenticator for Keycloak](https://karelics.fi/blog/2023/08/22/building-a-custom-conditional-authenticator-for-keycloak/)
+- [Scalekit: B2B Auth Universal vs Org-Specific Logins](https://www.scalekit.com/blog/designing-b2b-authentication-experiences-universal-vs-organization-specific-login) — Notion / Dropbox / Freshworks 業界実例
+
+---
+
 #### TBD / 要確認
 
 | 確認項目 | 回答例 |
 |---|---|
-| 推奨 UX パターン | メールドメイン HRD / IdP セレクター / 組織固有 URL |
+| 推奨 UX パターン | メールドメイン HRD / IdP セレクター / 組織固有 URL / 識別子先行 |
 | メールドメインから IdP への解決ルール | 1 ドメイン = 1 IdP / 1 顧客に複数ドメイン |
 | 複数テナント所属時の選択 UI | ログイン後にテナント選択 / 別途 |
 | ログイン画面のブランディング | 共通 UI / 顧客企業ごとカスタマイズ |
@@ -2975,6 +3206,12 @@ flowchart LR
 | **A + C ハイブリッド構成採用方針**（[B-618](../../hearing-checklist.md) / §FR-2.3.3.C）| 採用（大口顧客のみ C） / 採用しない（全顧客 A 一律） / 検討中 |
 | **HRD 実装方式**（§FR-2.3.3.D）| ① v26 Organizations（推奨） / ② sventorben プラグイン / ③ 自前 SPI / ④ kc_idp_hint（基盤 HRD 無し）|
 | **単一テナント複数 IdP の想定**（§FR-2.3.3.D）| 想定あり（ドメイン分割可） / 想定あり（同一ドメイン内多 IdP）/ 想定なし |
+| **ヒントキー戦略**（§FR-2.3.3.E、[B-IDM-1](../../hearing-checklist.md) 連動）| email ドメインのみ / 顧客独自 ID 併用 / 組織固有 URL 主 / kc_idp_hint 主 / 混在対応 |
+| **email 非保有顧客の HRD パターン**（§FR-2.3.3.E）| D（識別子先行）/ C（組織固有 URL）/ E（kc_idp_hint）/ B（フォールバック）|
+| **C 案 URL 命名**（§FR-2.3.3.E）| サブドメイン（`acme.basis.example.com`）/ パスベース（`/t/acme`）/ 採用しない |
+| **フェデ + ローカル混在ハンドリングのポリシー**（§FR-2.3.3.F）| ① v26 Organizations 標準（推奨）/ ② Conditional Authenticator / ③ Custom SPI / ④ コミュニティプラグイン |
+| **Organization メンバーかつローカル PW を持つユーザーの扱い**（§FR-2.3.3.F）| フェデ強制（ローカル PW 廃止）/ ローカル PW 残置（Break Glass）/ 顧客選択 |
+| **未登録 email アクセス時のエラー文言**（§FR-2.3.3.F）| Generic error（user enumeration 対策）/ 詳細メッセージ（UX 優先）|
 
 ---
 

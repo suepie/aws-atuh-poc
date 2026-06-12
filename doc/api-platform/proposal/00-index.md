@@ -19,6 +19,19 @@
 
 各章はこの 4 軸への立場を明示する。
 
+### 本標準のアーキテクチャ前提：Federated（連邦型）
+
+本標準は **「中央集権的な共通 API 基盤」ではなく、「分散ガイド + 共通要素のみ中央化」** を採用する：
+
+| 中央集約すべき要素 | 各システムで分散すべき要素 |
+|---|---|
+| 共有認証基盤（OIDC / OAuth） | API Gateway / WAF / Lambda / ECS |
+| 監査アカウント（FMS / CloudTrail / Config）| 流量制御の閾値・カスタムルール |
+| Service Catalog（標準テンプレ配布）| アプリ DB / permission |
+| Organization SCP | 各システム独自の業務ロジック |
+
+**根拠**：対象システムが独立しており API も重複しない条件下で、共通化のメリット（重複削減・再利用）が消失する一方、分散のメリット（障害分離・要件最適化・リリース独立性）はフル活用される。業界主流（Netflix Paved Road / Spotify Golden Path）と整合。詳細：[common/01-reference-architecture.md §C-1.5](common/01-reference-architecture.md)。
+
 ---
 
 ## §1 要件定義の 7 ステップ（語る順序）

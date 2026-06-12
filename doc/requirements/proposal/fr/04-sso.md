@@ -112,6 +112,7 @@ flowchart LR
 |---|---|---|
 | §FR-4.1 同一 IdP 内 SSO | 同じ Pool/Realm 内のアプリ間 SSO（粒度 [1]） | FR-SSO-001 |
 | §FR-4.2 クロス IdP SSO | フェデレーション IdP 経由の SSO 伝播（粒度 [2] + [3]） | FR-SSO-002 |
+| §FR-4.3 ログイン後のランディング UX | Launchpad（entitled apps 一覧）/ Sorry ページ / Deep-Link return_to 制御 | FR-SSO-008 |
 
 ---
 
@@ -455,6 +456,492 @@ flowchart TB
 | 規制業種向け L3 オプションの要否 | **B-801-3** | 必須（金融顧客あり）/ 不要 |
 | 外部 IdP の SSO セッション TTL に従うか | B-802 | はい（推奨）/ 本基盤側で上書き |
 | `max_age` 制約の適用 | **B-802-2** | 適用する（時間）/ 適用しない |
+
+---
+
+## §FR-4.3 ログイン後のランディング UX（Launchpad / Sorry / Deep-Link）（→ FR-SSO-008）
+
+> **このセクションで定めること**: 認証が完了した後、ユーザーが **「どのアプリ・どの画面に着地するか」** の UX 設計。具体的には (1) 直リンク（deep-link）後の自動遷移、(2) Post-login Launchpad（entitled apps 一覧 SPA）、(3) 権限がないアプリへのアクセス時の Sorry ページ、の 3 つの責務分担を確定する。   
+> **主な判断軸**: アプリの数と入口の多様性（社内 / 顧客 / 外部）、ユーザーが「自分が何にアクセス権限を持つか」を知る必要性、ブランディング要件、運用工数   
+> **§FR-4 全体との関係**: §FR-4.1 同一 IdP 内 SSO・§FR-4.2 クロス IdP SSO は**セッション共有の仕組み**を扱う。本サブセクションは**「認証完了後の着地点 UX」**を扱う独立論点。HRD（[§FR-2.3.3](02-federation.md#fr-2.3.3-ログイン画面で-idp-選択-ux--home-realm-discovery--fr-fed-013)）とは別軸
+
+### §FR-4.3.0 前提と背景
+
+#### Pre-login vs Post-login は「二択」ではなく「役割の違う 2 軸」
+
+「ユーザーがどのシステムを使うか」を**ログイン前**に選ばせるか、**ログイン後**に選ばせるか — これは UX 設計上の大きな分岐点だが、**二択ではない**。両者は対象ユーザーが違うため**共存可能**で、むしろ大手 B2B SaaS は両方持つのが標準。
+
+##### 4 つの組合せパターン
+
+| パターン | Pre-login | Post-login Launchpad | 業界実例 |
+|---|:---:|:---:|---|
+| ① Pre のみ | ✅ | ❌ | 社内イントラ単体 |
+| ② Post のみ | ❌ | ✅ | Okta End-User Dashboard 単独運用 |
+| **③ Pre + Post**（**B2B SaaS で多い**）| ✅ | ✅ | Atlassian（`atlassian.com` + `start.atlassian.com`）/ Microsoft（`microsoft.com` + `office.com`）|
+| ④ いずれもなし | ❌ | ❌ | Deep-link 専用（メール / ブックマーク主体）|
+
+##### 役割別の住み分け
+
+```mermaid
+flowchart LR
+    subgraph Anon["匿名ユーザー (= Pre-login の対象)"]
+        Anon1["何のサービス?"]
+        Anon2["サインアップ"]
+        Anon3["FAQ / 価格"]
+    end
+
+    subgraph Authn["認証済ユーザー (= Post-login の対象)"]
+        Auth1["entitled apps タイル"]
+        Auth2["お気に入り / 最近"]
+        Auth3["テナント情報"]
+    end
+
+    Anon -->|認証通過| Authn
+    Authn -.ログアウト.-> Anon
+
+    style Anon fill:#fff3e0
+    style Authn fill:#e3f2fd
+```
+
+→ **Pre = マーケティング / 発見 / サインアップ**（匿名訪問者向け）、**Post = 生産性 / 権限ベース / 個人化**（認証済ユーザー向け）。**両者は競合せず、対象ユーザーが違う**。
+
+##### 詳細比較（20 観点）
+
+| # | 観点 | Pre-login | Post-login Launchpad |
+|---|---|---|---|
+| 1 | **誰に何を見せるか** | 匿名訪問者にサービス群を見せる | 認証済ユーザーに **entitled apps だけ**見せる |
+| 2 | **権限ベースのフィルタ** | ❌ 不可（未認証）| ✅ JWT roles / tenant_id でフィルタ |
+| 3 | **「使えないシステム」誤選択** | 発生（クリック後 Sorry へ）| 発生しない（最初から非表示）|
+| 4 | **マーケティング / 値訴求** | ✅ 主目的（"何ができるか" 訴求可）| ❌ 認証済ユーザー対象 |
+| 5 | **新規サインアップ導線** | ✅ 自然に組込可 | ❌ 認証済前提 |
+| 6 | **公開情報**（FAQ / プライシング / 営業窓口）| ✅ 自然 | ❌ 認証越しは不自然 |
+| 7 | **個人化**（最近使った / お気に入り）| ❌ 不可 | ✅ ユーザー固有 |
+| 8 | **ブランディング** | コーポレートブランド前面 | プロダクトブランド前面 |
+| 9 | **既知ユーザーの操作工数** | Pre 経由は 1 クリック増 | Deep-link なら最短 |
+| 10 | **エンタープライズ顧客の "自社専用入口" 期待** | 中（パブリック Web 寄り）| 高（Launchpad は社内ツール感）|
+| 11 | **テナント別カスタマイズ** | 弱（共通 Pre 1 枚 or テナント別 URL）| 強（テナント認識済、自由）|
+| 12 | **セキュリティ面の攻撃面** | 公開エンドポイント → 一般 Web セキュリティで十分 | 認証越し → 内部情報（ロール / アプリ名）漏出対策が必要 |
+| 13 | **アプリ追加時の更新場所** | Pre ページ（手動）| Launchpad（ロール定義 + 自動表示）|
+| 14 | **アプリ削除時の更新場所** | Pre ページの手動更新 | Launchpad は自動（ロール失効でフェードアウト）|
+| 15 | **多言語対応** | 必須（B2C / 海外顧客向け）| アプリ側に揃える程度 |
+| 16 | **B2B エンタープライズのホワイトラベル要望** | 顧客ロゴ程度（共通 Pre は弱い）| 強い対応可（Theme / config）|
+| 17 | **「初めて使うが何ができる?」の発見性** | ✅ 良好 | ❌ 認証後でしかわからない |
+| 18 | **オフライン / 障害時のフォールバック** | 静的 HTML で生存可 | 認証基盤依存（落ちると見えない）|
+| 19 | **Cookie / セッション削除後の挙動** | 何も困らない | 再ログイン後 Launchpad へ |
+| 20 | **既存システムからの移行容易性** | 既存ポータルをそのまま流用しやすい | 新規構築が必要 |
+
+##### 採用判断の決定木
+
+```mermaid
+flowchart TB
+    Q1{B2C / 公開向け<br/>マーケサイトが必要?}
+    Q1 -->|Yes| Pre[Pre-login 必須]
+    Q1 -->|No| Q2
+
+    Q2{未認証ユーザーに<br/>サービス紹介する?}
+    Q2 -->|Yes| Pre
+    Q2 -->|No / 既存社員のみ| Skip[Pre 不要]
+
+    Pre --> Q3
+    Skip --> Q3
+
+    Q3{認証済みユーザーが<br/>複数アプリを使う?}
+    Q3 -->|Yes 2 個以上| Post[Post-login Launchpad 必須]
+    Q3 -->|No 1 個のみ| NoPost[Deep-link で十分]
+
+    Post --> Done
+    NoPost --> Done
+
+    style Pre fill:#fff3e0
+    style Post fill:#e3f2fd
+```
+
+##### 顧客像別の推奨パターン
+
+| 顧客像 | 推奨パターン | 理由 |
+|---|---|---|
+| 社内専用、既存社員のみ、複数アプリ | **② Post のみ** | マーケ不要、entitled apps 提示で十分 |
+| B2C / B2B 両方、複数アプリ | **③ Pre + Post** | 業界標準（Atlassian / Microsoft 型）|
+| 完全社内、アプリ 1 つだけ | **④ いずれもなし**（Deep-link） | Launchpad もなしで OK |
+| マーケサイト中心、アプリは付随 | **① Pre のみ** | 業務アプリが弱いケース |
+
+##### よくある誤解と落とし穴
+
+| 誤解 | 実際 |
+|---|---|
+| 「Pre があれば Sorry 不要」| ❌ Sorry は別軸。Pre 経由でも権限ない場合は Sorry 必要 |
+| 「Post があれば Pre は不要」| ⚠ 公開向けマーケサイトが必要なら Pre も必要 |
+| 「Launchpad = ホームページ」| ❌ Launchpad は entitled apps の起動台、ホームページ（マーケサイト）と役割違い |
+| 「Pre-login で entitled apps を見せる」| ❌ 未認証では権限不明、原理的に不可 |
+| 「Pre と Launchpad は同じ画面でいい」| ⚠ 認証前後で見せる情報が違うため、画面を分けるのが業界標準 |
+
+##### Sorry ページとの関係（別軸、ただし連動）
+
+Sorry は「**認証は成功したが、アクセスしようとしたアプリの権限を持たない**」場合の処理で、Pre/Post とは**独立した軸**。ただし設計上は連動する:
+
+| Pre / Post の組合せ | Sorry の自然な振る舞い |
+|---|---|
+| Post-login Launchpad あり | Sorry → Launchpad にリダイレクト（entitled apps へ誘導）|
+| Post なし、Pre のみ | Sorry → Pre ページに戻す（ただし匿名と同じ景色で UX 弱い）|
+| 両方なし（Deep-link 主体）| Sorry 専用ページが必須（アプリ別のフォールバック先がない）|
+| 両方あり | Sorry → Post Launchpad へ |
+
+##### 本基盤のデフォルトスタンス
+
+| 観点 | デフォルト |
+|---|---|
+| Pre-login | **B-626 ヒアリングで判定**。マーケサイト要否次第で採用 / 不採用を決める |
+| Post-login Launchpad | **採用**（業界標準、複数アプリの効率な起動）|
+| Sorry | **採用**（権限なしクリック時の必須挙動）|
+| デフォルト構成 | **② Post + Sorry**（または **③ Pre + Post + Sorry**）|
+
+### §FR-4.3.A 本基盤のランディングスタンス
+
+本基盤は次の **3 つのエントリ点パターン**を統合した着地 UX を提供:
+
+```mermaid
+flowchart LR
+    User[ユーザー] --> Choice{エントリ点}
+
+    Choice -->|直リンク| App[アプリ X]
+    Choice -->|Launchpad 経由| LP[Launchpad SPA]
+    Choice -->|ブックマーク / メール| App
+
+    App -->|未認証| Auth[共通認証基盤]
+    LP -->|未認証| Auth
+
+    Auth -->|認証成功 + return_to| App
+    Auth -->|認証成功 + デフォルト| LP
+
+    App -->|権限あり| Use[アプリ利用]
+    App -->|権限なし| Sorry[Sorry ページ]
+    Sorry -->|entitled apps へ| LP
+
+    style LP fill:#e3f2fd
+    style Sorry fill:#fff3e0
+```
+
+### §FR-4.3.1 Post-login Launchpad（→ FR-SSO-008-1）
+
+> **このサブ・サブセクションで定めること**: 認証完了後にユーザーが着地する**ランチパッド SPA** の責務、entitled apps の判定根拠、Keycloak Account Console との関係。
+
+#### 業界の現在地
+
+| サービス | Launchpad 形態 |
+|---|---|
+| **Microsoft 365 portal** | `office.com` ハブ。entitled apps をタイル表示、お気に入り / 検索 / 履歴 |
+| **Okta End-User Dashboard** | `*.okta.com/app/UserHome` でアプリタイル、SSO はクリック 1 回 |
+| **Atlassian Cloud start** | `start.atlassian.com` で全 Atlassian アプリ + サードパーティ tile |
+| **Salesforce App Launcher** | アプリ内（Lightning Experience）で App 切替 |
+| **AWS IAM Identity Center** | SSO portal でロール選択 |
+
+→ いずれも **独立した SPA** で構築。**Keycloak の Account Console とは別物**。
+
+#### Launchpad の責務と Keycloak の限界
+
+| 機能 | Keycloak Account Console "Applications" タブ | 独立 Launchpad SPA |
+|---|:---:|:---:|
+| entitled clients のリスト表示 | ✅ 標準 | ✅ |
+| "Always Display in Console" 制御 | ✅ クライアント単位設定 | ✅ |
+| **業界標準 UX**（タイル / 検索 / お気に入り / 履歴）| ❌ | ✅ |
+| カスタムブランディング | ⚠ Theme 微調整のみ | ✅ 自由設計 |
+| **Authz ロールベースの可視性制御**（ロールで非表示）| ⚠ 制限あり | ✅ JWT クレームで完全制御 |
+| アプリへの SSO 遷移 | ✅ deep-link 可 | ✅ |
+| 管理外アプリのリンク（社内 Wiki / Slack ワークスペース等）| ❌ | ✅ |
+| **本基盤の採用方針** | ⚠ 補助的（ユーザー自身のアカウント設定が主目的）| ✅ **業界標準として別 SPA 構築** |
+
+→ **Account Console は「ユーザーが自分のアカウント設定を管理する場所」**であり、**Launchpad の業界標準 UX は別 SPA で構築**するのが現実的。
+
+#### entitled apps の判定根拠
+
+```mermaid
+flowchart LR
+    JWT[JWT クレーム] --> Roles[roles配列]
+    JWT --> TenantId[tenant_id]
+    JWT --> Sub[sub]
+
+    Roles --> Match[Launchpad SPA で<br/>roles → app 表示マッピング]
+    TenantId --> Filter[テナント別<br/>app セット切替]
+
+    Match --> Visible[entitled apps 表示]
+    Filter --> Visible
+```
+
+- Launchpad SPA は **JWT を検証して `roles` / `tenant_id` から表示アプリを決定**
+- マッピング表は Launchpad SPA 内（or 設定 DB）に保持
+- 「ロール = アプリ」の対応は [§FR-6 認可](06-authz.md) と整合
+
+#### Keycloak で実装する場合の最小構成
+
+```
+Common Auth Platform (Keycloak)
+   ↓ OIDC
+Launchpad SPA (auth.example.com/launchpad)
+   ↓ JWT 検証 + roles 解析
+[App A tile] [App B tile] [App C tile]
+   ↓ deep-link with active session
+App A / B / C (各システム)
+```
+
+| コンポーネント | 実装 |
+|---|---|
+| Launchpad SPA | React / Vue 等で OIDC RP として実装、Keycloak client として登録 |
+| 表示アプリリスト | Keycloak Client ロール / JWT `roles` クレームから動的生成 |
+| 各アプリへの SSO 遷移 | アプリの URL に redirect、SSO セッションで認証フローはスキップ |
+| ブランディング | テナント別 theme / config 切替可能 |
+
+### §FR-4.3.2 Sorry ページ（権限なしアクセス時）（→ FR-SSO-008-2）
+
+> **このサブ・サブセクションで定めること**: ユーザーが直リンクでアプリ X にアクセスしたが、認証は成功したものの**そのアプリの権限を持たない**場合の挙動とページ設計。
+
+#### 3 つの実装パターン
+
+| パターン | 責務分担 | UX | 採用例 |
+|---|---|---|---|
+| **A. アプリ側 Sorry + Launchpad リンク** | アプリ X が `403` → 自前 Sorry ページ → Launchpad リンク | アプリのブランディング維持 | Atlassian Cloud |
+| **B. 認証基盤の Sorry テーマ** | Keycloak の `access_denied` ページを Theme カスタマイズ | 認証基盤側で統一 | 小規模システム |
+| **C. 共通 Sorry SPA** | アプリ X が `403` → `auth.example.com/sorry?app=x` にリダイレクト → 共通 SPA がガイダンス表示 + entitled apps リスト | **業界標準** | LinkedIn / Microsoft 365 |
+
+→ **本基盤の推奨は C**。Launchpad SPA 内に `/sorry` パスを設けて統合運用。アプリは `403` 時に **`/sorry?app=x` にリダイレクトするだけ**で良い。
+
+#### Sorry ページの最低限の情報
+
+| 表示項目 | 理由 |
+|---|---|
+| **「このアプリにはアクセス権がありません」**（明確なメッセージ）| 認証失敗ではないことを伝える |
+| ユーザー自身の情報（名前 / テナント）| 「別人としてログイン中?」の不安解消 |
+| **entitled apps の一覧 or Launchpad リンク** | 行き先を提供 |
+| アクセス申請の連絡先 | 「使いたい場合は管理者に連絡」|
+| ログアウトリンク | 別人としてログインし直す場合 |
+
+#### Sorry ページの設計アンチパターン
+
+| アンチパターン | 問題 |
+|---|---|
+| 「認証エラー」と表示する | 認証は成功している。ユーザーが PW 再入力を試みる無駄が発生 |
+| **アプリの存在自体を隠す**（"Not Found" 表示）| 一部の規制業種では透明性要件と矛盾。本基盤としては推奨しない |
+| **詳細な権限内訳を表示**（"あなたは admin ロールが必要だが viewer のみ"）| 内部ロール構造を漏らす攻撃面 |
+| ホーム画面に強制リダイレクト（何も表示せず）| 「なぜ?」がわからずユーザーが混乱 |
+
+#### §FR-4.3.2.A AWS edge での Sorry 制御パターン（ALB / CloudFront 統合）
+
+> **このサブ・サブセクションで定めること**: 上記 §FR-4.3.2 3 つの実装パターン（A アプリ側 / B 認証基盤 Theme / C 共通 Sorry SPA）を **AWS インフラ層でどう実装するか**。アプリ個別実装を避け、ALB / CloudFront に集約する 5 つのパターンを比較し、推奨を確定する。   
+> **主な判断軸**: アプリ数 / マルチオリジン構成の有無、JWT 検証をどこで行うか、ブランディング要件、遅延要件、運用負荷、コスト   
+> **§FR-4.3.2 内の位置付け**: 実装パターン C「共通 Sorry SPA」を AWS で具体的にどう実現するかの**インフラ層設計**
+
+##### なぜ edge 集約を検討するか
+
+- 業務アプリが N 個ある場合、**各アプリが 403 → Sorry リダイレクトを個別実装するのは非経済的**
+- 403 ハンドリングを **ALB / CloudFront に寄せれば、アプリは単に 403 を返すだけ**で良い
+- 認証連動の判定（JWT クレーム検証）も edge でできる
+- Sorry SPA は **1 つだけ S3 に置けば全アプリで共有**できる
+
+##### 5 つの AWS 実装パターン
+
+| # | パターン | edge 層 | JWT 検証 | 動的コンテキスト | 工数 | 遅延 | コスト | 推奨度 |
+|---|---|---|---|:---:|:---:|:---:|:---:|:---:|
+| **i** | **CloudFront Custom Error Response**（静的）| CloudFront | アプリ任せ | ❌（静的 HTML のみ）| ◎ 設定のみ | 0 | ◎ ほぼ 0 | ★★★（アプリ少時）|
+| **ii** | **CloudFront + Lambda@Edge（origin-response 403 → 302 redirect）**（**業界標準・推奨**）| CloudFront | アプリ任せ | ✅ クエリ動的化 | △ Lambda 実装 | 〜10ms | ⚠ Lambda@Edge 実行料 | ★★★★★ |
+| **iii** | **CloudFront + Lambda@Edge（viewer-request JWT 検証）**（先回り判定）| CloudFront | ✅ edge で実行 | ✅ | ❌ Lambda + KMS 鍵検証 | 〜20ms | ⚠ 全リクエストに乗る | ★★★（高度な要件のみ）|
+| **iv** | **ALB authenticate-oidc + 403 ターゲット**（OIDC 認証付き ALB）| ALB | ALB が OIDC 認証、JWT を `x-amzn-oidc-data` ヘッダで target に渡す | △ 限定的 | △ ALB 設定 | 0 | ◎ ALB のみ | ★★★（単一 ALB 構成時）|
+| **v** | **ALB Native JWT Validation**（2025 新機能）| ALB | ✅ ALB がネイティブ検証 | △ ヘッダで判定可 | ◎ 設定のみ | 0 | ◎ ALB のみ | ★★★★（最新構成、適用範囲確定後）|
+
+##### 推奨アーキテクチャ：パターン ii（CloudFront + Lambda@Edge）
+
+```mermaid
+flowchart LR
+    User[ユーザー] -->|"deep-link to /app/x"| CF[CloudFront]
+    CF -->|"forward"| App["App X (ALB / S3 / EC2)"]
+    App -.403 + X-Sorry-Reason ヘッダ.-> CF
+    CF -->|"Lambda@Edge<br/>origin-response"| LE["Lambda@Edge<br/>403 検出 → 302 書換"]
+    LE -.302 Location.-> User
+    User -->|"/sorry?app=x&reason=Y"| CF
+    CF -->|"forward"| SorrySPA["Sorry SPA<br/>(S3 origin)"]
+    SorrySPA --> User
+
+    style CF fill:#fff3e0
+    style LE fill:#e3f2fd
+    style SorrySPA fill:#e8f5e9
+```
+
+##### パターン ii の実装ポイント
+
+```javascript
+// Lambda@Edge: origin-response トリガー
+exports.handler = async (event) => {
+  const response = event.Records[0].cf.response;
+  const request = event.Records[0].cf.request;
+
+  if (response.status === '403') {
+    const appName = request.uri.match(/^\/app\/([^/]+)/)?.[1] || 'unknown';
+    const reason = response.headers['x-sorry-reason']?.[0]?.value || 'not_entitled';
+
+    return {
+      status: '302',
+      statusDescription: 'Found',
+      headers: {
+        location: [{
+          key: 'Location',
+          value: `/sorry?app=${encodeURIComponent(appName)}&reason=${encodeURIComponent(reason)}`,
+        }],
+      },
+    };
+  }
+  return response;
+};
+```
+
+##### パターン v（ALB Native JWT Validation、2025 新機能）の使い所
+
+ALB が OIDC IdP（Keycloak）の JWT を**ネイティブで署名検証**できるようになり、特定の claim 有無で Listener Rule を分岐できる。
+
+- **適合**: 単一 ALB に複数アプリがぶら下がる構成、JWT クレームベース粗粒度ルーティング
+- **制限**: 11K byte claim 制約あり（超過時 HTTP 500）、ALB が JWT を含むリクエストを受け取る必要がある（典型: Authorization ヘッダ）
+- **本基盤適用**: Identity Broker 配下のアプリが ALB 経由ならパターン v は最少工数で導入可。**ただし業界での適用実績がまだ少ない**ため、パターン ii を主にしてパターン v はオプション位置付け
+
+##### パターン別比較（推奨判断の整理）
+
+| 観点 | i 静的 | **ii Lambda@Edge** | iii viewer-request | iv ALB OIDC | v ALB JWT |
+|---|:---:|:---:|:---:|:---:|:---:|
+| **マルチオリジン対応** | ✅ | ✅ | ✅ | ⚠ ALB 配下のみ | ⚠ ALB 配下のみ |
+| **アプリ無変更で導入** | ✅ | ⚠ 403 + ヘッダ返却が必要 | ✅ | ✅ | ⚠ JWT 送信が必要 |
+| **動的コンテキスト**（app 名 / 理由）| ❌ | ✅ | ✅ | ⚠ 限定的 | ⚠ 限定的 |
+| **JWT 検証を edge で完結** | ❌ | ❌ | ✅ | ✅ | ✅ |
+| **遅延ペナルティ** | 0 | 〜10ms（403 時のみ）| 〜20ms（全リクエスト）| 0 | 0 |
+| **ブランディング細かな反映** | ⚠ 静的 HTML | ✅ Sorry SPA で自由 | ✅ | ⚠ ALB は HTML 表示弱い | ⚠ 同左 |
+| **Sorry SPA との統合**（B-622 連動）| ⚠ 別 SPA で運用は弱い | ✅ クエリ受渡で完全統合 | ✅ | ⚠ 受渡が手間 | ⚠ 同左 |
+| **運用変更頻度** | 低（静的）| 中（Lambda 改修）| 高（JWT ロジック改修）| 中 | 中 |
+| **コスト**（月間 1M リクエスト想定）| 〜数 USD | 〜20 USD | 〜100 USD（全リクエスト）| ALB のみ | ALB のみ |
+| **障害時の挙動** | CloudFront 健全なら継続 | Lambda@Edge 障害で 5xx 露出 | 同左、影響範囲広い | ALB 障害でアプリ全停止 | 同左 |
+
+##### 顧客状況別の推奨
+
+| 顧客状況 | 推奨パターン | 理由 |
+|---|---|---|
+| **業務アプリ 3 個以上、CloudFront 前段あり**（本基盤の標準想定）| **ii Lambda@Edge** | 動的コンテキスト + Sorry SPA 統合 + アプリ無変更（403 ヘッダ返却のみ）|
+| アプリ 1 個のみ、簡素な要件 | **i Custom Error Response** | コストゼロ、運用最小 |
+| 全アプリが ALB 配下、JWT 認証統一 | **v ALB Native JWT Validation** | 最少工数、edge 完結 |
+| 多層認証 + 高度なクレーム判定 | **ii + iii の組合せ** | 認証は viewer-request、Sorry は origin-response |
+
+##### 我々のスタンス
+
+| 基本方針の柱 | AWS edge Sorry 制御での実現 |
+|---|---|
+| **絶対安全** | edge での JWT 署名検証（v）、Sorry での内部情報非露出 |
+| **どんなアプリでも** | アプリは「403 + ヘッダ返却」だけで OK、Sorry 集約 |
+| **効率よく認証** | edge 集約で個別アプリ実装不要、変更は 1 箇所 |
+| **運用負荷・コスト最小** | パターン ii は Lambda@Edge 1 本 + Sorry SPA 1 つ + S3 で完結 |
+
+##### 参考資料
+
+- [AWS Blog: Customize 403 error pages from CloudFront Origin with Lambda@Edge](https://aws.amazon.com/blogs/networking-and-content-delivery/customize-403-error-pages-from-amazon-cloudfront-origin-with-lambdaedge/)
+- [AWS Blog: Generating dynamic error responses in CloudFront with Lambda@Edge](https://aws.amazon.com/blogs/networking-and-content-delivery/generating-dynamic-error-responses-in-amazon-cloudfront-with-lambdaedge/)
+- [AWS Docs: Authenticate users using an Application Load Balancer](https://docs.aws.amazon.com/elasticloadbalancing/latest/application/listener-authenticate-users.html) — `authenticate-oidc` で Keycloak 連携可
+- [AWS Docs: Verify JWTs using an Application Load Balancer](https://docs.aws.amazon.com/elasticloadbalancing/latest/application/listener-verify-jwt.html) — 2025 新機能 ALB Native JWT Validation
+- [AWS Blog: Security best practices when using ALB authentication](https://aws.amazon.com/blogs/networking-and-content-delivery/security-best-practices-when-using-alb-authentication/) — `x-amzn-oidc-data` ヘッダ署名検証要件
+
+### §FR-4.3.3 Deep-Link 後の return_to 制御（→ FR-SSO-008-3）
+
+> **このサブ・サブセクションで定めること**: ユーザーがアプリ X に直リンク → 認証基盤に redirect → 認証完了 後、**元のアプリ X に戻る** 制御。`return_to` / `redirect_uri` の検証ルール。
+
+#### 標準 OIDC フローでの return_to
+
+- OIDC `redirect_uri` パラメータがアプリ X の URL
+- Keycloak は **Client の登録済 Valid Redirect URIs** と完全一致でない限り拒否
+- 認証成功後、`code` を持って `redirect_uri` にリダイレクト
+- 業界標準（Keycloak / Cognito 共通）
+
+#### return_to が機能しないケースと対策
+
+| ケース | 対策 |
+|---|---|
+| `redirect_uri` が未登録 / 不正 | Keycloak が `Invalid redirect_uri` エラー表示 → アプリ側で Valid Redirect URIs 設定を確認 |
+| セッションタイムアウト中の deep-link | 認証フロー後に `redirect_uri` でアプリに戻る（標準動作）|
+| Launchpad 経由ログインでアプリに飛ばしたい | Launchpad が **App tile クリック時にアプリの URL に redirect**（アプリ側 OIDC フローが起動、SSO セッションで即返る）|
+| 認証後に Launchpad に必ず着地させたい | `redirect_uri` を Launchpad SPA に固定（業界標準は **アプリ側 redirect_uri 優先**、Launchpad はデフォルト着地点のみ）|
+
+### §FR-4.3.4 推奨デフォルトアーキテクチャ
+
+```mermaid
+flowchart TB
+    subgraph User_Entry["エントリ点"]
+        DL["直リンク<br/>(メール / ブックマーク)"]
+        LPLink["Launchpad URL<br/>(launchpad.example.com)"]
+    end
+
+    subgraph Auth_Layer["認証層"]
+        KC["Keycloak<br/>(auth.example.com)"]
+    end
+
+    subgraph Landing["ランディング層 (本基盤責務)"]
+        LP["Launchpad SPA<br/>+ /sorry"]
+    end
+
+    subgraph Apps["業務アプリ層"]
+        A1["App A"]
+        A2["App B"]
+        A3["App C"]
+    end
+
+    DL --> A1
+    LPLink --> LP
+
+    A1 -.OIDC 未認証.-> KC
+    LP -.OIDC 未認証.-> KC
+
+    KC -.認証成功 + redirect_uri.-> A1
+    KC -.認証成功 + デフォルト.-> LP
+
+    LP -- entitled --> A1
+    LP -- entitled --> A2
+    A3 -. 権限なし .-> LP
+
+    style KC fill:#fff3e0
+    style LP fill:#e3f2fd
+```
+
+### §FR-4.3.B 我々のスタンス
+
+| 基本方針の柱 | Launchpad / Sorry / Deep-Link 設計での実現 |
+|---|---|
+| **絶対安全** | redirect_uri の厳格検証、user enumeration 対策、Sorry での内部ロール非表示 |
+| **どんなアプリでも** | 直リンク / Launchpad / メール / ブックマーク 全パターン対応、業界標準パターン C |
+| **効率よく認証** | アプリは entitled なら直アクセス、そうでなければ Sorry → Launchpad |
+| **運用負荷・コスト最小** | Keycloak は OIDC 標準動作のみ、Launchpad / Sorry は独立 SPA（変更頻度に応じて独立リリース可能）|
+
+### §FR-4.3.C プラットフォーム実装の差
+
+| 機能 | Cognito | Keycloak |
+|---|:---:|:---:|
+| OIDC redirect_uri 検証 | ✅ 標準 | ✅ 標準 |
+| Account Console（簡易 Launchpad）| ❌ なし | ✅ あり（補助用途）|
+| Custom Sorry テーマ | ⚠ Hosted UI で限定的 | ✅ Theme で完全カスタマイズ |
+| クライアント別 default redirect | ✅ App Client 単位 | ✅ Client 単位 |
+| Launchpad SPA との統合 | ✅ OIDC RP として実装可 | ✅ 同左 |
+
+→ **どちらでも Launchpad SPA を別構築する設計は同等に可能**。Keycloak は Account Console を補助的に使える分やや優位。
+
+### §FR-4.3 TBD / 要確認
+
+| 確認項目 | ヒアリング ID | 回答例 |
+|---|---|---|
+| Launchpad SPA の構築方針 | **B-622** | 別 SPA 構築（推奨）/ Keycloak Account Console 流用 / 不要（直リンクのみ）|
+| Sorry ページの実装パターン | **B-623** | A アプリ側 / B 認証基盤テーマ / C 共通 Sorry SPA（推奨）|
+| Launchpad のテナント別ブランディング要否 | **B-624** | あり（テナント別 theme）/ なし（共通 UI）|
+| 認証後のデフォルト着地点 | **B-625** | `redirect_uri` 優先（直リンク尊重）/ Launchpad 強制 |
+| Pre-login システム選択 UI の採否 | **B-626** | 不採用（業界標準）/ 採用（社内イントラ要件）|
+| Launchpad の表示アプリ判定根拠 | **B-627** | JWT `roles` / Keycloak Client ロール / 顧客別マッピング表 / 全部組合せ |
+| **AWS edge での Sorry 制御パターン**（§FR-4.3.2.A）| **B-628** | i Custom Error Response / **ii Lambda@Edge（推奨）** / iii viewer-request JWT / iv ALB OIDC / v ALB Native JWT |
+| **edge 集約 vs アプリ個別 Sorry 実装**（§FR-4.3.2.A）| **B-629** | edge 集約（推奨、変更 1 箇所）/ アプリ個別（既存変更最小） |
+| **CloudFront / ALB のどちらを主インフラに置くか**（§FR-4.3.2.A）| **B-630** | CloudFront 前段 + ALB 配下（標準）/ ALB のみ / CloudFront のみ（S3 単独）|
+
+### 参考資料（§FR-4.3 関連）
+
+- [Keycloak Account Console — Applications tab](https://access.redhat.com/documentation/en-us/red_hat_build_of_keycloak/22.0/html/server_administration_guide/account-service)
+- [Keycloak issue #23885: Display only accessible clients in Account Console](https://github.com/keycloak/keycloak/issues/23885)
+- [Microsoft 365 portal architecture](https://learn.microsoft.com/en-us/microsoft-365/admin/admin-overview/admin-center-overview)
+- [Atlassian Cloud start page](https://support.atlassian.com/atlassian-account/docs/launch-products-from-your-start-page/)
+- [Salesforce App Launcher](https://help.salesforce.com/s/articleView?id=sf.app_launcher.htm) — Lightning App Launcher
 
 ---
 

@@ -40,17 +40,18 @@
 
 ## 1. 全体方針・前提（5 項目）
 
-### 1.1 検討方針（3 つのスタンス）★ 最初のスライド
+### 1.1 検討方針（3 つのスタンス + Federated アーキ）★ 最初のスライド
 
-**概要**: AWS の API 提供手段は多岐に渡り、すべてを標準で縛ると肥大化する。本検討は **「範囲を絞り、守らせるところは明確に、それ以外はアプリ裁量に委ねる」** スタンスで進める。3 つのスタンス（**強制的な禁止 / 一貫性を持った統制 / 独立性を認める**）として整理。
+**概要**: AWS の API 提供手段は多岐に渡り、すべてを標準で縛ると肥大化する。本検討は **「範囲を絞り、守らせるところは明確に、それ以外はアプリ裁量に委ねる」** スタンスで進める。3 つのスタンス（**強制的な禁止 / 一貫性を持った統制 / 独立性を認める**）として整理。**さらに本標準は中央集権的な共通 API 基盤ではなく Federated（連邦型）アーキを採用する**。
 
-#### スライド構成案（3 枚）
+#### スライド構成案（4 枚）
 
 | # | スライド | 内容 |
 |---|---|---|
 | 1 | 検討方針の宣言 | 導入文 + 業界標準（Paved Road / Golden Path / Guardrails-not-Gates）への対応を明示 |
 | 2 | 3 つのスタンス一覧 | 強制的な禁止（絞る / 守らせる）/ 一貫性を持った統制（揃える）/ 独立性を認める（委ねる）+ 強制度マトリクス |
 | 3 | 業界用語との対応 | Guardrails / Paved Road / Freedom and Responsibility と本標準の対応表 |
+| **4** | **Federated アーキ：中央集約 vs 分散ガイド** ⭐ | 中央集約 vs 分散ガイドの比較表、本標準の Federated 採用根拠、中央集約要素（認証 / 監査 / Service Catalog）vs 分散要素（API GW / WAF / Lambda）|
 
 #### 重要メッセージング
 
@@ -59,12 +60,14 @@
 | ❌ 「AWS のすべての API 提供手段を標準化します」 | ✅ 「**範囲を絞り、守るべき統制と共通ルールを明確化**します」 |
 | ❌ 「アプリの自由は最小限にします」 | ✅ 「**ガードレール外はアプリ裁量に委ねる**」（強制最小化） |
 | ❌ 「独自フレームワークを作ります」 | ✅ 「**業界標準（Netflix Paved Road / Spotify Golden Path）の Platform Engineering アプローチ**」 |
+| ❌ 「中央 API 基盤を作って全システムで使う」 | ✅ 「**各システムが自前で API 基盤を持ち、標準とガイドで支援する**（Federated）」 |
+| ❌ 「分散だとガバナンスが効かない」 | ✅ 「**中央集約すべき要素（認証 / 監査 / ガードレール）は集約済、それ以外を分散**」 |
 
 | 種別 | 参考資料 |
 |---|---|
-| **proposal** | [proposal/00-index.md §0 基本方針](proposal/00-index.md) |
+| **proposal** | [proposal/00-index.md §0 基本方針](proposal/00-index.md) / **[proposal/common/01-reference-architecture.md §C-1.5 Federated Platform Standard](proposal/common/01-reference-architecture.md)** ⭐ |
 | **内部 SSOT** | [requirements-document-structure.md §0.1](requirements-document-structure.md) |
-| **外部** | [Netflix Tech Blog: Scaling Appsec at Netflix](https://netflixtechblog.medium.com/scaling-appsec-at-netflix-6a13d7ab6043) / [Spotify Engineering: Golden Paths](https://engineering.atspotify.com/2020/08/how-we-use-golden-paths-to-solve-fragmentation-in-our-software-ecosystem) / [The New Stack: Paved Roads, Golden Paths, Guardrails and Railroads](https://thenewstack.io/paved-roads-golden-paths-guardrails-and-railroads/) / [Google Cloud: Platform Engineering Control Mechanisms](https://cloud.google.com/blog/products/application-modernization/platform-engineering-control-mechanisms) / [Jason Chan: Guardrails not Gatekeepers](https://platformsecurity.com/blog/guardrails-not-gatekeepers-platform-security-scales-with-engineering) |
+| **外部** | [Netflix Tech Blog: Scaling Appsec at Netflix](https://netflixtechblog.medium.com/scaling-appsec-at-netflix-6a13d7ab6043) / [Spotify Engineering: Golden Paths](https://engineering.atspotify.com/2020/08/how-we-use-golden-paths-to-solve-fragmentation-in-our-software-ecosystem) / [The New Stack: Paved Roads, Golden Paths, Guardrails and Railroads](https://thenewstack.io/paved-roads-golden-paths-guardrails-and-railroads/) / [Google Cloud: Platform Engineering Control Mechanisms](https://cloud.google.com/blog/products/application-modernization/platform-engineering-control-mechanisms) / [Jason Chan: Guardrails not Gatekeepers](https://platformsecurity.com/blog/guardrails-not-gatekeepers-platform-security-scales-with-engineering) / [Amazon Two-Pizza Team principles](https://aws.amazon.com/executive-insights/content/two-pizza-teams/) |
 
 ### 1.2 基本方針 4 軸
 
@@ -901,3 +904,5 @@
 | 2026-06-10 | **Path C 確定：認証側 Federation B 衝突を踏まえた tier 戦略の正式化**：§2.2.7 を Bronze fallback 化、§2.2.8 Silver 主流 Token Exchange（§FR-6 K-01 と完全整合）、§2.2.9 Federation B 長期 ADR placeholder、§2.2.10 Defense-in-depth 4 層防御を proposal に追加。§4.2 PowerPoint を tier 別整理に刷新。**§2.3 を AWS ネイティブ / 非 AWS に分割**、§2.3.A 「非 AWS Internal の認証」新設（GitHub Actions OIDC / IRSA / mTLS / OAuth M2M / External ID / API Key legacy の 6 カテゴリ）、§4.3 PowerPoint を 4 枚に拡張。ヒアリング項目 A-115（非 AWS Internal 棚卸）+ B-225（GitHub Actions OIDC 必須化）+ B-226（on-prem mTLS/OAuth）+ B-227（Vendor External ID）+ B-228（レガシー移行期限）を追加。escalation-to-auth.md §1.5〜§1.7（Token Exchange 採用要請、`/token` 保護要件、Federation B ADR 案）追記 |
 | 2026-06-10 | **ALB only vs API Gateway + ALB 選定基準を正式整理**：§FR-API-6 §6.2.A「ALB only vs API Gateway + ALB の選定基準」新設（Pattern X / Pattern Y 比較表、選定マトリクス、デフォルト推奨）。§6.1.A.5「モノリスでの API GW 利用留意」追加（HTML 配信不適・タイムアウト・ペイロード制約）。§C-API-2 §C-2.1.5「パターン A サブパターン A-1/A-2/A-3」+ 決定木追加。§C-API-1 §C-1.3.4「ECS バックエンド + API GW 参照アーキ」追加。§FR-API-5 / §FR-API-6 境界を「Serverless = API GW + Lambda 密結合、Container = ALB or API GW 任意選択」と明文化。PowerPoint §6.2 を 4 枚 + リファレンス補足 R1（選定基準）/ R2（モノリス非推奨）に拡張。ヒアリング項目 B-623（ECS 前段デフォルト）⭐ + B-624（Partner B2B API GW 必須化）追加 |
 | 2026-06-11 | **アプリ側認可モデル Hybrid（C）を正式採用**：認証側現状調査の結果、§FR-6.0.A スタンス（最小限クレーム + 段階拡張）と完全整合。§FR-API-2 §2.5「アプリ側認可モデル & ユーザオンボーディング」新設（Hybrid 役割分担、6 必須処理、JIT/SCIM/Invitation/Self-Service、Pattern 1/2/3、デフォルト permission マッピング）+ §2.6「Permission ストレージ標準パターン」新設（DynamoDB/Aurora スキーマ、Cedar）。§C-API-3 §C-3.4「ユーザプロビジョニング・権限マッピング境界」新設（情報の所在マトリクス、JIT/SCIM フロー、認証側依存事項）。PowerPoint §4 を 4 項目→6 項目に拡張（§4.5 アプリ側認可モデル + §4.6 Permission ストレージ）。ヒアリング項目 B-244（認可パターン）⭐ + B-245（プロビジョニング）⭐ + B-246（退職追従）+ B-247（permission マッピング規約）+ B-248（オンボーディング UX）+ D-245（Cedar 採用判断）追加。escalation-to-auth.md §1.8（クレーム仕様の安定性 + SCIM Webhook + userinfo endpoint）追記 |
+| 2026-06-12 | **流量制限 4 観点整理 + WAF カスタム集約キー対応**：§FR-API-3 §3.0.5「流量制限 4 観点」表追加（目的 / 対象 / 閾値 / アーキ）+ §3.1.2「WAF 集約キー 7 種」追加（IP / Forwarded IP / **ヘッダ値（tenant_id）** / Cookie / Query / URI Path / JA3-JA4 / 複合キー）+ §3.4.1 全面刷新（**HTTP API でも WAF ヘッダ集約で tenant 単位制御が成立**、自前実装は業務 logic 駆動の特殊ケースのみに退く）。ヒアリング項目 B-304（ヘッダ名標準）+ B-305（WCU 予算）+ B-341 改訂追加。AWS WAF 公式 8 リンク追加 |
+| 2026-06-12 | **Federated Platform Standard の論拠正式採用**：「中央集約 vs 分散ガイド」の根本論拠を §C-API-1 §C-1.5 新設で明示。共通要素のみ中央化（認証 / 監査 / Service Catalog / SCP）、その他は分散（API GW / WAF / Lambda / DB）の Federated アーキ。Netflix Paved Road / Spotify Golden Path / Amazon Two-Pizza 業界主流と整合。00-index.md §0.0 + proposal/00-index.md §0 に論拠追記。PowerPoint §1.1 を 3 枚→4 枚に拡張（Federated アーキスライド追加）、重要メッセージング 2 対比追加 |

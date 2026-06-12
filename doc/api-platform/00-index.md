@@ -19,6 +19,19 @@
 
 両者は読者も性質も異なるため、`doc/requirements/`（認証）と本フォルダは独立して運用する。
 
+### 中央集約 vs 分散ガイドの根本論拠（Federated Platform Standard）
+
+本標準は **「中央集権的な共通 API 基盤」ではなく、「分散ガイド + 共通要素のみ中央化」（Federated アーキ）** を採用する。
+
+| 採用しないアプローチ | 採用するアプローチ |
+|---|---|
+| ❌ 中央集約：1 つの API 基盤に全システムを集約 | ✅ **分散ガイド**：各システムが自前で API 基盤を持ち、標準で支援 |
+| ❌ 単一障害点リスク、中央チームのボトルネック | ✅ 障害分離、システム別独立リリース |
+
+**根拠**：対象システムは独立しており API も重複しない条件下で、共通化の主要メリット（重複削減・再利用）が消失する一方、分散の主要メリット（障害分離・最適化）はフル活用される。詳細は [proposal/common/01-reference-architecture.md §C-1.5](proposal/common/01-reference-architecture.md)。
+
+**ただし** 共通すべき要素（認証 / 監査 / ガードレール配信 / Service Catalog）は中央集約。**完全分散ではなく Federated 構造**。業界主流（Netflix Paved Road / Spotify Golden Path / Amazon Two-Pizza）と整合。
+
 ---
 
 ## §0.1 スコープ（対象 Workload と 4 層 + 横串の論述構造）
