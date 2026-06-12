@@ -40,10 +40,32 @@
 
 | § | サブセクション | 主題 |
 |---|---|---|
-| §3.1 | スロットル設計 | API・メソッド・利用者単位の throttle/burst |
+| §3.1 | スロットル設計 | API・メソッド・利用者単位の throttle/burst、**集約キー 7 種** |
 | §3.2 | クォータ設計 | 日次・月次の累積上限 |
 | §3.3 | 超過時挙動 | 429 応答・Retry-After・クライアント規約 |
-| §3.4 | HTTP API での流量制御代替 | Usage Plan 非対応への対処 |
+| §3.4 | HTTP API での流量制御代替 | Usage Plan 非対応への対処、**WAF ヘッダ集約による tenant 単位制御** |
+
+### §3.0.5 流量制限 4 観点の整理（目的 → 対象 → 閾値 → アーキ）
+
+検討の論理順序：**「なぜ（目的）→ 誰を（対象/集約キー）→ どこから NG（閾値）→ どう実装（アーキ）」**
+
+| # | 観点 | 概要 | 方針案 |
+|---|---|---|---|
+| **1** | **流量制限の目的** | なぜ制限が必要か。**多目的の防御策**として整理 | **5 つの目的を併せ持つ**：①保護（DDoS/バーストから上流系を守る）② 公平性（マルチテナント環境で 1 顧客が全体を占有しない）③ コスト管理（従量課金リソースの暴走防止）④ SLA 遵守（契約 TPS の自動強制）⑤ 異常検知（credential stuffing / scraping / Bot 検出）|
+| **2** | **流量制限の対象**（集約キー）| 「誰の」リクエストをカウントするか。識別単位の選定で **防御の意味が決まる** | **多層集約キーを併用**（詳細は §3.1）：IP / Forwarded IP / **HTTP ヘッダ値（tenant_id 等）** ⭐ / Cookie / クエリ文字列 / URI Path / JA3・JA4 fingerprint / **複合キー（最大 5）**。**「テナント単位の集約」は WAF ヘッダ集約で REST/HTTP 両 API 共通に実現可** |
+| **3** | **流量制限の閾値** | どの値で発動するか、超過時の挙動。**公開範囲別の既定値** + 個別調整 | **公開範囲別 既定値**：パブリック（認証有）1,000 req/min/user、パブリック（オープン）100 req/min/IP（強）、社内 5,000 req/sec/service、パートナー tier 別（Bronze 100 / Silver 1,000 / Gold 10,000 req/min）。**超過時**：429 + Retry-After ヘッダ、warn（80%）→ block（100%）の 2 段階、CloudWatch Alarm 連動 |
+| **4** | **リファレンスアーキテクチャ** | どの AWS サービスでどう実装するか。**5 層の組合せ** | **5 層**：①CloudFront + WAF rate-based（IP / ヘッダ / 複合キー）② API Gateway throttling（stage/method 単位）③ API Gateway Usage Plan + API Key（REST のみ、Partner 主役）④ Lambda Authorizer + DynamoDB counter（業務 logic 駆動の細粒度）⑤ アプリ内 middleware（resource-level）。**公開範囲別の組合せ**は §3.4 参照 |
+
+```mermaid
+flowchart LR
+    Why["①目的<br/>5 つの動機"] --> What["②対象<br/>集約キー 7 種"]
+    What --> How["③閾値<br/>公開範囲別 既定値"]
+    How --> Where["④アーキ<br/>5 層配置"]
+
+    Why -.選定根拠.- What
+    What -.制御単位.- How
+    How -.実装場所.- Where
+```
 
 ---
 
@@ -70,13 +92,53 @@
 | Partner B2B | 100 / API key | 200 |
 | Private | 個別 | 個別 |
 
-- **WAF rate-based rule**（IP 単位、5 分窓）を **全 Public/Partner API に必須**：標準値 2,000 req / 5min（既定）
+- **WAF rate-based rule** を **全 Public/Partner API に必須**：標準値 2,000 req / 5min（既定 IP 集約）
 
-### §3.1.2 TBD / 要確認
+### §3.1.2 WAF rate-based の集約キー 7 種（2024〜 拡張）
+
+**重要な更新（2024〜）**：WAF rate-based は **IP 単位だけでなく、ヘッダ値・複合キー** での集約が可能になった（[AWS 公式 Aggregating rate-based rules](https://docs.aws.amazon.com/waf/latest/developerguide/waf-rule-statement-type-rate-based-aggregation-options.html)）。これにより **テナント単位の制限が REST/HTTP 両 API 共通で可能**。
+
+#### §3.1.2.1 集約キーの選択肢
+
+| # | 集約キー | 説明 | 用途 |
+|---|---|---|---|
+| 1 | **IP アドレス**（デフォルト）| 送信元 IP 単位でカウント | DDoS / 単純ブルートフォース対策 |
+| 2 | **Forwarded IP**（X-Forwarded-For 等）| CDN 経由でも実 IP を取得 | CloudFront 配下の真の送信元 IP |
+| 3 | **HTTP ヘッダ値** ⭐ | 任意のヘッダ値（`x-tenant-id`、`x-api-key`、`Authorization` 等）| **マルチテナント / 顧客単位の集約**（本標準デフォルト）|
+| 4 | **Cookie 値** | 特定 Cookie の値 | セッション単位（B2C 等）|
+| 5 | **クエリ文字列** | クエリパラメータ値 | URL パラメータ単位 |
+| 6 | **URI Path** | path 単位 | エンドポイント別（`/login` / `/signup` 強保護）|
+| 7 | **JA3 / JA4 fingerprint**（2025）| TLS handshake の fingerprint | Bot / 異常クライアント検知 |
+| 複合 | **複合キー（最大 5 個）**| 上記の組合せ | `tenant_id + URI path` 等の細粒度制御 |
+
+#### §3.1.2.2 コスト・制約
+
+| 項目 | 値 |
+|---|---|
+| カスタムキー 1 個あたり追加 WCU | **30 WCU** |
+| Web ACL の WCU 上限 | 1,500 WCU（拡張可）|
+| 評価ウィンドウ | 60 / 120 / 300 / 600 秒（2024〜）|
+| 1 Rule の閾値範囲 | 100 〜 20,000,000,000 req / 評価ウィンドウ |
+
+#### §3.1.2.3 公開範囲別の集約キー組合せ（本標準デフォルト）
+
+| 公開範囲（Profile）| 集約キー組合せ | 既定値（暫定）|
+|---|---|---|
+| パブリック（認証有）| **IP + ヘッダ（`x-tenant-id` or JWT クレーム由来）** | 1,000 req/min/user-tenant 複合 |
+| パブリック（オープン）| **IP + URI Path** | 100 req/min/IP（強）|
+| 社内 | （内部のため WAF 不要、IAM auth で制御）| – |
+| パートナー | **API Key + URI Path**（REST API + Usage Plan）or **ヘッダ + URI Path**（HTTP API）| tier 別（Bronze 100 / Silver 1,000 / Gold 10,000 req/min）|
+| 社内限定 | 制限なし（SG で代替）| – |
+
+→ 「**テナント単位の集約はできない**」は古い前提。**WAF ヘッダ集約で REST/HTTP 両 API 共通に成立する**。
+
+### §3.1.3 TBD / 要確認
 
 - Q: **既定 throttle 値の妥当性**（アプリごとのトラフィック実績に基づいて再設定要）→ `API-B-301`
 - Q: アカウントレベル throttle の **増枠申請を予防的に行うか**（10k RPS のままで足りるか）→ `API-B-302`
 - Q: **メソッド単位**（POST は厳しく、GET は緩く 等）の標準化テンプレを用意するか → `API-B-303`
+- Q: **WAF ヘッダ集約キーで使用するヘッダ名の標準**（`x-tenant-id` / `Authorization` の JWT クレーム由来 等）→ `API-B-304` ⭐
+- Q: 複合キー採用時の **WCU 予算**（カスタムキー 1 個 = 30 WCU、Web ACL 上限 1,500 WCU）→ `API-B-305`
 
 ---
 
@@ -136,20 +198,63 @@
 **主な判断軸**：マネージド優先、複雑性最小、検知可能性。
 **§3 全体との関係**：§3.1 / §3.2 を HTTP API でも実現するための手段。
 
-### §3.4.1 ベースライン
+### §3.4.1 ベースライン（更新：WAF ヘッダ集約がデフォルト）
 
-代替手段の積み重ね（複数を組み合わせる）：
+**重要（2024〜）**：WAF rate-based の **ヘッダ集約キー** で **HTTP API でも tenant 単位の流量制御が可能**になった。これにより従来の「HTTP API は自前実装必須」前提が不要に。
 
-1. **AWS WAF rate-based rule**（IP 単位、5 分窓）
-2. **API Gateway stage throttling**（API 全体・メソッド単位の上限、Usage Plan のような per-key 制御は不可）
-3. **Lambda Authorizer + DynamoDB アトミックカウンタ**でテナント単位の per-key 制御を自前実装（コスト・レイテンシ増）
-4. **CloudFront function** でヘッダベース簡易制御
-5. アプリ内（Lambda 内）でのトークンバケット実装
+#### 代替手段の優先順位
+
+| 優先 | 手段 | tenant 単位制御 | 実装複雑性 | コスト |
+|:---:|---|:---:|:---:|---|
+| **1（デフォルト）⭐** | **AWS WAF rate-based + ヘッダ集約キー**（`x-tenant-id` 等）| ✅ | 低（マネージド）| WAF + カスタムキー 30 WCU/key |
+| 2 | **API Gateway stage throttling**（API 全体・メソッド単位） | ❌（粗粒度）| 最低 | 無料 |
+| 3 | **CloudFront function** でヘッダベース簡易制御 | △（path-based 等）| 中 | CloudFront function 料金 |
+| 4 | **Lambda Authorizer + DynamoDB アトミックカウンタ**（業務 logic 駆動の細粒度時のみ）| ✅ | 高（自前実装）| Lambda + DDB（write 重い）|
+| 5 | アプリ内（Lambda 内）でのトークンバケット実装 | ✅ | 高 | 開発負荷大 |
+
+#### 公開範囲（Profile）別 推奨組合せ（HTTP API 時）
+
+| Profile | 推奨組合せ |
+|---|---|
+| パブリック（認証有） | 層 1（WAF：IP + `x-tenant-id` 複合キー）+ 層 2（API GW stage throttling）+ 層 5（アプリ middleware）|
+| パブリック（オープン）| 層 1（WAF：IP + URI Path、強 rate）+ 層 2 |
+| 社内 | 層 2 + 層 5 |
+| パートナー（HTTP API 時）| 層 1（WAF：`x-api-key` ヘッダ集約 + URI Path）+ 層 2 + 層 5 |
+
+#### WAF ヘッダ集約の具体例
+
+`x-tenant-id` ヘッダで tenant 単位の rate-limit：
+
+```yaml
+# AWS WAF Rule (CloudFormation)
+- Name: TenantRateLimit
+  Statement:
+    RateBasedStatement:
+      Limit: 1000              # 1000 req per 5 min per tenant
+      AggregateKeyType: CUSTOM_KEYS
+      CustomKeys:
+        - Header:
+            Name: x-tenant-id
+            TextTransformations:
+              - Priority: 0
+                Type: NONE
+        - UriPath:
+            TextTransformations:
+              - Priority: 0
+                Type: NONE
+      EvaluationWindowSec: 300
+  Action:
+    Block: {}
+```
+
+→ **HTTP API + WAF ヘッダ集約で、tenant 単位の細粒度制御が REST API + Usage Plan と同等に実現可能**。
+→ 自前実装（Lambda Authorizer + DDB counter）は **業務 logic 駆動の特殊ケースのみ**に退く。
 
 ### §3.4.2 TBD / 要確認
 
-- Q: **HTTP API でテナント単位 quota が必要なら REST API への変更を検討するか**、それとも自前実装を許容するか → `API-B-341`
-- Q: 自前実装の DynamoDB スキーマ・コスト試算 → `API-B-342`
+- Q: HTTP API + WAF ヘッダ集約での tenant 単位制御を **デフォルトとするか** → `API-B-341`（**改訂版**）
+- Q: WAF ヘッダ集約キーで使用するヘッダ名標準（`x-tenant-id` / JWT クレーム → API GW transformation 由来）→ `API-B-304`
+- Q: 自前実装（Lambda Authorizer + DDB）の DynamoDB スキーマ・コスト試算（必要時）→ `API-B-342`
 
 ---
 
@@ -182,8 +287,24 @@
 
 ## §3.x 関連ドキュメント
 
+### 本標準内クロスリファレンス
+
 - [§FR-API-4 課金](04-metering-billing.md) — 利用者識別子（API Key）の活用
 - [§FR-API-6 §6.1.A モノリス vs マイクロサービス](06-container-standard.md) — モノリスでの流量制御
 - [§FR-API-7 ガードレール](07-guardrails.md) — WAF rate-based rule の FMS 配信
 - [§NFR-API-4 セキュリティ](../nfr/04-security.md) — DDoS 対策の死守事項
 - [§NFR-API-8 コスト](../nfr/08-cost.md) — 流量制御で防ぐべきコスト暴騰シナリオ
+
+### AWS 公式（WAF rate-based、最新仕様）
+
+- [Aggregating rate-based rules in AWS WAF](https://docs.aws.amazon.com/waf/latest/developerguide/waf-rule-statement-type-rate-based-aggregation-options.html) — **集約キー 7 種の公式仕様**（IP / Forwarded IP / Header / Cookie / Query / URI Path / JA3・JA4）
+- [Rate-based rule aggregation instances and counts](https://docs.aws.amazon.com/waf/latest/developerguide/waf-rule-statement-type-rate-based-aggregation-instances.html) — 集約インスタンスの仕組み
+- [RateBasedStatementCustomKey - AWS WAFv2 API](https://docs.aws.amazon.com/waf/latest/APIReference/API_RateBasedStatementCustomKey.html) — カスタムキー API リファレンス
+- [Discover the benefits of AWS WAF advanced rate-based rules (AWS Security Blog)](https://aws.amazon.com/blogs/security/discover-the-benefits-of-aws-waf-advanced-rate-based-rules/) — **マルチテナント用例の公式 Blog**
+- [AWS WAF now supports JA4 fingerprinting (2025-03)](https://aws.amazon.com/about-aws/whats-new/2025/03/aws-waf-ja4-fingerprinting-aggregation-ja3-ja4-fingerprints-rate-based-rules/) — JA4 集約キー対応の announcement
+- [Use an aggregation key to configure a rate limit rule (AWS re:Post)](https://repost.aws/knowledge-center/waf-rate-limit-rule-aggregation-key) — 実装ガイド
+
+### API Gateway throttling 関連
+
+- [Throttle requests to your REST APIs (API Gateway docs)](https://docs.aws.amazon.com/apigateway/latest/developerguide/api-gateway-request-throttling.html) — REST API throttling 仕様
+- [Usage plans and API keys for REST APIs](https://docs.aws.amazon.com/apigateway/latest/developerguide/api-gateway-api-usage-plans.html) — Usage Plan + API Key 仕様
