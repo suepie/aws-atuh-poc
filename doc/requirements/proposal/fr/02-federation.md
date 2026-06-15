@@ -2955,3 +2955,55 @@ Keycloak 公式ブログ（2024-06）からの引用:
 - [Auth0 B2B Authentication](https://auth0.com/docs/get-started/architecture-scenarios/business-to-business/authentication)
 - [Scalekit - B2B Universal vs Org-Specific Logins](https://www.scalekit.com/blog/designing-b2b-authentication-experiences-universal-vs-organization-specific-login)
 - [WorkOS - Model B2B SaaS with Organizations](https://workos.com/blog/model-your-b2b-saas-with-organizations)
+
+---
+
+## §FR-2.4 外部 SP（SaaS）連携 — ServiceNow ケース（→ FR-FED §2.4）
+
+> **このサブセクションで定めること**: 本基盤を **IdP**、外部 SaaS（ServiceNow / Salesforce 等）を **SP** とする発行側連携のうち、特に ServiceNow ケースの設計方針。**SSO + プロビジョニング + ユーザーマスタ所在**の 3 軸の選択を確定する。   
+> **主な判断軸**: 既存 ServiceNow ユーザー数 / 業務オーナーシップ、プロビジョニング自動化要求、ユーザーマスタを ServiceNow に残すかどうか   
+> **§FR-2 全体との関係**: §FR-2.1〜§FR-2.3 は本基盤が受信側（顧客 IdP → 基盤）のフェデレーション。本サブセクションは**本基盤が発行側**（基盤 → SaaS SP）のシナリオ
+>
+> **詳細は [ADR-023 ServiceNow SP 連携設計](../../../adr/023-servicenow-sp-integration.md) を参照**
+
+### §FR-2.4.0 背景
+
+打ち合わせインプット 3 点目で「**現行は ServiceNow と連携あり、ServiceNow ユーザーは ServiceNow 側で管理、これも SSO 対象としたい**」が確定。本基盤は ServiceNow に対して **IdP として SAML 発行**する必要がある。ServiceNow は自身のユーザー DB（`sys_user`）を持つため、**認証 ↔ ユーザーマスタの所在 ↔ プロビジョニング方向**の 3 軸が独立した設計論点になる。
+
+### §FR-2.4.A 結論サマリ
+
+| 項目 | 採用方針 |
+|---|---|
+| **SSO プロトコル** | **SAML 2.0**（ServiceNow Multi-Provider SSO Plugin、業界標準）|
+| **Provisioning** | **SAML JIT Provisioning**（ServiceNow が初回 SSO 時に自動作成）|
+| **ユーザーマスタ** | **ServiceNow に残す**（業界標準、業務データ・履歴を壊さない）|
+| **既存 ServiceNow ユーザー** | `user_name` を Layer B `external_id` として突合（[ADR-018](../../../adr/018-user-identifier-3layer-emailless.md) と整合）|
+
+### §FR-2.4.B 主要な裏どり（詳細は ADR-023）
+
+- ServiceNow **Multi-Provider SSO Plugin** が SAML / OIDC 両対応、複数 IdP 並列接続可
+- **SAML JIT Provisioning** は ServiceNow 側で `User Provisioning Enabled = Yes` だけで動作（最少工数）
+- ⚠ **2025-11 KB2599716**: Microsoft Entra 経由の SCIM プロビは ServiceNow が非サポート公表 → SCIM Push（パターン C）は自前実装・SI 保証外
+- 4 パターン比較：A SSO のみ / **B SSO + SAML JIT（推奨）** / C SSO + SCIM Push / D 双方向同期（推奨せず）
+
+### §FR-2.4.C 我々のスタンス（基本方針に基づく）
+
+| 基本方針の柱 | ServiceNow 連携での実現 |
+|---|---|
+| **絶対安全** | SAML 署名検証、`user_name` 一意キーの突合厳格化、退職時の即時無効化 |
+| **どんなアプリでも** | ServiceNow / Salesforce / Workday 等の SaaS SP に汎用適用可（Multi-Provider SSO 標準）|
+| **効率よく認証** | SAML JIT で自動プロビ、SCIM Push は大規模顧客のみオプション |
+| **運用負荷・コスト最小** | パターン B は ServiceNow 設定のみで完結、追加実装ゼロ |
+
+### §FR-2.4 TBD / 要確認（B-SN 系ヒアリング項目）
+
+| 確認項目 | ヒアリング ID | 回答例 |
+|---|---|---|
+| ServiceNow 連携の対象範囲 | **B-SN-1** | SSO のみ / SSO + Provisioning / その他 SaaS（Salesforce / Workday）も含む |
+| 既存 ServiceNow ユーザー数 / 規模 | **B-SN-2** | 全体合計 / 顧客あたり最大 |
+| プロビジョニング方向 | **B-SN-3** | A SSO のみ / **B SSO + JIT（推奨）** / C SSO + SCIM Push / D 双方向 |
+| SSO プロトコル | **B-SN-4** | **SAML 2.0（推奨・業界標準）** / OIDC（Tokyo+ 新規のみ）|
+| 既存 `user_name` 体系 | **B-SN-5** | 顧客独自 ID と同じ（B-IDM-8 連動）/ 別 mapping 必要 / 不明 |
+| 退職時の ServiceNow 側レコード扱い | **B-SN-6** | 残す（推奨・履歴保持）/ active=false 同期 / 物理削除 |
+| Multi-Provider SSO Plugin 有効化状況 | **B-SN-7** | 既に有効 / 未有効（要設定）/ 不明 |
+| 他 SaaS SP 連携の予定 | **B-SN-8** | Salesforce / Workday / その他 / なし |

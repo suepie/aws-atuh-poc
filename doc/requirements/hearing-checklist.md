@@ -190,6 +190,14 @@
 | **B-MIG-10** | `[B]` | 🟡 | **強制 PW リセット許容範囲**（2026-06-12 追加）| NFR-MIG / NFR-SEC | §FR-1.2.0.E.2 | 強制 PW リセット（招待メール再送）は許容できるか?（① / ② キャッシュ移行で回避できれば理想）| なし許容 / 一部のみ / 全員許容 | | ⏳ |
 | **B-MIG-11** | `[B]` | 🟡 | **サインアップ UI 引継ぎ希望**（2026-06-12 追加）| FR-USER-004 | §FR-1.2.0.E.3 | 新基盤でのサインアップ UI 配置は?（α アプリ側残置 / **β 共通基盤集約（推奨）** / γ 管理者作成のみ）| α / β / γ | | ⏳ |
 | **B-MIG-12** | `[B]` | 🟢 | **旧 user_id の保持期間**（2026-06-12 追加）| FR-USER-001 | §FR-1.2.0.E.4 | 旧 user_id を **`external_id` 属性として永続保持** するか、並走期終了で破棄するか? | 永続 / 並走期のみ | | ⏳ |
+| **B-SN-1** | `[B]` | 🔴 | **ServiceNow 連携の対象範囲**（2026-06-15 追加）| FR-FED-014 / FR-USER | §FR-2.4, §FR-7.4.10 | ServiceNow 連携で必要な機能は?（SSO のみ / **SSO + Provisioning** / その他 SaaS Salesforce/Workday も含む）| 範囲 + 対象 SaaS 一覧 | | ⏳ |
+| **B-SN-2** | `[B]` | 🟡 | **既存 ServiceNow ユーザー数 / 規模**（2026-06-15 追加）| FR-FED-014 / NFR-SCALE | §FR-2.4 | 既存 ServiceNow ユーザー規模（全体合計 / 顧客あたり最大）| 規模目安 | | ⏳ |
+| **B-SN-3** | `[B]` | 🔴 | **プロビジョニング方向**（2026-06-15 追加）| FR-USER / FR-FED-014 | §FR-2.4.A | A SSO のみ / **B SSO + SAML JIT（推奨・業界標準）** / C SSO + SCIM Push（KB2599716 リスク承知）/ D 双方向（非推奨）| パターン | | ⏳ |
+| **B-SN-4** | `[B]` | 🟡 | **SSO プロトコル**（2026-06-15 追加）| FR-FED-001 / FR-FED-014 | §FR-2.4.A | **SAML 2.0（推奨・業界標準）** / OIDC（ServiceNow Tokyo+ 新規構築のみ）| プロトコル | | ⏳ |
+| **B-SN-5** | `[B]` | 🟡 | **既存 `user_name` 体系**（B-IDM-8 連動、2026-06-15 追加）| FR-USER-001 / FR-FED-014 | §FR-2.4, §FR-1.2.0.D | ServiceNow の `user_name` は **顧客独自 ID（Layer B `external_id`）と同じ** か別 mapping が必要か? | 同じ / 別 mapping / 不明 | | ⏳ |
+| **B-SN-6** | `[B]` | 🟡 | **退職時の ServiceNow レコード扱い**（2026-06-15 追加）| FR-USER-009 | §FR-2.4 | 退職時、ServiceNow 側 `sys_user` は?（**残置・履歴保持＝業界標準** / `active=false` 同期 / 物理削除）| 方針 | | ⏳ |
+| **B-SN-7** | `[B]` | 🟢 | **Multi-Provider SSO Plugin 有効化状況**（2026-06-15 追加）| FR-FED-014 | §FR-2.4.B | ServiceNow `com.snc.integration.sso.multi` プラグイン有効化済み? | 有効 / 未有効（要設定）/ 不明 | | ⏳ |
+| **B-SN-8** | `[B]` | 🟢 | **他 SaaS SP 連携の予定**（2026-06-15 追加）| FR-FED-014 | §FR-2.4 | ServiceNow 以外の SaaS SP 連携予定は?（Salesforce / Workday / その他 / なし）| 一覧 + 優先度 | | ⏳ |
 
 ### §2.5 SSO・ログアウト方針
 

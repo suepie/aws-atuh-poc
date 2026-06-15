@@ -26,3 +26,4 @@
 | [020](020-hrd-hint-keys-mixed-login.md) | HRD ヒントキー戦略 + フェデ/ローカル混在 Identifier-First | Proposed | 2026-06-12 |
 | [021](021-post-login-landing-ux.md) | Post-login Landing UX（Pre/Post 設計判断 + Launchpad + Sorry） | Proposed | 2026-06-12 |
 | [022](022-aws-edge-sorry-control.md) | AWS edge での Sorry 制御パターン（ALB / CloudFront 統合） | Proposed | 2026-06-12 |
+| [023](023-servicenow-sp-integration.md) | ServiceNow SP 連携設計（SSO + プロビジョニング方向の選択） | Proposed | 2026-06-15 |

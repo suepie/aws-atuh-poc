@@ -1218,6 +1218,28 @@ flowchart TD
 
 → **業界主流は「案 A + 案 C + 案 D の組合せ」**、本基盤も同方向。
 
+### §FR-7.4.10 発信プロビジョニング（基盤 → ServiceNow 等）
+
+> **このサブセクションで定めること**: 顧客が **ServiceNow / Salesforce / Workday 等の SaaS** を業務利用しており、これらに**本基盤からユーザー情報を Push する**シナリオの方針。本サブセクションは特に ServiceNow ケースに焦点を当てる。   
+> **§FR-7.4 内の位置付け**: §FR-7.4.1〜§FR-7.4.9 は **受信側 SCIM**（顧客 IdP → 本基盤）。本サブセクションは **発信側 SCIM / JIT**（本基盤 → SaaS SP）  
+>
+> **詳細は [ADR-023 ServiceNow SP 連携設計](../../../adr/023-servicenow-sp-integration.md) を参照**
+
+#### ベースライン
+
+| 項目 | デフォルト |
+|---|---|
+| **第一推奨パターン** | **SAML JIT Provisioning**（ServiceNow が初回 SSO 時に自動作成）|
+| 代替: SCIM Push | 大規模 / 運用統合志向のみ。ServiceNow の SCIM v2 Plugin 経由、**KB2599716 リスク承知の自前実装** |
+| 識別子 | ServiceNow `user_name` = Layer B `external_id`（[ADR-018](../../../adr/018-user-identifier-3layer-emailless.md) と整合）|
+| 退職時 | 本基盤で無効化 → SAML 認証拒否 → SN ログイン不能。SN レコードは残置が業界標準（履歴保持）|
+
+#### TBD / 要確認
+
+[B-SN-1〜8](../../hearing-checklist.md) を参照。詳細パターン比較は [ADR-023](../../../adr/023-servicenow-sp-integration.md)。
+
+---
+
 ### 参考: Keycloak 実装目線の詳細
 
 本サブセクション §FR-7.4.5 / §FR-7.4.6 / §FR-7.4.7 の **Keycloak 実装観点での詳細**（Identity Provider Mapper / First Broker Login Flow / Sync Mode 設定 / externalId 突合実装 / テナント別 SCIM 有効化）は **[doc/common/jit-scim-coexistence-keycloak.md](../../../common/jit-scim-coexistence-keycloak.md)** に集約。
