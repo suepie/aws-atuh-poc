@@ -217,11 +217,16 @@ Partner → Custom Domain (mTLS Listener) → CloudFront 不可（mTLS なら直
 
 ### §2.2.5 Partner-tier 別の構成パターン例（参考）
 
-| Tier | デフォルト認証 | 適用 |
-|---|---|---|
-| **Bronze** | API Key + Usage Plan | Trial / 旧 Partner / 軽量 API |
-| **Silver**（標準）| OAuth Client Credentials + JWT | 業界標準 B2B |
-| **Gold** | OAuth Client Credentials + mTLS | 規制業界 / 重要パートナー / FAPI 2.0 |
+| Tier | デフォルト認証 | 流量制御の組合せ | 適用 |
+|---|---|---|---|
+| **Bronze** | API Key + Usage Plan | **WAF + Usage Plan**（rate + quota）| Trial / 旧 Partner / 軽量 API |
+| **Silver**（標準）| OAuth Client Credentials + JWT | **WAF + Usage Plan 併用** ⭐<br/>（WAF: edge 防御 / Usage Plan: tier + 長期 quota + 請求）| 業界標準 B2B（REST API 採用時） |
+| **Gold** | OAuth Client Credentials + mTLS | Silver + 強い WAF（ATP）+ Shield Advanced | 規制業界 / 重要パートナー / FAPI 2.0 |
+
+→ **REST API 採用時、Partner B2B のデフォルトは「WAF + Usage Plan 併用」**（[§FR-API-3 §3.0.6](../fr/03-throttling-quota.md) 役割分担表）：
+- WAF が **edge 防御 + 短期 rate limit**（IP / ヘッダ集約）
+- Usage Plan が **Partner 識別 + tier 別 throttle + 長期 quota + 請求データ**
+- 両者は競合ではなく **補完関係**
 
 ### §2.2.6 TBD / 要確認
 

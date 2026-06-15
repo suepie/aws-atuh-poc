@@ -20,3 +20,9 @@
 | [014](014-auth-patterns-scope.md) | 共有認証基盤が対応する認証パターンの範囲 | Proposed | 2026-04-24 |
 | [015](015-rhbk-validation-deferred.md) | PoC では RHBK 検証を実施せず本番設計フェーズへ先送り | Proposed | 2026-04-24 |
 | [016](016-cognito-feature-tier-selection.md) | Cognito 機能ティア（Lite / Essentials / Plus）の機能マトリクスと選定基準 | Proposed | 2026-05-13 |
+| [017](017-multitenant-l2-single-realm.md) | マルチテナント L2（単一 Pool/Realm + 複数 IdP）採用根拠 | Proposed | 2026-06-11 |
+| [018](018-user-identifier-3layer-emailless.md) | ユーザー識別子 3 階層戦略（メール非保有 + 顧客独自 ID 対応） | Proposed | 2026-06-12 |
+| [019](019-existing-system-migration.md) | 既存システムからの移行戦略（並走 + User Storage SPI キャッシュ移行） | Proposed | 2026-06-12 |
+| [020](020-hrd-hint-keys-mixed-login.md) | HRD ヒントキー戦略 + フェデ/ローカル混在 Identifier-First | Proposed | 2026-06-12 |
+| [021](021-post-login-landing-ux.md) | Post-login Landing UX（Pre/Post 設計判断 + Launchpad + Sorry） | Proposed | 2026-06-12 |
+| [022](022-aws-edge-sorry-control.md) | AWS edge での Sorry 制御パターン（ALB / CloudFront 統合） | Proposed | 2026-06-12 |

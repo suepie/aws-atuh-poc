@@ -1412,149 +1412,32 @@ A 案を採用する場合、以下を**標準実装**する：
 
 ### §FR-2.3.A.3 A 案採用の運用コスト根拠（マルチ Realm の実例 / Broker 効果の業界実証）
 
-§FR-2.3.A で「A 案（単一 Pool/Realm + 複数 IdP）を推奨」と判断したが、その根拠は「Broker パターン整合」だけではない。本サブセクションでは**「B 案（Pool/Realm per テナント）が顧客数比例で運用コストを爆発させる具体例」**と、**「Broker パターンが統合点を削減する業界実証データ」**の 2 つの裏どりを示す。顧客や経営層からの「なぜ物理分離しないのか」「Broker 化の効果はどれくらいか」という問いへの定量的な回答資料。
+> **詳細は [ADR-017 マルチテナント L2 採用根拠](../../../adr/017-multitenant-l2-single-realm.md) を参照**
 
-#### 背景：「技術的に可能」と「運用に耐える」は別問題
+§FR-2.3.A で A 案（単一 Pool/Realm + 複数 IdP）を推奨と判断した根拠は「Broker パターン整合」だけでなく、**運用コストと業界実証データの 2 軸**で裏付けられている。
 
-§FR-2.3.A の比較表で「Keycloak はスケール上限が高い（実用上 1000+ 顧客）」と記述したが、これは**性能上の話**であり、**運用コストの話ではない**。たとえば「Keycloak は数千 Realm 動かせる」とは言えても、「管理コスト・監視コスト・設定変更の伝播コストが顧客数に**比例して**増加する」という現実は技術スペックだけでは見えにくい。本セクションで具体的に整理する。
-
----
-
-#### A. マルチ Realm 運用の技術的限界（Keycloak バージョン別の推移）
-
-| Keycloak バージョン | Realm 数の実用上限 | 主なボトルネック |
-|---|---|---|
-| 〜25.x | **100〜200 Realm** | Realm 作成時間が**指数関数的**に増加、Admin Console 遅延 |
-| 26.0〜26.3 | 〜500 Realm | キャッシュ設定チューニング必須 |
-| **26.4+** | **1,000+ Realm**（最大 2,600 本番事例あり）| REST endpoint のスケーラビリティ改善、N+1 クエリ修正 |
-
-**実証データ**:
-- **本番運用事例**: 2,600 Realm 稼働中（Admin Interface・主要 API は問題なし）
-- **テスト最大値**: 3,000 Realm でベンチマーク実施
-- **ピーク性能**: Keycloak Benchmark で 12,000 RPS のスケーラビリティ実証
-
-→ **「数千 Realm 可能」は 26.4 以降の話**。25.x 系では 100〜200 Realm で実用上限。バージョンアップに引きずられない構成（=A 案）が安全。
-
----
-
-#### B. 顧客数比例で増えるコストの具体例（B 案を採ると何が起きるか）
-
-「Realm 数が増えると何にコストが乗るのか」を 5 つの観点で分解。
-
-##### B-1. 設定変更の伝播コスト
-
-| 変更内容 | 影響範囲 | コスト構造 |
-|---|---|---|
-| ブランディング変更（ロゴ・配色）| Realm ごとに Theme 設定 | Realm 数 × 適用時間（テンプレ化しても残る）|
-| IdP プロトコル変更（例：SAML 署名アルゴリズム更新）| Realm ごとに IdP メタデータ再インポート | Realm 数 × 手作業 or IaC 適用 |
-| セキュリティパッチ後の動作確認 | 全 Realm の health check 必要 | Realm 数 × 確認工数 |
-| Password Policy 変更（例：最小長変更）| 全 Realm に同一ポリシー適用 | Realm 数 × API call |
-
-→ **設定変更が「単発作業」から「N 回ループ作業」になる**。IaC（Terraform）で自動化できる範囲でも、適用時間・差分検証は Realm 数に比例。
-
-##### B-2. 監視コストの爆発
-
-- **Prometheus メトリクスは Realm 単位でラベル付与** → カーディナリティが急増
-- **1,000 Realm × 20 メトリクス = 20,000 時系列**。Grafana ダッシュボード設計が複雑化
-- **アラートルールも Realm 単位で個別調整が必要なケース**（例：あるテナントだけログイン失敗が多いとき）
-- Realm ごとに健全性閾値（例：エラー率 5% 以上）を共通設定にすると、小規模テナントの異常が埋もれる
-
-→ 「メトリクスの粒度を落とす（=全テナント合算）」と異常検知が遅れ、「粒度を保つ」と監視基盤が肥大化。**どちらを採ってもコスト増**。
-
-##### B-3. キャッシュ・メモリ管理
-
-- Realm キャッシュのデフォルト = 10,000 エントリ（Realm 数 × 設定オブジェクト数）
-- **推奨設定: 1 Realm あたり 50 キャッシュエントリ** → 1,000 Realm で 50,000 エントリ必要
-- Infinispan のキャッシュサイズ調整を誤ると OOM（Out Of Memory）
-- ノード追加でスケールしても、キャッシュ同期コストは Realm 数に比例
-
-##### B-4. Realm 作成・削除の運用
-
-- **100 Realm 超で作成時間が指数関数的に増加**（一次関数的でない）
-- バッチでの大量作成は非推奨、API レート制限の設計が必要
-- 削除時もカスケード削除（ユーザー / セッション / イベントログ）の処理時間が増加
-
-##### B-5. Admin Console UX の劣化
-
-- 17.0.0 時点では 1,000 Realm で Admin Console が**著しく低速**
-- 26.4 で大幅改善されたが、**Realm 切替 UI は依然として線形検索**
-- 運用者が「Acme Realm の設定を確認したい」だけで毎回 Realm 一覧から検索 → 単発操作の体感コストが増加
-
----
-
-#### C. 「コスト爆発」の定量イメージ
-
-A 案 vs B 案の運用負荷を顧客数別に比較した近似モデル:
-
-| 顧客数 | A 案（単一 Realm + 複数 IdP）| B 案（Realm per テナント）|
-|---|---|---|
-| 10 社 | IdP 設定 10 件、Realm 1 件 | Realm 10 件 + IdP 設定 10 件 |
-| 100 社 | IdP 設定 100 件、Realm 1 件 | **Realm 100 件 + IdP 設定 100 件**、設定変更 × 100 |
-| 1,000 社 | IdP 設定 1,000 件、Realm 1 件 | **Realm 1,000 件**、Admin Console 重い、メトリクス爆発 |
-
-→ A 案では「Realm 数 = 1 で固定」のため、**追加コストは「IdP エントリの増加」のみ**。設定変更・監視・キャッシュは Realm 数に依存しないため、顧客数が増えても運用負荷は緩やかに上昇するだけ。
-
----
-
-#### D. Broker パターンの効果実証（WJAETS-2025 論文の裏どり）
-
-§FR-2.3.A で「Broker パターンの本質は集約点が 1 つ」と述べたが、これが**実際にどれくらい統合点を削減するか**の業界調査結果を確認した。
-
-##### 出典の確定情報
-
-| 項目 | 内容 |
-|---|---|
-| 論文 ID | WJAETS-2025-0919 |
-| 著者 | Preetham Kumar Dammalapati（Collabrium Systems LLC, USA）|
-| タイトル | "Understanding federated identity management: Architecture, protocols and implementation" |
-| 掲載誌 | World Journal of Advanced Engineering Technology and Sciences |
-| 巻号 | Volume 15, Issue 3 (2025) |
-| ISSN | 2582-8266 (Online) |
-| 公開日 | 2025-06-03 |
-
-##### 主要データ
-
-| 項目 | 値 | 出典 |
-|---|---|---|
-| 直接統合点の削減 | **18 → 6 直接統合点**（= **約 67% 削減**）| WJAETS-2025-0919 Abstract |
-| ハイブリッド ID ソリューション導入企業のうち、Azure AD を Federation Broker として採用する割合 | **約 62%** | 同論文本文 |
-
-→ つまり、N アプリ × M IdP を直接連携すると統合点は N×M（例：6×3=18）だが、**Broker を 1 つ挟むと N+M（例：6+3+ハブ 1=10、実質的に 6 接続点で済む）に削減**できる、というのが業界調査の結論。
-
-##### 注意事項
-
-- 論文 PDF 本体はバイナリストリームで直接読めず、**Abstract（HTML ページ）の情報を基にしている**
-- 「60% 削減」と要約されることもあるが、**正確には 67%（18→6）**。本ドキュメントでは「約 67% 削減（18→6 直接統合点、WJAETS-2025-0919）」として参照する
-
----
-
-#### E. 我々の結論（再確認）
+#### 結論サマリ
 
 | 観点 | A 案（採用）| B 案（例外時のみ）|
 |---|---|---|
 | 性能 | Cognito / Keycloak 共に 1,000+ 顧客で問題なし | Keycloak 26.4 でようやく 1,000 Realm 実用化 |
 | 運用負荷 | **顧客数に対して緩やかに増加**（IdP エントリのみ）| **顧客数に比例して爆発**（設定変更 × N、監視 × N、キャッシュ × N）|
-| Broker 効果 | **約 67% の統合点削減を享受**（WJAETS-2025）| Realm 分割で issuer が分散 → Broker 効果を捨てる |
+| Broker 効果 | **約 67% の統合点削減を享受**（WJAETS-2025-0919）| Realm 分割で issuer が分散 → Broker 効果を捨てる |
 | バージョン依存リスク | なし | Keycloak バージョンアップに引きずられる |
 
-→ **A 案を「デフォルト」とする方針は、Broker パターン整合性 + 運用コスト + 業界実証 の 3 軸すべてで裏付けられている**。
+#### 主要な裏どり（詳細は ADR-017）
+
+- **マルチ Realm の技術的限界**: Keycloak 25.x は 100〜200 Realm 実用上限、26.4+ で 1,000+ 実用化（最大 2,600 本番事例）
+- **顧客数比例で増えるコスト 5 観点**: 設定変更伝播 / 監視カーディナリティ / キャッシュ管理 / Realm 作成削除 / Admin Console UX
+- **Broker 効果実証**: 18 → 6 直接統合点（約 67% 削減）、Azure AD 採用 62%（WJAETS-2025-0919 論文）
 
 #### TBD / 要確認
 
 | 確認項目 | 回答例 |
 |---|---|
-| 顧客数の想定上限 | 〜100 社 / 〜1,000 社 / 1,000+ 社（後者なら A 案がさらに重要）|
+| 顧客数の想定上限 | 〜100 社 / 〜1,000 社 / 1,000+ 社 |
 | マルチ Realm/Pool 構成を採る特殊顧客の有無 | あり（業種・顧客数）/ なし |
-| 監視粒度の方針（テナント別 vs 全体合算）| テナント別必須 / 全体合算で十分 |
-
-#### 参考資料
-
-- **Keycloak Multi-Realm 運用**:
-  - [Keycloak 26.4 Performance & Scalability Documentation](https://www.keycloak.org/server/concepts-scalability)
-  - [Keycloak Benchmark Project](https://github.com/keycloak/keycloak-benchmark) — RPS / Realm 数の公式ベンチマーク
-  - [Keycloak Issue #11784](https://github.com/keycloak/keycloak/issues/11784) — Realm 作成時間の指数関数的増加に関する議論
-- **Broker パターンの統合点削減効果**:
-  - [WJAETS-2025-0919](https://wjaets.com/) — "Understanding federated identity management"（World Journal of Advanced Engineering Technology and Sciences, Vol.15 Issue 3, 2025-06-03, Preetham Kumar Dammalapati）
+| 監視粒度の方針 | テナント別必須 / 全体合算で十分 |
 
 ---
 
@@ -2971,226 +2854,75 @@ flowchart LR
 
 #### §FR-2.3.3.E email 非保有時の HRD パターン拡張 — ヒントキーの選択
 
-> **このサブ・サブセクションで定めること**: [§FR-1.2.0.D](01-auth.md#fr-120d-ユーザー識別子戦略--メール非保有顧客独自-id-への対応) で確定した「email 非保有ユーザーを収容する」前提に対する HRD 設計の対応。**HRD の本質は「ヒントキー → IdP マッピング」であり、ヒントキーは email ドメインに限らない**ことを明示し、5 つの代替パターンを定義する。   
-> **主な判断軸**: 顧客側 email 保有率（B-IDM-1 / B-IDM-10）、顧客独自 ID 体系（B-IDM-2）、テナント数規模、ユーザーの認知負荷許容度   
-> **§FR-2.3.3 内の位置付け**: §FR-2.3.3 メインの 5 案併記表で **A 案（メールドメイン HRD）が破綻するシナリオ** の代替を確定する
+> **詳細は [ADR-020 HRD ヒントキー戦略 + 混在 Identifier-First](../../../adr/020-hrd-hint-keys-mixed-login.md) を参照**
 
-##### HRD の本質：ヒントキーは「email ドメイン」とは限らない
+§FR-2.3.3 メイン 5 案併記表で **A 案（メールドメイン HRD）が email 非保有時に破綻**するシナリオの代替を確定。
 
-HRD（Home Realm Discovery）の業界一般定義（Auth0 / Microsoft / Scalekit）は次の通り:
+#### HRD ヒントキーは「email ドメイン」とは限らない
 
+業界一般定義（Auth0 / Microsoft / Scalekit）:
 > **HRD = ユーザーがどの IdP / realm に属するかを認証情報の入力前に判定する仕組み**
 
-ヒントキーの選択肢は次の通り（Auth0 公式は **3 アプローチ**、Microsoft Entra B2C は **5 アプローチ** を列挙）:
+5 案 + 補助 2 案: A email / B セレクター / **C URL（組織固有）** / **D 識別子先行** / **E `kc_idp_hint`** / ⑥ Cookie / ⑦ IP。
 
-| ヒントキー | 取得タイミング | email 非保有時 | 例 |
-|---|---|:---:|---|
-| ① email ドメイン（`@acme.com`）| ユーザー入力 | ❌ | A 案 |
-| ② 顧客独自 ID パターン（`ACME-EMP-0042` → `ACME-` プレフィックス）| ユーザー入力 | ✅ | D 案 |
-| ③ テナントコード / ワークスペース名 | ユーザー入力 | ✅ | Slack 形式 |
-| ④ URL（サブドメイン / パス）| URL 自体 | ✅ | C 案 |
-| ⑤ URL パラメータ `kc_idp_hint`（SPA / ポータル注入）| 呼出元 SPA | ✅ | E 案 |
-| ⑥ クライアント Cookie（前回選択記憶）| ブラウザ | ✅ | 補助 |
-| ⑦ IP / CIDR ベース | ネットワーク | ✅ | 補助、企業内 NW |
+#### 顧客状況別の推奨パターン
 
-→ **ヒントキー = email ドメイン**は**ヒントキー選択肢の 1 つに過ぎない**。打ち合わせ前の暗黙の前提だった「HRD = email ドメイン HRD」は再定義が必要。
-
-##### 顧客状況別の推奨パターン
-
-| 顧客状況（B-IDM-1 / B-IDM-10 連動）| 推奨 HRD パターン | 補助手段 |
-|---|---|---|
-| **全員 email 保有 + 1 顧客 = 1 ドメイン** | A（email ドメイン HRD）| Cookie 記憶（⑥）|
-| **全員 email 保有 + 1 顧客 = 複数ドメイン** | A + 複数ドメイン → 同一 IdP マッピング | Cookie 記憶（⑥）|
-| **email 一部のみ保有（混在）** | **D + A ハイブリッド**（識別子先行で判定、email 形式なら A、ID 形式なら D）| C を大口顧客に追加 |
-| **全員 email 非保有 + 単一顧客** | **C（組織固有 URL）**（`acme.basis.example.com`）| Cookie 記憶（⑥）|
-| **全員 email 非保有 + 複数顧客** | **C（組織固有 URL）+ E（kc_idp_hint）** | テナントコード（③）バックアップ |
-| **ポータル経由ディープリンクが主** | **E（kc_idp_hint）**（ポータル側でテナント認識済）| C をフォールバック |
-
-##### D 案（識別子先行 / Identifier-First）の実装
-
-```mermaid
-sequenceDiagram
-    participant U as ユーザー
-    participant Login as ログイン画面<br/>(認証基盤)
-    participant Resolver as ヒントキー解決<br/>(基盤側 Custom Authenticator)
-    participant IdP as 顧客 IdP
-
-    U->>Login: 識別子入力 (例: ACME-EMP-0042 or alice@acme.com)
-    Login->>Resolver: 識別子を解決依頼
-    alt 識別子が email 形式
-        Resolver->>Resolver: A 案: @domain → IdP マッピング
-    else 識別子がパターンマッチ
-        Resolver->>Resolver: D 案: 接頭辞 (ACME-) → IdP マッピング
-    else 識別子が tenant_id + sub 形式
-        Resolver->>Resolver: 複合キー検索
-    end
-    Resolver-->>Login: Acme IdP に転送
-    Login->>IdP: 認証要求 (identity_provider=acme)
-    IdP->>U: 顧客固有のログイン画面
-    IdP->>Login: 認証成功
-```
-
-##### C 案（組織固有 URL）の email-less シナリオでの実装
-
-- **URL の例**: `acme.basis.example.com` / `basis.example.com/t/acme` / `basis.example.com/acme/login`
-- **Front Proxy**（CloudFront / ALB / nginx）でテナント識別子を抽出し、Keycloak への認可要求に `kc_idp_hint=acme` を自動付与
-- ユーザーは何も入力せずに顧客 IdP に直接転送される（**email も独自 ID も入力不要**でゼロ知識）
-- 顧客のブランディング（ロゴ / 色 / フッター）が URL 単位で確定
-- **email 非保有顧客で全社員が同一の URL から入る** B2E モデルに最適（Slack workspace、Figma org スペース）
-
-##### E 案（`kc_idp_hint` URL パラメータ）の使い所
-
-Keycloak の `kc_idp_hint` は OAuth/OIDC 認可要求の **オプションパラメータ**として扱われ、Keycloak のログイン画面をスキップして指定 IdP へ直接転送する標準機能（Keycloak 公式機能）。
-
-| ユースケース | E 案が刺さる場面 |
+| 顧客状況 | 推奨 HRD パターン |
 |---|---|
-| 自社ポータル / SPA がテナントを認識済 | ポータル側で `?kc_idp_hint=acme` を付けてディープリンクすると、ユーザーは Keycloak 画面を見ずに Acme IdP へ直行 |
-| QR コード / バッジログイン | QR の中に `kc_idp_hint` を埋め込む |
-| メール招待リンク（基盤内招待）| 招待 URL に `kc_idp_hint` を付与 |
-| C 案（組織固有 URL）の裏で使用 | Front Proxy がサブドメインを抽出して `kc_idp_hint` 化 |
+| 全員 email 保有 + 1 顧客 = 1 ドメイン | A（email ドメイン HRD）|
+| email 一部のみ保有（混在）| **D + A ハイブリッド** |
+| 全員 email 非保有 + 単一顧客 | **C（組織固有 URL）** |
+| 全員 email 非保有 + 複数顧客 | **C + E（kc_idp_hint）** |
+| ポータル経由ディープリンクが主 | **E（kc_idp_hint）+ C フォールバック** |
 
-##### 5 案のフォールバック設計（ヒントキー欠落時）
+→ **すべての案で「最終的に B（IdP セレクター）にフォールバック」が業界標準**。
 
-各案でヒントキーが取れない場合の動作:
+#### 我々のスタンス
 
-| 案 | ヒントキー欠落時の動作 | 推奨フォールバック |
-|---|---|---|
-| A | email が入力されない / 未登録ドメイン | B（IdP セレクター）に降格 |
-| B | — | （フォールバック先） |
-| C | URL にテナント識別子なし（裸の `basis.example.com`）| ランディング画面で「組織コードを入力してください」（③）or B |
-| D | パターンマッチ失敗（unknown ID）| B + ヘルプリンク |
-| E | `kc_idp_hint` 不正 / 未設定 | A or B（Keycloak は自動的にログイン画面表示） |
-
-→ **すべての案で「最終的に B（IdP セレクター）にフォールバック」する設計が業界標準**。これにより HRD は「**第一推奨ヒントキーの判定**」、B は「**汎用安全網**」として共存する。
-
-##### 我々のスタンス
-
-| 状況 | 推奨方針 |
-|---|---|
-| 顧客打ち合わせ前の暫定 | **D（識別子先行）+ C（組織固有 URL）+ B（フォールバック）** をデフォルト構成として提示。A は email 保有顧客のみオプション扱い |
-| 顧客が「email ドメイン HRD で十分」と回答（B-IDM-1 = なし） | A + C + B（従来 §FR-2.3.3.C 構成）|
-| 顧客が「email 非保有ユーザーあり」と回答（B-IDM-1 = あり） | **D + C + B**（A は使わない or email 顧客分のみ）|
-| 混在顧客あり | **D（識別子の形式で email / 独自 ID を自動判定）+ A + C + B** の 4 段構え |
-
-##### 参考資料
-
-- [Auth0: B2B Authentication — Home Realm Discovery 3 アプローチ](https://auth0.com/docs/get-started/architecture-scenarios/business-to-business/authentication)
-- [Microsoft Entra B2C: Advanced Home Realm Discovery](https://techcommunity.microsoft.com/t5/azure-developer-community-blog/advanced-home-realm-discovery-in-azure-ad-b2c/ba-p/482788)
-- [Scalekit: B2B Auth — Universal vs Org-Specific Logins](https://www.scalekit.com/blog/designing-b2b-authentication-experiences-universal-vs-organization-specific-login)
-- [SkyCloak: Use kc_idp_hint in Keycloak](https://skycloak.io/blog/use-kc_idp_hint-to-choose-identity-provider-in-keycloak/)
-- [Kinde: Home realm or IdP discovery](https://docs.kinde.com/authenticate/enterprise-connections/home-realm-discovery/)
+打ち合わせ前のデフォルト = **D（識別子先行）+ C（組織固有 URL）+ B（フォールバック）**。A は email 保有顧客のみオプション扱い。
 
 ---
 
 #### §FR-2.3.3.F フェデユーザー + ローカルユーザー混在時の Identifier-First 設計（Keycloak v26 Organizations 標準動作）
 
-> **このサブ・サブセクションで定めること**: 1 つの認証基盤に **フェデユーザー（顧客 IdP 経由）とローカルユーザー（共通基盤 DB 直接登録）が同居する**シナリオで、共通ログイン画面が両方を**同じ画面で安全に振り分ける** UX 設計と、Keycloak v26 Organizations 機能でどこまで標準実装できるかを確定する。   
-> **主な判断軸**: ローカルユーザーの存在範囲（[§FR-1.2.0.0](01-auth.md#fr-1200-ローカルユーザーとは何か--利用者カテゴリ別の分析) シナリオ γ / β）、混在時の同一画面振り分け要件、Keycloak v26 Organizations 採用方針（[§FR-2.3.3.D ①](#fr-233d-keycloak-hrd-実装方式選定universal-login--4-オプション--単一テナント複数-idp-対応)）、ヒントキー戦略（[§FR-2.3.3.E](#fr-233e-email-非保有時の-hrd-パターン拡張--ヒントキーの選択)）   
-> **§FR-2.3.3 内の位置付け**: §FR-2.3.3.E でヒントキーを決めた後の **「ヒントキー判定後の分岐ロジック」** を確定。フェデ経路とローカル経路を同一ログイン画面で扱う設計
+> **詳細は [ADR-020 HRD ヒントキー戦略 + 混在 Identifier-First](../../../adr/020-hrd-hint-keys-mixed-login.md) を参照**
 
-##### 重要発見：Keycloak v26 Organizations の標準動作が混在を最初から想定している
+#### 重要発見：Keycloak v26 Organizations が混在を最初から想定
 
-Keycloak 公式ブログ（2024-06 Organizations 発表）からの引用:
+Keycloak 公式ブログ（2024-06）からの引用:
+> "The main change to the browser flow is that it **defaults to an identity-first login** so that users are identified before prompting for their credentials."
+> "A user will act as an existing realm user that has an email that matches one of the domains set to an organization but is not yet a member of the organization."
 
-> "The main change to the browser flow is that it **defaults to an identity-first login** so that users are identified before prompting for their credentials. During login, the user provides an email address. Keycloak analyzes its domain and automatically assigns the user to the appropriate organization."
+→ v26 Organizations の標準 Browser Flow が「Identifier-First → Organization マッチング → IdP / Local 振り分け」を自動でやる。
 
-> "A user will act as **an existing realm user that has an email that matches one of the domains set to an organization but is not yet a member of the organization**. This user could have been created through **self-registration, or by integrating with a custom identity store, or even federated from an identity provider available from the realm**."
+#### 4 実装パスと顧客状況別推奨
 
-→ つまり Keycloak v26 Organizations は次の 3 つを同じ Browser Flow で扱う前提で設計されている:
-1. **Organization に IdP が紐付いている** → フェデ経路（IdP に強制 redirect）
-2. **Organization に IdP が紐付いていないが、ユーザーは Organization メンバー** → ローカル経路（PW プロンプト）
-3. **Organization メンバーでないが realm に既存ユーザーとして存在** → ローカル経路（PW プロンプト、Organization 非依存）
+| 実装パス | 推奨度 |
+|---|:---:|
+| **① v26 Organizations 標準** | ★★★★★（email あり時）|
+| ② Conditional Authenticator（公式）| ★★★★ |
+| **③ Custom Conditional Authenticator SPI** | ★★（email 非保有時に必要）|
+| ④ コミュニティ `keycloak-home-idp-discovery` | ★★ |
 
-##### 標準フローの分岐ロジック（v26 Organizations）
-
-```mermaid
-flowchart TB
-    Start[ユーザー: 識別子入力]
-    Start --> Lookup[Keycloak が識別子を解析]
-    Lookup --> M1{email ドメイン<br/>→ Organization<br/>マッチ?}
-
-    M1 -->|マッチ + IdP 紐付け| Fed[IdP に強制 redirect<br/>= フェデ経路]
-    M1 -->|マッチ + IdP なし<br/>+ Org メンバー| Local1[ローカル PW プロンプト<br/>= Org 内ローカル]
-    M1 -->|マッチなし + 既存 realm ユーザー| Local2[ローカル PW プロンプト<br/>= realm 既存ユーザー]
-    M1 -->|マッチなし + 未登録| Fallback[エラー or IdP セレクター<br/>= フォールバック B 案]
-
-    Fed --> Done[認証成功]
-    Local1 --> Done
-    Local2 --> Done
-
-    style Fed fill:#e3f2fd
-    style Local1 fill:#e8f5e9
-    style Local2 fill:#e8f5e9
-    style Fallback fill:#fff3e0
-```
-
-##### 業界実例：混在ハンドリング UI
-
-| サービス | UI パターン | 出典 |
-|---|---|---|
-| **Notion** | email / password を**分離フィールド表示**、Identifier-First で HRD | Scalekit Blog |
-| **Dropbox** | email 入力でエンタープライズ認証が判定されたら **password フィールドを隠す** | 同上 |
-| **Freshworks** | email でテナント特定後、**組織固有ログインページに redirect** | 同上 |
-| **Microsoft 365** | sign-in name 入力 → managed / federated を判定 → 適切なログイン画面に遷移 | Microsoft Learn |
-
-→ いずれも「**email/識別子先行 → 判定 → 適切な経路に分岐**」という **Identifier-First** が業界標準。
-
-##### Keycloak での 4 つの実装パス（混在ハンドリング目線）
-
-| 実装パス | Keycloak 機能 | 工数 | email 非保有対応 | 推奨度 |
-|---|---|---|:---:|:---:|
-| **① v26 Organizations 標準**（推奨）| 公式機能 | ◎ 設定のみ | ❌ email ドメイン依存 | ★★★★★（email あり時）|
-| ② Conditional Authenticator（公式）| Browser Flow + 公式 Condition - User Configured | ◎ 設定で組合せ | ⚠ 標準条件式の範囲 | ★★★★ |
-| ③ Custom Conditional Authenticator SPI | Java 実装 | ❌ 1-2 週間 | ✅ **D 案（識別子先行）はこれが必要** | ★★（email 非保有時）|
-| ④ コミュニティ `keycloak-home-idp-discovery` | OSS プラグイン | ◎ JAR 配置 | ⚠ Elastic License v2、RHBK 対象外 | ★★（RHBK 不採用時のみ）|
-
-##### 推奨実装（顧客状況別）
-
-| 顧客状況 | 推奨実装パス | 理由 |
-|---|---|---|
-| **全員 email 保有** | **① v26 Organizations 標準** | 設定のみで Identifier-First + 混在ハンドリングが揃う |
-| **email 一部のみ保有（混在）** | **① + ③ Custom Authenticator** | email 形式なら ① の Organization マッチ、独自 ID 形式なら ③ Custom Conditional でルーティング |
-| **全員 email 非保有** | **③ Custom Authenticator + C 案 URL** | Front Proxy が URL → `kc_idp_hint` 化、Keycloak は混在判定スキップ |
-| **ローカルユーザーゼロ（フェデ専用）**（[§FR-1.2.0.0](01-auth.md#fr-1200-ローカルユーザーとは何か--利用者カテゴリ別の分析) シナリオ δ Break Glass のみ）| **① + IdP セレクター B 案** | 混在判定不要、IdP 選択のみ |
-
-##### Identifier-First で「password フィールドを後から表示」UX を Keycloak で実現する方法
-
-Notion / Dropbox 的な「email 入力 → enterprise なら hide password / local なら show password」UX:
-
-| Keycloak バージョン | 実装方法 |
+| 顧客状況 | 推奨実装 |
 |---|---|
-| **v26.x + Organizations 有効** | **デフォルトで Identifier-First**。Browser Flow を変更せず Theme でフィールド表示制御 |
-| v25 以前 | Browser Flow を「Username Password Form」→「Identity First Form + Conditional Password」に書き換え |
-| v26 のまま Theme カスタマイズ | `login-username.ftl` で email 入力 → JS で `/realms/{realm}/login-actions/authenticate` 経由判定 → password フィールド動的表示 |
+| 全員 email 保有 | ① のみ |
+| email 一部のみ保有 | ① + ③ |
+| 全員 email 非保有 | ③ + C 案 URL |
 
-→ **v26 Organizations を採用すれば、Theme 微調整のみで Notion / Dropbox 風の UX が実現できる**。
+#### 業界実例（混在ハンドリング UI）
 
-##### 「混在を許す realm」での運用上の注意
-
-| 注意点 | 対策 |
+| サービス | UI パターン |
 |---|---|
-| **同一 email がフェデユーザーとローカルユーザーで重複** | [§FR-2.2.1.A](#fr-2.2.1.a-同一テナント内ユーザー重複の扱い) と連動。**Layer A `sub` で完全分離、Layer B email は補助属性**（[§FR-1.2.0.D](01-auth.md#fr-120d-ユーザー識別子戦略--メール非保有顧客独自-id-への対応)）|
-| **ローカルユーザーが Organization の IdP 経由で別 sub になる** | First Broker Login Flow で既存ローカルユーザー検出 → アカウントリンク or 拒否 |
-| **Organization メンバーかつローカル PW を持つユーザー** | 「フェデ強制」か「ローカル PW 残置」かの**ポリシー選択**が必要（B-622 で確認）|
-| **realm 既存ユーザーで Organization 非所属** | デフォルトは「ローカル PW プロンプト」。**「フェデ強制」したい場合は Organization 紐付けを Required にする** |
-| **未登録 email でアクセス**（不正フィッシング含む）| `User not found` の即座表示は user enumeration リスク。**Generic error + 一定待機**（業界標準）|
+| Notion | email / password 分離フィールド、Identifier-First |
+| Dropbox | enterprise 認証検出で password フィールド隠し |
+| Freshworks | テナント特定後、組織固有ログインページに redirect |
 
-##### 我々のスタンス
+#### 「混在 realm」運用上の主な注意点
 
-| 基本方針の柱 | Identifier-First 混在設計での実現 |
-|---|---|
-| **絶対安全** | Layer A `sub` 中心の突合（[§FR-1.2.0.D](01-auth.md#fr-120d-ユーザー識別子戦略--メール非保有顧客独自-id-への対応)）、user enumeration 対策、未登録への generic error |
-| **どんなアプリでも** | フェデユーザー / ローカルユーザー / 混在 を 1 つのログイン画面で完結 |
-| **効率よく認証** | Keycloak v26 Organizations の **標準動作で 90% カバー**、Custom SPI は email 非保有顧客分のみ |
-| **運用負荷・コスト最小** | プラグイン不要、ライセンス問題なし、Red Hat サポート対象（RHBK 採用時） |
-
-##### 参考資料
-
-- [Keycloak Organizations 発表（2024-06）](https://www.keycloak.org/2024/06/announcement-keycloak-organizations) — Identifier-First 標準化の根拠
-- [Red Hat build of Keycloak 26.0 Managing Organizations](https://docs.redhat.com/en/documentation/red_hat_build_of_keycloak/26.0/html/server_administration_guide/managing_organizations)
-- [Inero Software: Organizations in Keycloak — Management and Customization](https://inero-software.com/organizations-in-keycloak-management-and-customization-of-authentication/)
-- [Karelics: Building a custom conditional authenticator for Keycloak](https://karelics.fi/blog/2023/08/22/building-a-custom-conditional-authenticator-for-keycloak/)
-- [Scalekit: B2B Auth Universal vs Org-Specific Logins](https://www.scalekit.com/blog/designing-b2b-authentication-experiences-universal-vs-organization-specific-login) — Notion / Dropbox / Freshworks 業界実例
+- 同一 email がフェデ / ローカルで重複 → Layer A `sub` で完全分離（ADR-018）
+- Organization メンバーかつローカル PW を持つユーザー → 「フェデ強制」or「ローカル PW 残置」ポリシー選択
+- 未登録 email アクセス → Generic error + 一定待機（user enumeration 対策）
 
 ---
 

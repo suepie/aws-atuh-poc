@@ -114,6 +114,12 @@
 | API-B-301 | 既定 throttle 値の妥当性確認 | §FR-API-3 §3.1 | 🟡 | ⏳ |
 | API-B-302 | アカウントレベル throttle の予防的増枠申請要否 | §FR-API-3 §3.1 / §NFR-API-3 | 🟡 | ⏳ |
 | API-B-303 | メソッド単位の標準化（GET / POST 別の標準値） | §FR-API-3 §3.1 | 🟢 | ⏳ |
+| API-B-304 ⭐ | WAF ヘッダ集約で使用するヘッダ名標準（`x-tenant-id` / `Authorization` の JWT クレーム由来 等）| §FR-API-3 §3.1.2 / §3.4 | 🟡 | ⏳ |
+| API-B-305 | 複合キー採用時の WCU 予算（30 WCU/key、Web ACL 上限 1,500）| §FR-API-3 §3.1.2 | 🟡 | ⏳ |
+| API-B-306 ⭐ | **長期 quota（日次/月次）が必要な API の有無**（Usage Plan 採用判断）| §FR-API-3 §3.2 | 🔥 | ⏳ |
+| API-B-307 | AWS Marketplace SaaS 経由の API 提供想定の有無 | §FR-API-3 §3.2, §FR-API-2 §2.2 | 🟡 | ⏳ |
+| API-B-308 | Partner subscription tier（Free/Basic/Pro/Enterprise）の管理粒度 | §FR-API-3 §3.2 | 🟡 | ⏳ |
+| API-B-343 | 長期 quota 必要な HTTP API は REST 移行 vs 自前実装のどちらをデフォルトとするか | §FR-API-3 §3.4.2 | 🟡 | ⏳ |
 | API-B-311 | 商用 API への quota 全面適用 / 内部利用無制限 | §FR-API-3 §3.2 | 🟡 | ⏳ |
 | API-B-312 | quota 超過時の課金モデル（追加 / ハードカット） | §FR-API-3 §3.2 / §NFR-API-8 | 🟡 | ⏳ |
 | API-B-313 | 月初リセットのタイムゾーン | §FR-API-3 §3.2 | 🟢 | ⏳ |

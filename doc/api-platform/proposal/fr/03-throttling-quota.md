@@ -67,6 +67,102 @@ flowchart LR
     How -.実装場所.- Where
 ```
 
+### §3.0.6 WAF rate-based vs API Gateway Usage Plan の役割分担
+
+WAF カスタム集約キー対応（2024〜）により、「WAF か Usage Plan か」の選択が変わった。**両者は完全置換ではなく、棲み分けがある**。
+
+#### 機能比較表
+
+| 機能 | WAF rate-based | API GW Usage Plan |
+|---|:---:|:---:|
+| **短期 throttle**（秒〜分）| ✅ 60-600 秒の評価窓 | ✅ token bucket（RPS + burst）|
+| **長期 quota**（日次 / 週次 / 月次）| ❌ **不可**（最大 600 秒）| **✅ DAY / WEEK / MONTH** ⭐ |
+| 集約キー：IP | ✅ | ❌（API Key 固定）|
+| 集約キー：tenant（ヘッダ）| ✅（2024〜）| △ API Key で代替 |
+| 集約キー：複合キー（複数）| ✅（最大 5 個）| ❌（API Key のみ）|
+| 集約キー：JA3 / JA4 fingerprint | ✅（2025）| ❌ |
+| 集約キー：URI Path | ✅ | △ Stage/method 単位 |
+| 配置層 | Edge（CloudFront / Regional） | API Gateway stage |
+| **対応 API 種別** | REST / HTTP / GraphQL すべて | **REST API のみ** ⚠ |
+| Action 種別 | Block / Count / Challenge / CAPTCHA | 429 自動 |
+| **AWS Marketplace SaaS 統合** | ❌ | **✅ 必須** ⭐ |
+| **Usage data export**（請求用）| ❌ | **✅ S3 export** ⭐ |
+| コスト | 30 WCU/custom key + WAF 料金 | **無料**（API GW 標準機能） |
+| 制限の性質 | Best-effort | Best-effort |
+
+#### Usage Plan の独自価値（WAF で代替不可能な領域）
+
+| # | 領域 | 説明 |
+|---|---|---|
+| **1** | **長期 quota（日次 / 週次 / 月次）**| WAF 評価窓は最大 10 分、日次・月次累積は **WAF 不可**。自前実装（DynamoDB counter）も可だがコスト・複雑性増 |
+| **2** | **AWS Marketplace SaaS 統合** | Marketplace 課金統合は **Usage Plan + API Key が必須要件** |
+| **3** | **Partner subscription tier 管理**（Free / Pro / Enterprise）| プラン別 throttle + quota セットを **宣言的に管理可** |
+| **4** | **Usage data（請求データ）** | per-Partner / per-API Key の Usage を **S3 export 可**、課金按分の根拠 |
+| **5** | **Partner オンボーディングの標準フロー** | 「API Key 発行 + Usage Plan 紐付け」がマネージドプロセス |
+
+#### WAF rate-based の独自価値（Usage Plan で代替不可能な領域）
+
+| # | 領域 | 説明 |
+|---|---|---|
+| **1** | **HTTP API / GraphQL 対応** | Usage Plan は REST API のみ、WAF は全 API 種別対応 |
+| **2** | **集約キーの多様性** | IP / Forwarded IP / ヘッダ / Cookie / Query / Path / JA3-JA4 / 複合（最大 5）|
+| **3** | **Edge 防御**（DDoS / Bot）| CloudFront 配置で攻撃を Origin 到達前にブロック |
+| **4** | **匿名トラフィック制御** | API Key を持たない B2C / Public-Open API |
+| **5** | **CAPTCHA / Challenge action** | 疑わしいトラフィックに対する判定 |
+
+#### 役割分担サマリー
+
+| 役割 | 担当 |
+|---|---|
+| **エッジ防御**（DDoS、Bot、OWASP）| WAF |
+| **短期 rate limit**（per IP、per ヘッダ、複合）| **WAF を主役**（柔軟性高）|
+| **Partner 識別**（誰のリクエストか）| API Key（Usage Plan）|
+| **Tier 別 throttle**（Bronze/Silver/Gold）| Usage Plan |
+| **長期 quota**（月次累積） | **Usage Plan**（WAF 不可）|
+| **請求データ生成**（per-Partner Usage） | **Usage Plan**（WAF 不可）|
+| **Marketplace 統合** | **Usage Plan**（WAF 不可）|
+
+→ **「WAF が流量制御層、Usage Plan が課金・ライフサイクル管理層」と役割分離**。
+
+#### Partner B2B（REST API 採用時）のデフォルト：WAF + Usage Plan 併用 ⭐
+
+両者は競合ではなく **補完関係**。REST API + Partner B2B 連携では **WAF + Usage Plan 併用** をデフォルト推奨：
+
+```
+[CloudFront + WAF]
+  ├ WAF Managed Rules（OWASP）
+  ├ WAF rate-based（IP 単位、DDoS 対策）
+  └ WAF rate-based（x-api-key + URI path、bot 対策）
+
+[API Gateway REST API]
+  ├ API Key 検証
+  └ Usage Plan
+      ├ Throttle: tier 別 RPS + burst（短期）
+      ├ Quota: tier 別 req/月（長期）⭐ Usage Plan のみ可
+      └ Usage data export（請求按分）⭐ Usage Plan のみ可
+```
+
+#### 決定木：どちらを使うか
+
+```mermaid
+flowchart TD
+    Start{何を制御したい?}
+    Start -->|"短期 throttle のみ<br/>(秒〜分)"| Q1{API 種別?}
+    Start -->|"長期 quota も必要<br/>(日次/週次/月次)"| Q3{API 種別?}
+
+    Q1 -->|"REST / HTTP / GraphQL"| WafOnly["WAF rate-based のみ ⭐<br/>tenant_id ヘッダ集約 OK"]
+
+    Q3 -->|REST API| Q4{Partner B2B<br/>or Marketplace?}
+    Q3 -->|HTTP API| HttpSelf["REST 移行 検討<br/>or WAF + 自前 quota（DDB）"]
+
+    Q4 -->|Yes| Combo["WAF + Usage Plan 併用 ⭐<br/>WAF: edge 防御<br/>Usage Plan: tier + quota + 請求"]
+    Q4 -->|"No,内部利用のみ"| ChooseEither["どちらでも可<br/>Usage Plan: 無料・楽<br/>WAF: 柔軟・複合キー"]
+
+    style WafOnly fill:#e3f2fd,stroke:#1565c0
+    style Combo fill:#fff3e0,stroke:#e65100
+    style HttpSelf fill:#f3e5f5,stroke:#6a1b9a
+```
+
 ---
 
 ## §3.1 スロットル設計
@@ -142,11 +238,22 @@ flowchart LR
 
 ---
 
-## §3.2 クォータ設計
+## §3.2 クォータ設計（Usage Plan の独自領域）
 
 **このサブセクションで定めること**：日次・月次の累積リクエスト上限。
 **主な判断軸**：商用契約・無料枠・サブスクリプションプランへの対応。
-**§3 全体との関係**：§3.1 の瞬間制御に対し本サブセクションは長期累積。
+**§3 全体との関係**：§3.1 の瞬間制御（throttle）に対し本サブセクションは長期累積。**WAF では実現不可、Usage Plan の独自領域**。
+
+### §3.2.0 なぜ Usage Plan か（WAF で代替不可な根本理由）
+
+| 観点 | WAF rate-based | API GW Usage Plan |
+|---|:---:|:---:|
+| 評価窓 | **最大 600 秒（10 分）** | DAY / WEEK / MONTH |
+| 長期 quota（日次/週次/月次）| **❌ 不可** | **✅ ネイティブ** |
+| 課金データ生成 | ❌ | ✅ Usage data export 可 |
+| Marketplace 統合 | ❌ | ✅ 必須要件 |
+
+→ **長期 quota が要件にある場合、Usage Plan は事実上唯一のマネージド解**。WAF では自前実装（DynamoDB counter）不可避でコスト・複雑性増。
 
 ### §3.2.1 ベースライン
 
@@ -160,13 +267,33 @@ flowchart LR
 | Pro | 1,000,000 / month | 中規模商用 |
 | Enterprise | 個別 | 大規模 / 専用契約 |
 
-- **HTTP API は Usage Plan 非対応** → §3.4 で代替
+- **HTTP API は Usage Plan 非対応** → §3.4 で代替（REST 移行 or 自前実装）
+- **Usage Plan の Usage data** は CloudWatch + S3 export 経由で per-Partner / per-API Key の請求按分に活用（[§FR-API-4 課金按分](04-metering-billing.md)）
 
-### §3.2.2 TBD / 要確認
+### §3.2.2 Usage Plan を採用する判断フロー
+
+```mermaid
+flowchart TD
+    Q1{長期 quota<br/>必要?}
+    Q1 -->|"No"| NoNeed["Usage Plan 不要<br/>WAF rate-based で十分"]
+    Q1 -->|"Yes"| Q2{API 種別?}
+    Q2 -->|REST API| Q3{Partner B2B?}
+    Q2 -->|HTTP API| Migrate["REST 移行 検討<br/>or 自前実装 §3.4"]
+    Q3 -->|"Yes"| UseUP["Usage Plan 採用 ⭐<br/>WAF と併用"]
+    Q3 -->|"No"| Simple["Usage Plan 採用<br/>無料・楽"]
+
+    style UseUP fill:#fff3e0,stroke:#e65100
+    style Migrate fill:#f3e5f5,stroke:#6a1b9a
+```
+
+### §3.2.3 TBD / 要確認
 
 - Q: **商用 API に quota を全面適用するか、内部利用は無制限とするか** → `API-B-311`
 - Q: **超過時の課金モデル**（追加課金 / ハードカット）→ `API-B-312`
 - Q: 月初リセットの **タイムゾーン**（UTC か JST か）→ `API-B-313`
+- Q: **長期 quota が必要な API の有無**（Usage Plan 採用判断）→ `API-B-306` ⭐
+- Q: **AWS Marketplace SaaS 経由の API 提供想定** → `API-B-307`
+- Q: **Partner subscription tier**（Free/Basic/Pro/Enterprise）の管理粒度 → `API-B-308`
 
 ---
 
@@ -247,13 +374,41 @@ flowchart LR
     Block: {}
 ```
 
-→ **HTTP API + WAF ヘッダ集約で、tenant 単位の細粒度制御が REST API + Usage Plan と同等に実現可能**。
+→ **HTTP API + WAF ヘッダ集約で、tenant 単位の細粒度 throttle が REST API + Usage Plan と同等に実現可能**（短期制御）。
 → 自前実装（Lambda Authorizer + DDB counter）は **業務 logic 駆動の特殊ケースのみ**に退く。
 
-### §3.4.2 TBD / 要確認
+### §3.4.2 長期 quota が必要な場合の判断軸
 
-- Q: HTTP API + WAF ヘッダ集約での tenant 単位制御を **デフォルトとするか** → `API-B-341`（**改訂版**）
+短期 throttle は WAF で代替できるが、**長期 quota（日次/月次）は WAF では実現不可**（評価窓 最大 600 秒）。HTTP API 採用時の選択肢：
+
+| 選択肢 | 適用条件 | コスト | 推奨度 |
+|---|---|---|:---:|
+| **A. REST API へ移行** | Usage Plan のフル機能を使う、Marketplace 統合要件、Partner B2B 標準パターンに揃える | 設計変更（HTTP API → REST API）、HTTP API の利点（71% 安、低レイテンシ）喪失 | ⭐ **推奨**（B2B 主流の場合） |
+| **B. 自前実装**（Lambda Authorizer + DynamoDB atomic counter）| HTTP API の利点を維持したい、quota 要件が特殊（時間帯別等）、Marketplace 不要 | DDB write 重い、コスト・レイテンシ増 | △ 例外承認制 |
+| **C. quota 諦め**（throttle のみ）| 短期 rate limit のみで十分、課金は別 system で計測 | 最小 | – |
+
+#### 判断フロー
+
+```mermaid
+flowchart TD
+    Start["HTTP API 採用 +<br/>長期 quota 必要?"]
+    Start -->|No| WafOnly[WAF rate-based で十分]
+    Start -->|Yes| Q1{Marketplace<br/>or 厳密な請求連動?}
+    Q1 -->|Yes| MovetoREST["A. REST API へ移行 ⭐<br/>Usage Plan 採用"]
+    Q1 -->|No| Q2{HTTP API の利点<br/>(コスト・レイテンシ)<br/>必須?}
+    Q2 -->|Yes| SelfImpl["B. 自前実装<br/>(Lambda Authorizer + DDB)"]
+    Q2 -->|No| MovetoREST2["A. REST API へ移行<br/>(運用負荷小)"]
+
+    style MovetoREST fill:#fff3e0,stroke:#e65100
+    style MovetoREST2 fill:#fff3e0,stroke:#e65100
+    style SelfImpl fill:#f3e5f5,stroke:#6a1b9a
+```
+
+### §3.4.3 TBD / 要確認
+
+- Q: HTTP API + WAF ヘッダ集約での tenant 単位制御を **デフォルトとするか**（短期 throttle）→ `API-B-341`（改訂版）
 - Q: WAF ヘッダ集約キーで使用するヘッダ名標準（`x-tenant-id` / JWT クレーム → API GW transformation 由来）→ `API-B-304`
+- Q: 長期 quota 必要な HTTP API は **REST 移行 vs 自前実装** のどちらをデフォルトとするか → `API-B-343` ⭐
 - Q: 自前実装（Lambda Authorizer + DDB）の DynamoDB スキーマ・コスト試算（必要時）→ `API-B-342`
 
 ---
