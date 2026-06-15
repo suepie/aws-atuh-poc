@@ -483,253 +483,54 @@ flowchart LR
 
 ### §FR-2.2.1.A 同一テナント内ユーザー重複の扱い
 
-> **このサブ・サブセクションで定めること**: 同一テナント内で同一人物が複数 IdP / ローカル経由で別レコード化する重複問題と、その統合（アカウントリンク）または独立扱いの設計判断。   
-> **主な判断軸**: 顧客が複数 IdP を持つか、IdP 切替計画があるか、ローカル + フェデ併存があるか、乗っ取りリスクを許容できるか   
-> **§FR-2.2 内の位置付け**: §FR-2.2.1 JIT 時の「**既存ユーザー検出と統合判断**」を扱う。クロステナント重複は [§FR-2.3.A.1](#fr-23a1-何が分離共有されているか--論理分離の実態顧客が必ず聞く論点) で扱う   
-> **⚠ 前提依存**: 本節は「**JIT 突合キーが email である**」前提で従来書かれていたが、email 非保有顧客への対応を含めた**識別子戦略は [§FR-1.2.0.D](01-auth.md#fr-120d-ユーザー識別子戦略--メール非保有顧客独自-id-への対応) で確定**。**突合キーの第一推奨は `tenant_id + persistent NameID`、email は補助属性扱い**。本節の以降の図中で「email 同一だが別 sub」と書かれている箇所は「**email がある場合の典型例**」として読み替えること（email 非保有時の突合は §FR-1.2.0.D.2 参照）
+> **詳細は [ADR-027 同一テナント内ユーザー重複の扱い（7 シナリオ + アカウントリンク戦略）](../../../adr/027-tenant-user-duplication-handling.md) を参照**
 
-#### 問題の所在: 同一テナント内で重複が発生する 7 シナリオ
+> **このサブ・サブセクションで定めること**: 同一テナント内で同一人物が複数 IdP / ローカル経由で別レコード化する重複問題と、その統合（アカウントリンク）または独立扱いの設計判断。
+> **主な判断軸**: 顧客が複数 IdP を持つか、IdP 切替計画があるか、ローカル + フェデ併存があるか、乗っ取りリスクを許容できるか
+> **§FR-2.2 内の位置付け**: §FR-2.2.1 JIT 時の「既存ユーザー検出と統合判断」を扱う。クロステナント重複は [§FR-2.3.A.1](#fr-23a1-何が分離共有されているか--論理分離の実態顧客が必ず聞く論点) で扱う
+> **⚠ 前提依存**: JIT 突合キーの第一推奨は `tenant_id + persistent NameID`、email は補助属性扱い（[§FR-1.2.0.D](01-auth.md#fr-120d-ユーザー識別子戦略--メール非保有顧客独自-id-への対応)）
+
+#### 結論サマリ
+
+| 項目 | 採用方針 |
+|---|---|
+| **重複扱い方針** | **A 統合（リンク）派**（業界標準：Microsoft Entra / Auth0 / Okta）|
+| **自動リンク** | **原則行わない**。Email OTP 確認 or 既存パスワード再認証を経たリンクのみ |
+| **Trust Email** | **IdP 単位で明示設定**（デフォルト false、顧客 IdP は性善説で扱わない）|
+| **突合せキー** | email（補助）+ **immutable な `sub` / 雇用 ID（プライマリ）**（[ADR-018](../../../adr/018-user-identifier-3layer-emailless.md) と整合）|
+| **管理者通知** | リンクイベントは監査ログ + 管理者通知（運用必須）|
+
+#### 7 つの重複発生シナリオ（詳細は ADR-027）
 
 | # | シナリオ | 発生原因 |
 |:---:|---|---|
-| 1 | 顧客が複数 IdP を持つ（例: Acme = Entra ID + HENNGE 併用） | 各 IdP からの `sub` が別 |
-| 2 | IdP 切り替え期間（例: Okta → Entra への移行中） | 旧 `sub` と新 `sub` が並存 |
-| 3 | ローカル + フェデの併存 | 先にローカル登録、後から IdP 接続で別レコード作成 |
-| 4 | SCIM プロビ + JIT 競合 | 事前 SCIM の `userName` ≠ JIT 時の `sub` |
-| 5 | 退職 → 再入社 | IdP 上は新規アカウントだが基盤側に旧履歴あり |
-| 6 | 複数役割の表現 | 1 人 = 複数組織コードで別レコード化 |
-| 7 | 手動登録 + 自動流入 | 管理者の `AdminCreateUser` vs JIT 流入で別レコード |
+| 1 | 複数 IdP 併用（**最頻出**）| 各 IdP からの `sub` が別 |
+| 2 | IdP 切替期間（Okta → Entra 移行中）| 旧 sub と新 sub が並存 |
+| 3 | ローカル + フェデの併存 | 先ローカル登録、後 IdP 接続 |
+| 4 | SCIM プロビ + JIT 競合 | 事前 SCIM の userName ≠ JIT 時の sub |
+| 5 | 退職 → 再入社 | IdP 上は新規、基盤に旧履歴 |
+| 6 | 複数役割（多重所属）| 1 人 = 複数組織コードで別レコード |
+| 7 | 手動登録 + 自動流入 | AdminCreateUser vs JIT 流入 |
 
-#### 7 シナリオの図解（各々がどう「別レコード」を生むか）
+#### プラットフォーム実装の差（Cognito の落とし穴 3 点）
 
-> 重複が発生した状態は「同じテナント内に同一人物のユーザーレコードが複数存在し、本基盤の `sub` が別々」であることが核心。**`sub` が分かれると認可・履歴・退職処理・MFA 登録が分断**される。理想は「同一人物 = 1 プロファイル + 複数 IdP リンク（`identities` 配列）」（業界標準 = Microsoft Entra / Auth0 / Okta）。本節は「どうやってその理想状態に収束させるか」の前提となる重複発生メカニズムを図解で示す。
-
-**重複が発生した状態のイメージ**:
-
-```mermaid
-flowchart LR
-    subgraph Person["現実世界の 1 人（例: 田中 alice@acme.co.jp）"]
-        P[Alice]
-    end
-
-    subgraph Hub["共通基盤 Acme テナント内のユーザー DB（重複した状態）"]
-        U1["sub=abc111<br/>identities=[Entra]<br/>roles=[admin]"]
-        U2["sub=def222<br/>identities=[HENNGE]<br/>roles=[]"]
-        U3["sub=ghi333<br/>identities=[local PW]<br/>roles=[viewer]"]
-    end
-
-    P -->|Entra で SSO| U1
-    P -->|HENNGE で SSO| U2
-    P -->|ローカル PW で| U3
-
-    style U1 fill:#ffebee,stroke:#c62828
-    style U2 fill:#ffebee,stroke:#c62828
-    style U3 fill:#ffebee,stroke:#c62828
-```
-
-##### シナリオ 1: 複数 IdP 併用（最頻出）
-
-```mermaid
-sequenceDiagram
-    autonumber
-    actor Alice
-    participant Entra
-    participant HENNGE
-    participant Hub as 共通基盤
-
-    Note over Alice: 月: 業務で Entra から
-    Alice->>Entra: ログイン
-    Entra->>Hub: assertion(sub=ENTRA-xyz, email=alice@acme.co.jp)
-    Hub-->>Hub: JIT 作成（基盤 sub=abc111）
-
-    Note over Alice: 翌週: 別アプリ用に HENNGE から
-    Alice->>HENNGE: ログイン
-    HENNGE->>Hub: assertion(sub=HEN-789, email=alice@acme.co.jp)
-    Hub-->>Hub: ❌ 同一 email だが別 sub → 別レコード def222 作成
-```
-
-##### シナリオ 2: IdP 切替期間（Okta → Entra 移行中）
-
-```mermaid
-gantt
-    title Acme 社の IdP 切替（例: 2026Q3-Q4）
-    dateFormat YYYY-MM-DD
-    section 旧 Okta
-    全社員 Okta 利用     :done, 2025-01-01, 2026-09-30
-    並走（一部 Okta 残）   :crit, 2026-09-01, 2026-12-31
-    section 新 Entra
-    並走（一部先行移行）   :active, 2026-09-01, 2026-12-31
-    Entra 単独運用       :2026-12-01, 2027-06-30
-```
-
-→ 並走 4 ヶ月の間、**同じ社員が Okta と Entra の両方からログインしてくる** ため、`sub` が異なる 2 レコードが基盤に並存。
-
-##### シナリオ 3: ローカル + フェデの併存
-
-```mermaid
-flowchart LR
-    T1["2026-01<br/>Acme オンボード時<br/>IdP 未連携"] -->|管理者がローカル<br/>PW 登録| L["基盤レコード<br/>sub=ghi333<br/>local PW"]
-    T2["2026-06<br/>Acme が Entra 連携開始"] -->|Alice が Entra でログイン| F["基盤レコード<br/>sub=abc111<br/>identities=Entra"]
-    L -.同じ Alice.-> F
-    style L fill:#fff3e0
-    style F fill:#e3f2fd
-```
-
-##### シナリオ 4: SCIM プロビ + JIT 競合
-
-```mermaid
-sequenceDiagram
-    autonumber
-    participant HR as Acme HR
-    participant SCIM as Acme IdP (SCIM Client)
-    participant Hub as 共通基盤
-    actor Alice
-
-    Note over HR,SCIM: 入社処理（事前）
-    HR->>SCIM: 新入社員 Alice 登録
-    SCIM->>Hub: SCIM POST /Users (userName=alice, email=alice@acme.co.jp)
-    Hub-->>Hub: レコード作成（sub=scim-001、IdP リンク無し）
-
-    Note over Alice: 数日後: 初回ログイン
-    Alice->>Hub: Entra 経由でログイン
-    Hub-->>Hub: ❌ JIT が「SCIM 作成済み」を検知できず別レコード作成
-```
-
-##### シナリオ 5: 退職 → 再入社
-
-```mermaid
-flowchart LR
-    A1["2024-04 入社<br/>sub=old-555<br/>roles=[admin]"] -->|2025-03 退職| A2["soft-delete<br/>or 物理削除"]
-    A2 -->|2026-05 再入社| A3["新 sub=new-777<br/>roles=[viewer]<br/>※過去の admin 履歴ロスト"]
-    style A1 fill:#e8f5e9
-    style A2 fill:#eeeeee
-    style A3 fill:#fff3e0
-```
-
-→ IdP 上は **新規アカウント扱い**（社員番号が再採番されるケースも多い）、基盤上は **旧 sub の履歴・監査ログが残る**。同一人物として復活させるか、別人扱いとするかの **運用判断（コンプライアンス論点）** が必要。
-
-##### シナリオ 6: 複数役割の表現（1 人 = 複数組織コードで多重所属）
-
-```mermaid
-flowchart TB
-    Alice["田中 Alice"]
-    Alice -->|営業所長としての権限<br/>org_code=SALES01| R1["sub=role1-aaa<br/>roles=[sales_manager]"]
-    Alice -->|PJ マネージャ権限<br/>org_code=PJ-X| R2["sub=role2-bbb<br/>roles=[pm]"]
-    style R1 fill:#e3f2fd
-    style R2 fill:#fff3e0
-```
-
-→ レアだが業務複雑な業種（建設・コンサル・SI 多重所属）で発生。アプリ側の文脈切替で対応すべき要件か、基盤で別レコードを許すかの判断。
-
-##### シナリオ 7: 手動登録 + 自動流入の競合
-
-```mermaid
-sequenceDiagram
-    autonumber
-    participant Admin as テナント管理者
-    participant Hub as 共通基盤
-    actor Alice
-
-    Admin->>Hub: AdminCreateUser(email=alice@acme.co.jp, role=admin)
-    Hub-->>Hub: ローカル PW 仮レコード作成（sub=manual-100）
-
-    Note over Alice: 翌日: 招待メールではなく Entra SSO で来てしまう
-    Alice->>Hub: Entra 経由ログイン
-    Hub-->>Hub: ❌ 既存ローカルと突合せず別レコード作成（sub=jit-200）
-```
-
-#### 業界の現在地
-
-- 業界標準は「**同一人物 = 1 プロファイル + 複数 IdP リンク**」（Microsoft Entra / Auth0 / Okta などの実装）
-- リンク時の最大リスクは「**他人 email アサーション流入による乗っ取り**」
-- AWS Cognito 公式は `AdminLinkProviderForUser` を **"trusted IdPs only"** と警告
-- Keycloak は First Broker Login Flow で **Confirm Link / Email OTP / Re-auth** を標準フロー化
-
-#### 我々のスタンス（基本方針に基づく）
-
-| 基本方針の柱 | 同一テナント重複扱いでの実現 |
-|---|---|
-| **絶対安全** | 自動リンクは原則しない。**Email OTP 確認** または **既存パスワード再認証** を経たリンクのみ。Trust Email は IdP 単位で明示判断 |
-| **どんなアプリでも** | リンク後は単一 `sub` で見える（`identities` クレームで複数 IdP 可視化）|
-| **効率よく** | SCIM 連携時は事前リンク（運用負荷で重複検出が起きない設計）|
-| **運用負荷・コスト最小** | Keycloak は標準フロー、Cognito は Pre Sign-up Lambda + `AdminLinkProviderForUser` で実装 |
-
-#### 設計の三択
-
-| 案 | 設計方針 | メリット | デメリット | 採用例 |
-|:---:|---|---|---|---|
-| **A 統合（リンク）派** | 同一人物 → 1 プロファイル / 複数 IdP リンク | UX 一貫、データ重複なし、deprovision 一括 | リンクロジック誤動作で乗っ取りリスク | **Microsoft Entra / Auth0 / Okta（業界標準）** |
-| **B 独立（許可）派** | IdP 経由 = 別ユーザー、重複を許容 | 攻撃面狭い、認証経路ごとに独立 | UX 悪化、データ重複、ロール管理混乱 | レガシー設計、移行期に一時採用 |
-| **C ハイブリッド** | IdP 経由は独立、ローカルとは統合 | 規制業種で許容しやすい | 設計複雑、説明難 | 慎重派、規制業種 |
-
-→ **推奨ベースライン: A 統合（リンク）派 + Trust Email を IdP 単位で慎重制御 + Email OTP / 再認証確認**
-
-#### 対応能力マトリクス
-
-| 機能 | Cognito | Keycloak (OSS / RHBK) | 備考・出典 |
-|---|:---:|:---:|---|
-| 同一プロファイルへの IdP リンク | ✅ `AdminLinkProviderForUser` API | ✅ First Broker Login Flow | 両方標準 |
-| **リンク可能な IdP 数上限** | **5（Hard limit）**[^cognito-q08] | 制限なし | AWS 公式: "link up to five federated users to each user profile"[^aws-linking] |
-| **リンク時の突合せ属性数上限** | **5（Hard limit）** | 制限なし | AWS 公式: "from up to five IdP attribute claims"[^aws-linking] |
-| 既存ユーザー検出時の確認フロー | ⚠ Pre Sign-up Lambda 自前実装 | ✅ `Confirm Link Existing Account` / `Verify Existing Account By Email` / `Verify Existing Account By Re-authentication` の 3 認証器を選択 | Keycloak Identity Brokering Docs[^kc-fbl] |
-| Detect Existing Broker User（同一 IdP の別ユーザー名検知）| ❌ 自前 | ✅ `Detect Existing Broker User` 認証器 | Keycloak Docs[^kc-fbl] |
-| **既ログイン済 IdP の再リンク** | ⚠ **既存プロファイル削除が必要**（監査ログ分断）| ✅ `Detect Existing Broker User` で上書き確認 | AWS 公式: "you must first delete their existing profile"[^aws-linking] |
-| 管理 UI からのリンク操作 | ❌ **API のみ**（Console 不可） | ✅ Admin Console + Account Console | AWS 公式: "can't link providers to user profiles in the AWS Management Console"[^aws-linking] |
-| ユーザー自身による自己リンク | ❌ | ✅ Account Console 経由 | 同上 |
-| Trust Email の IdP 単位制御 | ⚠ 暗黙的 | ✅ IdP 設定で明示 | Keycloak Identity Brokering 設定 |
-| `identities` クレーム出力（複数 IdP 可視化）| ✅ ID Token | ✅ Federated Identities API | 両方標準 |
-| 自動リンク（信頼 IdP 前提）| ⚠ Pre Sign-up Lambda で自前 | ✅ `Automatically Set Existing User` 認証器 | Keycloak Docs[^kc-fbl]、業界標準は **自動リンクは非推奨** |
-| 退職 → 再入社時の旧履歴復活 | ⚠ プラットフォーム標準なし、soft-delete + 承認の運用設計マター | ⚠ 同左 | **両者ともシナリオ 5 はプラットフォーム選定で決まらない** |
-
-[^cognito-q08]: [cognito-knockout-conditions.md Q-08](../../../reference/cognito-knockout-conditions.md) — Identities linked to a user は 5 Hard limit
-[^aws-linking]: [AWS 公式 - Linking federated users to an existing user profile](https://docs.aws.amazon.com/cognito/latest/developerguide/cognito-user-pools-identity-federation-consolidate-users.html)（"Things to know about linking federated users" セクション）
-[^kc-fbl]: [Keycloak Server Admin Guide - First Login Flow](https://www.keycloak.org/docs/latest/server_admin/index.html#_default-first-login-flow) — `Confirm Link Existing Account` / `Verify Existing Account By Email` / `Verify Existing Account By Re-authentication` / `Detect Existing Broker User` / `Automatically Set Existing User` 認証器の組合せで重複検出を宣言的に構成
-
-#### シナリオ別の実装可否（7 シナリオ × 2 プラットフォーム）
-
-| # | シナリオ | Cognito での実現 | Keycloak での実現 |
-|:---:|---|---|---|
-| 1 | 複数 IdP 併用 | Pre Sign-up Lambda + `AdminLinkProviderForUser`（**自前 200〜500 行**）。**5 IdP までしかリンク不可** | First Broker Login Flow に `Confirm Link` + `Verify by Email` を組むだけ（**追加コード 0**）。IdP 数無制限 |
-| 2 | IdP 切替期間 | 同上（移行用に Lambda 増強）| 同上（標準フローで自然に処理） |
-| 3 | ローカル + フェデ併存 | Pre Sign-up Lambda + 既存ローカル検索 → Link | First Broker Login Flow で標準動作 |
-| 4 | SCIM + JIT 競合 | **Pre Sign-up Lambda で SCIM 作成済みレコードを email/externalId で検索 → Link**（重い実装）| `Detect Existing Broker User` + email 突合（標準） |
-| 5 | 退職 → 再入社 | **両プラットフォームとも標準機能なし** — soft-delete + 管理者承認のワークフロー自前運用 | 同左（**運用設計マター**、プラットフォーム選定で決まらない） |
-| 6 | 複数役割（多重所属）| アプリ層で文脈切替 or Cognito Groups で属性多重化 | Realm Groups / Composite Roles で表現可。アプリ層対応も推奨 |
-| 7 | 手動 + 自動流入 | Pre Sign-up Lambda で AdminCreateUser 済を検出 → Link | First Broker Login Flow で標準動作 |
-
-#### Cognito の落とし穴 3 点（要件定義時に必ず顧客と握る）
-
-公式ドキュメントから確認できた、**Cognito 採用時に契約前に顧客合意が必要な制約**:
-
-| # | 制約 | 影響シナリオ |
+| # | 制約 | 影響 |
 |:---:|---|---|
-| 1 | **1 ユーザーあたり IdP リンクは 5 個まで（Hard limit）**、突合せ属性も 5 個まで | グローバル製造業（多重子会社で各社が別 IdP）、IdP 切替を複数回経験する顧客で破綻 |
-| 2 | **リンク操作の管理コンソール UI なし**（`AdminLinkProviderForUser` API のみ） | 運用者が CLI / カスタム自前 UI でしかリンク作業ができない。テナント管理者委譲（[B-404](../../hearing-checklist.md#b-4-ユーザー管理プロビジョニング-fr-user-6--proposal-fr-221-fr-7)）を顧客に提供する場合、専用 UI 開発が必須化 |
-| 3 | **既ログイン済 IdP の再リンクには既存プロファイル削除が必要** | 監査ログ・履歴が分断、退職再入社シナリオ（シナリオ 5）で運用が複雑化 |
+| 1 | **1 ユーザーあたり IdP リンクは 5 個まで（Hard limit）** | 多 IdP 顧客（製造業多重子会社、IdP 切替複数経験）で破綻 |
+| 2 | **リンク操作の管理コンソール UI なし**（API のみ）| 運用者が CLI / 自前 UI 必須 |
+| 3 | **既ログイン済 IdP の再リンクには既存プロファイル削除が必要** | 監査ログ・履歴分断 |
 
-→ **B-406 で「あり」回答 + 経路に「複数 IdP」「IdP 切替」「SCIM + JIT 競合」のいずれかが含まれる場合、Cognito は実装工数・ハードリミット・運用 UI 不在で実質ノックアウト**になる可能性が高い。本基盤の **プラットフォーム選定上のキーファクター**（[§C-2.2](../common/02-platform.md) と整合）。
+→ **B-406 で「あり」+ 経路に「複数 IdP」「IdP 切替」「SCIM + JIT 競合」が含まれる場合、Cognito は実質ノックアウト**。プラットフォーム選定の決定要因。
 
-#### セキュリティ上の最大論点：アカウント乗っ取り対策
+#### セキュリティ最大論点：アカウント乗っ取り対策
 
 | 攻撃ベクター | 対策 |
 |---|---|
-| **悪意ある（or 設定ミス）IdP からの他人 email アサーション流入**（攻撃者が自分の IdP アカウントに被害者 email を設定 → 自動リンクで被害者アカウント乗っ取り） | **Trust Email を自動 true にしない**（IdP 単位で明示判断）+ Email OTP 確認 |
-| **同名同 email の偶然衝突** | 突合せキーを email でなく **immutable な `sub` / `objectid` / 雇用 ID** にする |
-| **退職者の再入社時のリンク誤動作** | 退職者プロファイルは soft-delete + 管理者承認後リンク |
-| **JIT による自動レコード生成と既存ローカル衝突** | First Broker Login Flow / Pre Sign-up Lambda で確認フロー必須 |
-| **管理者通知なしのサイレント乗っ取り** | リンクイベントは監査ログ + 管理者通知（[§FR-8.2](08-admin.md) 監査）|
-
-#### ベースライン
-
-| 項目 | ベースライン |
-|---|---|
-| 重複扱い方針 | **A 統合（リンク）派** |
-| 自動リンクの条件 | **原則行わない**。Email OTP 確認 or 既存パスワード再認証を経た上でのみ |
-| Trust Email | **IdP 単位で明示設定**。デフォルト false（顧客 IdP は性善説で扱わない）|
-| 突合せキー | email（補助）+ **immutable な `sub` / 雇用 ID（プライマリ）** |
-| 管理者通知 | リンクイベントは監査ログ + 管理者通知（運用必須） |
-| IdP 切替時の連続性 | SCIM 同期で事前リンク、または管理者主導の手動マージ |
-| Cognito 採用時の制約 | 1 ユーザーあたり **5 IdP リンクまで（Hard）** — 多 IdP 顧客は Keycloak へ移行検討 |
+| **他人 email アサーション流入による乗っ取り** | Trust Email を自動 true にしない + Email OTP 確認 |
+| 同名同 email の偶然衝突 | 突合せキーを email でなく immutable な `sub` / 雇用 ID にする |
+| 退職者再入社時のリンク誤動作 | soft-delete + 管理者承認後リンク |
+| JIT 自動レコード生成 + 既存ローカル衝突 | First Broker Login Flow / Pre Sign-up Lambda で確認フロー必須 |
+| サイレント乗っ取り | リンクイベントは監査ログ + 管理者通知 |
 
 #### TBD / 要確認（[hearing-checklist.md](../../hearing-checklist.md) B-406〜B-410 と連動）
 
@@ -741,8 +542,6 @@ sequenceDiagram
 | 突合せキー | email / immutable sub / 雇用 ID / カスタム属性 |
 | リンクのトリガー | 管理者主導 / ユーザー主導 / 自動 |
 | IdP 切替計画の有無 | あり（時期）/ なし |
-
----
 
 ### §FR-2.2.2 属性マッピング / クレーム変換（→ FR-FED-009）
 
@@ -1194,206 +993,71 @@ flowchart LR
 
 ### §FR-2.3.A.2 IdP なし顧客のローカルユーザー管理 — パスワードハッシュの同居問題
 
-§FR-2.3.A.1 では「フェデユーザー」（顧客 IdP 経由）の同居問題を扱った。本サブセクションは**「IdP を持たない顧客」のユーザー管理**を扱う。
+> **詳細は [ADR-028 IdP なし顧客のローカルユーザー管理 — 4 選択肢の比較](../../../adr/028-idpless-customer-local-user-management.md) を参照**
 
-#### 問題の所在: パスワードハッシュも同居する
+> **このサブ・サブセクションで定めること**: IdP を持たない顧客（DeltaCo 等）のローカルユーザー管理で、**パスワードハッシュが本基盤側に同居する問題**への 4 つの選択肢比較と、規制顧客対応を考慮した推奨方針。
+> **主な判断軸**: 規制顧客（金融 / 医療 / 政府）の有無、運用工数、Broker パターン整合性、契約上の物理分離要求
+> **§FR-2.3.A 内の位置付け**: §FR-2.3.A.1 ではフェデユーザーの同居を扱った。本サブセクションは **「IdP を持たない顧客」のユーザー管理**を扱う
 
-```mermaid
-flowchart LR
-    subgraph IdPAri["IdP あり顧客 (Acme / Globex)"]
-        AcmeIdP["Acme Entra ID<br/>※ パスワードここ"]
-        AcmeUsers["Acme 社員"]
-    end
-    subgraph IdPNashi["⚠ IdP なし顧客 (DeltaCo)"]
-        DeltaUsers["DeltaCo 社員<br/>※ パスワードどこに?"]
-    end
-    subgraph Basis["共通認証基盤"]
-        Pool_Local["⚠ User Pool<br/>(ローカルユーザー DB<br/>+ パスワードハッシュ)"]
-    end
+#### 結論サマリ
 
-    AcmeUsers -.OIDC.-> Pool_Local
-    AcmeIdP -.- AcmeUsers
-    DeltaUsers ==>|"パスワード保存"| Pool_Local
+| 項目 | 採用方針 |
+|---|---|
+| **採用アプローチ** | **D 案 ハイブリッド**（一般 A + 規制 B / C）|
+| 一般顧客（IdP なし） | 共通 Pool でローカル管理（論理分離 + PBKDF2/Argon2 ハッシュ）|
+| 規制顧客（金融 / 医療 / 政府）| 専用 Pool/Realm（物理分離 + 別 KMS キー）|
+| 同居許容の前提 | 侵害クレデンシャル検出 / MFA Must / Pool DB 暗号化 等の必須セキュリティ実装 |
 
-    style Pool_Local fill:#fff8e1
-```
+#### 5 選択肢の概要（詳細は ADR-028 / ADR-033）
 
-→ **IdP なし顧客のユーザーをローカル管理すると、パスワードハッシュも本基盤側に保存される**。共通 Pool に集約すると、フェデユーザー以上に**強い「同居」状態**になる。
+| 案 | 設計 | パスワード分離 | 運用工数 | コスト（10M MAU 時）| 推奨度 |
+|:---:|---|:---:|:---:|:---:|:---:|
+| A. 共通 Pool に集約 | ローカル管理、論理分離 | ❌ 同居 | ◎ 1 つ | ◎ | 一般顧客のみ |
+| B. 顧客別 Pool/Realm | 物理分離 | ✅ 完全 | ❌ N 倍 | △ | × 過剰 |
+| C. 顧客専用 Mini IdP | 別 Realm + フェデ | ✅ 完全 | ❌ N 倍 + 階層 | △ | △ 例外的 |
+| **D. ハイブリッド** | 一般 A + 規制 B/C | ⚠ 部分 | ○ 数個 | ○ | **✅ 中規模時の推奨**（〜中規模、IdP なし顧客が少ない場合）|
+| **E. 2-tier 別インスタンス**（NEW）| **Broker KC + IdP KC を物理分離**（[ADR-033](../../../adr/033-keycloak-2tier-broker-idp-architecture.md)）| ✅ 完全 | ⚠ 2 倍 | ◎ Keycloak OSS、Entra 比 350-600 倍削減 | **✅ 大規模時の推奨**（10M MAU、IdP なし顧客が一定数含まれる場合）|
 
-| 顧客タイプ | パスワード保存先 | 本基盤での同居 |
+#### 採用判断基準
+
+| 状況 | 推奨案 |
+|---|---|
+| MAU < 1M、IdP あり顧客 100%（IdP なし顧客なし）| **D 案**で十分（ローカル PW 同居が発生しない）|
+| MAU < 1M、IdP なし顧客が含まれる | **D 案**（一般は共通 Pool、規制顧客のみ専用）|
+| MAU 1M-10M、IdP なし顧客が含まれる | **E 案検討開始**（[ADR-033](../../../adr/033-keycloak-2tier-broker-idp-architecture.md)）|
+| MAU 10M+、IdP なし顧客が含まれる | **E 案採用**（[ADR-033](../../../adr/033-keycloak-2tier-broker-idp-architecture.md) / [ADR-032 コスト裏どり](../../../adr/032-ciam-platform-cost-comparison-10m-mau.md)）|
+| 規制顧客（金融・医療）を多数獲得予定 | **E 案 + 規制顧客向け追加 IdP-KC インスタンス**（別 VPC / Region）|
+
+#### E 案（2-tier）の構造サマリ
+
+- **Tier 1 Broker Keycloak**: 認証集約・JWT 発行・Organizations + IdP リンク管理（フェデユーザーのみ、PW なし）
+- **Tier 2 IdP Keycloak**: ローカル PW・MFA・サインアップ UI（IdP なし顧客のユーザー + ハッシュ）
+- **両 Tier とも Single Realm + Organizations**（Keycloak v26+ 標準機能、[ADR-017](../../../adr/017-multitenant-l2-single-realm.md) と整合）
+- Broker → IdP-KC は OIDC Federation 標準パターン（業界実装多数）
+- 段階的導入: Phase 1（Broker 単独・D 案）→ Phase 2（IdP-KC 追加）→ Phase 3（既存ユーザー段階移行）→ Phase 4（規制顧客向け追加 IdP-KC）
+
+#### 推奨配置
+
+| 顧客タイプ | 配置（中規模 D 案）| 配置（大規模 E 案）|
 |---|---|---|
-| IdP あり顧客（Acme, Globex）| 顧客 IdP（Entra / Okta）| ユーザーレコードのみ同居 |
-| **IdP なし顧客**（DeltaCo）| **本基盤 User Pool**（PBKDF2/Argon2 ハッシュ）| **ユーザーレコード + パスワードハッシュ同居** |
+| **IdP あり顧客**（Acme, Globex 等）| Broker 共通 Pool | Broker 共通 Pool（変わらず）|
+| **IdP なし 一般顧客**（標準セキュリティ）| Broker 共通 Pool でローカル管理 | **IdP Keycloak（Tier 2）**（Broker からは OIDC フェデ）|
+| **規制顧客**（金融 / 医療 / 政府）| 専用 Pool/Realm | **追加の専用 IdP-KC インスタンス**（別 VPC / Region）|
 
-#### 4 つの選択肢
+#### A 採用時の必須セキュリティ要件
 
-```mermaid
-flowchart TB
-    Q["IdP なし顧客のユーザー管理"]
-    Q --> A["A. 共通 Pool に集約<br/>(ローカル管理)"]
-    Q --> B["B. 顧客別 Pool/Realm<br/>(物理分離)"]
-    Q --> C["C. 顧客向け Mini IdP<br/>(別 Realm + フェデ)"]
-    Q --> D["D. ハイブリッド<br/>(一般 A / 規制 B)"]
+- 強いハッシュ（PBKDF2-SHA512 / Argon2id）
+- 侵害クレデンシャル検出（Cognito Plus / Keycloak + HIBP）
+- 強いパスワードポリシー（NIST SP 800-63B Rev 4 準拠）
+- アカウントロック / ブルートフォース対策
+- MFA Must（IdP なしユーザー、Passkey 推奨 + TOTP）
+- Pool DB 暗号化（Cognito 自動 / Keycloak: Aurora + KMS CMK）
+- 管理 API 制限（`tenant_id` フィルター必須）
+- 全認証イベントの監査ログ
 
-    A --> ARes["⚠ ハッシュ同居<br/>運用 ◎<br/>業界標準"]
-    B --> BRes["✅ 物理分離<br/>運用 ❌ N 倍<br/>規制対応"]
-    C --> CRes["✅ 実質物理分離<br/>運用 △<br/>メイン基盤シンプル"]
-    D --> DRes["✅ 柔軟<br/>運用 ○<br/>**推奨**"]
+#### 顧客への説明テンプレート
 
-    style A fill:#fff8e1
-    style B fill:#e8f5e9
-    style C fill:#e3f2fd
-    style D fill:#fce4ec
-```
-
-#### 各選択肢の詳細
-
-##### A. 共通 Pool に集約（ローカル管理、論理分離）
-
-```mermaid
-flowchart LR
-    subgraph Pool["単一 User Pool"]
-        FedUsers["フェデユーザー<br/>(alice, bob)<br/>パスなし"]
-        LocalUsers["ローカルユーザー<br/>(DeltaCo の dave)<br/>**パスワードハッシュあり**"]
-    end
-    style Pool fill:#fff8e1
-```
-
-- **同居**: ユーザーレコード + **パスワードハッシュ**（DeltaCo 分）
-- **保存形式**: PBKDF2-SHA512 / Argon2id（業界標準ハッシュ）
-- **リスク**: Pool DB 全体漏洩時に全顧客のローカルユーザー分のハッシュ流出。**ただし強いハッシュ + salt で元パスワード復元困難**
-- **業界スタンス**: B2B SaaS で論理分離 + 強いハッシュ + 侵害検知で十分とされる（OWASP / WorkOS / Microsoft 標準）
-
-##### B. 顧客別 Pool / Realm（物理分離 = §FR-2.3.A の B 案）
-
-```mermaid
-flowchart LR
-    subgraph PoolA["Pool A (Acme 専用)"]
-        AcmeFed["Acme フェデユーザー"]
-    end
-    subgraph PoolD["Pool D (DeltaCo 専用)"]
-        DeltaLocal["DeltaCo ローカルユーザー<br/>+ パスワードハッシュ"]
-    end
-    subgraph PoolG["Pool G (Globex 専用)"]
-        GlobexFed["Globex フェデユーザー"]
-    end
-    style PoolD fill:#e8f5e9
-```
-
-- パスワードハッシュも**物理分離**（DeltaCo の Pool D のみに存在）
-- 運用工数が顧客数 N に比例（100 社抱えると Pool 100 個）
-- JWT issuer が分散 → 各アプリで複数 issuer 検証必要
-- Broker パターンの本質が崩壊
-
-##### C. 顧客専用 Mini IdP（別 Realm）+ メインからフェデ
-
-```mermaid
-flowchart LR
-    subgraph DeltaMini["DeltaCo 専用 Mini Realm<br/>(または別 Pool)"]
-        DeltaIdP["DeltaCo 用 IdP"]
-        DeltaUsers["DeltaCo 社員<br/>+ パスワードハッシュ"]
-    end
-    subgraph Basis["メイン共通基盤"]
-        MainPool["メイン Pool<br/>(フェデのみ同居)"]
-    end
-
-    DeltaIdP -.OIDC フェデ.-> MainPool
-    DeltaUsers -.- DeltaIdP
-
-    style DeltaMini fill:#e3f2fd
-    style Basis fill:#fff3e0
-```
-
-- 「**IdP を自前で用意**」する案 = 顧客専用に Mini Realm/Pool を立て、メインからは外部 IdP として接続
-- 物理分離の効果は B 案と同等（パスワードハッシュは Mini Realm のみ）
-- メイン共通基盤側はシンプル（メインから見れば「フェデのみ」になる）
-- 実装複雑度は B 案以上（2 段階の認証フロー）
-- 採用例: Auth0 / Okta が「Premium Tenant」として顧客専用テラスを提供するパターン
-
-##### D. ハイブリッド（一般 A + 規制 B / C）— **本基盤の推奨**
-
-```mermaid
-flowchart TB
-    subgraph MainPool["メイン共通 Pool"]
-        FedUsers["フェデユーザー<br/>(Acme, Globex 等)"]
-        LocalGen["一般ローカルユーザー<br/>(DeltaCo 等の小規模)<br/>+ ハッシュ"]
-    end
-    subgraph FinPool["金融顧客専用 Pool"]
-        FinLocal["金融顧客 ローカル<br/>+ ハッシュ"]
-    end
-    subgraph MedPool["医療顧客専用 Pool"]
-        MedLocal["医療顧客 ローカル<br/>+ ハッシュ"]
-    end
-
-    style MainPool fill:#fff8e1
-    style FinPool fill:#e8f5e9
-    style MedPool fill:#e8f5e9
-```
-
-- **一般顧客（IdP なし含む）**: 共通 Pool で論理分離
-- **規制顧客（金融 / 医療 / 政府）**: 専用 Pool で物理分離
-- 柔軟で運用工数も最小化
-- 業界実例: Auth0 / Microsoft Entra External ID 等が「**Standard Tenant + Premium Tenant**」パターン採用
-
-#### 比較表
-
-| 観点 | A. 共通 Pool | B. 顧客別 Pool | C. Mini IdP フェデ | D. ハイブリッド |
-|---|:---:|:---:|:---:|:---:|
-| パスワードハッシュの物理分離 | ❌ 同居 | ✅ 完全分離 | ✅ 完全分離 | ⚠ 部分分離 |
-| 同居規模 | 全顧客 | 顧客 1 社 | 顧客 1 社 | 一般顧客のみ |
-| 運用工数 | ◎ 1 つ | ❌ N 倍 | ❌ N 倍 + 階層 | ○ 数個 |
-| JWT issuer | 1 つ | N 個 | N + 1 個 | 数個 |
-| Broker パターン整合 | ✅ 完全 | ❌ 崩壊 | ⚠ 階層化 | ⚠ 部分崩壊 |
-| 規制対応（金融 / 医療）| ⚠ 要交渉 | ✅ | ✅ | ✅ 特殊顧客のみ |
-| **本基盤での採用判断** | ⚠ 一般顧客のみ | × 過剰 | △ 例外的 | ✅ **推奨** |
-
-#### 「Pool を分けたら物理的に別れているのか?」の直接回答
-
-**Yes、Pool/Realm を分けると物理的に別ストレージで分離されます**：
-
-| 観点 | 単一 Pool | 別 Pool 分離 |
-|---|---|---|
-| データストレージ | 同じテーブル / DB | 別テーブル / 別 DB（Cognito 別 User Pool / Keycloak 別 Realm = 別テーブル群）|
-| パスワードハッシュ | 同居 | 別物理保管 |
-| 暗号化キー | 共通 | 別 KMS キー設定可 |
-| 管理権限 | 共通 IAM Role / Realm Admin | Pool/Realm 別の Admin |
-| 障害影響範囲 | 全テナント | 該当テナントのみ |
-| GDPR Right to Erasure 等 | tenant_id レコード削除 | Pool 全体削除可、より厳密 |
-
-→ 「**自前 IdP として別 Pool/Realm を立てる**」 = 「**Pool を分ける**」 = **物理分離**として等価。
-
-#### 本基盤の推奨ベースライン
-
-**D 案ハイブリッド**を採用：
-
-| 顧客タイプ | 配置 | パスワード扱い |
-|---|---|---|
-| **IdP あり顧客**（Acme, Globex 等）| 共通 Pool | 顧客 IdP 側、本基盤に来ない |
-| **IdP なし 一般顧客**（標準セキュリティ要件） | **共通 Pool でローカル管理** | PBKDF2/Argon2 ハッシュ + `tenant_id` タグ |
-| **規制顧客**（金融 / 医療 / 政府）| **専用 Pool/Realm** | 物理分離 + 別 KMS キー |
-
-#### 共通 Pool でローカル管理する場合の必須セキュリティ要件
-
-A 案を採用する場合、以下を**標準実装**する：
-
-| 要件 | 実装 | 参照 |
-|---|---|---|
-| **強いハッシュ** | PBKDF2-SHA512 / Argon2id | Cognito 自動 / Keycloak 標準 |
-| **侵害クレデンシャル検出** | Cognito Plus（$0.02/MAU）or Keycloak + HIBP | [§FR-1.2 C-205-2](01-auth.md) |
-| **強いパスワードポリシー** | NIST SP 800-63B Rev 4 準拠 | [§FR-1.2](01-auth.md) |
-| **アカウントロック / ブルートフォース対策** | 連続失敗で一時ロック | [§FR-1.2 / C-205](01-auth.md) |
-| **MFA Must**（IdP なしユーザー）| Passkey 推奨 + TOTP | [§FR-3](03-mfa.md) |
-| **Pool DB 暗号化** | Cognito 自動 / Keycloak: Aurora storage_encrypted=true + KMS CMK | [§NFR-4](../nfr/04-security.md) |
-| **管理 API 制限** | `ListUsers` 等は IAM Role で制限、`tenant_id` フィルター必須 | §10.0.5 OWASP |
-| **監査ログ** | 全認証イベント（成功・失敗）を CloudTrail / Event Listener に永続化 | [§FR-8.2](08-admin.md) |
-
-→ これらを実装すれば、**ハッシュ同居でも実用上のセキュリティリスクは小さい**（業界標準）。
-
-#### 顧客への説明（推奨フレーズ）
-
-> 「IdP をお持ちでない顧客のユーザーは、本基盤側で**ローカル管理**します。パスワードは PBKDF2-SHA512（または Argon2）でハッシュ化して保存され、salt 付きで元パスワード復元は困難です。
->
-> ハッシュ自体は他の一般顧客のものと**同じデータベースに格納**されますが、これは Slack / Notion / Linear など主要 B2B SaaS の標準的な構成です（OWASP 推奨）。**侵害クレデンシャル検出 / 強いパスワードポリシー / MFA / DB 暗号化**で実用上のリスクは抑えられます。
+> 「IdP をお持ちでない顧客のユーザーは、本基盤側で**ローカル管理**します。パスワードは PBKDF2-SHA512 でハッシュ化して保存され、salt 付きで元パスワード復元は困難です。ハッシュ自体は他の一般顧客のものと**同じデータベースに格納**されますが、これは Slack / Notion / Linear など主要 B2B SaaS の標準構成です（OWASP 推奨）。
 >
 > 金融・医療・政府系など、**規制・契約で物理分離が必須**な場合は、お客様専用の User Pool を別途用意することも可能です（B 案 = 物理分離、コスト・運用工数増）。」
 
@@ -1401,14 +1065,14 @@ A 案を採用する場合、以下を**標準実装**する：
 
 | 確認項目 | 回答例 |
 |---|---|
-| IdP なし顧客のユーザー管理方針 | A 共通 Pool / B 専用 Pool / C 専用 Mini IdP / D ハイブリッド |
+| IdP なし顧客のユーザー管理方針 | A 共通 Pool / B 専用 Pool / C 専用 Mini IdP / **D ハイブリッド**（中規模）/ **E 2-tier 別インスタンス**（大規模、[ADR-033](../../../adr/033-keycloak-2tier-broker-idp-architecture.md)）|
+| **想定 MAU 規模**（E 案採否の決定要因）| 〜1M（D 案）/ 1M-10M（D or E 検討）/ **10M+（E 案推奨）** |
+| **IdP なし顧客の割合**（E 案 IdP-KC 規模見積もり）| ほぼ 0%（D 案で十分）/ 〜30%（E 案で IdP-KC = MAU の 30%）/ 50%+（E 案推奨）|
 | 規制顧客（金融 / 医療等）の有無 | あり（業種・顧客数）/ なし |
 | パスワードハッシュ同居を許容するか | はい（一般顧客で OK）/ いいえ（全顧客分離要）|
 | 専用 Pool/Realm を用意する顧客の判断基準 | 契約金額 / 規制要件 / セキュリティレベル |
 
 → 実装方式の詳細（Cognito 別 Pool vs Keycloak 別 Realm の比較、運用工数）は内部技術メモ [`identity-broker-multi-idp.md §10`](../../../common/identity-broker-multi-idp.md) 参照。
-
----
 
 ### §FR-2.3.A.3 A 案採用の運用コスト根拠（マルチ Realm の実例 / Broker 効果の業界実証）
 
@@ -1825,672 +1489,83 @@ sequenceDiagram
 | 組織固有 URL | ✅ Custom Domain | ✅ Hostname / Realm 別 |
 | SPA 変更要否（顧客追加時）| ⚠ IdP ボタン追加要 | ✅ **不要** |
 
-#### §FR-2.3.3.A 画面所在マトリクスとカスタマイズ 3 パターン
+#### §FR-2.3.3.A 画面所在マトリクスとカスタマイズ 4 パターン
 
-> **このサブ・サブセクションで定めること**: 「画面が認証基盤上 vs アプリ側のどちらに存在するか」で **カスタマイズ可能範囲と実装手段が決定的に変わる** ことを明示し、3 つの設計パターンから推奨を選ぶ。   
-> **主な判断軸**: 顧客がブランディングを求める範囲（ログイン画面まで含むか、アプリ内のみか）、URL 肥大化制約（[§5.A.1](../../../common/platform-architecture-patterns.md) Cognito Branding Style 20 上限）   
-> **§FR-2.3.3 内の位置付け**: UX パターン（HRD / セレクター / 組織固有 URL）の選択とは別軸の「**ブランディング層の責務分担**」を扱う
+> **詳細は [ADR-024 ログイン画面アーキテクチャとブランディング 4 パターン](../../../adr/024-login-screen-architecture-branding.md) を参照**
 
-##### 画面の物理的所在で整理
+> **このサブ・サブセクションで定めること**: 「画面が認証基盤上 vs アプリ側のどちらに存在するか」で**カスタマイズ可能範囲と実装手段が決定的に変わる**ことを明示し、ブランディング設計を 2 軸（アプリ別 / 顧客別）から 4 パターンに分類して推奨を確定する。あわせて「2 回ログイン問題」（顧客誤解への対応）も扱う。   
+> **主な判断軸**: アプリ別ブランディング有無（A-11）、顧客別ブランディング有無（A-11-α）、URL 肥大化制約（Cognito Branding Style 20 上限）、L4-L8 カスタマイズ要否   
+> **§FR-2.3.3 内の位置付け**: UX パターン（HRD / セレクター / 組織固有 URL）とは**別軸の「ブランディング層の責務分担」**
 
-```mermaid
-flowchart LR
-    User["👤 田中さん"]
-
-    subgraph App["アプリ側ドメイン<br/>(app.example.com)"]
-        Landing["ランディング"]
-        Dashboard["ダッシュボード"]
-        PostLogout["ログアウト後"]
-    end
-
-    subgraph Hub["認証基盤ドメイン<br/>(auth.example.com)"]
-        Login["🔐 ログイン画面"]
-        IdPSelect["IdP 選択"]
-        MFA["MFA 入力"]
-        PwReset["パスワードリセット"]
-        ErrorPage["エラー画面"]
-    end
-
-    User -->|"❶ アクセス"| App
-    Landing -->|"❷ 認証要求"| Hub
-    Hub -->|"❸ ログイン完了"| App
-    App -->|"❹ ログアウト要求"| Hub
-    Hub -->|"❺ リダイレクト"| App
-
-    style Hub fill:#fff3e0,stroke:#e65100
-    style App fill:#e8f5e9,stroke:#2e7d32
-```
-
-| 画面 | 物理的所在 | アプリで `tenant_id` 解釈可能? | 認証基盤側設定 |
-|---|---|:---:|:---:|
-| ログイン画面（ID/PW 入力） | 認証基盤 | ❌ **不可能** | ✅ **必須** |
-| IdP 選択画面（セレクター / HRD） | 認証基盤 | ❌ | ✅ **必須** |
-| MFA 入力画面 | 認証基盤 | ❌ | ✅ **必須** |
-| パスワードリセット画面 | 認証基盤 | ❌ | ✅ **必須** |
-| 同意画面 / Consent | 認証基盤 | ❌ | ✅ **必須** |
-| 認証エラー画面（一部） | 認証基盤 | △（リダイレクトで逃せる） | ⚠ 部分的に必要 |
-| ログイン前ランディング | アプリ | ✅ **完全可能** | 不要 |
-| ログイン後ダッシュボード | アプリ | ✅ **完全可能** | 不要 |
-| ログアウト後ランディング | アプリ | ✅ **完全可能** | 不要 |
-
-##### なぜアプリ側で完全カスタマイズできないか
-
-ブラウザの URL バーが `auth.example.com` を指している間は、**ブラウザの Same-Origin Policy により、アプリの JS から認証基盤ドメインの DOM を触れない**（XSS / CSRF 対策の根幹）。回避は不可能。
-
-→ **認証基盤上の画面のカスタマイズは、必ず認証基盤側の Theme / Branding 設定が必要**。
-
-##### フェデユーザー / ローカルユーザーの画面遷移と責務分担
-
-フェデユーザー（P-3）とローカルユーザー（P-2 / P-4 等）では、ログイン操作で経由する画面が異なります。**カスタマイズの責務もそれぞれ違う**ため、整理が必要です。
-
-###### フェデユーザー（P-3）の画面遷移
-
-```mermaid
-sequenceDiagram
-    participant User as 👤 田中さん<br/>(顧客 Acme 社員)
-    participant App as 📱 アプリ
-    participant Hub as 🏢 本基盤<br/>(auth.example.com)
-    participant IdP as 🏢 Acme の Entra ID<br/>(login.microsoftonline.com)
-
-    User->>App: アクセス
-    App->>Hub: GET /authorize?client_id=expense-app
-
-    rect rgb(255, 243, 224)
-    Note over Hub: ❶ 本基盤の IdP セレクター画面<br/>(または HRD で自動振り分け)<br/>← A-11 / A-11-α の対象
-    Hub->>User: ログイン画面表示
-    User->>Hub: IdP 選択 or メール入力
-    end
-
-    Hub->>IdP: フェデーション要求 (OIDC/SAML)
-
-    rect rgb(227, 242, 253)
-    Note over IdP: ❷ 顧客 IdP のログイン画面<br/>(Entra/Okta 等のドメイン)<br/>← 本基盤管轄外、顧客 IT 部門が管理
-    IdP->>User: ID/PW + MFA 入力画面
-    User->>IdP: 認証情報入力
-    IdP->>IdP: 認証成功 + assertion 生成
-    end
-
-    IdP->>Hub: assertion + リダイレクト
-
-    rect rgb(255, 243, 224)
-    Note over Hub: ❸ 必要なら補完画面<br/>(同意 / プロファイル補完 / アカウントリンク確認)<br/>← A-11 / A-11-α の対象
-    Hub->>User: 補完画面 (必要時のみ)
-    User->>Hub: 確認・入力
-    end
-
-    Hub->>App: 認証完了 (JWT 発行)
-    App->>User: アプリ画面表示
-```
-
-###### ローカルユーザー（P-2 / P-4 等）の画面遷移
-
-```mermaid
-sequenceDiagram
-    participant User as 👤 ユーザー
-    participant App as 📱 アプリ
-    participant Hub as 🏢 本基盤<br/>(auth.example.com)
-
-    User->>App: アクセス
-    App->>Hub: GET /authorize?client_id=expense-app
-
-    rect rgb(255, 243, 224)
-    Note over Hub: ❹ 本基盤の ID/PW 入力フォーム<br/>(+ 外部 IdP ボタンと統合された UI)<br/>← A-11 / A-11-α の対象
-    Hub->>User: ログイン画面 (ID/PW フォーム + 外部 IdP ボタン)
-    User->>Hub: ID/PW 入力 + MFA
-    end
-
-    Hub->>App: 認証完了 (JWT 発行)
-```
-
-###### 画面別の責務分担マトリクス
-
-| 画面 | 物理的所在 | 誰が管理 | A-11 / A-11-α | 主な利用者カテゴリ |
-|---|---|---|:---:|---|
-| **❶ 本基盤の IdP セレクター画面** | 本基盤（`auth.example.com`）| 本基盤チーム | ✅ **対象** | P-3 フェデユーザー |
-| **❷ 顧客 IdP のログイン画面** | **顧客 IdP**（`login.microsoftonline.com` 等） | **顧客 IT 部門**（Entra Admin Center 等） | ❌ **対象外** | P-3 フェデユーザー |
-| **❸ 本基盤の補完画面**（同意 / プロファイル補完 / アカウントリンク確認） | 本基盤 | 本基盤チーム | ✅ 対象 | P-3 + 初回ログイン時 |
-| **❹ 本基盤の ID/PW 入力フォーム**（外部 IdP ボタンと統合 UI） | 本基盤 | 本基盤チーム | ✅ 対象 | P-2 / P-4 / P-5 ローカルユーザー |
-
-→ **❶❸❹ は本基盤側ドメインで表示** = A-11 / A-11-α でカスタマイズ可能。**❷ は顧客 IdP のドメイン** = 本基盤からは触れず、顧客 IT 部門の責務（Entra ID の場合 "Company Branding" 機能で設定）。
-
-###### Managed Login / Theme の重要な特性：1 つの統合画面
-
-Cognito Managed Login や Keycloak Theme の **ログイン画面は「フェデ専用」「ローカル専用」と分かれているわけではなく、両方が同じ画面上に統合される**:
-
-```
-┌──────────────────────────────────┐
-│  本基盤のログイン画面（共通 UI）       │
-│                                  │
-│  ┌──────────────────────────┐    │
-│  │  📧 メールアドレス           │    │  ← ローカル用フィールド
-│  │  🔒 パスワード              │    │     (P-4/P-2 が利用)
-│  │  [ ログイン ]               │    │
-│  └──────────────────────────┘    │
-│                                  │
-│  ─────  または  ─────          │
-│                                  │
-│  [ Microsoft Entra でログイン ]   │  ← フェデ用ボタン
-│  [ Okta でログイン ]              │     (P-3 が利用)
-│  [ HENNGE でログイン ]            │
-└──────────────────────────────────┘
-```
-
-→ **A-11 / A-11-α のカスタマイズは「統合 UI 全体」に適用される**。フェデ専用 / ローカル専用に分けて別 Branding を当てることは標準機能では不可（App Client 単位で分けるのは可能 = 後述）。
-
-###### App Client 単位での「誰が見るか」の制御
-
-App Client（= アプリ）ごとに **「ローカル ID/PW 入力欄を非表示にして外部 IdP ボタンだけ表示する」** という設定が可能:
-
-| App Client | 設定 | 表示される UI | 採用シーン |
-|---|---|---|---|
-| 経費精算アプリ（**P-3 のみ受け入れ、フェデ強制**）| 外部 IdP のみ許可 | 外部 IdP ボタンのみ | γ シナリオ（顧客従業員は IdP 強制）|
-| 管理画面アプリ（**P-1 / P-2 / P-5 用**）| ローカル Pool のみ許可 | ID/PW フォームのみ | 管理者専用（フェデ不要）|
-| 汎用アプリ（**P-3 + P-4 両方**）| 両方許可 | 統合 UI（両方表示） | β シナリオ（IdP あり/なし混在）|
-
-→ **A-5-2 / A-5-3 で利用者カテゴリ・採用シナリオが決まれば、App Client 単位の表示を自動的に最適化可能**。
-
-##### フェデユーザーのログイン操作 UX（HRD / セレクター / 組織固有 URL）
-
-フェデユーザーが「**❶ 本基盤の画面で IdP をどう選ぶか**」には 3 つの UX パターンがあります。これは B-601 で確認している論点ですが、本サブセクションで包括的に整理します。
-
-###### 3 つの UX パターン
-
-| パターン | ❶ の画面 | フロー | 業界実例 |
-|---|---|---|---|
-| **A. Home Realm Discovery (HRD)** | メール入力フィールドのみ表示 | ユーザーがメール入力 → 本基盤がドメインから IdP 自動判定 → 顧客 IdP にリダイレクト | Microsoft 365 / Slack |
-| **B. IdP セレクター** | 各 IdP のボタンを並べる | ユーザーがボタン押下 → 顧客 IdP にリダイレクト | GitHub / GitLab |
-| **C. 組織固有 URL** | URL 自体に組織が紐付く（`acme.app.example.com`） | URL アクセスで組織確定 → 顧客 IdP に直接リダイレクト | Slack（チーム別 URL）/ Notion |
-
-###### パターン比較
-
-```mermaid
-flowchart TB
-    subgraph A[A. HRD]
-        A1["📧 メール入力"]
-        A2["ドメインから IdP 自動判定"]
-        A3["顧客 IdP へリダイレクト"]
-        A1 --> A2 --> A3
-    end
-
-    subgraph B[B. セレクター]
-        B1["IdP ボタン一覧表示"]
-        B2["ユーザーが選択"]
-        B3["顧客 IdP へリダイレクト"]
-        B1 --> B2 --> B3
-    end
-
-    subgraph C[C. 組織固有 URL]
-        C1["acme.app.example.com<br/>にアクセス"]
-        C2["組織 = Acme と確定"]
-        C3["顧客 IdP へ直接リダイレクト"]
-        C1 --> C2 --> C3
-    end
-
-    style A fill:#e8f5e9
-    style B fill:#fff3e0
-    style C fill:#e3f2fd
-```
-
-###### 各パターンの長所・短所
-
-| 観点 | A. HRD | B. セレクター | C. 組織固有 URL |
-|---|:---:|:---:|:---:|
-| **UX シンプルさ** | ◎ メール入力 1 回 | ○ ボタン選択 | ◎ URL でほぼ確定 |
-| **顧客追加リードタイム** | △ ドメイン → IdP マッピング設定要 | ◎ 新 IdP ボタン追加のみ | ⚠ DNS / 証明書設定要 |
-| **顧客間の混同リスク** | ❌ 他社の IdP ボタンも見える可能性 | ❌ 他社の IdP ボタンが見える | ✅ URL で組織完全分離 |
-| **ブランディング** | △ 本基盤共通 | △ 本基盤共通 | ✅ 組織別カスタムページ可（パターン C / B 連動）|
-| **マルチテナント所属時の UX** | ✅ 入力メールで自動判定 | ⚠ ユーザーが手動選択 | ⚠ 別 URL 訪問が必要 |
-| **業界主流** | **Microsoft 365 / Slack** | GitHub / GitLab | Slack Workspace / Notion |
-
-→ **業界推奨は A (HRD)**。本基盤の[§FR-2.3.3 ベースライン](#fr-233-ログイン画面で-idp-選択-ux--home-realm-discoveryfr-fed-013) でも HRD を推奨。
-
-###### 採用シナリオ（A-5-3）との関係
-
-| 採用シナリオ | フェデユーザー UX 推奨 | 理由 |
-|---|---|---|
-| **α 全カテゴリ受け入れ** | A. HRD + 統合 UI | ローカルもフェデも同居、メールで両方判定 |
-| **β 管理者 + IdP なし顧客** | A. HRD + 統合 UI | フェデユーザー → HRD で IdP 自動判定、IdP なし顧客 → ローカル ID/PW 入力 |
-| **γ 管理者層のみ（推奨）** | **A. HRD（フェデユーザー専用）** | 顧客従業員は全員フェデ、HRD で自動振り分け |
-| **δ Break Glass のみ** | A. HRD or B. セレクター | フェデユーザーが大多数、ローカルは緊急用のみ |
-
-→ **A-5-3 でシナリオが決まれば、フェデユーザーの UX パターン推奨が自動的に絞れる**。
-
-###### 顧客 IdP 画面（❷）への影響
-
-「フェデユーザーのログイン画面をカスタマイズしたい」という顧客要望に対する **責務分担の明示が重要**:
-
-| 顧客要望 | 本基盤で対応可能? | 必要な対応 |
-|---|:---:|---|
-| 本基盤の IdP セレクター画面（❶）に自社ロゴ | ✅ | A-11-α = Yes 部分（パターン B、Cognito 20 顧客上限）|
-| 「Acme でログイン」ボタン（❶）のスタイル | ✅ | A-11-α |
-| 本基盤の補完画面（❸）の文言・配置 | ⚠ L4-L8 制約 | Cognito Managed Login は文言変更不可、Keycloak Theme なら可能 |
-| **顧客 Entra ID のログイン画面（❷）のデザイン** | **❌ 本基盤管轄外** | **顧客 IT 部門に Entra Admin Center > Company Branding での設定を依頼** |
-| 「顧客 IdP に飛ばす前にこちらで MFA も要求」 | ✅ | [§FR-3.3 ステップアップ MFA](03-mfa.md) + ACR 制御で実装可 |
-
-→ **顧客が「Entra のログイン画面も変えたい」場合は、本基盤の責務外であることを契約・SOW 段階で明示**する必要があります。
-
-##### 「2 回ログイン」の正体と対策（顧客の誤解への対応）
-
-> **顧客からの典型質問**: 「フェデなのに 2 回ログインさせるのか?」「SSO じゃないのか?」  
-> **回答の本質**: 多くのケースで **操作は 2 段階だが認証は 1 回**（業界標準）。ただし MFA 重複や信頼レベル設計次第で **本当に 2 回認証する**ケースもあり、これは設計で回避可能。
-
-###### 「2 回ログイン」と見える 3 種類の現象
-
-| 見え方 | 本当のところ | 評価 |
-|---|---|:---:|
-| **❶ メール入力 + ❷ IdP ログイン**（HRD パターン）| 実は **❶ は認証ではなく IdP 振り分け識別子の入力**。認証は ❷ の 1 回のみ | ✅ 業界標準・問題なし |
-| **本基盤の IdP セレクター + IdP ログイン**（セレクターパターン）| ❶ はクリック 1 つで認証ではない | ✅ 業界標準・問題なし |
-| **顧客 IdP で MFA + 本基盤で MFA**（MFA 重複）| **本当に 2 回認証している**。MFA 重複回避ができていない | ❌ **アンチパターン**、修正必要 |
-
-→ **「2 回ログイン」に見える多くのケースは実は 1 回認証**で、業界標準の挙動。ただし「**MFA を 2 回求められる**」は本物の問題で、[§FR-2.2.3 MFA 重複回避](#fr-223-mfa-重複回避--fr-fed-012) で扱う領域。
-
-###### 「ログイン」の定義の整理
-
-OAuth/OIDC 業界で「ログイン」と呼ばれる操作には 2 レベル:
-
-| 用語 | 意味 | 操作 |
-|---|---|---|
-| **狭義のログイン（認証）** | パスワード / MFA で本人確認 | ID/PW + MFA 入力 |
-| **広義のログイン（認証フロー）** | 認証完了までの一連のステップ | IdP 選択 + 認証 + 同意 |
-
-→ **「2 回ログイン」と顧客が言う場合、「狭義のログイン」を 2 回求められているか確認**することが重要。
-
-###### フェデユーザーの「2 段階」の正体（HRD パターン）
-
-```mermaid
-sequenceDiagram
-    participant User as 👤 田中さん
-    participant Hub as 🏢 本基盤
-    participant IdP as 🏢 顧客 Entra ID
-
-    rect rgb(255, 250, 230)
-    Note over User,Hub: ❶ IdP 振り分け（認証ではない）
-    User->>Hub: メール入力<br/>(tanaka@acme.com)
-    Hub->>Hub: ドメイン → IdP 自動判定<br/>("acme.com" → Acme Entra)
-    end
-
-    rect rgb(255, 230, 230)
-    Note over User,IdP: ❷ 本物の認証（ID/PW + MFA）
-    Hub->>IdP: フェデ要求
-    IdP->>User: ID/PW 入力画面
-    User->>IdP: パスワード + MFA
-    IdP->>Hub: 認証成功 assertion
-    end
-
-    Hub->>User: アプリへリダイレクト
-```
-
-→ **操作 2 段階だが、狭義のログインは ❷ で 1 回のみ**。
-
-###### SSO の本当の意味：「2 回目以降のログイン不要」
-
-「Single Sign-On」の本質は **「初回の認証は必要、2 回目以降は再認証不要」** という性質:
-
-```
-[初回ログイン（フェデの場合）]
-ユーザー → ❶ IdP 振り分け → ❷ 顧客 IdP で認証 → アプリ A 利用可
-   ↓ ここで顧客 IdP と本基盤の両方にセッション Cookie 確立
-
-[2 回目以降（同じブラウザ）]
-ユーザー → アプリ B にアクセス
-        → ❶ も ❷ もスキップ（既存セッションで認証成立）
-        → アプリ B 即時利用可  ← これが SSO の効果
-```
-
-→ **SSO の効果は「2 回目以降の体験」で測る**。初回の段階数で評価するものではない。
-
-###### 「本当に 2 回認証させる」アンチパターン 4 種
-
-| パターン | 原因 | 対策 | 関連章 |
-|---|---|---|---|
-| **パターン 1: MFA 重複**（最多）| 顧客 IdP で MFA 済なのに本基盤側でも MFA 要求 | `amr` クレーム信頼設計 | [§FR-2.2.3](#fr-223-mfa-重複回避--fr-fed-012) |
-| **パターン 2: 信頼レベル L4 不信任** | 本基盤側で `prompt=login` 強制 | L1〜L3 採用、L4 は規制業種のみ | [§FR-4.2](04-sso.md) |
-| **パターン 3: 古い `auth_time` の `max_age` 制約** | 高セキュ操作時に再認証要求 | 重要操作のみで使用、`max_age` 値を慎重に | [§FR-4.2](04-sso.md) |
-| **パターン 4: SCIM / JIT 競合の補完画面** | 初回ログイン時のアカウントリンク確認 | 認証ではないが操作が増える | [§FR-2.2.1.A](#fr-221a-同一テナント内ユーザー重複の扱い) |
-
-###### 「2 回ログイン」整理表
-
-| 状況 | ❶ 操作 | ❷ 操作 | 認証回数 | 問題? | 対策 |
-|---|---|---|:---:|:---:|---|
-| HRD 標準 | メール入力 | ID/PW + MFA | **1 回** | ❌ なし | 業界標準、説明だけ |
-| セレクター標準 | IdP ボタンクリック | ID/PW + MFA | **1 回** | ❌ なし | 同上 |
-| 組織固有 URL | (URL アクセスのみ) | ID/PW + MFA | **1 回** | ❌ なし | 最短 UX |
-| MFA 重複 | ID/PW + MFA | ID/PW + MFA | **2 回** | ✅ 問題 | `amr` 信頼で重複回避 |
-| L4 不信任 | ID/PW + MFA | ID/PW + MFA | **2 回** | ⚠ 意図的 | 規制業種で許容 |
-| `max_age` 強制 | 過去ログイン | ID/PW + MFA | 2 回（時間差）| ⚠ 意図的 | 高セキュ操作のみで許容 |
-| 同一基盤 SSO（2 回目）| (スキップ) | (スキップ) | **0 回** | ✅ SSO 効果 | これが SSO の真価 |
-
-###### 業界実例（フェデ 2 段階は標準）
-
-| サービス | 初回ログイン操作 | 認証回数 |
-|---|---|:---:|
-| **Microsoft 365** | メール入力 → Entra ID で ID/PW + MFA → サービス | 1 回（メール入力は識別子）|
-| **Slack** | Workspace 名入力 → SSO ボタン → IdP → Slack | 1 回 |
-| **Notion** | メール入力 → SSO 自動振り分け → IdP → Notion | 1 回 |
-| **Salesforce** | My Domain URL → SSO ボタン → IdP → Salesforce | 1 回 |
-| **GitHub Enterprise SSO** | IdP ボタン → IdP → GitHub | 1 回 |
-
-→ **業界全体で「フェデの初回は 2 段階操作、認証は 1 回」が標準**。ユーザーも慣れている。
-
-###### 顧客対話用の説明テンプレート
-
-```
-顧客「フェデなのに 2 回ログインさせるのか?」
-
-回答テンプレート:
-「実は『2 段階操作』に見えますが、認証（パスワード入力）自体は 1 回だけです。
-
-  ❶ 本基盤の画面でメール入力（または IdP ボタン選択）
-     → これは『認証』ではなく『どの会社の IdP に振り分けるか』を
-       決めるための識別子入力です。パスワードは入れません。
-
-  ❷ 御社の Entra ID で ID/パスワード + MFA 入力
-     → これが本物の『認証』です。
-
-これは Microsoft 365 / Slack / Notion / Salesforce 等、業界の標準的な
-SaaS で全て採用されている挙動で、ユーザーも慣れている操作です。
-
-なお、SSO の本当の効果は『2 回目以降のログイン操作が不要になる』点に
-あります。初回認証後、同じブラウザで別アプリにアクセスすると、
-Entra のセッションと本基盤のセッションが既に有効なため、
-完全にスキップされて即時利用可能になります。
-
-もし『❶❷ の両方でパスワード入力を求められている』状況であれば、
-それは MFA 重複や信頼レベル設定の問題です。本基盤の §FR-2.2.3 / §FR-4.2 で
-明示的に MFA 重複回避を実装し、業界標準の体験を保証します。」
-```
-
-###### 画面数を 1 つに減らす設計選択肢
-
-「2 段階操作は業界標準だが、それでも 1 画面に減らしたい」というニーズへの対応策。**いずれもトレードオフあり**:
-
-| 選択肢 | 効果 | トレードオフ | 採用例 |
-|---|---|---|---|
-| **A. 組織固有 URL**（パターン C 採用）| ❶ スキップ → **1 画面**（IdP ログインのみ）| 顧客ごとに URL を周知する必要 | Slack（`acme.slack.com`）/ Figma |
-| **B. IdP-Initiated SSO**（顧客 IdP ポータル起点）| ❶ 完全スキップ + ❷ も既存セッションで省略可 → **0〜1 画面** | 顧客が IdP ポータル経由でアプリを開く運用動線が必要 | Office 365 ポータルから SaaS にジャンプ |
-| **C. 顧客 IdP の SSO セッション持ち越し**（2 回目以降）| ❷ が無画面自動完了 → 業務時間中の 2 回目以降は **❶ メール入力 → 即アプリ** | 業務開始時の 1 回目は通常通り | Microsoft 365 内の他 SaaS 全般 |
-| **D. HRD クッキー保存**（前回入力メアドの記憶）| ❶ をワンクリック自動進行 → 体感 **1 画面** | プライベートブラウジング / 別端末では効かない、プライバシー要件と緊張 | 一部の B2B SaaS |
-| **E. IdP 1 社固定**（マルチテナント不要設計）| ❶ 不要 → **1 画面** | マルチテナント要件と相反、γ シナリオ端でのみ可能 | 内製業務システム / 単一顧客向け SaaS |
-
-```mermaid
-flowchart LR
-    subgraph Std["標準（A=HRD or B=セレクター）"]
-        S1["❶ メアド / IdP 選択"] --> S2["❷ IdP ログイン"] --> S3["アプリ"]
-    end
-    subgraph Org["A. 組織固有 URL（パターン C）"]
-        O1["organization.app に直接アクセス<br/>(❶ スキップ)"] --> O2["❷ IdP ログイン"] --> O3["アプリ"]
-    end
-    subgraph IdPInit["B. IdP-Initiated SSO"]
-        I1["顧客 IdP ポータル<br/>(Office 365 等) で<br/>アプリアイコンクリック"] --> I3["アプリ（既存 SSO セッションで認証完了）"]
-    end
-
-    style Std fill:#fff3e0
-    style Org fill:#e8f5e9
-    style IdPInit fill:#e8f5e9
-```
-
-→ **推奨**: 業界標準の 2 段階操作（A. HRD）+ SSO セッション持ち越し（C）で「初回 2 段階、2 回目以降 0〜1 段階」が現実的。1 画面強制が要件なら組織固有 URL（パターン C 採用）または IdP-Initiated SSO の運用動線を整備。
-
-###### 既存ヒアリング項目との関係
-
-| ヒアリング項目 | 関係 |
-|---|---|
-| [B-506 外部 IdP MFA 信頼度](../../hearing-checklist.md) | 「全面信頼」採用なら MFA 重複なし = 1 回のみ |
-| [B-507 信頼する `amr` / AuthnContext 値](../../hearing-checklist.md) | どの値を信頼するか決定 |
-| [B-801-1 信頼レベル（L1-L4）](../../hearing-checklist.md) | L1 完全信頼 = 業界標準、L4 不信任 = 意図的 2 回認証 |
-| [B-802-2 `max_age` 制約](../../hearing-checklist.md) | 古い auth_time 強制再認証 = 意図的 2 回認証 |
-| [B-601 IdP 選択 UX](../../hearing-checklist.md) | HRD / セレクター / 組織固有 URL の UX 差 |
-| [C-216 ステップアップ MFA](../../hearing-checklist.md) | 重要操作時のみ追加 MFA = 意図的だが UX 配慮 |
-
-→ **「2 回ログイン問題」は既存項目で十分カバー**。問題は「**業界標準の 2 段階操作**」と「**MFA 重複・不信任設計**」を顧客対話で混同しないこと。
-
-##### 認証基盤側でテナント別ブランディングする方法と制約
-
-**Cognito Managed Login Branding（Essentials+）**:
-
-| 機能 | 内容 | 制約 |
-|---|---|---|
-| Branding Styles | ロゴ / 配色 / フォント | **20 / User Pool（Hard limit）**（[§5.A.1](../../../common/platform-architecture-patterns.md)）|
-| App Client 別 Branding | App Client 単位で別 Style 適用可 | App Client 数の制約に縛られる |
-| 動的差替（query パラメータ） | ❌ 標準非対応 | カスタム実装で代替 |
-
-→ **顧客 20 社まで個別ブランディング可、それ以上は実質不可能**。
-
-**Keycloak Themes**:
-
-| 機能 | 内容 | 制約 |
-|---|---|---|
-| Realm Theme | Realm 単位で別 Theme | Realm 分離が必要（[§FR-2.3.A](#fr-23a-アーキテクチャ判断単一-poolrealm--複数-idp-を採用) 単一 Realm + 複数 IdP と矛盾）|
-| Client Theme Override | Client 単位で一部上書き | 限定的（Login Theme は Realm 設定が支配的）|
-| カスタム Theme（FreeMarker）| 動的にロゴ/色変更可（クエリ / Client 属性ベース）| 実装コスト高、Theme コードのメンテナンス必要 |
-
-##### 2 軸 × Yes/No でパターンが自動判定される構造
-
-ブランディングカスタマイズは **2 つの独立した軸** の組合せで考えると整理しやすい。両者は理論上独立しており、それぞれ Yes/No で答えればパターンが自動的に決まる。
-
-| 軸 | 質問 | 対応するカスタマイズ単位 | ヒアリング ID |
-|---|---|---|:---:|
-| **軸 1: アプリ別カスタマイズ** | アプリごとに認証基盤側のログイン画面を変えるか?（経費精算 vs 決済管理 等）| 認証基盤側で `client_id` ベースの Branding | [A-11](../../hearing-checklist.md) |
-| **軸 2: 顧客別カスタマイズ** | 顧客企業ごとに認証基盤側のログイン画面を変えるか?（Acme vs Globex 等）| 認証基盤側で `tenant_id` ベースの Branding | [A-11-α](../../hearing-checklist.md) |
-
-###### 2 軸の組合せから自動判定されるパターン
+##### 結論サマリ：2 軸 × Yes/No で 4 パターン自動判定
 
 | 軸 1（アプリ別）| 軸 2（顧客別）| 結果パターン | 採用シーン |
 |:---:|:---:|:---:|---|
-| ❌ No | ❌ No | **パターン A** | アプリ画面のみカスタマイズ（最シンプル、Slack/Notion 型）|
-| ✅ Yes | ❌ No | **パターン A'** | 経費精算 vs 決済等でアプリ間差別化（Auth0/Entra/Okta 型、業界主流）|
-| ❌ No | ✅ Yes 部分 | **パターン B** | 顧客別ブランディング（Cognito 20 上限、規制業種）|
-| ✅ Yes | ✅ Yes | A' × B 複合 | アプリ × 顧客の組合せ（Cognito ほぼ不可、Keycloak 必須）|
-| - | ✅ Yes 完全分離 | **パターン C** | Pool/Realm 分離、SSO 喪失リスクあり、Enterprise プラン |
+| ❌ No | ❌ No | **パターン A** | アプリ画面のみ（Slack/Notion 型）|
+| ✅ Yes | ❌ No | **パターン A'** | アプリ間差別化（**業界主流**、Auth0/Entra/Okta 型）|
+| ❌ No | ✅ Yes 部分 | **パターン B** | 顧客別（Cognito 20 上限、規制業種）|
+| - | ✅ Yes 完全分離 | **パターン C** | Pool/Realm 分離、Enterprise プラン |
 
-→ **顧客は軸 1 と軸 2 の Yes/No を独立に判断するだけでよい**。組合せから本基盤側がパターンを自動マッピング。
-
-###### ヒアリング推奨順序
-
-1. **A-11**（軸 1: アプリ別）を Yes/No で確認
-2. **A-11-α**（軸 2: 顧客別）を No / Yes 部分 / Yes 完全分離 のいずれかで確認
-3. 上表で自動判定されたパターン（A / A' / B / C）を顧客に提示・合意取得
-4. **A-11-2**（アプリ側実装責務）: 軸 1 = No または 軸 2 = No の場合に確認（アプリ側で顧客別差替する責務）
-5. **A-11-3**（カスタマイズレベル L1-L8）: 軸 1 = Yes または 軸 2 = Yes の場合に確認（認証基盤側カスタマイズの深度）
-
-→ 2 軸の合意取得により、**[B-612](../../hearing-checklist.md) / [B-703-3](../../hearing-checklist.md) / [B-208](../../hearing-checklist.md) / [B-703-1](../../hearing-checklist.md) の 4 項目が自動的に決まる**。
-
-##### 現実的な 4 つの設計パターン（2 軸の組合せ詳細）
-
-> 詳細な技術根拠・公式ソース引用は [branding-strategy-evidence.md](../../../common/branding-strategy-evidence.md) 参照。
-
-**パターン A: 認証基盤は最小ブランディング、アプリ側で完全カスタマイズ**（**シンプル・業界標準**）
-
-```
-[認証基盤側]
-- ロゴ: 本基盤の標準ロゴ / 「Powered by 本基盤」表記
-- 配色: ニュートラル（ダーク / ライト切替程度）
-- 文言: 多言語対応のみ
-
-[アプリ側]
-- ランディング / ログイン後 / ログアウト後: tenant_id を JWT or query で解釈、完全カスタマイズ
-```
-
-| 観点 | 評価 |
-|---|---|
-| Cognito で実装可能 | ✅ 1 Theme で完結 |
-| Keycloak で実装可能 | ✅ 1 Realm + 標準 Theme |
-| URL 肥大化 | なし（共通 URL）|
-| 業界実例 | **Slack / Notion / Microsoft 365 標準** |
-
-**パターン A': アプリ単位 Branding（認証基盤側） + テナント別差替（アプリ側）**（**新規・業界主流**）
-
-```
-[認証基盤側]
-- アプリ単位（client_id ベース）に Branding Style を割当
-  - 経費精算アプリ → 専用ロゴ・配色のログイン画面
-  - 決済管理アプリ → 別の専用ロゴ・配色のログイン画面
-- 認証画面で「どのアプリにログインするか」を視覚的に明示
-
-[アプリ側]
-- ランディング / ログイン後 / ログアウト後: tenant_id を JWT or query で解釈、完全カスタマイズ
-- パターン A と同じ責務（顧客別差替はアプリ側）
-```
-
-**ポイント**: **「ログイン画面はアプリ単位」「アプリ画面は顧客単位」の二重軸**。認証前は JWT がまだないため、認証基盤側は **`client_id` パラメータ**でアプリを識別して Branding 切替。認証後はアプリ側で **JWT `tenant_id` クレーム**で顧客識別。
-
-| 観点 | 評価 |
-|---|---|
-| Cognito で実装可能 | ✅ App Client 単位 Managed Login Branding（**20 Style 上限**）、Essentials+ ティア必須 |
-| Keycloak で実装可能 | ✅ **Client 単位 Login Theme Override**（制限なし）、Theme Selector SPI で高度な動的選択も可 |
-| 必要ティア | Cognito: **Essentials または Plus** / Keycloak: 制約なし |
-| URL 肥大化 | なし（アプリ単位なので 5-10 / アプリで完結）|
-| 対象アプリ規模 | Cognito: 20 アプリまで / Keycloak: 制限なし |
-| 業界実例 | **Auth0 Universal Login / Microsoft Entra App Registration / Okta Brands / Cognito Managed Login Branding** |
-| 採用シーン | アプリ間で全く異なるブランド体験を提供したい（経費精算 / 決済 / 人事 等）|
-
-###### パターン A' のカスタマイズ範囲の限界（重要）
-
-**「ロゴ・配色の差替」は両プラットフォームで可能**ですが、**配置・要素並び順・文言変更などの DOM 変更**には大きな制約があります。詳細は [branding-strategy-evidence.md §7.A カスタマイズレベル別マトリクス](../../../common/branding-strategy-evidence.md) を参照。
-
-| Lv | 内容 | Cognito Managed Login | Keycloak Theme |
-|:---:|---|:---:|:---:|
-| L1-L3 | 見た目・スペーシング・基本配置（事前選択肢） | ✅ | ✅ |
-| L4 | テキスト・文言変更 | **❌**（多言語のみ） | ✅ |
-| L5 | 要素追加・削除 | **❌** | ✅ |
-| L6 | 要素並び順変更 | **❌** | ✅ |
-| L7-L8 | HTML 構造完全自由 / カスタム JS | **❌** | ✅ |
-
-→ **L4-L8 が必要な場合の選択肢**:
-1. **Keycloak 採用**（パターン A' のまま、Theme で完全自由、SSO 維持）
-2. **Cognito Custom UI（SDK 経由）に切り替え**（自前ホスティング）
-3. **そのアプリ単独でアプリ側カスタム UI に寄せる**（共通基盤の運用負荷回避、ただし SSO 喪失のトレードオフ。詳細は [branding-strategy-evidence.md §7.B](../../../common/branding-strategy-evidence.md)）
-
-###### パターン A' の動作原理：URL 1 つで UI を振り分ける仕組み
-
-「Callback URL もログイン URL も 1 つなのに、どうやってアプリごとに違う画面を出しているのか?」という疑問への解説。
-
-**結論**: OAuth 標準の **`client_id` クエリパラメータで Client を識別**し、Client 設定から Branding / Theme を解決する仕組み。Cognito / Keycloak 共通の動作。
-
-```mermaid
-sequenceDiagram
-    participant Browser as 👤 ブラウザ
-    participant Hub as 🏢 共通認証基盤
-    participant Config as Client 設定
-    participant Theme as Theme/Branding<br/>リソース
-
-    Note over Browser: アプリ A（経費精算）からの遷移
-    Browser->>Hub: GET /auth?client_id=expense-app&...
-    Hub->>Config: client_id "expense-app" の設定取得
-    Config-->>Hub: Branding Style A / Theme A の参照
-    Hub->>Theme: Branding A / Theme A 読込
-    Theme-->>Hub: 経費精算用 UI リソース
-    Hub-->>Browser: HTML レスポンス<br/>(経費精算ブランド画面)
-
-    Note over Browser: アプリ B（決済管理）からの遷移
-    Browser->>Hub: GET /auth?client_id=payment-app&...
-    Hub->>Config: client_id "payment-app" の設定取得
-    Config-->>Hub: Branding Style B / Theme B の参照
-    Hub->>Theme: Branding B / Theme B 読込
-    Theme-->>Hub: 決済管理用 UI リソース
-    Hub-->>Browser: HTML レスポンス<br/>(決済管理ブランド画面)
-```
-
-**ポイント**:
-
-| 観点 | 内容 |
-|---|---|
-| **URL** | 同じ（`/auth` 等の認証エンドポイント） |
-| **Callback URL** | Client 設定の `redirectUris` で管理、複数アプリで共通 1 つでも OK |
-| **識別キー** | `client_id` クエリパラメータ（OAuth 2.0 標準仕様） |
-| **振り分けロジック** | 共通基盤が `client_id` から Client 設定を引き、紐づく Branding Style（Cognito）/ Theme（Keycloak）でレンダリング |
-
-**Cognito vs Keycloak の本質的差**:
-
-| 観点 | Cognito Managed Login | Keycloak Theme |
-|---|---|---|
-| **管理単位** | Branding Style（**JSON 設定**） | Theme（**ファイル群**） |
-| **HTML 編集** | ❌ 不可（設定の組み合わせのみ） | ✅ 完全自由（`.ftl` テンプレート）|
-| **継承機構** | ❌ なし | ✅ `parent` 指定で base / keycloak から継承可、差分のみ書く |
-| **管理単位の上限** | 20 Style / Pool（Hard）| 制限なし |
-| **デプロイ** | API 経由（`CreateManagedLoginBranding`）| ファイル配置（Git で管理可）|
-| **動的選択** | App Client 単位の静的割当 | Theme Selector SPI で動的選択可 |
-
-→ **「変更容易」の本質**: Keycloak は **ファイルベース + 階層継承** で、エンジニアが慣れた Git / PR フローで管理可能。Cognito Branding Editor の独自設定形式と異なり、HTML / CSS を直接編集できる。詳細は [branding-strategy-evidence.md §7.C](../../../common/branding-strategy-evidence.md) を参照。
-
-**パターン B: テナント別ロゴのみ動的注入（認証基盤側で顧客識別）**
-
-| 観点 | 評価 |
-|---|---|
-| Cognito | △ 20 **顧客**上限（Branding Style 20 を顧客に割当）|
-| Keycloak | ✅ カスタム Theme + Theme Selector SPI で動的差替 |
-| 採用シーン | ログイン画面にも**顧客**ブランドを出したい中規模顧客（規制業種等）|
-
-**パターン C: 完全テナント別ブランディング**（コスト高、Enterprise プラン）
-
-| 観点 | 評価 |
-|---|---|
-| Cognito | ❌ 21 社目から不可（Pool 分離が必要）|
-| Keycloak | ⚠ Realm 分離が必須（[§C-1.4](../common/01-architecture.md#c-14-物理分離レベルと-broker-パターンの関係) L3 ハイブリッドへ移行）|
-| 採用シーン | 大口顧客 / Enterprise プラン専用 |
-
-##### 4 パターン比較表（決定版）
+##### 4 パターン比較（決定版）
 
 | 軸 | A | A' | B | C |
 |---|:---:|:---:|:---:|:---:|
-| **認証基盤側カスタマイズ単位** | ❌ 共通 | **✅ アプリ単位**（client_id）| ✅ テナント単位 | ✅ テナント単位（物理分離）|
-| **アプリ側カスタマイズ** | ✅ テナント単位 | ✅ テナント単位 | ✅ | ✅ |
-| **Cognito 制約** | なし | 20 Branding Style 上限 | 20 顧客上限 | Pool 分離（10,000 Pool 上限）|
-| **Keycloak 制約** | なし | なし | Realm 分離 or Theme | Realm 分離（数千上限）|
-| **必要ティア（Cognito）** | Lite OK | **Essentials+** | Essentials+ | Lite OK |
-| **URL allowlist 数** | 5-10 / アプリ | 5-10 / アプリ | 顧客数 × アプリ数 | 顧客数 × アプリ数 |
-| **対象スケール** | 制限なし | **アプリ 20 個まで** | 顧客 20 社まで | 大口顧客のみ |
-| **業界実例** | Slack / Notion | **Auth0 / Entra / Okta** | 規制業種 | 金融 |
+| 認証基盤側カスタマイズ単位 | ❌ 共通 | **✅ アプリ単位**（client_id）| ✅ テナント単位 | ✅ テナント単位（物理分離）|
+| Cognito 制約 | なし | 20 Branding Style 上限 | 20 顧客上限 | Pool 分離（10,000 Pool）|
+| Keycloak 制約 | なし | なし | Realm 分離 or Theme | Realm 分離（数千）|
+| 必要ティア（Cognito）| Lite OK | **Essentials+** | Essentials+ | Lite OK |
+| 業界実例 | Slack / Notion | **Auth0 / Entra / Okta / Cognito Managed Login** | 規制業種 | 金融 |
 
-##### 業界実例（拡張版）
+##### 主要な裏どり（詳細は ADR-024）
 
-| サービス | 認証基盤側 | アプリ側 | パターン |
-|---|---|---|---|
-| Slack | 共通（Slack ロゴ） | Workspace 別ブランディング | **A** |
-| Notion | 共通 | Workspace 別 | A |
-| **Auth0 Universal Login** | **Application 単位 Branding Page** | 自由 | **A'** |
-| **Microsoft Entra ID** | **App Registration 単位ロゴ** | 各 SaaS でカスタマイズ | **A'** |
-| **Okta** | **Application 単位 + Brands** | 自由 | **A'** |
-| **AWS Cognito Managed Login** | **App Client 単位 Branding Style** | アプリ側 | **A'**（公式機能） |
-| Microsoft 365 | テナント別ロゴ表示可 | 各 SaaS でカスタマイズ | A + 一部 B |
-| AWS Console | 共通（AWS ロゴ） | 一部 IAM Identity Center で組織別 | A |
-
-→ **業界主流は A または A'**。「アプリ単位カスタマイズしたい」要望には A' で十分対応可能。
-
-##### URL 肥大化問題との連動
-
-「**共通 URL + 動的差替**」設計は、[§FR-5.1 ログアウト後リダイレクト](05-logout-session.md) と統合運用すべき:
-
-| 用途 | URL 設計 |
-|---|---|
-| ログインコールバック | `https://app.example.com/callback`（全顧客共通）|
-| ログアウト完了 | `https://app.example.com/post-logout?tenant=acme&reason=...` |
-| エラー | `https://app.example.com/error?code=...&tenant=acme` |
-
-→ **5〜10 URL/アプリで完結**。100 顧客でも Cognito 100 URL Hard limit 内に収まる。
+- **画面の物理的所在**：ID/PW・MFA・パスワードリセット・同意画面は**必ず認証基盤側**。Same-Origin Policy 制約でアプリ JS から触れない
+- **❷ 顧客 IdP の画面は本基盤管轄外**（Entra ID なら Company Branding 機能で顧客 IT 部門が管理）
+- **「2 回ログイン」と見える操作の多くは認証 1 回のみ**（業界標準）。MFA 重複は別問題で [§FR-2.2.3](#fr-223-mfa-重複回避--fr-fed-012) で対応
+- **L4-L8（HTML 構造変更）が必要なら Keycloak 必須**（Cognito Managed Login は L1-L3 のみ）
+- **パターン A' の動作原理**：OAuth `client_id` クエリパラメータで Client 識別 → Branding/Theme 解決
 
 ##### ベースライン
 
 | 項目 | 推奨 |
 |---|---|
 | **デフォルト** | **パターン A**（認証基盤は最小、アプリ側で完全カスタマイズ）|
-| **アプリ間で異なるブランド体験を提供したい場合** | **パターン A'**（認証基盤側でアプリ単位 Branding + アプリ側でテナント別差替、業界主流）|
-| 顧客から「ログイン画面に自社ロゴ」要望 | パターン B（Cognito は 20 顧客まで / Keycloak はカスタム Theme）|
-| 大口顧客の「完全専用」要望 | パターン C（[§C-1.4 L3 ハイブリッド](../common/01-architecture.md#c-14-物理分離レベルと-broker-パターンの関係)、Enterprise プラン化）|
-| `tenant_id` 改竄対策 | JWT クレームで検証（クエリパラメータは表示用のみ、authorize 判定には JWT を使う）|
-| **認証前後の識別子の違い** | **認証前（ログイン画面）= `client_id` パラメータ**（OAuth 標準、A' で利用）/ **認証後（アプリ画面）= JWT クレーム `tenant_id`**（A / A' でアプリ側が利用）|
-| **ヒアリング順序** | **[A-11 ブランディング基本方針](../../hearing-checklist.md)（🔥 最優先）で最初に合意取得**。パターン A / A' 合意により B-612 / B-703-3 / B-208 / B-703-1 の 4 項目が自動決定 |
+| **アプリ間差別化が必要** | **パターン A'**（業界主流、Cognito Branding Style / Keycloak Login Theme Override）|
+| 顧客から「ログイン画面に自社ロゴ」要望 | パターン B（Cognito 20 上限 / Keycloak カスタム Theme）|
+| 大口顧客の「完全専用」要望 | パターン C（Enterprise プラン化）|
+| 認証前識別子 | **`client_id`**（OAuth 標準、A' で利用）|
+| 認証後識別子 | **JWT `tenant_id` クレーム**（A / A' でアプリ側が利用）|
 
 ##### 顧客との対話：要望の翻訳表
 
-| 顧客要望の表現 | 真意の確認 | 対応 |
+| 顧客要望 | 真意の確認 | 対応 |
 |---|---|---|
-| 「テナントごとにブランディング」 | ログイン画面? アプリ内? 両方? | アプリ内のみなら **A** / ログイン画面まで含むなら **B** |
-| 「会社のロゴを出したい」 | どの画面で? どの単位で? | ログイン画面で顧客ロゴ = **B** / アプリ内のみ = **A** / **アプリ単位のロゴ = A'** |
-| **「経費精算と決済で違うブランド体験にしたい」** | アプリ単位の差別化要望 | **パターン A'**（業界主流、Auth0/Entra/Okta 採用）|
-| 「完全に自社専用にしたい」 | 全画面? 目に触れる画面? | 全画面なら **C**（Enterprise プラン）|
-| 「迷わないようにしたい」 | UX 問題（B-601）| **A** + HRD で十分 |
-| 「アプリごとに異なるログイン画面のロゴ」 | システム識別子（client_id）ベースのカスタマイズ要望 | **パターン A'**（Cognito Branding Style / Keycloak Login Theme Override）|
+| 「テナントごとにブランディング」 | ログイン画面? アプリ内? | アプリ内のみ = **A** / ログイン画面まで = **B** |
+| 「経費精算と決済で違うブランド体験にしたい」 | アプリ単位差別化 | **パターン A'** |
+| 「完全に自社専用にしたい」 | 全画面なら | **C**（Enterprise）|
+| 「迷わないようにしたい」 | UX 問題 | **A** + HRD で十分 |
+
+##### 顧客対話用テンプレート（「2 回ログイン」誤解への回答）
+
+```
+顧客「フェデなのに 2 回ログインさせるのか?」
+
+回答:
+「実は『2 段階操作』に見えますが、認証（パスワード入力）自体は 1 回だけです。
+  ❶ 本基盤の画面でメール入力 → 『どの会社の IdP に振り分けるか』を決める識別子入力
+  ❷ 御社の Entra ID で ID/PW + MFA → 本物の認証
+Microsoft 365 / Slack / Notion / Salesforce 等の業界標準 SaaS で全て採用。
+SSO の本当の効果は『2 回目以降の操作不要』。」
+```
+
+##### ヒアリング推奨順序
+
+1. **[A-11](../../hearing-checklist.md)**（軸 1: アプリ別）を Yes/No で確認
+2. **[A-11-α](../../hearing-checklist.md)**（軸 2: 顧客別）を No / Yes 部分 / Yes 完全分離 で確認
+3. 上表で自動判定されたパターン（A / A' / B / C）を顧客に提示・合意取得
+4. **[A-11-2](../../hearing-checklist.md)**（アプリ側実装責務）+ **[A-11-3](../../hearing-checklist.md)**（カスタマイズ L1-L8）で詳細確定
+
+→ 2 軸の合意取得により、**[B-612](../../hearing-checklist.md) / [B-703-3](../../hearing-checklist.md) / [B-208](../../hearing-checklist.md) / [B-703-1](../../hearing-checklist.md) の 4 項目が自動的に決まる**。
+
 
 #### §FR-2.3.3.B フローのカスタマイズ責務（3 領域の整理）
 
@@ -2555,233 +1630,45 @@ flowchart LR
 
 #### §FR-2.3.3.C Keycloak でのハイブリッド構成リファレンス（基本 A + 大口顧客のみ C）
 
-> **このサブ・サブセクションで定めること**: 複数顧客 × 複数サービスのシナリオで「全顧客 A 一律」「全顧客 C 一律」が両方非現実的な場合の **A + C ハイブリッド構成** を Keycloak で実装する標準パターンを提示。 [B-618 採用方針](../../hearing-checklist.md) で「採用」と回答された場合の参照リファレンス。   
-> **主な判断軸**: 想定 C 経由顧客数、CloudFront Function 採用可否、DNS / ACM 管理体制   
-> **§FR-2.3.3 内の位置付け**: §FR-2.3.3 の 3 案併記（A/B/C）が**相互排他ではない**ことを明示し、業界実用解としてのハイブリッド構成を具体化
+> **詳細実装は [common/hrd-implementation-keycloak.md](../../../common/hrd-implementation-keycloak.md) を参照**（realm.json サンプル、CloudFront Function 実装、Stage B 検証推奨項目）
 
-##### なぜハイブリッドが必要か
+> **このサブ・サブセクションで定めること**: A + C ハイブリッド構成（基本 HRD + 大口顧客のみ組織固有 URL）の Keycloak 実装パターン。[B-618 採用方針](../../hearing-checklist.md) で「採用」と回答された場合の参照リファレンス。
+> **主な判断軸**: 想定 C 経由顧客数、CloudFront Function 採用可否、DNS / ACM 管理体制
+> **§FR-2.3.3 内の位置付け**: §FR-2.3.3 の 3 案併記（A/B/C）が相互排他ではないことを明示し、業界実用解としてのハイブリッド構成を具体化
 
-**「全顧客 A 一律」では大口エンタープライズ顧客の「専用感」要求に応えられず、「全顧客 C 一律」では Cognito 4 顧客 Hard Limit / 運用負荷爆発の問題が生じる**。実用解は「基本 A、契約で大口のみ C」のハイブリッド:
+#### なぜハイブリッドが必要か
+
+**「全顧客 A 一律」では大口エンタープライズ顧客の「専用感」要求に応えられず、「全顧客 C 一律」では Cognito 4 顧客 Hard Limit / 運用負荷爆発の問題**。実用解は「基本 A、契約で大口のみ C」のハイブリッド:
 
 | 顧客分類 | UX | 採用理由 |
 |---|---|---|
 | 一般顧客（中小規模 / 標準契約）| **A. HRD** | 1 URL 統一、運用負荷最小、マルチ所属対応容易 |
 | 大口エンタープライズ顧客（契約で個別合意）| **C. 組織固有 URL** | フィッシング耐性 + 顧客別ブランディング + 「専用感」訴求 |
 
-業界実例: Microsoft 365 / Notion / Atlassian Cloud（複数サービス系）は基本 A、Slack / Figma（単一サービス系）は基本 C。**本基盤と同型（複数サービス × 複数顧客）は A 基本 + 大口 C ハイブリッド** が現実的。
+業界実例：Microsoft 365 / Notion / Atlassian Cloud（複数サービス系）は基本 A、Slack / Figma（単一サービス系）は基本 C。**本基盤と同型（複数サービス × 複数顧客）は A 基本 + 大口 C ハイブリッド** が現実的。
 
-##### 推奨構成: Single Realm + Front Proxy で URL を IdP ヒント自動付与
+#### 推奨構成サマリ
 
-```mermaid
-flowchart TB
-    subgraph Users["エンドユーザー"]
-        UA[一般顧客<br/>従業員]
-        UB[大口顧客<br/>従業員]
-    end
+- **Single Realm + Front Proxy**（CloudFront Function or Lambda@Edge）で **URL → `kc_idp_hint` 自動付与**
+- Keycloak Hostname Provider で multi-hostname 許可
+- First Browser Flow に **Identity Provider Redirector + HRD authenticator** を組み込み
+- 全顧客 IdP を 1 Realm に集約（[ADR-017](../../../adr/017-multitenant-l2-single-realm.md) と整合）
 
-    subgraph FrontProxy["Front Proxy 層 (AWS)"]
-        CF[CloudFront / ALB]
-        EF["CloudFront Function<br/>or Lambda@Edge<br/>URL → kc_idp_hint 変換"]
-    end
+詳細な realm.json / CloudFront Function 実装 / Stage B 検証推奨項目（HRD-B1〜B7）は [common/hrd-implementation-keycloak.md](../../../common/hrd-implementation-keycloak.md) を参照。
 
-    subgraph KC["Keycloak Single Realm"]
-        Auth[Hostname Provider<br/>multi-hostname 許可]
-        Flow["First Browser Flow<br/>Identity Provider Redirector<br/>+ HRD authenticator"]
-        IdPList["Identity Providers<br/>(全顧客 IdP を 1 Realm に集約)"]
-        DB[(User DB<br/>tenant_id で分離)]
-    end
+#### Cognito 採用時の制約
 
-    subgraph Customers["顧客 IdP"]
-        I1[Acme Entra ID]
-        I2[Globex Okta]
-        I3[HENNGE One]
-    end
-
-    UA -->|auth.example.com<br/>(共通 URL)| CF
-    UB -->|acme.auth.example.com<br/>(大口専用 URL)| CF
-
-    CF --> EF
-    EF -->|kc_idp_hint=acme-entra<br/>を付与| Auth
-    Auth --> Flow
-    Flow --> IdPList
-    Flow -.HRD ルート<br/>メアド入力.-> IdPList
-    Flow -.組織 URL ルート<br/>kc_idp_hint 即時.-> IdPList
-    IdPList --> I1
-    IdPList --> I2
-    IdPList --> I3
-    Flow --> DB
-
-    style FrontProxy fill:#fff3e0,stroke:#e65100
-    style KC fill:#e8f5e9,stroke:#2e7d32
-    style Customers fill:#e3f2fd,stroke:#1565c0
-```
-
-→ **同じ Single Realm を維持しつつ、エントリ URL の違いで A（HRD）/ C（組織固有 URL）の体験差を作る**。Realm を分けないので、ユーザー管理・SCIM・属性正規化・SSO セッションは統一。
-
-##### 3 つの構成要素
-
-###### ① Front Proxy 層（CloudFront Function 推奨）
-
-複数の DNS 名（`auth.example.com` + 顧客別 `acme.auth.example.com` 等）をすべて Keycloak に向ける + **URL に応じて `kc_idp_hint` クエリパラメータを自動付与**:
-
-| URL | Front Proxy の挙動 | 効果 |
-|---|---|---|
-| `auth.example.com/...` | パラメータ追加なし、そのまま通す | HRD 経路（A 案） |
-| `acme.auth.example.com/...` | **`&kc_idp_hint=acme-entra` を追加** | Acme の IdP に即リダイレクト（C 案）|
-| `globex.auth.example.com/...` | **`&kc_idp_hint=globex-okta` を追加** | Globex の IdP に即リダイレクト |
-
-実装オプション比較:
-
-| 方式 | 特徴 | 採用判断 |
-|---|---|---|
-| **CloudFront Function**（推奨）| Viewer Request で URL → ヒント変換、ms 単位、$0.10/1M req | 主流・シンプル |
-| **Lambda@Edge** | 複雑ロジック可、ms-秒オーダー、$0.60/1M req | ヒント変換が複雑な場合 |
-| **ALB Listener Rule** | host-header ベース、別 target group へ転送 | ALB のみ採用時 |
-
-###### ② Keycloak Single Realm + Hostname 設定
-
-Keycloak の Hostname Provider を**複数ホスト名許可モード**に設定:
-
-```bash
-KC_HOSTNAME_STRICT=false
-KC_HOSTNAME_STRICT_BACKCHANNEL=false
-KC_HOSTNAME_STRICT_HTTPS=true  # 必須（Open Redirect 対策）
-```
-
-→ `auth.example.com` / `acme.auth.example.com` / `globex.auth.example.com` のいずれからリクエストが来ても同じ Realm が応答。
-
-###### ③ Identity Provider Redirector（標準 Authenticator）
-
-First Browser Flow の `Identity Provider Redirector` 認証器が **`kc_idp_hint` パラメータを検知**して該当 IdP に即リダイレクト。**標準機能のため追加実装不要**:
-
-```mermaid
-flowchart LR
-    Req["リクエスト到着"]
-    Has["kc_idp_hint<br/>あり?"]
-    DirectRedirect["指定 IdP に即リダイレクト<br/>(C 案フロー)"]
-    HRD["HRD authenticator<br/>(メアド入力画面)"]
-    Resolve["ドメインから IdP 自動判定"]
-    IdPRedirect["判定 IdP にリダイレクト<br/>(A 案フロー)"]
-
-    Req --> Has
-    Has -->|Yes| DirectRedirect
-    Has -->|No| HRD
-    HRD --> Resolve
-    Resolve --> IdPRedirect
-
-    style DirectRedirect fill:#fff3e0
-    style IdPRedirect fill:#e8f5e9
-```
-
-**HRD authenticator はメアド入力 HRD を行うため軽い拡張が必要**:
-- 選択肢 1: コミュニティ拡張 [keycloak-home-idp-discovery](https://github.com/sventorben/keycloak-home-idp-discovery) を導入（広く採用、設定のみで動作）
-- 選択肢 2: 自前 Custom Authenticator SPI で実装（Java、20-50 行）
-- 選択肢 3: アプリ側でメアド入力 → `kc_idp_hint` を付けて Keycloak を呼ぶ（SPA 側設計、最もシンプル）
-
-##### 顧客追加時の運用フロー
-
-###### A 経由（一般顧客、HRD）の追加
-
-```mermaid
-flowchart LR
-    A["① 顧客 IdP メタデータ受領"]
-    B["② Terraform PR で<br/>Identity Provider 追加"]
-    C["③ HRD マッピング追加<br/>(email_domain → provider_alias)"]
-    D["④ CI/CD でデプロイ"]
-    E["⑤ テスト + 顧客通知"]
-    A --> B --> C --> D --> E
-    style A fill:#e3f2fd
-    style E fill:#e8f5e9
-```
-
-**作業量**: < 1 営業日（[§FR-2.3.2 標準フロー](#fr-232-顧客追加オンボーディング--fr-fed-011)）
-
-###### C 経由（大口顧客、組織固有 URL）の追加
-
-```mermaid
-flowchart LR
-    A["① IdP メタデータ +<br/>専用 URL 仕様合意"]
-    B["② Terraform PR で<br/>3 つを同時追加"]
-    B1["② -1 Identity Provider"]
-    B2["② -2 ACM 証明書<br/>(Route 53 DNS 検証)"]
-    B3["② -3 CloudFront Function 更新<br/>(hostname → kc_idp_hint)"]
-    C["③ DNS レコード追加"]
-    D["④ CI/CD + DNS 伝播待ち"]
-    E["⑤ テスト + 顧客通知"]
-    A --> B
-    B --> B1
-    B --> B2
-    B --> B3
-    B1 --> C
-    B2 --> C
-    B3 --> C
-    C --> D --> E
-    style A fill:#e3f2fd
-    style E fill:#e8f5e9
-```
-
-**作業量**: 2-3 営業日（DNS 伝播 + ACM 検証で時間がかかる）→ **契約フェーズで「専用 URL 提供あり」をオプション化、リードタイムも長めに設定**。
-
-##### B-607 物理分離との関係
-
-**C 経由 ≠ 物理分離**。3 つの組合せパターン:
-
-| 要件 | 採用パターン | ユーザー DB |
-|---|---|:---:|
-| 大口顧客が「専用 URL」要望のみ | **C ハイブリッド（本節）**| 共有（Single Realm 内、`tenant_id` 論理分離） |
-| 大口顧客が「データ物理分離」要望 | **[B-607 = あり](../../hearing-checklist.md)（Multi-Realm）** | 専用（Realm 別） |
-| 両方要望（規制金融等）| **C + B-607 両方採用** | 専用 + 専用 URL |
-
-→ 通常は **C ハイブリッドだけで「専用感」演出は十分**。物理分離は規制・契約条項で明示された場合のみ追加。
-
-##### 設計上のポイント・落とし穴
-
-| ポイント | 詳細 |
+| 制約 | 内容 |
 |---|---|
-| **`kc_idp_hint` のセキュリティ** | クライアントが任意の IdP を指定できないよう、Realm 設定で「許可 IdP」を絞る、または **Front Proxy 側で URL から導出した値で上書き** |
-| **HRD マッピングの管理** | email_domain → provider_alias の対応表は **Realm Attribute or 外部 DynamoDB** で管理。Terraform で IaC 化推奨 |
-| **マルチ所属ユーザー** ([B-606](../../hearing-checklist.md)) | C 経由でも Single Realm なら一人のユーザーレコードに複数 IdP リンク可。物理分離（Multi-Realm）採用時は注意 |
-| **Custom Domain × CloudFront** | CloudFront は 1 ディストリビューションで複数 CNAME 可、ACM 証明書は SAN で複数 hostname 統合可（実用上の制約なし）|
-| **Hostname strict モード OFF のリスク** | Open Redirect 等を防ぐため、`KC_HOSTNAME_STRICT_HTTPS=true` + 許可リスト管理を必須 |
-| **DNS 伝播 SLA** | 大口 C 経由顧客の追加リードタイム（2-3 日）を契約に明示 |
-| **ログ・監査** | 全顧客が同じ Realm のため、CloudTrail / Audit Log で `client_id` + `tenant_id` の組み合わせで分析する設計 |
+| Custom Domain | **4 / Region (Hard limit)** → C 経由は最大 4 顧客 |
+| Branding Style 上限 | **20 / Pool** |
+| **Cognito では A + C ハイブリッドは大口 4 顧客が限界** | Keycloak は理論的に無制限 |
 
-##### 既存設計との整合性
+→ **C 経由顧客が 5 社以上見込まれる場合、Keycloak 必須化のキーファクター**。
 
-| 既存設計 | 本ハイブリッドとの整合 |
-|---|---|
-| [§FR-2.3.A 単一 Pool/Realm + 複数 IdP](#fr-23a-アーキテクチャ判断単一-poolrealm--複数-idp-を採用) | ✅ **完全整合**（Single Realm 維持）|
-| [§FR-2.3.A.1 論理分離（tenant_id）](#fr-23a1-何が分離共有されているか--論理分離の実態顧客が必ず聞く論点) | ✅ 維持（`tenant_id` クレームで分離）|
-| [§FR-2.3.A.2 IdP なし顧客のローカル管理](#fr-23a2-idp-なし顧客のローカルユーザー管理--パスワードハッシュの同居問題) | ✅ 維持（同じ Realm 内でローカルユーザー併存）|
-| [ADR-011 認証フロントネットワーク設計](../../../adr/011-auth-frontend-network-design.md) | 拡張: CloudFront / ALB の前段に Function 層追加 |
-| [ADR-013 CloudFront WAF IP 制限](../../../adr/013-cloudfront-waf-ip-restriction.md) | ✅ そのまま適用可 |
-| [§FR-7 ユーザー管理](07-user.md) | ✅ Single Realm 前提を維持 |
+#### TBD / 要確認
 
-##### 推奨初期ロールアウト
-
-| フェーズ | 内容 | 時期 |
-|---|---|---|
-| **Phase 1** | A（HRD）のみで全顧客対応 + Single Realm + 共通 1 Custom Domain | リリース時 |
-| **Phase 2** | CloudFront Function を導入し、最初の大口顧客に C を適用 | 大口受注後 |
-| **Phase 3** | C 採用顧客が 2-3 社に増えた段階で運用パターンを確立、テンプレート化 | 半年〜1 年後 |
-| **Phase 4**（例外）| 物理分離（Multi-Realm = [B-607](../../hearing-checklist.md)）要求顧客が現れた場合のみ別 Realm を追加 | 必要時 |
-
-→ **「A 全顧客対応 → C は契約後に追加」** が初期構築リスクを最小化する順序。最初から C 用インフラを構築する必要なし。
-
-##### Cognito 採用時の制約（参考）
-
-本リファレンスは Keycloak 想定。**Cognito 採用時**は以下の制約で実装難度が大幅に上がる:
-
-| 制約 | 影響 |
-|---|---|
-| **Custom Domain 4 / Region（Hard Limit）**[^cognito-q12-fr233c] | 大口 C 顧客は最大 3 社まで（共通 1 + 大口 3）|
-| **`kc_idp_hint` 相当の `identity_provider` パラメータ** | Cognito も対応するが、Pre Sign-up Lambda 等の前処理が複雑化 |
-| **HRD authenticator 相当機能なし** | Lambda + Custom UI で自前実装、200-500 行のコード |
-| **First Broker Login Flow なし** | Pre Sign-up Lambda で同等処理を自前実装（[§FR-2.2.1.A](#fr-221a-同一テナント内ユーザー重複の扱い)）|
-
-→ **C ハイブリッド要件が想定される場合、Cognito 採用は実装工数とハードリミットで実質ノックアウト**。これは [§C-2.2 プラットフォーム選定](../common/02-platform.md) の判断要素として反映済み。
-
-[^cognito-q12-fr233c]: [cognito-knockout-conditions.md Q-12](../../../reference/cognito-knockout-conditions.md)
+[B-618 IdP 選択 UX のハイブリッド構成採用方針](../../hearing-checklist.md) で確認。
 
 #### §FR-2.3.3.D Keycloak HRD 実装方式選定（Universal Login + 4 オプション + 単一テナント複数 IdP 対応）
 

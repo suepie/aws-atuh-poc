@@ -320,239 +320,55 @@ flowchart TD
 
 ### §FR-3.3.A AAL 不整合の具体例とフロー（[§FR-4.2 リスク 4](04-sso.md#リスク-4-aal-不整合) と連動）
 
-> **このサブ・サブセクションで定めること**: 「外部 IdP の AAL レベルが本基盤の要求と一致しない」場合の典型 4 シナリオと、ステップアップ MFA による解決フロー。   
-> **主な判断軸**: 顧客 IdP の AAL 実装差異、業務操作の重要度に応じた段階的引き上げ、本基盤側の補完 MFA 提供   
-> **§FR-3.3 内の位置付け**: ステップアップ認証の **適用ユースケース集**。理論は本サブセクション上部、実例はここで。
+> **詳細は [ADR-026 AAL 不整合の具体例とステップアップ MFA 設計](../../../adr/026-aal-mismatch-stepup-mfa.md) を参照**
 
-#### AAL レベルの定義（NIST SP 800-63B Rev 4）
+> **このサブ・サブセクションで定めること**: 「外部 IdP の AAL レベルが本基盤の要求と一致しない」場合の典型 4 シナリオと、ステップアップ MFA による解決フロー。
+> **主な判断軸**: 顧客 IdP の AAL 実装差異、業務操作の重要度に応じた段階的引き上げ、本基盤側の補完 MFA 提供
+> **§FR-3.3 内の位置付け**: ステップアップ認証の**適用ユースケース集**
 
-| レベル | 必要な認証要素 | 例 |
-|:---:|---|---|
-| **AAL 1** | 単一要素（パスワードのみ）| ID + パスワード |
-| **AAL 2** | 多要素（パスワード + 何か）| パスワード + OTP / Push / SMS |
-| **AAL 3** | Phishing-resistant 多要素（暗号鍵ベース）| パスワード + Hardware Key / Passkey |
+#### 結論サマリ
+
+| 項目 | 採用方針 |
+|---|---|
+| **AAL 不整合への対応** | **A 案 = 本基盤側でステップアップ MFA**（不足分を補う）|
+| **デフォルト要求 AAL** | AAL 1（業務系標準）|
+| 重要操作 | AAL 2、規制業種は AAL 3 |
+| AAL 不足時の挙動 | 拒否ではなく**補完 MFA を要求** |
+
+#### AAL レベル定義（参考）
+
+| レベル | 認証要素 |
+|:---:|---|
+| AAL 1 | 単一要素（パスワードのみ）|
+| AAL 2 | 多要素（PW + OTP / Push / SMS）|
+| AAL 3 | Phishing-resistant 多要素（Hardware Key / Passkey）|
 
 #### OIDC で AAL を表現するクレーム
 
-| クレーム | 役割 | 値の例 |
+| クレーム | 役割 | 例 |
 |---|---|---|
-| **`acr`**（Authentication Context Class Reference） | 認証の保証レベル | `"0"` / `"1"` / `"2"` / `"3"` |
-| **`amr`**（Authentication Methods References） | 認証方法のリスト | `["pwd"]` / `["pwd", "mfa"]` / `["hwk"]` |
+| **`acr`** | 認証の保証レベル | `"1"` / `"2"` / `"3"` |
+| **`amr`** | 認証方法のリスト | `["pwd"]` / `["pwd", "mfa"]` |
 | **`auth_time`** | 認証時刻 | `1730000000` |
 
-#### シナリオ 1: 本基盤は AAL 2 要求、顧客 IdP は AAL 1 のみ（不整合の典型）
+#### 4 つの典型シナリオ（詳細は ADR-026）
 
-```mermaid
-sequenceDiagram
-    participant User as 👤 田中さん
-    participant App as 📱 経費精算 App
-    participant Hub as 🏢 本基盤
-    participant IdP as 🏢 古い ADFS<br/>(MFA なし)
+| # | シナリオ | 対応 |
+|---|---|---|
+| 1 | 本基盤 AAL 2 要求 + IdP は AAL 1 のみ | **A 本基盤でステップアップ MFA**（推奨）|
+| 2 | IdP MFA 済 + 古すぎる `auth_time` | `max_age` 15 分制約 + `prompt=login` 強制再認証 |
+| 3 | 複数 IdP で AAL 表現が違う（標準化問題）| **ACR-to-LoA Mapping で正規化** |
+| 4 | 段階的なステップアップ（最も実用的）| 操作の重要度に応じた acr_values 引き上げ |
 
-    Note over App: 「経費精算 API は AAL 2 必須」と決定
-    User->>App: 大量経費申請（高額）
-    App->>Hub: /authorize?acr_values=2<br/>(AAL 2 要求)
-    Hub->>IdP: フェデレーション要求<br/>(acr_values=2 を伝達)
-    Note over IdP: 古い ADFS は MFA 機能なし<br/>→ パスワードのみで認証
-    User->>IdP: パスワード入力
-    IdP->>Hub: assertion<br/>amr=["pwd"]<br/>acr="1"
-    Note over Hub: 🚨 AAL 不整合検出<br/>(要求 acr=2、実 acr=1)
+#### プラットフォーム別実装の差
 
-    rect rgb(255, 230, 230)
-        Note over Hub: 対応の選択肢
-    end
-    Hub->>User: ステップアップ要求<br/>(本基盤側で MFA)
-    User->>Hub: OTP / Passkey 入力
-    Hub->>App: トークン発行<br/>amr=["pwd", "mfa"]<br/>acr="2"
-```
+| 実装観点 | Cognito | Keycloak |
+|---|---|---|
+| ACR to LoA Mapping | ⚠ Pre Token Lambda V2 + アプリ側 Custom Auth Challenge（2 段階）| ✅ Realm Settings 宣言的 |
+| `max_age` 強制 | ❌ なし | ✅ あり |
+| ステップアップフロー | ⚠ 自前実装 | ✅ Authentication Flow Overrides 標準 |
 
-**対応の 3 つの選択肢**:
-
-| 選択肢 | 内容 | 推奨度 | リスク / コスト |
-|:---:|---|:---:|---|
-| **A 本基盤側でステップアップ MFA** | Hub が追加で OTP / Passkey 要求 → 不足分を補う | ✅ **推奨** | UX 1 ステップ追加 |
-| **B AAL 無視して通す** | acr 検査せずトークン発行 | ❌ | **🚨 高セキュ操作に弱い認証で通る、コンプラ違反** |
-| **C エラー返却** | 「顧客 IdP に MFA を設定してください」 | △ | UX 悪化、顧客クレーム |
-
-→ **A が現実解**。本基盤側で **「不足分を補う」MFA を提供**することで、顧客 IdP の AAL 実装差異を吸収できる。
-
-#### シナリオ 2: IdP は MFA 済みだが古すぎる auth_time
-
-```mermaid
-sequenceDiagram
-    participant User as 👤 田中さん
-    participant App as 💳 決済管理 App
-    participant Hub as 🏢 本基盤
-    participant IdP as 🏢 Entra ID
-
-    Note over User: 09:00 朝イチで Entra ID にログイン<br/>MFA 完了
-    User->>IdP: パスワード + MFA
-    IdP-->>User: SSO Cookie 発行<br/>auth_time=09:00
-
-    Note over User: 11:00 (2 時間後) 決済操作
-    User->>App: 100 万円送金
-    App->>Hub: /authorize?acr_values=3<br/>&max_age=900<br/>(15 分以内の認証要求)
-    Hub->>IdP: フェデ要求<br/>(max_age=900 伝達)
-    IdP->>Hub: assertion<br/>auth_time=09:00<br/>amr=["pwd", "mfa"]
-
-    Note over Hub: 🚨 auth_time + 900 < 現在<br/>古すぎる<br/>(2 時間 = 7200 秒 > 900)
-    Hub->>IdP: prompt=login&max_age=0<br/>強制再認証
-    IdP->>User: 再ログイン要求
-    User->>IdP: パスワード + MFA
-    IdP->>Hub: 新 assertion<br/>auth_time=11:00<br/>amr=["pwd", "mfa"]
-    Hub->>App: トークン発行<br/>acr="3"<br/>auth_time=11:00
-```
-
-→ **「2 時間前の MFA 認証で 100 万円送金は危ない」を防ぐ仕組み**。`max_age` がない（Cognito）と、IdP セッション TTL（8 時間）までは古い認証で通る。
-
-#### シナリオ 3: 複数 IdP で AAL 表現が違う（標準化問題）
-
-各 IdP は `amr` / `AuthnContext` を独自命名で返す:
-
-| 顧客 | IdP | 認証方法 | `amr` の値 | 本基盤側のマッピング |
-|---|---|---|---|---|
-| Acme | Entra ID | パスワード + MFA | `["pwd", "mfa"]` | → AAL 2 |
-| Globex | Okta | パスワード + WebAuthn | `["pwd", "hwk"]`（hwk = Hardware Key） | → AAL 3 |
-| Initech | 自社 SAML | パスワード + OTP | `urn:oasis:names:tc:SAML:2.0:ac:classes:MultiFactorContract` | → AAL 2 |
-| Old-Co | レガシー ADFS | パスワードのみ | `["pwd"]` | → AAL 1 |
-
-→ **本基盤の ACR-to-LoA Mapping でこの差異を正規化**:
-
-```mermaid
-flowchart LR
-    subgraph IdPs["顧客 IdP"]
-        E["Acme/Entra<br/>amr=[pwd, mfa]"]
-        O["Globex/Okta<br/>amr=[pwd, hwk]"]
-        S["Initech/SAML<br/>MultiFactorContract"]
-        L["Old-Co/ADFS<br/>amr=[pwd]"]
-    end
-
-    subgraph Hub["本基盤 ACR-to-LoA Mapping"]
-        M["IdP 別マッピング設定"]
-    end
-
-    subgraph LoA["統一 AAL"]
-        L1["AAL 1"]
-        L2["AAL 2"]
-        L3["AAL 3"]
-    end
-
-    E --> M --> L2
-    O --> M --> L3
-    S --> M --> L2
-    L --> M --> L1
-
-    style M fill:#fff3e0
-```
-
-→ 各アプリは「`acr=2` 必須」とだけ宣言すれば、本基盤が裏で全 IdP の方言を AAL に変換。
-
-#### シナリオ 4: 段階的なステップアップ（最も実用的）
-
-```mermaid
-sequenceDiagram
-    participant User as 👤 田中さん
-    participant App as 📱 経費精算
-    participant Hub as 🏢 本基盤
-
-    Note over User: 09:00 朝、業務開始
-    User->>App: ログイン（経費一覧閲覧）
-    App->>Hub: /authorize<br/>(acr_values 指定なし、AAL 1 で OK)
-    Hub-->>App: acr=1 のトークン
-    Note over User: ✅ 一覧閲覧 OK
-
-    Note over User: 11:00 通常申請（5 万円）
-    User->>App: 5 万円申請
-    App->>App: AAL 1 で OK
-    Note over User: ✅ 通常申請 OK
-
-    Note over User: 14:00 高額申請（30 万円）
-    User->>App: 30 万円申請
-    App->>App: 内部判定: AAL 2 必要
-    App->>Hub: /authorize?acr_values=2<br/>(ステップアップ要求)
-
-    rect rgb(255, 250, 230)
-        Note over Hub: 現在の acr=1<br/>不足 → MFA 要求
-    end
-    Hub->>User: OTP 入力画面
-    User->>Hub: OTP 入力
-    Hub-->>App: acr=2 のトークン
-    Note over User: ✅ 高額申請 OK<br/>(操作のたびに毎回ログインは不要)
-```
-
-→ **「操作の重要度に応じて段階的に認証を強化」**。NIST SP 800-63B Rev 4 が推奨する標準パターン。
-
-#### プラットフォーム別の実装イメージ
-
-**Keycloak（宣言的・標準対応）**:
-
-```
-[1] Admin Console > Realm Settings > Authentication
-    → ACR to LoA Mapping を設定
-    例: acr "2" → loa 1（AAL 2 相当）
-        acr "3" → loa 2（AAL 3 相当）
-
-[2] IdP 接続設定で「この IdP の amr=mfa → AAL 2」をマッピング
-
-[3] Client Settings > Advanced > Authentication Flow Overrides
-    → Step-up Flow を選択
-
-[4] アプリから acr_values=2 で要求 → Keycloak が自動判定 + ステップアップ
-```
-
-**Cognito（Lambda 自前実装）**:
-
-```python
-# Pre Token Generation Lambda V2
-def lambda_handler(event, context):
-    requested_acr = parse_acr_from_state(event)  # 自前パース
-    idp_amr = event['request']['userAttributes'].get('cognito:idp_amr', [])
-
-    # AAL 判定（自前）
-    current_aal = 1
-    if 'mfa' in idp_amr:
-        current_aal = 2
-    if 'hwk' in idp_amr or 'webauthn' in idp_amr:
-        current_aal = 3
-
-    # 不足検出
-    if requested_acr and current_aal < int(requested_acr):
-        # Cognito ではここでフロー開始不可
-        # 代替: クレーム注入 + アプリ側で別 Custom Auth Challenge 起動
-        event['response']['claimsOverrideDetails'] = {
-            'claimsToAddOrOverride': {
-                'needs_stepup': 'true',
-                'current_aal': str(current_aal)
-            }
-        }
-
-    return event
-```
-
-→ **Cognito は Pre Token Lambda V2 でクレーム注入 → アプリ側で別 Custom Auth Challenge 起動**という 2 段階実装が必要。Keycloak なら Realm Settings の宣言的設定で完結。
-
-#### 不整合を放置すると何が起きるか（脅威モデル）
-
-| 放置時のリスク | 具体例 |
-|---|---|
-| **弱い IdP の経路で高セキュリティ操作** | Old-Co（パスワードのみ）の従業員が、本来 AAL 2 必須の機能にアクセス可 |
-| **フィッシング被害の伝播** | IdP セッションが奪取されても、本基盤側で AAL 検証していれば高セキュ操作は防げる |
-| **コンプライアンス違反** | PCI DSS / NIST 準拠を謳いながら実態は AAL 1 で運用 |
-| **MFA バイパス** | `amr` 値の偽装（[§FR-4.2 リスク 3](04-sso.md#リスク-3-amr-偽装)）と組み合わさると致命的 |
-| **規制業種顧客の獲得不能** | 金融・医療顧客が AAL 整合性を契約条件にする場合、対応不可 |
-
-#### 本基盤での推奨設計
-
-| 項目 | 推奨 |
-|---|---|
-| **デフォルト要求 AAL** | AAL 1（業務系標準）|
-| **重要操作（決済 / 管理画面 / 大量データ出力）** | AAL 2 要求、ステップアップで対応 |
-| **金融・規制業種顧客** | AAL 3 要求、Phishing-resistant 必須 |
-| **IdP 接続時の AAL 評価** | 接続承認時に「この IdP は何の AAL まで出せるか」を契約に明記 |
-| **AAL 不足時の挙動** | **本基盤側でステップアップ MFA**（拒否でなく補完）|
-| **`auth_time` 制約** | 高セキュ操作は `max_age` 15 分 / AAL 3 は 5 分推奨 |
-
-→ 詳細なプラットフォーム選定への影響は [§C-2.2 A-12 クロス IdP SSO 信頼レベル制御](../common/02-platform.md) 参照。
+→ 詳細は [§C-2.2 A-12 クロス IdP SSO 信頼レベル制御](../common/02-platform.md) 参照。
 
 ### TBD / 要確認
 
@@ -562,8 +378,6 @@ def lambda_handler(event, context):
 | ステップアップ採用の要否 | Must / Should / Could / 不要 |
 | ステップアップで要求する MFA 手段 | Passkey / TOTP / SMS OTP |
 | プラットフォーム選定への影響 | RFC 9470 Must / 宣言的実装を希望 → **Keycloak** |
-
----
 
 ## §FR-3.4 全顧客 MFA 必須化と基盤側保持データの最小化
 
@@ -780,273 +594,93 @@ flowchart TD
 
 ## §FR-3.5 amr クレーム評価の信頼性根拠
 
-> **本サブセクションで定めること**: §FR-3.4 案 3 で採用する「**amr クレーム評価**」が、なぜ盲信ではなく **業界標準的に安全か** の根拠整理。
-> **§FR-3 全体との関係**: §FR-3.4 の信頼レベル評価方式（案 3）の **安全性の説明責任**
+> **詳細は [ADR-031 amr / SAML AuthnContext MFA 評価の統合方針](../../../adr/031-amr-saml-mfa-evaluation.md) を参照**
 
-### §FR-3.5.1 amr クレームとは
+> **本サブセクションで定めること**: §FR-3.4 案 3 で採用する「**amr クレーム評価**」が、なぜ盲信ではなく**業界標準的に安全か**の根拠整理、および **SAML 経由の MFA 評価**（amr 不在）の統合方針。
+> **§FR-3 全体との関係**: §FR-3.4 の信頼レベル評価方式（案 3）の**安全性の説明責任**
 
-**OIDC Core 1.0 §2 で定義** されている標準クレーム:
-- `amr` (Authentication Methods References) = ユーザーが認証時に使用した方法の配列
-- 例: `["pwd", "otp"]` = パスワード + ワンタイムパスワード認証
-- **RFC 8176** で標準値が定義されている（`mfa` / `otp` / `hwk` / `pwd` / `pin` / `fpt` / `face` / `iris` / `mca` 等）
+### 結論サマリ
 
-#### amr クレームの形式（重要）
+| 項目 | 採用方針 |
+|---|---|
+| **amr 評価の業界標準性** | Microsoft Entra B2B / Auth0 / Okta / Curity / Salesforce が採用、本基盤も標準パターン |
+| **amr 不送出時の扱い** | **安全側「未済」扱い** → 基盤側 MFA 補完（**fail-safe 設計**）|
+| **SAML 経由の評価** | **AuthnContextClassRef + authnmethodsreferences**（Microsoft 拡張）の両方を確認 |
+| **統合実装方針** | **統一 User Attribute (`mfa_indicator`) への正規化** + Conditional Authenticator で単一属性評価 |
+| **信頼する amr 値** | RFC 8176 標準値の MFA 系（`mfa` / `otp` / `hwk` 等）のホワイトリスト方式、SMS / pwd は除外 |
 
-**JSON 文字列の配列** であり、認証時に使用した**全ての**認証方法を列挙する:
+### amr クレームとは（RFC 8176）
 
-```json
-{
-  "sub": "alice@acme.com",
-  "iss": "https://login.microsoftonline.com/...",
-  "amr": ["pwd", "mfa", "rsa"],     ← 配列、複数の認証方法を列挙
-  "acr": "1",
-  ...
-}
-```
+OIDC Core 1.0 §2 で定義される標準クレーム。`amr` (Authentication Methods References) = 認証時に使用した方法の配列。
 
-→ **`amr` は単一値ではなく**、`["pwd", "mfa"]` のように **複数の認証方法を同時に表現**できる。
-
-#### RFC 8176 標準値の分類
-
-| 値 | 意味 | MFA 該当 | 本基盤の信頼 |
+| 値 | 意味 | MFA 該当 | 信頼 |
 |---|---|:-:|:-:|
-| `mfa` | 一般的な多要素認証（最も明示的）| ✅ | ✅ |
-| `otp` | One-Time Password（TOTP / HOTP）| ✅ | ✅ |
-| `hwk` | Hardware Key（FIDO2 / YubiKey）| ✅ | ✅ |
-| `fpt` | 指紋認証 | ✅ | ✅ |
-| `face` | 顔認証 | ✅ | ✅ |
-| `iris` | 虹彩認証 | ✅ | ✅ |
-| `mca` | Multi-Channel Authentication | ✅ | ✅ |
-| `swk` | Software Key | ✅ | ✅ |
-| `pwd` | パスワード | ❌ 単要素 | ❌ |
-| `pin` | PIN | ❌ 単要素 | ❌ |
-| `kba` | 知識ベース認証 | ❌ | ❌ |
-| `sms` | SMS OTP | ⚠ NIST 非推奨 | ❌（本基盤不採用）|
+| `mfa` / `otp` / `hwk` / `fpt` / `face` / `iris` / `mca` / `swk` | 強い MFA | ✅ | ✅ |
+| `pwd` / `pin` / `kba` | 単要素 | ❌ | ❌ |
+| `sms` | SMS OTP（NIST 非推奨）| ⚠ | ❌（本基盤不採用）|
 
-### §FR-3.5.1.A amr の有無による判定（4 パターン）
-
-> **重要**: amr クレームは OIDC 仕様上 **OPTIONAL** であり、IdP によって送出しないこともある。本基盤は以下の 4 パターンを明示的に判定する。
+### amr の有無による判定（4 パターン）
 
 | パターン | 例 | 本基盤の判定 | 動作 |
 |---|---|:-:|---|
-| **A. amr クレーム送出なし**（属性自体存在しない）| `{"sub": "...", ...}` (`amr` なし) | ⚠ **判定不可** | **安全側「未済」扱い → 基盤側 MFA 補完** |
-| **B. amr が空配列** | `"amr": []` | ⚠ **判定不可** | 同上 |
-| **C. amr に MFA 系値なし**（`pwd` のみ等）| `"amr": ["pwd"]` | ❌ **MFA 未済** | 基盤側 MFA 補完 |
-| **D. amr に MFA 系値あり** | `"amr": ["pwd", "mfa"]` | ✅ **MFA 済** | 基盤側 MFA スキップ |
+| A. amr 送出なし | `amr` 属性自体なし | ⚠ 判定不可 | **安全側「未済」→ 基盤 MFA 補完** |
+| B. amr が空配列 | `"amr": []` | ⚠ 判定不可 | 同上 |
+| C. MFA 系値なし | `"amr": ["pwd"]` | ❌ 未済 | 基盤 MFA 補完 |
+| D. MFA 系値あり | `"amr": ["pwd", "mfa"]` | ✅ 済 | 基盤 MFA スキップ |
 
-#### 「amr がなければ必ず MFA していない」と言えるか?
+### 顧客 IdP 別の amr 送出実態
 
-| 観点 | 厳密性 | 本基盤の方針 |
-|---|---|---|
-| **論理的厳密**: amr 不送出 = MFA していないとは断定できない | ⚠ 情報がないだけ | - |
-| **業界実装**: 「amr 不送出 = 未済扱い」が業界標準（fail-safe）| ✅ 安全側 | **採用** |
-| **本基盤の判定** | - | **「未済として扱う」→ 基盤側 MFA 補完** |
+| IdP | amr 送出 | 設定要否 |
+|---|:-:|---|
+| Microsoft Entra ID | ✅ デフォルト | 設定不要 |
+| Okta / Google Workspace | ✅ デフォルト | 設定不要 |
+| **ADFS** | ⚠ デフォルト送出しない | Claim Rule 設定 or 基盤側 MFA 補完 |
+| HENNGE One / 独自 IdP | △ 個別確認 | 確認次第 |
 
-→ **結論: 厳密には「不明」だが、安全側で「未済」とみなし基盤側 MFA を補完**。これは Microsoft Entra B2B / Auth0 / Okta 等の業界主流と同じパターン。
+### SAML 経由の MFA 評価（重要：amr 不在）
 
-### §FR-3.5.2 amr 評価が信頼できる根拠
+SAML 経由では `amr` クレームがない。3 種類の評価対象が必要:
 
-| リスク | 対策 |
-|---|---|
-| **偽の amr を含む JWT 送信**（中間者攻撃 / 悪意ある IdP）| ❌ **顧客 IdP の SAML/OIDC 署名検証**で防がれる（JWKS / 証明書）。署名検証は OIDC RP の基本動作 |
-| **顧客 IdP 側で MFA 設定変更**（顧客都合）| 顧客 IdP の設定変更は **顧客責任**、契約条項で明示。本基盤は顧客 IdP の宣言を信頼 |
-| **amr 値の解釈差**（IdP ごとに違う）| **信頼する `amr` 値をホワイトリスト化**（RFC 8176 標準値のみ採用）|
-| **HTTPS 中間者攻撃** | ❌ TLS + JWT 署名で防がれる |
-| **リプレイ攻撃** | JWT の `nonce` / `iat` / `exp` 検証で防がれる（OIDC 標準）|
+| # | 検出対象 | 採用 IdP |
+|:-:|---|---|
+| A | `AuthnContextClassRef`（SAML 標準）| Okta / Google Workspace / Shibboleth |
+| **B** | **`authnmethodsreferences`（Microsoft 拡張）** | **Microsoft Entra ID SAML** / ADFS |
+| C | `multipleauthn`（Microsoft 拡張特殊値）| Microsoft Entra ID 専用 |
 
-### §FR-3.5.3 ホワイトリスト方式の信頼する amr 値
+#### ⚠ Microsoft Entra ID SAML の特殊仕様
 
-[§3.2 MFA スライド 4](../../powerpoint-slides/3.2-mfa-slides.md) で既に整理した値:
+**AuthnContextClassRef は MFA 用に変更されない**（`Password` 等のまま）。MFA は `authnmethodsreferences` 属性で送出される。**Entra ID の SAML 接続では `authnmethodsreferences` を必ず評価**する必要あり。
 
-| amr 値 | 意味 | 信頼度 | 採用 |
-|---|---|:-:|:-:|
-| `mfa` | 一般的な多要素認証（OIDC 標準）| ⭐ | ✅ |
-| `otp` | OTP（TOTP / HOTP）| ⭐ | ✅ |
-| `hwk` | ハードウェアキー（FIDO2 / YubiKey）| ⭐ | ✅ |
-| `mca` | Multi-Channel Authentication | ⭐ | ✅ |
-| `fpt` | 指紋 | ⭐ | ✅ |
-| `face` | 顔認証 | ⭐ | ✅ |
-| `iris` | 虹彩認証 | ⭐ | ✅ |
-| `pwd` | パスワードのみ | × 単要素のため MFA とみなさない | ❌ |
-| `pin` | PIN のみ | × 単要素 | ❌ |
-| `sms` | SMS OTP | △ NIST 非推奨、本基盤では信頼しない | ❌ |
+業界事例：**Salesforce は OIDC / SAML を別評価し**、2026-02-17 から Entra ID の `multipleauthn` 値も対応（authnmethodsreferences 属性内）。
 
-→ **「強い MFA」相当の amr 値のみホワイトリスト**、SMS や単要素は除外。
+### 統合実装方針：統一 User Attribute (`mfa_indicator`)
 
-### §FR-3.5.4 顧客 IdP 別の amr 送出実態（実装時の確認項目）
-
-| 顧客 IdP | amr 送出 | 送出形式 | 設定要否 | 本基盤の動作 |
-|---|:-:|---|---|---|
-| **Microsoft Entra ID** | ✅ デフォルト送出 | `["pwd", "mfa", "rsa"]` 等 RFC 8176 準拠 | 設定不要 | amr 評価可能 |
-| **Okta** | ✅ デフォルト送出 | `["pwd", "mfa", "otp", "hwk"]` 等 | 設定不要 | amr 評価可能 |
-| **Google Workspace** | ✅ デフォルト送出 | `["pwd", "mfa", "otp", "swk"]` 等 | 設定不要 | amr 評価可能 |
-| **ADFS** | ⚠ **デフォルト送出しない** | Claim Rule 設定時のみ | **顧客側で Claim Rule 設定が必要** | **設定なし = 未済扱い → 基盤側 MFA 補完** |
-| **HENNGE One** | △ 個別確認必要 | カスタム実装次第 | 顧客実装次第 | 確認次第 |
-| **独自 IdP** | △ 個別確認必要 | カスタム実装次第 | 顧客実装次第 | 確認次第 |
-
-#### ADFS の amr 送出設定例（顧客に依頼する場合）
-
-ADFS は **デフォルトで amr クレームを送出しない**ため、顧客側に以下の Claim Rule 設定を依頼:
-
-```powershell
-# ADFS PowerShell: amr クレームを発行する Claim Rule 例
-$rule = @'
-@RuleTemplate = "AuthenticationMethodsReferences"
-@RuleName = "Issue AMR Claim"
-c:[Type == "http://schemas.microsoft.com/claims/authnmethodsreferences"]
- => issue(claim = c);
-'@
-
-# Relying Party Trust に Claim Rule を追加
-Add-AdfsRelyingPartyTrust -Name "Common-Auth-Platform" `
-  -IssuanceTransformRules $rule
-```
-
-#### Claim Rule 未設定 IdP への対応
-
-顧客 IdP（ADFS / 独自 IdP 等）が amr を送出しない場合、本基盤は **「判定不可」として安全側で「未済」扱い** とし、自動的に基盤側 MFA 補完が起動する（[§FR-3.5.1.A](#fr-3-5-1-a-amr-の有無による判定4-パターン) パターン A 参照）。
-
-→ **顧客に Claim Rule 設定を強制する必要はなく**、未設定の場合は基盤側 MFA で MFA 必須化を確保する設計。
-
-→ **顧客 IdP 接続時にヒアリング項目として追加**（[§FR-2.2.3 MFA 重複回避](02-federation.md) と整合）。
-
-### §FR-3.5.5 業界実装事例（amr 評価の業界標準性）
-
-| プレイヤー | amr 評価の使い方 |
-|---|---|
-| **Microsoft Entra B2B Cross-Tenant Access** | Home IdP の amr を Resource Tenant 側で信頼 |
-| **Auth0 Rules / Actions** | amr 評価で条件付き MFA 実装 |
-| **Okta** | amr ベースの Authentication Policy |
-| **Curity Identity Server** | amr 評価が標準機能 |
-
-→ **amr 評価は業界標準パターン**、本基盤の採用は実績豊富な手法。
-
-### §FR-3.5.6 SAML 経由 IdP の MFA 評価（amr では不十分、別評価が必須）
-
-> **本サブセクションで定めること**: 本基盤は **OIDC + SAML 両プロトコルの顧客 IdP を受信** するが、**SAML 経由では `amr` クレームが存在しない**。SAML 経由の MFA 評価には **`AuthnContextClassRef`（SAML 標準）+ `authnmethodsreferences`（Microsoft 拡張）** の評価が必要。
-> **主な判断軸**: 顧客 IdP のプロトコル / ベンダーごとの MFA 表現方法の違い
-> **§FR-3.5 全体との関係**: §FR-3.5.1〜5 は OIDC `amr` 中心の整理、本サブセクションで SAML 経由を補完して **OIDC + SAML 統合評価** を完成させる
-
-#### SAML 経由での MFA 検出方法（3 つのチェック対象）
-
-| # | 検出対象 | 詳細 | 採用 IdP |
-|:-:|---|---|---|
-| **A** | `AuthnContextClassRef`（SAML 標準）| SAML Assertion の `<saml:AuthnContext>` 内で送出 | Okta / Google Workspace / Shibboleth 等 |
-| **B** | `authnmethodsreferences`（Microsoft 拡張）| URI: `http://schemas.microsoft.com/claims/authnmethodsreferences`、`mfa` / `multipleauthn` 等を含む | **Microsoft Entra ID (SAML)** / ADFS（設定時）|
-| **C** | `multipleauthn`（Microsoft 拡張の特殊値）| Entra ID が MFA 完了時に送出、Salesforce が 2026-02-17 から対応 | **Microsoft Entra ID 専用** |
-
-#### AuthnContextClassRef の標準値（SAML）
-
-| 値 | 意味 | MFA 該当 |
-|---|---|:-:|
-| `urn:oasis:names:tc:SAML:2.0:ac:classes:Password` | パスワードのみ | ❌ |
-| `urn:oasis:names:tc:SAML:2.0:ac:classes:PasswordProtectedTransport` | HTTPS パスワード | ❌ |
-| `urn:oasis:names:tc:SAML:2.0:ac:classes:MultiFactorContract` | **MFA** | ✅ |
-| `urn:oasis:names:tc:SAML:2.0:ac:classes:Smartcard` | スマートカード | ✅ |
-| `urn:oasis:names:tc:SAML:2.0:ac:classes:Kerberos` | Kerberos | △ |
-| `https://refeds.org/profile/mfa` | **REFEDS MFA Profile**（学術界標準）| ✅ |
-
-#### 重要: Microsoft Entra ID の SAML での特殊仕様
-
-> **⚠ Microsoft Entra ID は AuthnContextClassRef を MFA 用に変更しない仕様**
-
-| 観点 | Microsoft Entra ID の挙動 |
-|---|---|
-| MFA 実施時の AuthnContextClassRef | **変わらない**（`Password` 等のまま） |
-| MFA 表現方法 | **`authnmethodsreferences` 属性で送出**（Microsoft 拡張）|
-| 送出される値 | `mfa`、`multipleauthn`、`otp` 等 |
-
-→ **Entra ID の SAML 接続で AuthnContextClassRef だけ見ても MFA 判定不可**。`authnmethodsreferences` を必ず評価する必要あり。
-
-#### 顧客 IdP × プロトコル別の評価対象マトリクス
-
-| 顧客 IdP | OIDC 経由（amr） | SAML 経由（AuthnContextClassRef + authnmethodsreferences）|
-|---|:-:|:-:|
-| **Microsoft Entra ID** | ✅ amr 評価 | ⚠ **AuthnContextClassRef は無効、authnmethodsreferences を評価** |
-| **Okta** | ✅ amr 評価 | ✅ AuthnContextClassRef 評価（REFEDS Profile 等） |
-| **Google Workspace** | ✅ amr 評価 | ✅ AuthnContextClassRef 評価 |
-| **ADFS** | △ Claim Rule 設定時のみ | △ Claim Rule 設定時のみ（authnmethodsreferences 推奨）|
-| **HENNGE One** | △ 個別確認 | △ 個別確認 |
-| **Shibboleth**（学術系）| - | ✅ AuthnContextClassRef = REFEDS Profile |
-| **独自 IdP** | △ 個別確認 | △ 個別確認 |
-
-#### 業界事例: Salesforce の OIDC / SAML 別評価
-
-Salesforce は OIDC IdP と SAML IdP で **評価方法を分けて**実装している:
-
-| 評価対象 | 評価値の列 |
-|---|---|
-| OIDC IdP | **AMR 受入値列**（`["mfa", "otp"]` 等）|
-| SAML IdP | **ACR 受入値列**（`urn:...:MultiFactorContract` 等）|
-
-さらに 2026-02-17 update で **Entra ID の `multipleauthn` 値もサポート追加**（authnmethodsreferences 属性内）し、「High Assurance」セッションとして扱うようになった。
-
-→ **業界主流の認証基盤は SAML / OIDC で別評価**、本基盤も同じ設計が必要。
-
-### §FR-3.5.7 OIDC / SAML 統合評価の実装方針（統一 User Attribute 正規化）
-
-> **本サブセクションで定めること**: §FR-3.5.6 で示した「OIDC `amr` + SAML `AuthnContextClassRef` + SAML `authnmethodsreferences`」を **統一的に評価する実装方針**。
-> **主な判断軸**: 実装の簡潔性、新規顧客 IdP 追加時の影響、保守性
-> **§FR-3.5 全体との関係**: §FR-3.5.1〜6 で確定した評価対象を、実装時にどう統合するかを定義
-
-#### 推奨アプローチ: 統一 User Attribute (`mfa_indicator`) への正規化
-
-複数のクレーム / 属性を Identity Provider Mapper で **統一 User Attribute（`mfa_indicator`）** に正規化し、Conditional Authenticator は単一属性のみ評価:
+複数クレーム / 属性を Identity Provider Mapper で**統一 User Attribute (`mfa_indicator`)** に正規化し、Conditional Authenticator は単一属性のみ評価:
 
 ```
-OIDC IdP (amr)                         ─┐
-SAML IdP (AuthnContextClassRef)         ├─→ Identity Provider Mapper
-SAML IdP (authnmethodsreferences)      ─┘    で統一コピー
-                                              ↓
-                                       User Attribute: mfa_indicator
-                                              ↓
-                                       Conditional Authenticator
-                                       (mfa_indicator に MFA 系値含むかチェック)
+OIDC IdP (amr)                        ─┐
+SAML IdP (AuthnContextClassRef)        ├─→ IdP Mapper → mfa_indicator
+SAML IdP (authnmethodsreferences)     ─┘                    ↓
+                                              Conditional Authenticator
 ```
 
-#### Keycloak 実装（Terraform、3 IdP プロトコル別）
-
-| IdP | Identity Provider Mapper の `claim_name` | コピー先 User Attribute |
+| IdP | Mapper の `claim_name` | コピー先 |
 |---|---|---|
 | OIDC IdP | `amr` | `mfa_indicator` |
 | SAML IdP（標準）| `Saml.AuthnContextClassRef` | `mfa_indicator` |
 | SAML IdP（Microsoft Entra）| `http://schemas.microsoft.com/claims/authnmethodsreferences` | `mfa_indicator` |
 
-→ **Conditional Authenticator は `mfa_indicator` 単一属性を見るだけで全プロトコル統合評価可能**。
+→ **新規 IdP 追加時の影響は IdP Mapper のみ、Conditional Authenticator は変更不要**。
 
 詳細な Terraform 実装例は [common/jit-scim-coexistence-keycloak.md §10.8.5.C](../../../common/jit-scim-coexistence-keycloak.md) を参照。
 
-#### 統一評価の信頼値（OIDC + SAML 統合ホワイトリスト）
+### 業界事例
 
-| 値 | プロトコル | MFA 該当 | 本基盤の信頼 |
-|---|:-:|:-:|:-:|
-| `mfa` | OIDC amr / SAML 拡張 | ✅ | ✅ |
-| `otp` / `hwk` / `fpt` / `face` / `iris` / `mca` / `swk` | OIDC amr | ✅ | ✅ |
-| `urn:oasis:names:tc:SAML:2.0:ac:classes:MultiFactorContract` | SAML 標準 | ✅ | ✅ |
-| `urn:oasis:names:tc:SAML:2.0:ac:classes:Smartcard` | SAML 標準 | ✅ | ✅ |
-| `https://refeds.org/profile/mfa` | SAML (REFEDS) | ✅ | ✅ |
-| `multipleauthn` | SAML (Microsoft 拡張) | ✅ | ✅ |
-| `pwd` / `Password` / `PasswordProtectedTransport` | 両方 | ❌ 単要素 | ❌ |
-
-#### 評価フロー
-
-| ステップ | 動作 |
-|---|---|
-| **1. 顧客 IdP から認証 Assertion を受信** | OIDC ID Token or SAML Assertion |
-| **2. Identity Provider Mapper でクレーム/属性を正規化** | amr / AuthnContextClassRef / authnmethodsreferences → `mfa_indicator` |
-| **3. Conditional Authenticator が評価** | `mfa_indicator` に **ホワイトリスト値が 1 つでも含まれるか** をチェック |
-| **4. 判定結果** | 含む → 基盤側 MFA スキップ / 含まない or 属性なし → 基盤側 MFA 補完 |
-
-#### 新規顧客 IdP 追加時の影響範囲
-
-| 追加要素 | 設定変更箇所 |
-|---|---|
-| 新規 IdP（OIDC 経由）| Identity Provider Mapper で `amr` → `mfa_indicator` のみ |
-| 新規 IdP（SAML 経由、標準）| Identity Provider Mapper で `Saml.AuthnContextClassRef` → `mfa_indicator` のみ |
-| 新規 IdP（SAML 経由、Microsoft 系）| Identity Provider Mapper で `authnmethodsreferences` → `mfa_indicator` のみ |
-| Conditional Authenticator | **変更不要**（`mfa_indicator` を見るだけ）|
-
-→ **新規顧客 IdP 追加時の影響範囲が IdP 設定内に閉じる**、保守性が高い。
+- **Microsoft Entra B2B Cross-Tenant**: Home IdP の amr を Resource Tenant 側で信頼
+- **Auth0 Rules / Actions**: amr 評価で条件付き MFA 実装
+- **Okta**: amr ベースの Authentication Policy
+- **Curity Identity Server**: amr 評価が標準機能
+- **Salesforce**: OIDC / SAML 別評価、Entra `multipleauthn` 対応（2026-02）
 
 ---
 
