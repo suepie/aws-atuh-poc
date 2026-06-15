@@ -6,7 +6,7 @@
   - [§FR-1.2.0.D ユーザー識別子戦略](../requirements/proposal/fr/01-auth.md#fr-120d-ユーザー識別子戦略--メール非保有顧客独自-id-への対応)
   - [§FR-2.2.1.A 同一テナント内ユーザー重複の扱い](../requirements/proposal/fr/02-federation.md#fr-2.2.1.a-同一テナント内ユーザー重複の扱い)
   - [ADR-019 既存システム移行戦略](019-existing-system-migration.md)
-  - [project_identifier_strategy_emailless.md](../../.claude/projects/-Users-suepie-Develop-10-project-aws-atuh-poc/memory/project_identifier_strategy_emailless.md)（メモリ）
+  - 関連 Claude 内部メモリ: `project_identifier_strategy_emailless.md`
   - [ADR-020 HRD ヒントキー戦略](020-hrd-hint-keys-mixed-login.md)
 
 ---

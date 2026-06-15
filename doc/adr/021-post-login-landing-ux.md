@@ -6,7 +6,7 @@
   - [§FR-4.3 ログイン後のランディング UX](../requirements/proposal/fr/04-sso.md#fr-43-ログイン後のランディング-uxlaunchpad--sorry--deep-link--fr-sso-008)
   - [ADR-022 AWS edge Sorry 制御パターン](022-aws-edge-sorry-control.md)
   - [ADR-018 ユーザー識別子戦略](018-user-identifier-3layer-emailless.md)
-  - [project_mixed_login_landing_ux.md](../../.claude/projects/-Users-suepie-Develop-10-project-aws-atuh-poc/memory/project_mixed_login_landing_ux.md)（メモリ）
+  - 関連 Claude 内部メモリ: `project_mixed_login_landing_ux.md`
 
 ---
 

@@ -6,7 +6,7 @@
   - [§FR-1.2.0.E 既存システムからの混在モデル移行戦略](../requirements/proposal/fr/01-auth.md#fr-120e-既存システムからの混在モデル移行戦略ローカル--フェデ併存からの集約)
   - [ADR-018 ユーザー識別子 3 階層戦略](018-user-identifier-3layer-emailless.md)
   - [§FR-7.4.7 段階移行運用](../requirements/proposal/fr/07-user.md#fr-747-段階移行運用jit--scim-追加既存ユーザーマージ)
-  - [project_migration_strategy_local_fed.md](../../.claude/projects/-Users-suepie-Develop-10-project-aws-atuh-poc/memory/project_migration_strategy_local_fed.md)（メモリ）
+  - 関連 Claude 内部メモリ: `project_migration_strategy_local_fed.md`
 
 ---
 

@@ -5,7 +5,7 @@
 - **関連**:
   - [§FR-2.3.A アーキテクチャ判断](../requirements/proposal/fr/02-federation.md#fr-23a-アーキテクチャ判断単一-poolrealm--複数-idp-を採用)
   - [ADR-006](006-cognito-vs-keycloak-cost-breakeven.md)（Cognito vs Keycloak コスト損益分岐）
-  - [project_multitenant_l2_rationale.md](../../.claude/projects/-Users-suepie-Develop-10-project-aws-atuh-poc/memory/project_multitenant_l2_rationale.md)（メモリ）
+  - 関連 Claude 内部メモリ: `project_multitenant_l2_rationale.md`
 
 ---
 

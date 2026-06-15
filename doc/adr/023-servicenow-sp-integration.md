@@ -8,6 +8,7 @@
   - [ADR-018 ユーザー識別子 3 階層戦略](018-user-identifier-3layer-emailless.md)
   - [ADR-019 既存システム移行戦略](019-existing-system-migration.md)
   - [B-IDM-8 ServiceNow user_name との関係](../requirements/hearing-checklist.md)
+  - 関連 Claude 内部メモリ: `project_servicenow_sp_integration.md`
 
 ---
 

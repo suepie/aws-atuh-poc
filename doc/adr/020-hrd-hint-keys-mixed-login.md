@@ -5,8 +5,7 @@
 - **関連**:
   - [§FR-2.3.3 ログイン画面で IdP 選択 UX / Home Realm Discovery](../requirements/proposal/fr/02-federation.md#fr-233-ログイン画面で-idp-選択-ux--home-realm-discovery--fr-fed-013)
   - [ADR-018 ユーザー識別子 3 階層戦略](018-user-identifier-3layer-emailless.md)
-  - [project_hrd_emailless_extension.md](../../.claude/projects/-Users-suepie-Develop-10-project-aws-atuh-poc/memory/project_hrd_emailless_extension.md)（メモリ）
-  - [project_mixed_login_landing_ux.md](../../.claude/projects/-Users-suepie-Develop-10-project-aws-atuh-poc/memory/project_mixed_login_landing_ux.md)（メモリ）
+  - 関連 Claude 内部メモリ: `project_hrd_emailless_extension.md`、`project_mixed_login_landing_ux.md`
 
 ---
 
