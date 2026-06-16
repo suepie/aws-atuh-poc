@@ -584,6 +584,185 @@ flowchart LR
 
 → **「ServiceNow 管理者だけ IdP 経由しない」は ② Break Glass パターンとして業界標準**。少数の管理者を Break Glass にし、それ以外は Keycloak SSO 強制が推奨。
 
+#### J-3-B. ServiceNow SSO Routing 制御の 7 レベル粒度マトリクス（技術詳細）
+
+> §J-1 ④（SN ローカル残置）/ §J-3-A（Break Glass）の**実装裏側にある ServiceNow の routing 制御機構**を 7 レベルで体系化。顧客の柔軟な要望（経理だけ別 IdP / Portal 別 SSO / 役割別 routing 等）への対応可否を判定する根拠資料。
+
+##### 7 レベル粒度マトリクス（粗 → 細）
+
+| Lv | 制御単位 | メカニズム | 用途例 | 採用頻度 |
+|:---:|---|---|---|:---:|
+| **1** | **グローバル**（システム全体）| `glide.authenticate.sso.redirect.idp` プロパティ + Default IdP 設定 | デフォルト経路の決定 | **★★★★★（必須）**|
+| **2** | **per-user** | `sys_user.sso_source` フィールド | Break Glass 管理者 / SN-only ユーザー | **★★★★★（必須）**|
+| **3** | **per-URL** | `glide_sso_id` URL パラメータ + `side_door.do` | 特定 URL から別 IdP 強制 | ★★★ |
+| **4** | **Service Portal 単位** | Portal 別の SSO 設定 | 社員 Portal vs 顧客 Portal で別 IdP | ★★★★ |
+| **5** | **Role / Group / Attribute** | SPEntryPage カスタムスクリプト | 役割別の routing | ★★★ |
+| **6** | **ユーザー選択** | Multi-Provider SSO without auto-redirect | 複数 IdP の選択画面 | ★★（移行期）|
+| **7** | **User Criteria**（高度な条件式）| ServiceNow 標準 User Criteria | Role + Group + Department + Location 複合 | ★★★ |
+
+##### Lv 1: グローバル制御（デフォルト経路）
+
+「**デフォルト Keycloak に redirect**」の設定:
+
+| プロパティ / 設定 | 値 | 効果 |
+|---|---|---|
+| `glide.authenticate.sso.redirect.idp` | `true` | 自動 redirect 有効化（一般ユーザー = 認証画面なしで Keycloak へ）|
+| Identity Provider entry "Default" | チェック ON（Keycloak IdP）| Keycloak をデフォルト IdP に |
+| `glide.authentication.external.disable_local_login` | `false` | ローカル併用許可（Break Glass のため）|
+
+##### Lv 2: per-user 制御（`sys_user.sso_source` フィールド）
+
+| `sso_source` の値 | ユーザーの挙動 | 用途 |
+|---|---|---|
+| `<keycloak_idp_sys_id>` | Keycloak へ強制 redirect | 一般ユーザー（明示指定）|
+| 空欄 | デフォルト IdP へ（Lv 1 設定適用）| 通常ユーザー（暗黙の Keycloak）|
+| 空欄 + デフォルト IdP 未設定 | **ローカルログイン画面表示** | **Break Glass 管理者** |
+| `<another_idp_sys_id>` | 別 IdP（例：旧 Okta）へ | 移行期の並走 |
+
+```mermaid
+flowchart TB
+    Login["ユーザーログイン試行"]
+    Login --> Check{"sys_user.sso_source<br/>確認"}
+    Check -->|Keycloak sys_id| KC[Keycloak redirect]
+    Check -->|別 IdP sys_id| Other[別 IdP redirect]
+    Check -->|空欄| Default{"デフォルト IdP<br/>設定?"}
+    Default -->|あり| DefaultIdP[デフォルト IdP redirect]
+    Default -->|なし| Local[ローカルログイン画面]
+
+    style KC fill:#e3f2fd
+    style Other fill:#fff3e0
+    style DefaultIdP fill:#e8f5e9
+    style Local fill:#fff8e1
+```
+
+##### Lv 3: per-URL 制御
+
+| URL | 挙動 |
+|---|---|
+| `https://<inst>.service-now.com/` | デフォルト経路（Lv 1 設定）|
+| `https://<inst>.service-now.com/login.do?glide_sso_id=<sys_id>` | **指定 IdP に強制 redirect**（URL に IdP を埋込）|
+| `https://<inst>.service-now.com/side_door.do` | **ローカルログイン画面強制**（Break Glass 用）|
+
+##### Lv 4: Service Portal 単位
+
+ServiceNow は **Service Portal** を複数持てる（社員 / 顧客 / パートナー等）。各 Portal で独立 SSO 設定可能:
+
+| Portal | 想定ユーザー | SSO 設定 |
+|---|---|---|
+| Employee Center Portal | 社員 | Keycloak SSO 強制 |
+| Customer Service Portal | 顧客 | 別 IdP（B2C 用）or ローカル |
+| Vendor Portal | ベンダー | ローカル only（Keycloak バイパス）|
+
+詳細: [ServiceNow KB0747338](https://support.servicenow.com/kb?id=kb_article_view&sysparm_article=KB0747338) / [KB0682702](https://noderegister.service-now.com/kb?id=kb_article_view&sysparm_article=KB0682702)
+
+##### Lv 5: Role / Group / Attribute ベース（スクリプト）
+
+**SPEntryPage Script** でログイン後の routing を条件分岐可能:
+
+```javascript
+// SPEntryPage Script Include 例
+var SPEntryPage = Class.create();
+SPEntryPage.prototype = {
+    initialize: function() {},
+    getFirstPageURL: function() {
+        var user = gs.getUser();
+
+        if (user.hasRole('itil') && user.hasRole('snc_internal')) {
+            return '/now/nav/ui/home';  // ITIL エージェント → 標準 UI
+        }
+        if (user.hasRole('admin') && !user.hasRole('snc_external')) {
+            return '/sp/admin';  // 管理者 → 管理 Portal
+        }
+        if (user.hasGroupName('Vendor')) {
+            return '/sp/vendor';  // ベンダー → ベンダー Portal
+        }
+        return '/sp';  // デフォルト
+    }
+};
+```
+
+| 制御条件 | 例 |
+|---|---|
+| Role | `admin` / `itil` / カスタムロール |
+| Group | `IT Service Desk` / `External Partners` |
+| Department | `Engineering` / `Sales` |
+| カスタム属性 | `sys_user.location` / `sys_user.company` |
+
+##### Lv 6: ユーザー選択（Multi-Provider SSO without auto-redirect）
+
+デフォルト IdP を設定せず、`glide.authenticate.sso.redirect.idp = false` にすると選択画面表示:
+
+```
+┌──────────────────────────────────┐
+│  ServiceNow Login                 │
+│  [ Keycloak でログイン ]          │  ← 本基盤の SSO
+│  [ Acme Entra ID でログイン ]    │  ← 並走中の旧 IdP
+│  [ ローカル PW でログイン ]       │  ← Break Glass
+└──────────────────────────────────┘
+```
+
+→ 移行期の並走運用や、混在シナリオに有効。
+
+##### Lv 7: User Criteria（ServiceNow 標準の高度条件式）
+
+ServiceNow の **User Criteria** は Role / Group / Department / Location / カスタム条件を組合せた条件式を定義可能:
+
+```
+User Criteria 例:
+  - Role: itil OR admin
+  - AND Group: Tokyo Office
+  - AND Department: ≠ External Vendor
+  - AND Active: true
+```
+
+これを Identity Provider entry に紐付けると「**この条件を満たすユーザーだけこの IdP に redirect**」が定義可能。
+
+##### 制御できる / できないことの整理
+
+**できる ✅**
+
+| 制御 | レベル |
+|---|---|
+| デフォルト経路（Keycloak）| L1 |
+| 特定ユーザーだけ除外（Break Glass）| L2 |
+| 特定 URL から別 IdP / ローカル | L3 |
+| 用途別 Portal で別 SSO | L4 |
+| 役割 / Group / 部署別 routing | L5・L7 |
+| ユーザーに IdP 選択させる | L6 |
+| 複数条件の組合せ | L7 |
+| モバイルアプリ別 IdP | [KB0864615](https://support.servicenow.com/kb?id=kb_article_view&sysparm_article=KB0864615) で個別設定 |
+
+**できない / 限定的 ⚠**
+
+| 制御 | 状況 |
+|---|---|
+| **IP ベース routing** | 標準では限定的。`gs.getSession().getClientIP()` を SPEntryPage で使えば実装可（カスタム）|
+| **時間帯ベース routing** | 標準なし、カスタム実装で可 |
+| **デバイスタイプ別**（PC vs モバイル）| モバイル別 IdP 設定は可（KB0864615）、それ以外は限定的 |
+| **位置情報ベース** | 標準なし |
+| **動的属性 routing**（ログイン時に AD 等を呼出して判定）| Server Script で可能だが複雑 |
+
+##### 推奨パターン（典型シナリオ別）
+
+| シナリオ | 推奨 Level | 具体構成 |
+|---|---|---|
+| **「全員 Keycloak、管理者だけ Break Glass」**（最頻出）| **L1 + L2** | デフォルト IdP = Keycloak + `glide.authenticate.sso.redirect.idp = true` + Break Glass 管理者 2-3 名は `sso_source` 空欄 |
+| 移行期の並走 | L2 or L6 | per-user `sso_source` で旧 / 新 IdP 振分 / 選択画面方式 |
+| 社員 vs 顧客で完全分離 | L4 | 別 Service Portal、Portal ごとに SSO 設定 |
+| 役割別 routing（経理は別 IdP 等）| L5 + L7 | User Criteria + SPEntryPage Script |
+| **SN-only ユーザー多数**（§J-1 ④）| L2 | per-user `sso_source` で SSO 対象と非対象を分離 |
+| 外部ベンダー Portal | L4 + L2 | Vendor Portal はローカル only、`sso_source` 空欄 |
+
+##### 結論：本基盤での標準構成
+
+| 構成項目 | 採用方針 |
+|---|---|
+| **本基盤デフォルト** | **L1 + L2 の組合せ**（Keycloak デフォルト IdP + 自動 redirect + Break Glass 管理者は `sso_source` 空欄）|
+| **必要に応じ追加** | L3-L7（顧客の固有要件に応じて選択）|
+| **顧客ヒアリング** | B-SN-17 で「L1+L2 で足りるか / L3 以降の細かい要件があるか」確認 |
+
+→ **顧客の柔軟な要望にほぼ全パターン対応可能**。Lv 5 / 7 までいけば「経理だけ別 IdP」「Tokyo Office だけ MFA 強化」等の高度な要件も実装できる。
+
 ### J-4. 移行手順（並走 + 切替 + 旧 PW 廃止）
 
 [ADR-019](019-existing-system-migration.md) の並走戦略を ServiceNow 連携に適用:
