@@ -1881,6 +1881,39 @@ Keycloak 公式ブログ（2024-06）からの引用:
 - ⚠ **2025-11 KB2599716**: Microsoft Entra 経由の SCIM プロビは ServiceNow が非サポート公表 → SCIM Push（パターン C）は自前実装・SI 保証外
 - 4 パターン比較：A SSO のみ / **B SSO + SAML JIT（推奨）** / C SSO + SCIM Push / D 双方向同期（推奨せず）
 
+#### 既存 SN ローカルユーザーの SSO 化（追加論点、[ADR-023 §J](../../../adr/023-servicenow-sp-integration.md#j-既存-servicenow-ローカルユーザーの-sso-化フローservicenow-のみに存在するユーザーの取扱い)）
+
+「現状 ServiceNow にしか居ないローカルユーザー」の取扱いには **4 つの選択肢**:
+
+| # | 案 | 認証ソース | 他アプリ SSO | 採用シーン |
+|:---:|---|---|:---:|---|
+| ① | IdP Keycloak（Tier 2）に移行 | IdP-KC | ✅ | 10M MAU + SSO 利用者 |
+| ② | Broker 共通 Pool に移行 | Broker | ✅ | 中規模 + SSO 利用者 |
+| ③ | 顧客 IdP（Entra/Okta）にリンク | 顧客 IdP | ✅ | 他 IdP アカウントあり |
+| **④** | **ServiceNow ローカル残置**（NEW）| SN | ❌ | **SN-only ユーザー多数時**（業務委託 / 外部ベンダー等）|
+
+#### ④ SN ローカル残置（移行しない選択肢）
+
+ServiceNow は **per-user `sso_source` フィールド**で SSO 経路を制御可能（公式機能）。SN-only ユーザーは `sso_source` 空欄 → ローカル PW 認証へフォールバック。
+
+| 観点 | 採用方針 |
+|---|---|
+| **認証** | per-user `sso_source` で SSO 経路制御、SN-only は SN ローカル PW |
+| **前提** | **他アプリ SSO は利用不可**（Keycloak には存在しないため）|
+| **適合シナリオ** | SN-only ユーザー（業務委託 / 外部ベンダー / 限定アクセス）が多い場合 |
+| **トレードオフ** | 監査二元化（KC + SN）、規制業種では非推奨 |
+| **使い分け** | ① + ④ ハイブリッド：SSO 利用者は ① 移行、SN-only は ④ で残置 |
+
+#### ①〜③（移行する場合）の方針
+
+| 観点 | 採用方針 |
+|---|---|
+| **認証ソース配置** | **10M MAU 規模 → IdP-KC（[ADR-033](../../../adr/033-keycloak-2tier-broker-idp-architecture.md) E 案）** / 中規模 → Broker 共通 Pool（[ADR-028](../../../adr/028-idpless-customer-local-user-management.md) A 案）|
+| **PW 移行手段** | **User Storage SPI** で ServiceNow REST API 経由のキャッシュ移行（[ADR-019](../../../adr/019-existing-system-migration.md) ② と整合）|
+| **SSO 開始後の SN ローカル PW** | **一般ユーザー無効化 + 管理者 1-2 名 Break Glass 残置**（業界標準）|
+| **移行期間** | 3〜6 ヶ月（並走 → 切替 → 廃止の Phase 1-4）|
+| **混在対応** | 社員（Entra ID 経由）+ SN のみのユーザー（IdP-KC 経由）を同一テナント内で並列 |
+
 ### §FR-2.4.C 我々のスタンス（基本方針に基づく）
 
 | 基本方針の柱 | ServiceNow 連携での実現 |

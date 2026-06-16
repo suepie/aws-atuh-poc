@@ -252,6 +252,344 @@ ServiceNow 側で **System Properties > User Provisioning Enabled = Yes** に設
 | **公式 ServiceNow Connector**（存在せず）| — | — |
 | **Identity Bridge ツール**（Stitchflow / Hire2Retire 等）| 商用ツール経由 | ✅ ツール採用 |
 
+### ServiceNow 側の設定責務分担と必要権限
+
+> **論点**: SAML SSO を成立させるには **Keycloak 側だけでなく ServiceNow 側にも設定が必須**。顧客の ServiceNow 担当者にどこまで依頼可能か、提供すべき情報、想定ハードルを整理する。
+
+#### ServiceNow 側で必要な設定 8 項目
+
+| # | 設定 | 場所 / 内容 |
+|---|---|---|
+| 1 | **Multi-Provider SSO Plugin 有効化** | プラグイン名: `com.snc.integration.sso.multi`（現代のインスタンスでは通常デフォルト有効）|
+| 2 | **Identity Provider 登録** | `Multi-Provider SSO > Identity Providers` → New → SAML を選択 |
+| 3 | **IdP メタデータインポート** | Keycloak の SAML Descriptor XML をアップロード or URL 指定。ほぼ全項目が**自動入力** |
+| 4 | **NameID Format 設定** | `Email` or `Unspecified` を選択、Keycloak 側と合致させる |
+| 5 | **属性マッピング** | SAML 属性 → `sys_user` フィールドの対応（user_name / email / first_name / last_name 等）|
+| 6 | **Auto Provisioning 設定**（JIT 採用時）| System Properties で `User Provisioning Enabled = Yes`、関連プロパティ 4-5 個 |
+| 7 | **Active 化 + Default 設定** | IdP entry を `Active` にし、必要なら全ユーザーで SSO 強制 |
+| 8 | **テスト** | テストユーザーで SP-initiated / IdP-initiated 両方検証 |
+
+#### 顧客 ServiceNow 担当者への依頼可否：✅ **標準業務として可能**
+
+| 観点 | 判定 |
+|---|---|
+| **必要権限** | `admin` role（ServiceNow 標準管理者ロール）。`security_admin` も推奨 |
+| **業界での頻度** | ServiceNow 管理者は **Okta / Azure AD と SAML SSO 連携した経験が大半**（過去 10 年の業界標準作業）|
+| **所要工数** | 初回設定 1-2 時間、テスト 1-2 日 |
+| **公式ドキュメント** | ServiceNow Now Learning / Product Documentation に SAML SSO 設定手順あり |
+| **第三者ドキュメント** | [Okta](https://saml-doc.okta.com/SAML_Docs/How-to-Configure-SAML-2.0-for-ServiceNow.html) / [miniOrange](https://www.miniorange.com/servicenow-single-sign-on-(sso)) / その他多数 |
+
+→ **「Keycloak と SSO 連携してください」とお願いすれば、Okta / Azure 連携と同じ作業として理解されます**。ServiceNow 側からは Keycloak は "Generic SAML 2.0 IdP" と見えるだけで、特殊対応は不要。
+
+#### 弊社 → 顧客に提供する 6 項目（設定依頼セット）
+
+ServiceNow 担当者に設定を依頼するときに、**こちらから提供する情報**:
+
+| # | 提供物 | 例 |
+|---|---|---|
+| 1 | **Keycloak IdP メタデータ XML**（URL or ファイル）| `https://auth.example.com/realms/main/protocol/saml/descriptor` |
+| 2 | **SP Entity ID**（Keycloak に登録する ServiceNow の識別子）| `https://acme.service-now.com` |
+| 3 | **Assertion Consumer Service (ACS) URL**（SAML Response 受信先）| `https://acme.service-now.com/navpage.do` |
+| 4 | **属性マッピング仕様** | `userName` → `user_name`、`email` → `email`、`firstName` → `first_name` 等 |
+| 5 | **NameID Format** | `urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress` or `unspecified`（顧客の `user_name` 仕様に合わせる）|
+| 6 | **テストユーザー作成依頼** | 検証用に 1-2 名 |
+
+#### 想定される潜在的ハードル
+
+| 障害候補 | 対処 |
+|---|---|
+| **ServiceNow Edition 制限** | Multi-Provider SSO は全 Edition 利用可、SCIM v2 は Enterprise 以上 |
+| **Plugin 未有効化** | 顧客が ServiceNow HI Portal でアクティベーション申請（通常即時〜数日）|
+| **顧客社内の Change Management** | 規制業種では Change Request が必要、リードタイム 1-2 週間追加 |
+| **既存 SAML 接続との競合** | Multi-Provider SSO なら **複数 IdP 並列接続可**（旧 IdP 残置で並走可能）|
+| **NameID Format の不一致** | 設定段階で確認、`Email` / `Unspecified` どちらを使うか事前合意 |
+| **ServiceNow 管理者の経験不足** | SAML 経験のない管理者の場合、ServiceNow Partner / Now Support の利用が必要 |
+
+#### 責務分担サマリ（弊社 vs 顧客 ServiceNow 担当者）
+
+| 作業項目 | 弊社（基盤側）| 顧客（ServiceNow 担当）|
+|---|:---:|:---:|
+| Keycloak SAML Client 登録 | ✅ | — |
+| Keycloak Protocol Mapper 設定（属性送出）| ✅ | — |
+| Keycloak IdP メタデータ XML 提供 | ✅ | — |
+| 設定情報の事前ドキュメント化（上記 6 項目）| ✅ | — |
+| ServiceNow Multi-Provider SSO Plugin 有効化確認 | — | ✅ |
+| ServiceNow IdP entry 作成 + メタデータインポート | — | ✅ |
+| ServiceNow 属性マッピング設定 | — | ✅ |
+| ServiceNow Auto Provisioning プロパティ設定 | — | ✅ |
+| ServiceNow テストユーザー作成 | — | ✅ |
+| SP-initiated SSO テスト | ✅ 立会 | ✅ 操作 |
+| IdP-initiated SSO テスト | ✅ 立会 | ✅ 操作 |
+| Change Request 提出（社内手続き）| — | ✅ |
+| 既存 SAML 接続との並走管理 | — | ✅ |
+
+---
+
+## J. 既存 ServiceNow ローカルユーザーの SSO 化フロー（**ServiceNow のみに存在するユーザー**の取扱い）
+
+> **対象シナリオ**: 現状 ServiceNow にローカルユーザーが存在し（`sys_user` テーブルに PW ハッシュ付きで保持）、それらを本基盤経由の SSO に切替えたい。これらのユーザーは ServiceNow 以外の認証ソース（Entra / Okta 等）に存在しないか、存在しても紐付けが必要。
+
+ADR-023 メイン部のパターン A〜D は「**新規連携**」を主眼としていたが、本セクションは「**既存ローカルユーザーをどう SSO 対応するか**」の追加論点を整理する。
+
+### J-1. 認証ソースをどこに置くか（4 選択肢）
+
+ブローカー（本基盤）から SAML SSO を発行するには、ユーザーの**認証ソース**がブローカーの先に存在する必要がある。ServiceNow しか居ない場合、認証ソースを次のいずれかに置く必要がある（**④ は移行せず、ServiceNow ローカル PW を残置して per-user SSO routing で回避する選択肢**）:
+
+| 案 | 認証ソース | 採用条件 | 関連 ADR |
+|:---:|---|---|---|
+| **①** | **IdP Keycloak（Tier 2）**（推奨、10M MAU 規模時）| ServiceNow ローカルユーザーを IdP-KC に移行、Broker → IdP-KC → SAML → ServiceNow | [ADR-033](033-keycloak-2tier-broker-idp-architecture.md) E 案 |
+| **②** | **Broker 共通 Pool**（中規模時）| Broker KC のローカル Pool に移行、Broker から直接 SAML → ServiceNow | [ADR-028 A 案](028-idpless-customer-local-user-management.md) |
+| **③** | **顧客 IdP**（ハイブリッド時）| 該当ユーザーが他に Entra/Okta アカウントを持つ場合、それを認証ソースとして使う | ADR-023 メイン部の通常パターン |
+| **④** | **ServiceNow ローカル残置**（**NEW、SN-only ユーザー向け**）| ServiceNow ローカル PW のまま、per-user `sso_source` で SSO 経路を制御。**Keycloak には移行しない**（他アプリ SSO 利用は不可、SN 内に閉じた利用のみ）| [§J-1.④](#j-1-認証ソースをどこに置くか4-選択肢) |
+
+```mermaid
+flowchart TB
+    SN_Users["既存 ServiceNow<br/>ローカルユーザー<br/>(sys_user + PW)"]
+
+    SN_Users -->|移行先 ①<br/>10M MAU 規模| IdP_KC["IdP Keycloak<br/>(Tier 2)"]
+    SN_Users -->|移行先 ②<br/>中規模| Broker_Pool["Broker KC<br/>共通 Pool"]
+    SN_Users -->|移行先 ③<br/>他アカウントあり| Cust_IdP["顧客 IdP<br/>(Entra / Okta)"]
+    SN_Users -->|④ 移行しない<br/>SN-only 利用| SN_Local["ServiceNow ローカル<br/>(sys_user.password 残置)"]
+
+    IdP_KC -.OIDC.-> Broker["Broker Keycloak"]
+    Broker_Pool -.直接.-> Broker
+    Cust_IdP -.OIDC/SAML.-> Broker
+    SN_Local -.ローカル認証のみ.-> ServiceNow["ServiceNow (SP)"]
+
+    Broker -.SAML.-> ServiceNow
+
+    style SN_Users fill:#ffebee
+    style IdP_KC fill:#e3f2fd
+    style Broker_Pool fill:#fff8e1
+    style Cust_IdP fill:#e8f5e9
+    style SN_Local fill:#fff3e0
+    style Broker fill:#fff3e0
+    style ServiceNow fill:#fce4ec
+```
+
+#### 4 選択肢の比較
+
+| 観点 | ① IdP-KC | ② Broker 共通 Pool | ③ 顧客 IdP | ④ SN ローカル残置 |
+|---|:---:|:---:|:---:|:---:|
+| PW ハッシュの物理分離 | ✅ Tier 2 のみ | ❌ Broker 同居 | ✅ 顧客 IdP のみ | ✅ ServiceNow のみ |
+| 適用 MAU 規模 | 10M+ | 〜中規模 | 顧客次第 | 規模問わず |
+| 既存 SN ユーザーの追加作業 | PW 移行 + IdP-KC 登録 | PW 移行 + Broker 登録 | 顧客 IdP リンク | **不要（設定のみ）** |
+| ユーザー追加体験 | IdP-KC でログイン | Broker でログイン | 顧客 IdP でログイン | **SN ローカル PW** |
+| 該当ユーザーに他 IdP アカウントが必要 | ❌ 不要 | ❌ 不要 | ✅ 必須 | ❌ 不要 |
+| **他アプリ SSO 利用** | ✅ 可能 | ✅ 可能 | ✅ 可能 | ❌ **不可（SN-only）** |
+| 監査・統制 | 一元化（KC）| 一元化（KC）| 一元化（KC）| **二元化（KC + SN）**|
+| 退職時 deprovision | KC で一括 | KC で一括 | 顧客 IdP で一括 | SN で個別 |
+| 規制業種適合 | ✅ | ✅ | ✅ | ⚠ 監査複雑性 |
+| 関連 ADR | ADR-033 E 案 | ADR-028 A 案 / D 案 | ADR-023 メイン | §J-1.④ |
+
+#### ④ SN ローカル残置の実装：per-user `sso_source` ベース routing
+
+ServiceNow は **per-user SSO routing** を公式サポート（[ServiceNow Community](https://www.servicenow.com/community/servicenow-ai-platform-forum/allow-local-login-alongside-sso-quot-source-quot-field/td-p/2471845)）:
+
+| 設定項目 | 値 | 効果 |
+|---|---|---|
+| `sys_user.sso_source` = `<keycloak_idp_sys_id>` | Keycloak へ routing | Keycloak SSO ユーザー |
+| `sys_user.sso_source` = `""`（空欄）| デフォルト IdP へ | デフォルト IdP 設定次第 |
+| デフォルト IdP **未設定** + `sso_source` 空欄 | **ローカル認証画面表示** | SN-only ユーザー |
+| `glide.authentication.external.disable_local_login` = `false` | ローカル併用許可 | フォールバック有効 |
+
+##### サポートされるフォールバック機構（4 種）
+
+| # | 機構 | 内容 |
+|---|---|---|
+| **1** | **per-user `sso_source` 設定**（推奨）| `sys_user.sso_source` 列に IdP の sys_id を設定。空欄なら**ローカル認証フォールバック** |
+| 2 | **`side_door.do` URL**（サイドドア）| `https://<instance>.service-now.com/side_door.do` でローカルログインに直アクセス（注：`glide.authenticate.sso.redirect.idp` 設定時はモバイルでも動作する KB0584514）|
+| 3 | `glide.authentication.external.disable_local_login = false` | ローカル併用許可 |
+| 4 | Multi-Provider SSO without auto-redirect | デフォルト IdP 未設定で**ユーザー選択画面**表示 |
+
+##### ④ 採用時の運用イメージ
+
+```mermaid
+flowchart TB
+    SNLogin["ServiceNow にアクセス"]
+    SNLogin --> Lookup{"ユーザーの<br/>sso_source 確認"}
+    Lookup -->|sso_source あり| ToKC["Keycloak SAML redirect"]
+    Lookup -->|sso_source 空欄| Local["ローカル PW ログイン画面"]
+
+    ToKC --> KC[Keycloak<br/>SSO 経由 → 他アプリ可]
+    Local --> SNOnly[ServiceNow 内のみ利用<br/>他アプリ SSO 不可]
+
+    style ToKC fill:#e3f2fd
+    style Local fill:#fff8e1
+    style SNOnly fill:#fff3e0
+```
+
+##### ④ のサイレント前提（重要）
+
+- ④ 採用ユーザーは **Keycloak には存在しない** → 他アプリ SSO は利用不可
+- **ServiceNow 内に閉じた利用のみ**（業務委託・外部ベンダー・限定的な現場担当者等）
+- ServiceNow → Keycloak への同期機構は ServiceNow 公式に存在しない（自前 Event Listener + Webhook + Lambda で構築可だが保守負荷）
+
+##### 顧客状況別の推奨使い分け
+
+| 顧客状況 | 推奨 |
+|---|---|
+| 全 SN ユーザーが他アプリも利用 | ① IdP-KC 移行（or ②）|
+| SN-only ユーザーが少数（< 10%）| ① + ④ **ハイブリッド**（少数のみ SN ローカル残置）|
+| **SN-only ユーザーが多数**（外部ベンダー / 限定業務委託 / 一時アクセス）| **④ メイン + 他アプリ利用者のみ ① で移行** |
+| 規制業種（金融 / 医療 / 政府）| ① **強推奨**（監査一元化のため、④ は監査複雑性で非推奨）|
+
+### J-2. PW ハッシュ移行戦略（[ADR-019](019-existing-system-migration.md) の応用）
+
+#### ServiceNow の PW ハッシュ仕様確認
+
+ServiceNow の `sys_user.password` 列は**ServiceNow 独自のハッシュ形式**（PBKDF2 ベース、内部実装非公開）。
+
+| 観点 | ServiceNow の挙動 |
+|---|---|
+| ハッシュアルゴリズム | PBKDF2 + ServiceNow 独自パラメータ（非公開）|
+| 外部からの直接検証 | ❌ 不可（公開 API なし）|
+| 平文 PW のエクスポート | ❌ 不可（セキュリティ仕様）|
+
+→ **ServiceNow から PW を「そのまま」Keycloak に持っていくことは不可能**。
+
+#### 移行手段 3 つ
+
+| 手段 | 内容 | UX |
+|:---:|---|---|
+| **A. User Storage SPI（キャッシュ移行）** | Keycloak が ServiceNow REST API（`sys_user_credentials` 認証エンドポイント）に問合せて検証 → 成功時に Keycloak DB へ再ハッシュ保存 | ✅ 強制リセット不要 |
+| **B. 強制 PW リセット** | 招待メール送信、ユーザーが新規 PW 設定 | ⚠ UX 悪化、サポート工数増 |
+| **C. ADR-019 ②と同じく外部 DB 読み出し** | ServiceNow DB に直接接続して検証（推奨されない）| ❌ ServiceNow の規約違反、保守困難 |
+
+→ **A 案 = User Storage SPI 経由のキャッシュ移行**が現実的かつ ADR-019 ② と完全整合。
+
+```mermaid
+sequenceDiagram
+    participant U as ユーザー
+    participant KC as Keycloak<br/>(IdP-KC or Broker)
+    participant SPI as User Storage SPI
+    participant SN as ServiceNow REST API
+
+    Note over U,SN: 初回ログイン（PW がまだ Keycloak DB にない）
+    U->>KC: PW 入力
+    KC->>KC: Keycloak DB 検索 → 未存在
+    KC->>SPI: SPI 経由で legacy 認証
+    SPI->>SN: POST /api/now/auth (user_name, password)
+    SN-->>SPI: 認証成功
+    SPI-->>KC: 認証成功
+    KC->>KC: Keycloak DB に新 algo で PW 再ハッシュ保存
+    KC-->>U: SSO 成功 + SAML → ServiceNow へ
+
+    Note over U,SN: 2 回目以降（Keycloak DB 直接利用）
+    U->>KC: PW 入力
+    KC->>KC: Keycloak DB で PBKDF2/Argon2 検証 → 成功
+    KC-->>U: SSO 成功
+```
+
+→ ServiceNow REST API による外部認証は ServiceNow が公式 API として提供しており、SI 保証対象内。
+
+### J-3. SSO 開始後の ServiceNow ローカル PW の取り扱い
+
+ServiceNow のローカル PW は SSO 開始後どうするか:
+
+| 選択肢 | 内容 | 推奨度 |
+|:---:|---|:---:|
+| **無効化（推奨）** | `sys_user.locked_out = true` 等で SSO 経由のみログイン可能に。Local Login 機能も無効化 | ✅ |
+| 残置（Break Glass）| SSO 障害時の最終防衛線として一部管理者のみ PW 残す（業界標準）| ⚠ 管理者層のみ可 |
+| 完全削除 | `sys_user.password = ""` で物理削除 | ❌ 過剰、ロールバック不可 |
+
+→ **推奨は「一般ユーザーは無効化、管理者層 1-2 名のみ Break Glass で残置」**（業界標準、Salesforce / Workday 同パターン）。
+
+### J-4. 移行手順（並走 + 切替 + 旧 PW 廃止）
+
+[ADR-019](019-existing-system-migration.md) の並走戦略を ServiceNow 連携に適用:
+
+```mermaid
+sequenceDiagram
+    participant Admin as 顧客管理者
+    participant SN as ServiceNow
+    participant Basis as 本基盤 (Broker + IdP-KC)
+    participant U as ServiceNow 既存ユーザー
+
+    Note over Admin,U: Phase 1: 準備
+    Admin->>Basis: User Storage SPI で ServiceNow REST API 接続設定
+    Admin->>SN: Multi-Provider SSO Plugin 有効化 + Broker を IdP 登録
+    Admin->>SN: 既存 SAML 接続 (or なし) は残置
+
+    Note over Admin,U: Phase 2: 並走期（既存 PW + SSO 両方有効）
+    U->>SN: ServiceNow に直接 PW ログイン（旧経路）
+    U->>Basis: or Broker 経由 SSO（新経路）
+    Note over U,Basis: 初回 SSO 時に User Storage SPI 経由で PW 移行<br/>(Keycloak DB に再ハッシュ保存)
+
+    Note over Admin,U: Phase 3: 切替（SSO 強制）
+    Admin->>SN: ServiceNow Local Login 無効化（一般ユーザー）
+    Admin->>SN: 管理者層 1-2 名のみ Break Glass で残置
+    U->>Basis: 全員 Broker 経由 SSO
+
+    Note over Admin,U: Phase 4: 移行終了
+    Basis->>Basis: 並走期で全員ログイン済 → PW 移行完了確認
+    Admin->>SN: 未ログイン残存ユーザー検出 → 強制リセット案内 or 削除
+```
+
+| Phase | 期間目安 | 内容 |
+|---|---|---|
+| Phase 1 | 1-2 週間 | SPI 接続設定、ServiceNow Multi-Provider SSO + Broker IdP 登録、ステージング検証 |
+| Phase 2 | 3-6 ヶ月 | 並走運用、ユーザーは SN ローカル PW でも SSO 経由でもログイン可。初回 SSO で PW 移行 |
+| Phase 3 | 1-2 週間 | SN Local Login 無効化（Break Glass 管理者除く）、SSO 強制 |
+| Phase 4 | 1 ヶ月 | 未ログインユーザーの最終処理、SPI 接続削除 |
+
+### J-5. user_name の突合（[ADR-018](018-user-identifier-3layer-emailless.md) と整合）
+
+ServiceNow 既存ユーザーの `user_name` をどう本基盤側と突合するか:
+
+| 状況 | 突合キー | 注意点 |
+|---|---|---|
+| ServiceNow `user_name` がメールアドレス | email を SAML NameID として送出、SN 側で email = user_name で突合 | 単純、現状でも動く |
+| ServiceNow `user_name` が独自 ID（社員番号等）| **`user_name` を Layer B `external_id` として基盤に保持**、SAML NameID に `external_id` 送出 | ADR-018 の方針と完全整合 |
+| ServiceNow `user_name` の重複（同名異人）| `tenant_id + user_name` の複合キー化 | テナント境界の厳格化 |
+| ServiceNow に複数の同一人物レコード | ServiceNow 側で事前にマージ or 本基盤側で `identities` リンク管理 | 移行前のデータ品質確認必須 |
+
+### J-6. 混在シナリオ（同一顧客内で「SN のみのユーザー」と「他 IdP もあるユーザー」が併存）
+
+ADR-019 §E の混在顧客パターンを ServiceNow ケースに適用:
+
+```mermaid
+flowchart LR
+    subgraph Acme["Acme 社"]
+        Employee["社員<br/>(Entra ID あり)"]
+        Contractor["業務委託<br/>(ServiceNow のみ)"]
+        Vendor["ベンダー担当者<br/>(ServiceNow のみ)"]
+    end
+
+    Employee -.OIDC.-> Entra[Acme Entra ID]
+    Contractor -.User Storage SPI<br/>→ PW 移行.-> IdP_KC[IdP-KC]
+    Vendor -.同上.-> IdP_KC
+
+    Entra -.OIDC/SAML.-> Broker[Broker KC]
+    IdP_KC -.OIDC.-> Broker
+    Broker -.SAML.-> ServiceNow
+
+    style Employee fill:#e3f2fd
+    style Contractor fill:#fff8e1
+    style Vendor fill:#fff8e1
+```
+
+→ **業界標準パターン**（Microsoft Azure Architecture Center 2026）。社員は Entra 経由、SN のみのユーザーは IdP-KC 経由、両者とも Broker で統一 JWT 発行 → ServiceNow に SAML SSO。
+
+### J-7. ヒアリング項目（B-SN-9〜11 追加）
+
+| ID | 確認項目 | 回答例 |
+|---|---|---|
+| **B-SN-9** | 既存 ServiceNow ローカルユーザー数 | 全体 / カテゴリ別（社員 / 委託 / ベンダー等）|
+| **B-SN-10** | 既存 SN ローカルユーザーの PW 移行希望 | A User Storage SPI（推奨）/ B 強制リセット / C SSO 後も SN ローカル PW 残置 |
+| **B-SN-11** | SSO 開始後の SN ローカル PW 取扱い | **無効化（推奨）** / Break Glass 残置（管理者層のみ）/ 完全削除 |
+
+### J-8. 推奨デフォルトアプローチ
+
+| 項目 | 推奨 |
+|---|---|
+| 認証ソース配置 | **10M MAU 規模なら IdP-KC、中規模なら Broker 共通 Pool**（[J-1](#j-1-認証ソースをどこに置くか3-選択肢) 参照）|
+| PW 移行手段 | **A. User Storage SPI（キャッシュ移行）** — ServiceNow REST API 経由 |
+| SSO 開始後の SN ローカル PW | **一般ユーザー無効化 + 管理者 1-2 名 Break Glass 残置** |
+| 移行期間 | 3〜6 ヶ月（ADR-019 並走戦略と同じ）|
+| 切替単位 | ユーザーカテゴリ単位（社員 → 委託 → ベンダー）|
+| user_name 突合 | Layer B `external_id` = `user_name`（ADR-018 整合）|
+
 ---
 
 ## Consequences

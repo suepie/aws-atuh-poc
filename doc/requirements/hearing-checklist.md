@@ -198,6 +198,13 @@
 | **B-SN-6** | `[B]` | 🟡 | **退職時の ServiceNow レコード扱い**（2026-06-15 追加）| FR-USER-009 | §FR-2.4 | 退職時、ServiceNow 側 `sys_user` は?（**残置・履歴保持＝業界標準** / `active=false` 同期 / 物理削除）| 方針 | | ⏳ |
 | **B-SN-7** | `[B]` | 🟢 | **Multi-Provider SSO Plugin 有効化状況**（2026-06-15 追加）| FR-FED-014 | §FR-2.4.B | ServiceNow `com.snc.integration.sso.multi` プラグイン有効化済み? | 有効 / 未有効（要設定）/ 不明 | | ⏳ |
 | **B-SN-8** | `[B]` | 🟢 | **他 SaaS SP 連携の予定**（2026-06-15 追加）| FR-FED-014 | §FR-2.4 | ServiceNow 以外の SaaS SP 連携予定は?（Salesforce / Workday / その他 / なし）| 一覧 + 優先度 | | ⏳ |
+| **B-SN-9** | `[B]` | 🔴 | **既存 ServiceNow ローカルユーザー数**（2026-06-16 追加）| FR-FED-014 / NFR-MIG | §FR-2.4, ADR-023 §J | 現状 ServiceNow にしか居ないローカルユーザー数は?（全体 / カテゴリ別：社員 / 委託 / ベンダー等）| 規模目安 + カテゴリ別内訳 | | ⏳ |
+| **B-SN-10** | `[B]` | 🔴 | **既存 SN ローカルユーザーの PW 移行希望**（2026-06-16 追加）| FR-FED-014 / NFR-MIG | §FR-2.4, ADR-023 §J-2 | PW 移行手段は?（**A User Storage SPI（推奨）** / B 強制リセット / C SSO 後も SN ローカル PW 残置）| A / B / C + 理由 | | ⏳ |
+| **B-SN-11** | `[B]` | 🟡 | **SSO 開始後の SN ローカル PW 取扱い**（2026-06-16 追加）| FR-FED-014 / NFR-SEC | §FR-2.4, ADR-023 §J-3 | SSO 開始後、ServiceNow ローカル PW は?（**一般無効化 + 管理者 Break Glass 残置（推奨）** / 全員残置 / 完全削除）| 方針 | | ⏳ |
+| **B-SN-12** | `[B]` | 🟡 | **顧客 ServiceNow 管理者の SAML SSO 経験**（2026-06-16 追加）| FR-FED-014 / NFR-OPS | §FR-2.4, ADR-023 §F | 顧客側の ServiceNow 管理者は **SAML SSO 連携の設定経験**があるか?（Okta / Azure AD 等の過去実績）| あり（経験 IdP）/ なし（要 Partner 支援）/ 不明 | | ⏳ |
+| **B-SN-13** | `[B]` | 🟢 | **顧客 Change Management リードタイム**（2026-06-16 追加）| NFR-MIG / NFR-OPS | §FR-2.4, ADR-023 §F | ServiceNow 設定変更に**社内 Change Request が必要**か?（規制業種では 1-2 週間追加の可能性）| 不要 / 必要（リードタイム）| | ⏳ |
+| **B-SN-14** | `[B]` | 🔴 | **SN-only ユーザーの存在と規模**（2026-06-16 追加、④ 採用判定）| FR-FED-014 / NFR-MIG | §FR-2.4, ADR-023 §J-1 ④ | **ServiceNow にしか居ない**（他アプリ SSO 不要）ユーザーが存在するか?（業務委託 / 外部ベンダー / 限定アクセス等）| 存在しない（全員 SSO 移行）/ 少数 < 10%（少数 ④ ハイブリッド）/ **多数 ≥ 10%（④ メイン）** | | ⏳ |
+| **B-SN-15** | `[B]` | 🟡 | **④ SN ローカル残置の許容性**（2026-06-16 追加、ガバナンス観点）| NFR-SEC / NFR-OPS | §FR-2.4, ADR-023 §J-1 ④ | SN-only ユーザーを **Keycloak に移行せず ServiceNow ローカル PW のまま残置** することは、**監査・統制上許容できるか**?（規制業種では監査一元化のため不可の可能性）| 許容（④ 採用可）/ 不可（① or ② 必須）/ 検討中 | | ⏳ |
 
 ### §2.5 SSO・ログアウト方針
 
