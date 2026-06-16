@@ -103,7 +103,12 @@ doc/data-platform/
 │   │       └── 05-schedule.md               ← §C-5 スケジュール
 │   └── internal-evaluation.md               ← 社内評価メモ（標準提示の裏どり資料、対外には出さない）
 │
+├── [意思決定記録]
+│   └── adr/                                 ← Architecture Decision Records（DP-ADR-NNN）
+│       └── DP-ADR-001-...-deferred.md       ← SageMaker Catalog 採否（Phase 1 不採用、Phase 2 再評価）
+│
 ├── [ヒアリング]
+│   ├── hearing-slide-deck.md                ← ヒアリング用スライド集（41 スライド、タイトル/内容/回答例）
 │   ├── hearing-strategy.md                  ← ヒアリング戦略
 │   ├── hearing-checklist.md                 ← ヒアリング項目（単一一覧）
 │   ├── hearing-script/                      ← 章別スクリプト（必要に応じて）
@@ -494,6 +499,8 @@ flowchart LR
 | [00-index.md](00-index.md) | 本フォルダの入口 | ✅ 初版 |
 | **[data-platform-document-structure.md](data-platform-document-structure.md)（本 SSOT）** | 構成・ナラティブ・状態の単一情報源 | ✅ 初版 |
 | [powerpoint-outline-and-references.md](powerpoint-outline-and-references.md) | PowerPoint 構成案・参考資料マトリクス（8 章 39 項目 ~156 枚）| ✅ 初版 |
+| [account-architecture-analysis.md](account-architecture-analysis.md) | アカウントアーキテクチャ検討メモ（Federated 3 役割 / Consumer α/β/γ/δ / Catalog 配置 Option A/B/C）| 🚧 ドラフト |
+| [strawman-proposal.md](strawman-proposal.md) | ヒアリング用 仮案（β + 共通ドメイン + Path C + **Option B Catalog 同居 +2**、7 役割定義、Phase 計画、ヒアリング項目）| 🚧 仮案 |
 
 ### 9.2 標準ベースライン提示版（proposal/）
 
@@ -525,10 +532,17 @@ flowchart LR
 | [proposal/common/05-schedule.md](proposal/common/05-schedule.md) | §C-5 スケジュール | 🚧 骨格 |
 | [internal-evaluation.md](internal-evaluation.md) | 社内評価メモ（抽出方針の裏どり資料） | ✅ 初版 |
 
-### 9.3 ヒアリング
+### 9.3 ADR（Architecture Decision Records）
+
+| ADR | タイトル | ステータス |
+|---|---|:---:|
+| [DP-ADR-001](adr/DP-ADR-001-sagemaker-catalog-adoption-deferred.md) | SageMaker Catalog（旧 DataZone）採否判断 — Phase 1 不採用、Phase 2 再評価 | ✅ Accepted |
+
+### 9.4 ヒアリング
 
 | ドキュメント | 役割 | 状態 |
 |---|---|:---:|
+| [hearing-slide-deck.md](hearing-slide-deck.md) | ヒアリング用スライド集（41 スライド、タイトル/内容/回答例 + ヒアリング相手別 重点スライド対応）| 🚧 仮案 |
 | hearing-strategy.md | Phase A〜D の進め方 | 📋 未着手 |
 | hearing-checklist.md | 全 TBD 項目一覧 | 📋 未着手 |
 | hearing-phase-a.md | 対象データ・スコープ確認 | 📋 未着手 |
@@ -536,7 +550,7 @@ flowchart LR
 | hearing-phase-c.md | ガバナンス・運用要件 | 📋 未着手 |
 | hearing-phase-d.md | 標準化推進体制 | 📋 未着手 |
 
-### 9.4 標準仕様書
+### 9.5 標準仕様書
 
 | ドキュメント | 役割 | 状態 |
 |---|---|:---:|
@@ -545,7 +559,7 @@ flowchart LR
 | non-functional-requirements.md | 非機能要件一覧 | 📋 未着手 |
 | service-selection-decision.md | AWS サービス選定判断 | 📋 未着手 |
 
-### 9.5 付録
+### 9.6 付録
 
 | ドキュメント | 役割 | 状態 |
 |---|---|:---:|
@@ -556,7 +570,7 @@ flowchart LR
 | governance-guide.md | Lake Formation 等実装ガイド | 📋 未着手 |
 | cost-estimation.md | コスト見積もり | 📋 未着手 |
 
-### 9.6 状態凡例
+### 9.7 状態凡例
 
 | 記号 | 意味 |
 |:---:|---|

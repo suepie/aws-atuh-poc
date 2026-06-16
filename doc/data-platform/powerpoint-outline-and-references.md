@@ -5,6 +5,8 @@
 > **対象読者**: PowerPoint 作成担当者 / 要件定義レビュー担当者 / 各アプリ提示担当者
 > **更新基準**: 大項目構成の変更時、参考資料追加時
 > **雛形元**: [../requirements/powerpoint-outline-and-references.md](../requirements/powerpoint-outline-and-references.md)（認証側）
+>
+> **関連 (スライド単位の内容)**: [hearing-slide-deck.md](hearing-slide-deck.md) — ヒアリング当日に提示するスライドの **タイトル / 内容 / 回答例** を 41 スライド分まとめた具体物。本資料が戦略マトリクスなのに対し、hearing-slide-deck.md は **実装スライド**。
 
 ---
 
