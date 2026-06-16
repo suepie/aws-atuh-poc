@@ -495,6 +495,95 @@ ServiceNow のローカル PW は SSO 開始後どうするか:
 
 → **推奨は「一般ユーザーは無効化、管理者層 1-2 名のみ Break Glass で残置」**（業界標準、Salesforce / Workday 同パターン）。
 
+#### J-3-A. Break Glass 管理者運用のベストプラクティス
+
+> SSO 障害時の最終防衛線として、**ServiceNow 管理者のごく一部を IdP 経由から除外**し、ローカル PW でアクセスできる状態を維持する運用パターン。**全業界の SaaS で必須レベルの標準**。
+
+##### Break Glass が必要な 6 ケース
+
+| ケース | 説明 |
+|---|---|
+| Keycloak 障害 | Keycloak ダウン中に ServiceNow 復旧が必要（IdP の事情で SP が止まるのを防ぐ）|
+| Keycloak 設定ミス | SAML 証明書期限切れ・属性マッピング誤り等で全 SSO 不能になった時の復旧 |
+| ネットワーク障害 | Keycloak ↔ ServiceNow 間の通信遮断 |
+| インシデント対応 | Keycloak 自体がインシデントの原因の時、Keycloak 経由で入れない |
+| 初期構築 / 大規模変更時 | SSO 設定変更中の安全網 |
+| 退職管理者のロックアウト | SSO 経由でしか管理できないと、緊急時に追加管理者作成不能 |
+
+##### 業界事例（Break Glass は全 SaaS の標準）
+
+| サービス | Break Glass パターン |
+|---|---|
+| **AWS** | root user（IAM 一切経由しない）、Break Glass IAM user |
+| **Microsoft 365** | Emergency Access Account（Cloud-only、MFA exclusion 設定可）|
+| **Okta** | Super Admin の Break Glass account（SSO 除外）|
+| **Salesforce** | System Administrator with local PW（SSO 除外）|
+| **GitHub Enterprise** | site_admin recovery code |
+| **ServiceNow** | `admin` role + `sso_source` 空欄 + `side_door.do` |
+
+##### 実装の仕組み（§J-1 ④ と同じメカニズム）
+
+```mermaid
+flowchart LR
+    subgraph Users["ServiceNow ユーザー"]
+        Normal["一般ユーザー<br/>(数千〜数万人)<br/>sso_source = keycloak"]
+        BG["Break Glass 管理者<br/>(2-3 名)<br/>sso_source = 空欄"]
+    end
+
+    Normal -->|常時 redirect| KC[Keycloak SSO]
+    BG -->|side_door.do or<br/>sso_source 空欄| Local[ServiceNow<br/>ローカル PW + MFA]
+
+    style Normal fill:#e3f2fd
+    style BG fill:#fff8e1
+    style Local fill:#ffebee
+```
+
+| 設定項目 | 内容 |
+|---|---|
+| 一般ユーザー | `sys_user.sso_source = <keycloak_idp_sys_id>` → Keycloak SSO 強制 |
+| **Break Glass 管理者**（2-3 名）| `sys_user.sso_source = ""`（空欄）→ ローカル PW 認証可能 |
+| アクセス URL | `https://<instance>.service-now.com/side_door.do`（Break Glass にのみ周知）|
+
+##### 推奨実装 10 項目（ベストプラクティス）
+
+| # | 要件 | 詳細 |
+|---|---|---|
+| 1 | **アカウント数** | **2〜3 名**（1 名だと当該管理者の不在時に動けない、5+ だと管理過剰）|
+| 2 | **ロール** | `admin` ロール（ServiceNow 標準最高権限）|
+| 3 | **`sso_source`** | **空欄**（SSO 経路非適用）|
+| 4 | **ローカル PW** | **長く・ランダム**（20+ 文字、生成パスワード）|
+| 5 | **MFA** | **ハードウェアキー必須**（YubiKey 等、Authenticator アプリも併用可）|
+| 6 | **PW 保管** | **企業 PW マネージャ**（1Password Business / Vault 等）、紙の封印保管も可 |
+| 7 | **IP 制限** | **社内 VPN / 特定 IP からのみログイン可**（ServiceNow IP Access Control）|
+| 8 | **定期テスト** | **四半期 1 回程度、ログイン動作確認**（休眠アカウントは緊急時に動かないリスク）|
+| 9 | **監査ログ** | 使用時に**即時通知**（Slack / メール）+ CloudTrail / SIEM 連携 |
+| 10 | **アクセス記録** | 使用理由のチケット必須（事後でも可、業界標準）|
+
+##### ServiceNow 特有の追加考慮
+
+| 項目 | 内容 |
+|---|---|
+| **`sn_security_break_glass` ロール** | ServiceNow が用意する Break Glass 専用ロール（一部バージョンで利用可）|
+| **`glide.authentication.external.disable_local_login` プロパティ** | これを `false` に保持（Break Glass のためにローカル併用許可）|
+| **`side_door.do` URL の周知** | Break Glass 管理者にのみ周知（一般ユーザーに教えない、URL 自体は隠匿せず運用ドキュメント化）|
+| **MFA 別管理** | ServiceNow ネイティブ MFA（Authenticator）を Break Glass 専用に有効化 |
+| **アカウント命名** | `bg-admin-01` / `bg-admin-02` 等、識別しやすく |
+
+##### 一般ユーザーとの違い
+
+| 観点 | 一般ユーザー（Keycloak SSO 強制）| Break Glass 管理者 |
+|---|---|---|
+| 数 | 数千〜数万 | 2-3 名 |
+| `sso_source` | Keycloak IdP sys_id | 空欄 |
+| 認証経路 | 必ず Keycloak 経由 | **Keycloak バイパス**（ローカル PW）|
+| MFA 場所 | Keycloak（or 顧客 IdP）| ServiceNow ネイティブ |
+| アクセス URL | 通常 URL（自動 redirect）| `/side_door.do` |
+| 監査ログ | Keycloak イベント | ServiceNow Login Log（即時通知）|
+| 用途 | 日常業務 | 緊急時のみ |
+| 利用頻度 | 毎日 | 月 0-1 回程度（テスト含む）|
+
+→ **「ServiceNow 管理者だけ IdP 経由しない」は ② Break Glass パターンとして業界標準**。少数の管理者を Break Glass にし、それ以外は Keycloak SSO 強制が推奨。
+
 ### J-4. 移行手順（並走 + 切替 + 旧 PW 廃止）
 
 [ADR-019](019-existing-system-migration.md) の並走戦略を ServiceNow 連携に適用:
