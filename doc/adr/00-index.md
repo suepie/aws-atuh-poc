@@ -40,3 +40,4 @@
 | [034](034-adaptive-authentication.md) | Adaptive Authentication（Risk-based 認証）の設計 | Proposed | 2026-06-18 |
 | [035](035-identity-threat-detection-response.md) | Identity Threat Detection and Response (ITDR) 設計 | Proposed | 2026-06-18 |
 | [036](036-customer-audit-support.md) | Customer Audit Support（顧客監査支援）の設計 | Proposed | 2026-06-18 |
+| [037](037-shared-responsibility-and-lightweight-iga.md) | IdP Keycloak の Shared Responsibility Model と軽量 IGA 設計 | Proposed | 2026-06-18 |

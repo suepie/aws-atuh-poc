@@ -277,6 +277,7 @@ flowchart TB
 > - **サービス枠内のアイテム** = そのサービスの **機能・コンポーネント**（LF-Tags は Lake Formation の機能、Glue Data Catalog は Glue の機能）
 > - **Catalog 層 / 利用者層 / 共通参照データ層は同じアカウント内**（Option B + D-2、§4.2 + [DP-ADR-003](adr/DP-ADR-003-common-domain-account-placement.md) で決定）— アカウント追加を最小化、IAM Role で責務分離
 > - **共通参照データ層**（顧客マスタ等）は中央 BI / Catalog アカウント内に同居（Phase 1）。Phase 2 以降で D-1 新設の再評価あり → [§4.2.1.X](#421x-共通参照データの配置--d-2中央同居採用)
+> - **Producer 側（案件側）の ETL パイプライン**（データソース → 取込層 → S3 → オーケストレーション）も図に含めるが、**詳細実装は本標準のスコープ外**（[§4.2.2.8](#4228-案件側-etl-の詳細イメージデータプラットフォーム標準のスコープ外参考情報) 参照）
 
 ```mermaid
 flowchart TB
@@ -289,24 +290,52 @@ flowchart TB
     MasterMgr(["👤 共通参照<br/>データ管理者<br/>役割 5"])
 
     %% Producer Account 1
-    subgraph App1Account["🟢 AWS アカウント: App 1 (Producer、既存活用)"]
+    subgraph App1Account["🟢 AWS アカウント: App 1 (Producer、既存活用) ※ETL 詳細はスコープ外 §4.2.2.8"]
         direction TB
+
+        subgraph App1Sources["💼 データソース（業務システム）"]
+            direction LR
+            App1Aurora[("Aurora / RDS<br/>業務 OLTP")]
+            App1Dynamo[("DynamoDB<br/>サービスメタ")]
+            App1AppLog["アプリログ<br/>ECS / Lambda"]
+            App1ExtSaaS["外部 SaaS<br/>Salesforce 等"]
+            App1ExtCust["顧客社内システム<br/>SFTP / Email"]
+        end
+
+        subgraph App1Ingest["📥 取込層 (Ingestion)"]
+            direction LR
+            App1DMS[AWS DMS<br/>CDC / Bulk]
+            App1KFH[Kinesis<br/>Data Firehose]
+            App1AppFlow[AWS AppFlow]
+            App1Transfer[Transfer Family<br/>+ Lambda]
+        end
+
         subgraph App1S3["Amazon S3"]
+            direction LR
             App1S3raw[raw 層]
             App1S3cur[curated 層]
             App1S3ana[analytics 層]
         end
+
         subgraph App1Glue["AWS Glue"]
+            direction LR
             App1GlueCat["Glue Data Catalog<br/>※App1 自身の S3 の<br/>テーブル定義"]
             App1Crawler[Glue Crawler]
-            App1ETL[Glue ETL Jobs]
+            App1ETL[Glue ETL Flex<br/>+ Glue Data Quality]
+        end
+
+        subgraph App1Orch["🔁 オーケストレーション / 監視"]
+            direction LR
+            App1StepFn[Step Functions]
+            App1EvBridge[EventBridge<br/>Scheduler]
+            App1CW[CloudWatch<br/>Alarms + Logs]
         end
     end
 
     %% Producer Account N
     subgraph AppNAccount["🟢 AWS アカウント: App N (Producer、既存活用)"]
         direction TB
-        AppNetc["...App 1 と同じ構造で N 個..."]
+        AppNetc["...App 1 と同じ構造で N 個...<br/>(データソース / 取込層 / S3 / Glue / オーケストレーション)"]
     end
 
     %% Central BI / Catalog Account (Catalog + User + Common Reference Data layers in same account, Option B + D-2)
@@ -351,15 +380,45 @@ flowchart TB
         end
     end
 
-    %% Producer side connections
+    %% Producer side - Actor responsibilities
     Steward -.実装・運用.-> App1ETL
     Steward -.実装・運用.-> App1Crawler
+    Steward -.実装・運用.-> App1Ingest
+    Steward -.実装・運用.-> App1Orch
     Owner -.公開承認.-> App1GlueCat
-    App1ETL -->|変換書込| App1S3raw
-    App1S3raw -->|ETL| App1S3cur
-    App1S3cur -->|集計| App1S3ana
+
+    %% Producer side - Data source → Ingestion
+    App1Aurora --> App1DMS
+    App1Dynamo --> App1KFH
+    App1AppLog --> App1KFH
+    App1ExtSaaS --> App1AppFlow
+    App1ExtCust --> App1Transfer
+
+    %% Producer side - Ingestion → S3 raw
+    App1DMS --> App1S3raw
+    App1KFH --> App1S3raw
+    App1AppFlow --> App1S3raw
+    App1Transfer --> App1S3raw
+
+    %% Producer side - S3 transformation flow
+    App1S3raw -->|raw → curated| App1ETL
+    App1ETL --> App1S3cur
+    App1S3cur -->|curated → analytics| App1ETL
+    App1ETL --> App1S3ana
+
+    %% Producer side - Crawler
     App1Crawler -.スキャン.-> App1S3raw
+    App1Crawler -.スキャン.-> App1S3cur
+    App1Crawler -.スキャン.-> App1S3ana
     App1Crawler -->|テーブル定義更新| App1GlueCat
+
+    %% Producer side - Orchestration controls
+    App1EvBridge -.起動.-> App1StepFn
+    App1StepFn -.制御.-> App1DMS
+    App1StepFn -.制御.-> App1ETL
+    App1StepFn -.制御.-> App1Crawler
+    App1ETL -.ログ.-> App1CW
+    App1DMS -.ログ.-> App1CW
 
     %% Central catalog
     Admin -.LF / Tag 管理.-> LakeFormation
@@ -396,7 +455,12 @@ flowchart TB
     style AppNAccount fill:#e8f5e9,stroke:#388e3c,stroke-width:3px
     style CentralAccount fill:#fff3e0,stroke:#e65100,stroke-width:3px
 
-    %% Layer backgrounds
+    %% Layer backgrounds - Producer side (ETL pipeline = スコープ外、点線)
+    style App1Sources fill:#f5f5f5,stroke:#999,stroke-dasharray: 3 3
+    style App1Ingest fill:#fff3e0,stroke:#999,stroke-dasharray: 3 3
+    style App1Orch fill:#e3f2fd,stroke:#999,stroke-dasharray: 3 3
+
+    %% Layer backgrounds - Central side
     style CatLayer fill:#ffebee
     style CommonRefLayer fill:#fff8e1
     style UserLayer fill:#e3f2fd
@@ -431,6 +495,20 @@ flowchart TB
 
 → **アカウント追加合計: +1 のみ**
 → 共通ドメインアカウントの **D-1 新設は Phase 2 以降の再評価候補**（[DP-ADR-003](adr/DP-ADR-003-common-domain-account-placement.md)）
+
+###### Producer 側 ETL パイプラインの構成要素（**点線枠 = 本標準のスコープ外、参考**）
+
+Producer アカウント内には ETL パイプラインに必要な以下のコンポーネントが存在する。**本標準ではインターフェース契約（S3 への着地データの規約）のみを定め、ETL の実装は案件側の自由**:
+
+| # | 構成要素 | 主な役割 | 代表サービス | 詳細 |
+|---|---|---|---|---|
+| 💼 | **データソース** | 業務システムの原本データ | Aurora / RDS / DynamoDB / アプリログ / 外部 SaaS / SFTP | [§4.2.2.8.1](#42281-案件側-etl-の全体像典型パターン) |
+| 📥 | **取込層 (Ingestion)** | データソース → S3 raw への運搬 | AWS DMS / Kinesis Firehose / AppFlow / Transfer Family + Lambda | [§4.2.2.8.3](#42283-取込層の選定マトリクス--詳細) |
+| 🗄 | **S3 (Medallion)** | raw → curated → analytics の 3 層構造 | Amazon S3 + パーティション + Parquet | [§4.2.2.8.4](#42284-変換層の典型実装--詳細) |
+| 🛠 | **Glue (変換 + メタデータ)** | クレンジング、PII マスキング、`tenant_id` 強制、Catalog 登録 | Glue ETL Flex / Glue Data Quality / Glue Crawler | [§4.2.2.8.4](#42284-変換層の典型実装--詳細) / [§4.2.3](#423-glue-crawler-の位置付けと運用) |
+| 🔁 | **オーケストレーション / 監視** | ジョブ起動・依存関係・リトライ・通知 | Step Functions / EventBridge Scheduler / CloudWatch Alarms + Logs | [§4.2.2.8.6](#42286-オーケストレーションの典型実装--詳細) |
+
+> ⚠ **スコープの境界**: 図中の **点線枠（💼 / 📥 / 🔁）は本標準のスコープ外**。案件側のデータエンジニアリングチームが選定・実装する。本標準は「**S3 への着地データの規約**」（バケット命名 / パーティション / 暗号化 / `tenant_id` / Catalog 登録）のみを課す。詳細は [§4.2.2.8.11 案件側に守ってもらうインターフェース契約](#422811-標準として案件側に守ってもらうことインターフェース契約)。
 
 ###### アクター（役割と IAM Role）の整理
 
