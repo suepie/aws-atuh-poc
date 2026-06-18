@@ -85,7 +85,6 @@ flowchart TB
         direction LR
         App1["App 1 アカウント<br/>+ S3 raw/curated/analytics<br/>+ 運用 DB"]
         App2["App 2 アカウント<br/>+ S3 / 運用 DB"]
-        AppN["App N ..."]
     end
 
     subgraph Consumer["Consumer 役割（α/β/γ パターンで変動、§4 参照）"]
@@ -332,11 +331,6 @@ flowchart TB
         end
     end
 
-    %% Producer Account N
-    subgraph AppNAccount["🟢 AWS アカウント: App N (Producer、既存活用)"]
-        direction TB
-        AppNetc["...App 1 と同じ構造で N 個...<br/>(データソース / 取込層 / S3 / Glue / オーケストレーション)"]
-    end
 
     %% Central BI / Catalog Account (Catalog + User + Common Reference Data layers in same account, Option B + D-2)
     subgraph CentralAccount["🟠 AWS アカウント: 中央 BI / Catalog 同居 (Option B + D-2、新規 +1 のみ)"]
@@ -427,7 +421,6 @@ flowchart TB
 
     %% Cross-account Federation (Producer → Central)
     App1GlueCat -.Cross-account<br/>Federation.-> GlueCatCentral
-    AppNetc -.Federation.-> GlueCatCentral
 
     %% Encryption (KMS → Producer S3)
     KMSCMK -.暗号化.-> App1S3raw
@@ -452,7 +445,6 @@ flowchart TB
 
     %% Styling - Account boundaries with thick borders
     style App1Account fill:#e8f5e9,stroke:#388e3c,stroke-width:3px
-    style AppNAccount fill:#e8f5e9,stroke:#388e3c,stroke-width:3px
     style CentralAccount fill:#fff3e0,stroke:#e65100,stroke-width:3px
 
     %% Layer backgrounds - Producer side (ETL pipeline = スコープ外、点線)
