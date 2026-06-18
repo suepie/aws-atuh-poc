@@ -250,6 +250,8 @@ IdP から受け取る ID Token のクレーム:
 | 4 | AAL 不整合 | ⚠ Lambda 自前 | ✅ 標準 | △ IdP の AAL 実装次第 | ○ Keycloak なら可 |
 | 5 | 古い `auth_time` | ❌ 未対応 | ⚠ 標準対応だが 26.x バグ | — | ○ Keycloak で限定的に可 |
 
+→ **本基盤側の能動検知・対応**は [ADR-035 ITDR](../../../adr/035-identity-threat-detection-response.md) に集約。リスク 1 IdP セッション乗っ取り / リスク 2 退職処理遅延 / リスク 3 amr 偽装 はいずれも **ITDR の 6 検知領域**（Compromised Credentials / Anomaly Login / Token Theft / Session Hijacking / Privileged Account Abuse / MFA Bypass Attempt）で能動検知される。リスク 4 AAL 不整合 への動的対応は [ADR-034 Adaptive Authentication](../../../adr/034-adaptive-authentication.md) でリスクスコア算出 → 自動引上げ。
+
 #### リスク 1: IdP セッション乗っ取り
 
 | 軸 | 評価 | 詳細 |

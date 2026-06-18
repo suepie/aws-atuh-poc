@@ -222,6 +222,8 @@ sequenceDiagram
 | JIT による自動レコード生成と既存ローカル衝突 | First Broker Login Flow / Pre Sign-up Lambda で確認フロー必須 |
 | 管理者通知なしのサイレント乗っ取り | リンクイベントは監査ログ + 管理者通知（§FR-8.2 監査）|
 
+→ **能動検知の補完**: 本セクションで挙げた攻撃ベクター（特に「悪意ある IdP からの他人 email アサーション流入」「JIT 自動レコード生成衝突」）は、[ADR-035 ITDR](035-identity-threat-detection-response.md) の **6 検知領域**（特に Compromised Credentials / Anomaly Login / Privileged Account Abuse）で**能動検知される**。本セクションが「攻撃を防ぐ設計」、ADR-035 が「攻撃を検知する設計」として補完関係。
+
 ---
 
 ## Consequences

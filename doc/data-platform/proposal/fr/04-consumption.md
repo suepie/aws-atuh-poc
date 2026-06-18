@@ -90,6 +90,7 @@ flowchart LR
 **Federated Query**:
 - Athena Federated Query で複数保存先横断を可能とする。
 - ただし Federated Query は性能・コストに注意し、定形バッチでは使用しない。
+- **採用 / 不採用の詳細判断基準**: [../../account-architecture-analysis.md §4.2.2.8.12](../../account-architecture-analysis.md) を参照（6 つの不採用根拠 / 4 つの補助用途 / 採用時の 8 制約 / 判断フロー図）。
 
 **コスト統制**:
 - Cost Explorer + AWS Budgets で月次しきい値アラート。

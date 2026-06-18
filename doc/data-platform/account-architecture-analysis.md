@@ -704,6 +704,308 @@ Role 間の境界を強制するためのガードレール:
 | **Glue ETL** | データ変換ジョブ（raw → curated → analytics）| Producer 側（各アプリ）が運用 |
 | **Glue Crawler** | スキーマ自動検出 + Glue Catalog 登録 | Producer 側で運用、新規データ発生時に実行 |
 
+##### 4.2.1.8 Athena ワークグループの分離理由（権限以外）
+
+> **質問への回答**: ワークグループを分ける理由は**権限だけではない**。Athena Workgroup は **8 つの分離軸**を一括で提供する論理コンテナであり、権限はそのうちの 1 つに過ぎない。
+
+###### A. ワークグループが提供する 8 つの分離軸
+
+| # | 分離軸 | 内容 | 分けないと何が困るか |
+|---|---|---|---|
+| 1 | **コスト統制** | per-query スキャン量上限（例: 100 GB）、per-workgroup 月次スキャン上限 | 1 人の暴走クエリ（フルテーブルスキャン）で月予算を食いつぶす |
+| 2 | **クエリ結果保存先** | クエリ結果の S3 出力先バケット / プレフィックス指定 | 機密度の異なる結果が同一バケットに混在、漏洩リスク |
+| 3 | **暗号化設定** | クエリ結果の暗号化方式（SSE-S3 / SSE-KMS / CSE-KMS）+ KMS CMK 指定 | 機密度の高いクエリ結果を弱い鍵で暗号化するリスク |
+| 4 | **エンジンバージョン** | Athena Engine v2 / v3 / Apache Spark の選択 | 新エンジン検証中にプロダクション影響を受ける、Spark を全員に開放するとコスト爆発 |
+| 5 | **クエリ履歴の隔離** | 他チームのクエリ履歴を見られないように分離 | 営業チームが経理チームの「給与テーブル参照クエリ」履歴を見てしまう |
+| 6 | **CloudWatch メトリクス分離** | per-workgroup の `ProcessedBytes` / `QueryQueueTime` / `EngineExecutionTime` | チーム別の利用傾向・コスト按分が不可能 |
+| 7 | **キャパシティ予約**（Phase 3+）| Athena Provisioned Capacity の DPU 予約をワークグループに紐付け | 用途別の応答時間 SLA を保証できない |
+| 8 | **IAM 権限（境界）** | どの IAM Role / User がそのワークグループでクエリ実行できるか | 役割 6（業務利用者）が役割 4（BI チーム）の探索ワークグループに入ってきて誤クエリ |
+
+→ **「権限」は 8 軸のうち 1 軸**。コスト統制・結果保存先・エンジン版・履歴分離も同等以上に重要。**ワークグループは「用途別のサンドボックス」**として機能する。
+
+###### B. 本 PoC での想定ワークグループ構成（Phase 1）
+
+中央 BI / Catalog アカウント内の Athena に、以下 5 ワークグループを想定:
+
+| ワークグループ | 用途 | 主な利用者 | 主な分離理由 | スキャン量上限 |
+|---|---|---|---|---|
+| **`wg-bi-dashboard`** | QuickSight ダッシュボード裏側のクエリ | QuickSight サービス（Service Principal）/ 中央 BI チーム | 結果キャッシュ最適化 + SLA 担保 + コスト予測 | per-query 50 GB |
+| **`wg-bi-exploration`** | 中央 BI チームの探索クエリ | 中央 BI チーム（役割 4）| エンジン v3 検証、Spark 試行も許可 | per-query 100 GB |
+| **`wg-app-producer-N`** | 各 Producer アカウントから cross-account で実行する自テナント分析 | 各案件アプリのデータエンジニア（役割 2）| アプリ別コスト按分、結果は自アプリ S3 へ | per-query 100 GB |
+| **`wg-reader-saved`** | 業務利用者の保存済み定形クエリ実行のみ | 業務利用者（役割 6）| 新規クエリ禁止 / Reader 限定 | per-query 10 GB |
+| **`wg-audit`** | 監査担当者の調査クエリ | 監査担当者（役割 7） | クエリ履歴を別 KMS 鍵で暗号化、改竄防止 | per-query 100 GB |
+
+###### C. ワークグループ分離の設計原則
+
+| # | 原則 | 説明 |
+|---|---|---|
+| 1 | **用途別 = 1 ワークグループ** | ダッシュボード裏 / 探索 / 監査 / Producer 等、用途ごとに 1 個 |
+| 2 | **per-query スキャン量上限を必ず設定** | コスト暴走防止の基本。閾値は用途で変える |
+| 3 | **結果保存先を per-workgroup で分離** | 機密度別バケット、KMS 鍵分離 |
+| 4 | **Service Principal は専用ワークグループ** | QuickSight / SageMaker 等の自動実行はサービス専用 WG |
+| 5 | **テナント識別はクエリ側で必須** | WG レベルでテナント分離はしない（テナント分離は Lake Formation の Data Filter で実装） |
+| 6 | **WG は粗粒度、Lake Formation は細粒度** | テーブル / 列 / 行レベルの分離は LF 側で行う |
+
+→ ワークグループは **「環境境界」** を提供する役割で、データそのものの細粒度アクセス制御は次節の Lake Formation が担う。**役割分担を明確に分けるのが重要**。
+
+##### 4.2.1.9 Lake Formation 認可フローの具体設計
+
+> **質問への回答**: 「Athena が Lake Formation に認可問合せ」とは、内部的に **資格情報ベンディング（Credentials Vending）** と呼ぶ仕組みで、Athena は Lake Formation から **そのクエリ用に絞り込まれた STS 一時クレデンシャル**を受け取り、それで S3 を読む。クエリ単位で「読める範囲を厳密に制限した一時的な権限」が発行される、というのが核心。
+
+###### A. クエリ実行時のシーケンス（具体フロー）
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant User as 利用者<br/>(DataAnalystRole)
+    participant Athena as Athena<br/>(wg-bi-exploration)
+    participant LF as Lake Formation
+    participant Glue as Glue Data Catalog
+    participant S3 as S3 (Producer 側<br/>analytics 層)
+
+    User->>Athena: SELECT email, amount FROM expenses<br/>WHERE submitted_date='2026-06-15'
+    Athena->>Glue: テーブル定義取得<br/>(expenses のスキーマ / 列 / パーティション)
+    Glue-->>Athena: スキーマ返却 (Federation 元 = App1)
+
+    Athena->>LF: GetTemporaryGlueTableCredentials<br/>{ TableArn, Principal=DataAnalystRole,<br/>  Permissions=[SELECT],<br/>  AuditContext=QueryId }
+
+    Note over LF: ① LF-Tag 評価<br/>② 列レベル評価<br/>③ Data Filter 評価<br/>④ Data Cell Filter 評価
+
+    LF-->>Athena: STS 一時クレデンシャル (15 分有効)<br/>{ AccessKey, SecretKey, SessionToken }<br/>※スコープ = 列(amount, submitted_date) のみ<br/>※Data Filter = WHERE tenant_id='T-001'<br/>※email 列 = MASK 適用
+
+    Athena->>S3: GetObject<br/>(STS credentials で署名)
+    S3-->>Athena: Parquet データ返却
+    Athena->>Athena: 列フィルタ + Data Filter 適用<br/>email 列はマスク後の値で返す
+    Athena-->>User: 結果<br/>(email=ハッシュ, amount=実値、<br/>テナント T-001 のレコードのみ)
+
+    Athena->>LF: 監査ログ記録 (誰が何を SELECT したか)
+```
+
+| ステップ | 何が起きるか |
+|---|---|
+| ①-③ | Athena はまず Glue Catalog からテーブルスキーマを取得 |
+| ④ | **重要ステップ**: Athena が Lake Formation の `GetTemporaryGlueTableCredentials` API を呼び、「この Principal がこのテーブルに SELECT する権限があるか」を問い合わせ |
+| ⑤ | Lake Formation が **4 層の評価**を実施: LF-Tag → 列 → 行（Data Filter）→ セル（Data Cell Filter）|
+| ⑥ | LF が **スコープを絞った STS 一時クレデンシャル**を返却（許可された列のみアクセス可、Data Filter 適用） |
+| ⑦⑧ | Athena はこのクレデンシャルで S3 を直接読みに行く（**Athena 自身の IAM ではなく、LF から受け取ったクレデンシャル**）|
+| ⑨⑩ | Athena が結果を組み立てて利用者に返却 |
+| ⑪ | Lake Formation が監査ログを CloudTrail / Lake Formation 監査ログに記録 |
+
+→ **「Athena が LF に問合せ」の正体は API コールベースの認可** であり、結果として **クエリ実行のたびに発行される STS 一時クレデンシャル**で S3 アクセスが行われる。
+
+###### B. 設定の流れ（Phase 1 採用時の最小構成）
+
+```mermaid
+flowchart TB
+    subgraph Step1["Step 1: LF-Tag 体系を定義 (DataLakeAdminRole)"]
+        T1["LF-Tag キー定義<br/>・domain (finance, sales, hr...)<br/>・classification (Public, Internal, Confidential, Restricted)<br/>・pii (Yes, No)<br/>・tenant_isolation (Required, NotApplicable)"]
+    end
+
+    subgraph Step2["Step 2: Producer の S3 を LF 委任登録"]
+        T2["aws lakeformation register-resource<br/>--resource-arn arn:aws:s3:::app1-curated-prd<br/>--use-service-linked-role"]
+    end
+
+    subgraph Step3["Step 3: テーブル / 列に LF-Tag 付与"]
+        T3["テーブル expenses に Tag 付与<br/>・domain=finance<br/>・classification=Confidential<br/>・pii=Yes<br/>・tenant_isolation=Required<br/><br/>列 email に追加 Tag<br/>・pii=Yes (列単位上書き)"]
+    end
+
+    subgraph Step4["Step 4: LF-Tag Based Access Control (LF-TBAC) ポリシー定義"]
+        T4["Principal=DataAnalystRole に対し<br/>・(domain=finance) ∧ (pii=No) → SELECT 許可<br/>・(domain=sales) → SELECT 許可<br/>※pii=Yes は別途 Data Cell Filter で個別許可"]
+    end
+
+    subgraph Step5["Step 5: Data Filter で行/列/セル制限"]
+        T5["Row Filter 'tenant-T001'<br/>SQL式: tenant_id = 'T-001'<br/><br/>Cell Filter 'mask-email'<br/>列: email<br/>値: SHA256(email) で返却"]
+    end
+
+    subgraph Step6["Step 6: クロスアカウント Grant"]
+        T6["aws lakeformation grant-permissions<br/>--principal DataAnalystRole<br/>--resource-tag domain=finance, pii=No<br/>--permissions SELECT<br/><br/>※AWS RAM で App1 Producer に共有"]
+    end
+
+    Step1 --> Step2 --> Step3 --> Step4 --> Step5 --> Step6
+```
+
+###### C. 4 層の評価（細粒度制御の正体）
+
+Lake Formation の認可は **4 つの粒度**で行われ、すべて AND で評価される:
+
+| 層 | 何ができるか | 設定例（経費精算 SaaS）|
+|---|---|---|
+| **① テーブル / DB レベル**（LF-Tag）| 「Finance ドメインのテーブル全部 SELECT 可」のような宣言的制御 | `(domain=finance) ∧ (classification ≠ Restricted) → SELECT` |
+| **② 列レベル**（Column Permissions）| 「テーブルの中で `email` 列は見せない」 | `expenses` テーブルの `email` 列を `DataReaderRole` から除外 |
+| **③ 行レベル**（Row Filter / Data Filter）| 「自テナントの行のみ見せる」 | `tenant_id = current_session_tenant()` の Filter を全テーブルに適用 |
+| **④ セルレベル**（Data Cell Filter）| 「`email` 列はマスクして返す」 | `email` 列を `SHA256(email)` でマスク、`amount > 1,000,000` のセルは `***` |
+
+**マルチテナント SaaS で最重要なのは ③ 行レベル**:
+
+```sql
+-- Data Filter 設定例（Lake Formation Data Filter）
+-- 「DataAnalystRole が見ていいのは自社管理対象テナントのみ」
+
+-- Method 1: 固定値
+WHERE tenant_id IN ('T-001', 'T-002', 'T-003')
+
+-- Method 2: セッションタグ連動（推奨）
+WHERE tenant_id = current_session_tag('allowed_tenant_id')
+
+-- Method 3: 監査用ロールは全テナント参照可
+-- (DataAuditorRole は Data Filter なしで Grant)
+```
+
+→ **`tenant_id` 強制と PII マスキングが LF Data Filter で「クエリ書き方によらず常に効く」のが核心**。Producer 側 ETL での `tenant_id` 強制付与（[§4.2.2.8.4](#42284-変換層の典型実装--詳細)）と組み合わせることで、二重の防御となる。
+
+###### D. Phase 1 で実装する LF 設定の具体例
+
+```bash
+# 1. LF-Tag 定義（DataLakeAdminRole で実行）
+aws lakeformation create-lf-tag \
+  --tag-key domain \
+  --tag-values finance sales hr operations common
+
+aws lakeformation create-lf-tag \
+  --tag-key classification \
+  --tag-values Public Internal Confidential Restricted
+
+aws lakeformation create-lf-tag \
+  --tag-key pii \
+  --tag-values Yes No
+
+# 2. テーブルに Tag 付与
+aws lakeformation add-lf-tags-to-resource \
+  --resource '{"Table":{"DatabaseName":"app1_curated","Name":"expenses"}}' \
+  --lf-tags '[
+    {"TagKey":"domain","TagValues":["finance"]},
+    {"TagKey":"classification","TagValues":["Confidential"]},
+    {"TagKey":"pii","TagValues":["Yes"]}
+  ]'
+
+# 3. LF-TBAC ポリシー: DataAnalystRole に「finance ∧ pii=No」のテーブルへの SELECT 許可
+aws lakeformation grant-permissions \
+  --principal '{"DataLakePrincipalIdentifier":"arn:aws:iam::123456789012:role/DataAnalystRole"}' \
+  --resource '{"LFTagPolicy":{
+    "CatalogId":"123456789012",
+    "ResourceType":"TABLE",
+    "Expression":[
+      {"TagKey":"domain","TagValues":["finance"]},
+      {"TagKey":"pii","TagValues":["No"]}
+    ]
+  }}' \
+  --permissions SELECT
+
+# 4. Data Filter (行レベル): テナント分離
+aws lakeformation create-data-cells-filter \
+  --table-data '{
+    "TableCatalogId":"123456789012",
+    "DatabaseName":"app1_curated",
+    "TableName":"expenses",
+    "Name":"tenant_isolation_T001",
+    "RowFilter":{"FilterExpression":"tenant_id = '\''T-001'\''"},
+    "ColumnNames":["amount","submitted_date","status"]
+  }'
+
+# 5. クロスアカウント共有（App1 Producer → 中央 BI/Catalog）
+aws lakeformation grant-permissions \
+  --principal '{"DataLakePrincipalIdentifier":"arn:aws:iam::CENTRAL_ACCOUNT:role/DataAnalystRole"}' \
+  --resource '{"Table":{"DatabaseName":"app1_curated","Name":"expenses"}}' \
+  --permissions SELECT
+```
+
+###### E. 運用上の注意点
+
+| 項目 | 内容 |
+|---|---|
+| **LF-Tag 設計が要** | Tag キー / 値の体系設計を Phase 0 で確定し、後から変更困難なので慎重に |
+| **Principal 設計** | IAM Role 単位で Grant、個別 User への直接 Grant は避ける（運用負荷）|
+| **Data Filter のテスト** | 行レベルフィルタは意図しない漏洩リスクが大きいので Phase 1 で自動テスト必須 |
+| **キャッシュの考慮** | LF の Permission キャッシュは最大 15 分、即時反映期待は禁物 |
+| **`DROP TABLE` 等の DDL** | 認可は `ALTER` / `DROP` も含む、`DataAnalystRole` には絶対付与しない |
+| **デバッグ難易度** | 認可エラー時のエラーメッセージが曖昧。Lake Formation 監査ログを必ず参照 |
+
+##### 4.2.1.10 データアクセス制御の代替手段比較（なぜ Lake Formation か）
+
+> **質問への回答**: アクセス制御の代替手段は複数あるが、**Athena / S3 / QuickSight を主軸とする本 PoC では Lake Formation が唯一の現実解**。代替案には技術的限界 or 運用負荷の問題がある。
+
+###### A. 代替手段 8 案の比較
+
+| # | 手段 | 粒度 | SQL 意味理解 | 運用負荷 | 本 PoC での適用可否 |
+|---|---|---|---|---|---|
+| **1** | **Lake Formation**（採用案）| **テーブル / 列 / 行 / セル** | ⭕ | ⭕ AWS マネージド | ⭕ **採用** |
+| 2 | **直接 IAM + S3 バケットポリシー** | バケット / プレフィックスのみ | ❌ | △ ポリシー数が増えると管理困難 | ❌ 列/行レベル不可、PII マスキング不能 |
+| 3 | **S3 Access Points + Access Grants** | プレフィックス + Principal | ❌ | △ Access Grants 設定が複雑 | ❌ SQL 意味を理解しない、Athena から制御不能 |
+| 4 | **Glue Resource Policies** | Catalog メタデータのみ | ❌ | ⭕ | ❌ メタデータ閲覧制御のみ、データ実体には効かない |
+| 5 | **Apache Ranger**（OSS）| テーブル / 列 / 行 | ⭕ | ❌ Ranger サーバ運用 + Athena 非対応 | ❌ Athena/Glue と未統合、EMR/Hive 用 |
+| 6 | **Open Policy Agent (OPA)** | 任意 | △ カスタム実装次第 | ❌ Policy 配布基盤 + Athena 統合層を自作 | ❌ Athena ネイティブ統合なし |
+| 7 | **QuickSight RLS/CLS** | 行 / 列（QuickSight 内のみ）| △ | ⭕ QuickSight マネージド | △ 補助的のみ（Athena 直クエリは保護されない）|
+| 8 | **Athena ワークグループ + IAM のみ** | ワークグループ単位（粗粒度）| ❌ | ⭕ | △ 細粒度制御不可（§4.2.1.8 と補完関係）|
+
+→ **粒度・SQL 意味理解・AWS ネイティブ統合の 3 軸**で評価すると Lake Formation が唯一の選択肢。
+
+###### B. なぜ Lake Formation が本 PoC に最適か
+
+| 観点 | Lake Formation の優位性 |
+|---|---|
+| **AWS ネイティブ統合** | Athena / Redshift Spectrum / EMR / Glue ETL / SageMaker / QuickSight が**全てネイティブで LF 認可を尊重**。外部システム追加なし |
+| **テーブル / 列 / 行 / セルの 4 層**| マルチテナント分離（行）+ PII マスキング（セル）+ ドメイン分離（テーブル）を 1 つのサービスで実現 |
+| **LF-Tag による宣言的管理** | 「Finance ドメインの PII=No なテーブル全て、SELECT 許可」のような**集合演算**でポリシー記述。テーブルが増えても Tag 付与だけで自動的に正しい権限になる |
+| **クロスアカウント標準対応** | AWS RAM 連携で **Producer → 中央 BI** の共有が標準機能。自前実装不要 |
+| **監査ログ標準対応** | CloudTrail + Lake Formation 監査ログで「**誰が何のテーブル / 列にアクセスしたか**」が記録される |
+| **コスト** | Lake Formation 自体は**無料**（CloudTrail / KMS 等の周辺コストのみ）|
+
+###### C. 代替案を採用しない理由（詳細）
+
+| 代替案 | 不採用の決定的理由 |
+|---|---|
+| **直接 IAM + S3 ポリシー** | 列レベル制御不可。`SELECT email FROM expenses` と `SELECT amount FROM expenses` を権限的に区別できない。マルチテナント SaaS では**事実上採用不可** |
+| **Apache Ranger** | Athena が Ranger をサポートしない。EMR / Hive 環境で Spark を使う場合の選択肢だが、本 PoC は Athena 主軸なので適用範囲外 |
+| **OPA (Open Policy Agent)** | Policy-as-code の柔軟性は高いが、**Athena からの呼び出し統合層を自作必要**。運用負荷が大きく、Lake Formation の標準機能を超えるメリットが薄い |
+| **QuickSight RLS のみ** | QuickSight ダッシュボード内でしか効かない。**Athena の直クエリ・SageMaker の学習データ取得・ad-hoc 探索が無防備**になる。多層防御として LF と併用は OK |
+| **ワークグループ IAM のみ** | 粒度がワークグループ単位（粗い）。同じワークグループ内でテーブル A は見せて B は見せない、という制御は不可。**§4.2.1.8 で扱う環境境界と、本節の細粒度認可は別レイヤー**として両方必要 |
+
+###### D. 多層防御の組み合わせ（推奨）
+
+Lake Formation を中核にしつつ、他の手段を**補強**として組み合わせる:
+
+```
+レイヤー 1: ネットワーク
+  └─ VPC Endpoint で S3 / Athena / LF へのアクセスを VPC 限定
+
+レイヤー 2: ワークグループ (§4.2.1.8)
+  └─ 用途別 WG 分離 + per-query スキャン量上限
+  └─ Service Principal vs 人間ユーザーの分離
+
+レイヤー 3: IAM (Permission Boundary + SCP)
+  └─ DataAnalystRole から lakeformation:* / iam:* を禁止
+  └─ ワークグループへの cross-account assume を制限
+
+レイヤー 4: Lake Formation (本節 §4.2.1.9)
+  └─ LF-Tag によるテーブル / DB レベル制御
+  └─ 列レベル制御
+  └─ Data Filter による行レベル制御 (tenant_id 強制)
+  └─ Data Cell Filter による PII マスキング
+
+レイヤー 5: QuickSight RLS (補助)
+  └─ ダッシュボード閲覧者がさらに自部署データのみに絞られる
+
+レイヤー 6: 監査
+  └─ CloudTrail Data Events + LF 監査ログ
+  └─ Athena Query History + 異常検知
+
+レイヤー 7: データ自体
+  └─ KMS CMK 暗号化 (鍵ポリシーで Principal 制限)
+  └─ ETL での `tenant_id` 強制付与 + PII マスキング (§4.2.2.8.4)
+```
+
+→ **Lake Formation が認可の中核**だが、**7 レイヤーの多層防御**で漏洩リスクを最小化する。
+
+###### E. 残課題（ヒアリングで確認）
+
+| # | 質問 | 影響 |
+|---|---|---|
+| 1 | テナント分離は LF Data Filter 必須か、アプリ側で `WHERE tenant_id=...` 強制で済ますか | LF Data Filter の運用負荷判断 |
+| 2 | PII マスキングはセル単位（LF）か、ETL 段階での恒久マスキング（curated 層）か | データの可逆性 / 監査要件次第 |
+| 3 | 監査担当者は全テナント参照可能とする運用ポリシー成立可否 | LF Grant 設計、職務分掌の組織合意 |
+| 4 | Lake Formation 監査ログのリテンション期間 | コンプライアンス要件 |
+| 5 | LF キャッシュ 15 分の権限即時反映非対応を運用で許容できるか | 退職者対応の SLA |
+
 #### 4.2.2 ETL 的な処理の配置
 
 ##### 4.2.2.1 配置の原則: 「データを生む側が ETL する」
@@ -1186,6 +1488,99 @@ Step Functions ステートマシン
 | **CloudTrail Data Events 有効化** | S3 raw / curated / analytics の全バケット | [proposal/fr/05-governance.md](proposal/fr/05-governance.md) §FR-5.4 |
 
 → 案件側は「**インターフェース契約を守れば、ETL の中身は自由に実装してよい**」というのが標準のスタンス（[../proposal/fr/03-pipeline.md §FR-3.0.A](proposal/fr/03-pipeline.md) 参照）。
+
+###### 4.2.2.8.12 Athena Federated Query (Data Source Connector) の位置付け
+
+> **方針**: **主軸は ETL → S3 → Athena**。Athena Federated Query は **ad-hoc 探索の補助用途に限定**、定形バッチや BI ダッシュボードの裏側では使用しない。
+> **既存方針との関係**: [proposal/fr/04-consumption.md §FR-4.1](proposal/fr/04-consumption.md) の「Federated Query は性能・コストに注意し、定形バッチでは使用しない」を本節で補強・具体化。
+
+###### A. Athena Federated Query とは
+
+Lambda ベースのコネクタを経由して、**S3 以外のデータソース**を Athena から直接 SQL クエリできる機能。
+
+| カテゴリ | 公式コネクタ提供サービス |
+|---|---|
+| AWS RDB | Aurora MySQL / Aurora PostgreSQL / RDS MySQL / RDS PostgreSQL / Redshift |
+| AWS NoSQL | DynamoDB / DocumentDB / Neptune |
+| AWS その他 | OpenSearch / CloudWatch Logs / CloudWatch Metrics / Timestream |
+| 外部 RDB | Snowflake / SAP HANA / Db2 / Oracle / SQL Server |
+| 外部 NoSQL | MongoDB / Google BigQuery |
+| 汎用 | JDBC（任意の JDBC ドライバ）|
+| カスタム | Athena Connector SDK で自作可能 |
+
+→ Lambda 関数として各 Producer アカウントに展開し、Athena から「外部カタログ」として登録して使う。
+
+###### B. 「主軸として採用しない」根拠（6 点）
+
+| # | 理由 | 詳細 |
+|---|---|---|
+| 1 | **パフォーマンス** | Lambda コールドスタート（初回数秒）、Lambda 同時実行数上限、ソース DB のレスポンス速度に律速。Athena の S3 並列読込（数百並列）に比べて 1-2 桁遅い |
+| 2 | **コスト予測困難** | クエリごとに Lambda 起動コスト + Lambda 実行時間課金 + ソース DB 計算リソース消費。Athena の「スキャン量 = $5/TB」のような単純な単価予測ができない |
+| 3 | **OLTP DB への負荷** | 分析クエリが業務 DB（Aurora 等）を直撃。トランザクション処理性能を毀損するリスク。読込専用レプリカ必須となるが、Producer 側に追加運用負荷 |
+| 4 | **テナント分離の徹底困難** | S3 + Parquet なら `tenant_id` パーティション + LF-Tags で強制できるが、Federated Query は接続先 DB のテーブル構造に依存。テナント分離を SQL の `WHERE tenant_id = ...` 必須化で担保することになり、漏れリスク |
+| 5 | **PII マスキング不能** | S3 raw → curated 経由なら ETL でマスキングしてから analytics に出せるが、Federated Query はソース DB の生データを直接参照。**PII 漏洩リスク**でガバナンス的に許容困難 |
+| 6 | **クロスアカウント運用負荷** | 各 Producer アカウントに Lambda コネクタを展開・更新が必要。Lake Formation も Federated Catalog 経由でアクセスする場合、設計が複雑化。N 個のアプリで N 個のコネクタ運用 |
+
+###### C. 「補助用途として採用する」4 ケース
+
+| # | ユースケース | 例 | 採用条件 |
+|---|---|---|---|
+| 1 | **ad-hoc 探索（ETL 設計前）** | 新規アプリのデータ構造を ETL 設計前に SQL で確認 | Producer 側データエンジニアによる開発時のみ |
+| 2 | **S3 レイクと OLTP の Join 探索** | analytics の月次集計結果と Aurora の現在の顧客状態を突合してドリフト確認 | データエンジニア / アナリストの調査用、ダッシュボード化禁止 |
+| 3 | **小規模リファレンス参照** | DynamoDB から少量の設定マスタ（数百レコード）を Athena クエリ内で参照 | レコード数 < 10,000、頻度 < 1 回/日 |
+| 4 | **インシデント時の業務 DB 状態確認** | 障害対応で「業務 DB の現在値はどうなっているか」を SQL で素早く確認 | 監査ログ必須、有限時間のみ |
+
+###### D. 採用時の制約（Phase 1）
+
+| 制約 | 内容 |
+|---|---|
+| **配置** | Producer アカウント側 Athena ワークグループ限定（**中央 BI / Catalog アカウントには配置しない**）|
+| **接続先 DB** | Aurora 読込専用レプリカ / DynamoDB 読込専用テーブル / 同期遅延を許容できるソースのみ |
+| **テーブルスコープ** | PII を含まないテーブルに限定（顧客マスタの個人情報列・経費明細の詳細等は禁止）|
+| **クエリスキャン量** | 月次上限を Athena Workgroup で設定（例: 月 100 GB） |
+| **実行時間** | クエリタイムアウト 5 分（OLTP 負荷防止）|
+| **同時実行数** | アカウントあたり 1-2 並列まで |
+| **監査ログ** | CloudTrail + Athena クエリ履歴で全件記録、四半期レビュー必須 |
+| **承認プロセス** | データオーナー（役割 1）の事前承認、用途・期間明示 |
+
+→ 実質的に [§FR-4.4 直接アクセス](proposal/fr/04-consumption.md) の「例外条件」と同等の運用ガードを課す。
+
+###### E. 採用 / 不採用の判断フロー
+
+```mermaid
+flowchart TD
+    Q1{用途は何か?}
+    Q1 -->|定形バッチ / BI ダッシュボード| NotUse[❌ Federated Query 不採用<br/>→ ETL → S3 → Athena が標準]
+    Q1 -->|ad-hoc 探索 / 調査| Q2{PII を含むか?}
+    Q2 -->|含む| NotUse2[❌ Federated Query 不採用<br/>→ ETL で curated 層にマスキング後にクエリ]
+    Q2 -->|含まない| Q3{ソース DB に負荷を<br/>かけられるか?}
+    Q3 -->|読込専用レプリカ あり| Q4{頻度 < 1 回/日 か?}
+    Q3 -->|本番 OLTP 直結のみ| NotUse3[❌ 業務影響リスクで不採用]
+    Q4 -->|Yes| OK[⭕ Federated Query 採用<br/>+ D 節の制約を遵守]
+    Q4 -->|高頻度| NotUse4[❌ ETL → S3 で定期取込が適切]
+
+    style NotUse fill:#ffcdd2
+    style NotUse2 fill:#ffcdd2
+    style NotUse3 fill:#ffcdd2
+    style NotUse4 fill:#ffcdd2
+    style OK fill:#c8e6c9
+```
+
+###### F. §4.2.1.1 図には現れない理由
+
+§4.2.1.1 リソース関係図には Athena Federated Query Lambda コネクタを**意図的に描いていない**。理由:
+
+| 理由 | 詳細 |
+|---|---|
+| **主軸でない** | Phase 1 の基本データフローは S3 → Athena。Federated Query は補助 |
+| **Producer ごとの自由実装** | 必要な Producer のみが導入、N 個のアプリ全てに必須ではない |
+| **図の複雑化回避** | Aurora 等のデータソースは既に図中にあるため、Federated Query を加えると矢印が増えてかえって読みにくくなる |
+
+→ **本節（§4.2.2.8.12）で文章解説する**位置付けとし、図には追加しない。
+
+###### G. ADR 化の要否
+
+[proposal/fr/04-consumption.md §FR-4.1](proposal/fr/04-consumption.md) の「Federated Query は性能・コストに注意し、定形バッチでは使用しない」で既に方針が定められているため、**新規 ADR 化は不要**。本節を §FR-4.1 を補強する詳細解説として位置付け、必要に応じて §FR-4.1 から本節へのリンクを追加する。
 
 #### 4.2.3 Glue Crawler の位置付けと運用
 

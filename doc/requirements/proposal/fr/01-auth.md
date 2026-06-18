@@ -534,6 +534,10 @@ flowchart TB
 
 **重要**: いずれも **AWS IAM とは別の認証チャネル**（アプリケーション層の OAuth）で動く。共通基盤の AWS アカウントに対する IAM 権限申請は **不要**。
 
+**Layer 3 の実装層 UI**: 委譲管理者（顧客テナント管理者）が実際に使うのは **[ADR-038 Tenant Admin Portal](../../../adr/038-tenant-admin-portal.md)**（`admin.basis.example.com`）。Keycloak Admin Console を顧客に直接開放するのは不可（マルチテナント未対応 / UI 複雑度 / ブランディング不可、業界実例なし）。詳細は [§FR-8.5](08-admin.md#fr-85-tenant-admin-portal顧客テナント管理者向け-admin-ui) 参照。
+
+**Layer 3 の Shared Responsibility 位置付け**: Layer 3 委譲管理者が管理する **IdP-KC 移行ユーザーは「顧客所有・弊社ホスト」モデル**（[ADR-037 Shared Responsibility Model](../../../adr/037-shared-responsibility-and-lightweight-iga.md)）。弊社はインフラ / データ保護 / ITDR 検知を、顧客はユーザーマスタ管理を実施する責務分担。詳細は [§FR-8.4](08-admin.md#fr-84-shared-responsibility-model-と軽量-iga) 参照。
+
 #### 推奨運用モデル
 
 ```mermaid

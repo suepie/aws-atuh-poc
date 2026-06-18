@@ -153,6 +153,7 @@ flowchart TB
 > **このサブセクションで定めること**: 基盤側で生成される**監査ログの記録範囲・改ざん防止・閲覧 UI**（認証イベント / 管理操作 / 設定変更履歴）。   
 > **主な判断軸**: 適用コンプライアンス枠組み（SOC 2 / ISO 27001 / PCI DSS / HIPAA）、ログ保存期間、閲覧者   
 > **§FR-8 全体との関係**: §FR-8.1 で設定変更を行う → §FR-8.2 でその履歴を記録 → [§FR-9.2](09-integration.md#102-ログ監視--fr-int-82) で外部 SIEM に流す
+> **⚠ 関連 ADR**: 顧客向け監査ログ提供（Customer Audit Support）は [ADR-036](../../../adr/036-customer-audit-support.md) / [§NFR-7.5](../nfr/07-compliance.md) で扱う。テナント管理者が UI で監査ログを閲覧する実装は [ADR-038 Tenant Admin Portal](../../../adr/038-tenant-admin-portal.md) / [§FR-8.5](#fr-85-tenant-admin-portal顧客テナント管理者向け-admin-ui) Phase 1 機能セット。本サブセクションは「**何をログとして記録するか・保存するか**」、ADR-036/038 は「**それを顧客にどう見せるか**」を扱う
 
 ### 業界の現在地
 
@@ -221,6 +222,8 @@ flowchart TB
 > **このサブセクションで定めること**: 顧客企業の管理者に**自社テナント運用を委譲**する仕組み（テナント管理者ロール / JIT 管理者 / SoD）と、UI / メールの**ブランディング・カスタマイズ**範囲。   
 > **主な判断軸**: テナント管理者委譲の要否（**Keycloak 必須化に直結**）、ログイン画面ブランディング深度、自前 UI の意思、管理画面カスタマイズ要否   
 > **§FR-8 全体との関係**: §FR-8.0.A 2 層構造のうち「**テナント管理者への委譲**」を扱う。基盤管理者の操作は §FR-8.1。**ここで扱う「テナント管理者」は [§FR-1.2.0.0](01-auth.md#fr-1200-ローカルユーザーとは何か--利用者カテゴリ別の分析) の P-2 カテゴリ、[§FR-1.2.0.B](01-auth.md#fr-120b-aws-アカウント境界による運用摩擦への対応) Layer 3 委譲管理者** の具体機能
+> **⚠ UI 実装**: テナント管理者が実際に使う UI は **[§FR-8.5 Tenant Admin Portal](#fr-85-tenant-admin-portal顧客テナント管理者向け-admin-ui)（[ADR-038](../../../adr/038-tenant-admin-portal.md)）**。Keycloak Admin Console の直接開放は不可（業界実例なし）。本サブセクションは「**何を委譲するか**」、§FR-8.5 は「**どうやって UI を提供するか**」を扱う
+> **⚠ 責務分担**: 委譲管理者が管理する **IdP-KC ユーザーは「顧客所有・弊社ホスト」の Shared Responsibility Model**（[§FR-8.4](#fr-84-shared-responsibility-model-と軽量-iga) / [ADR-037](../../../adr/037-shared-responsibility-and-lightweight-iga.md)）
 
 ### 業界の現在地
 

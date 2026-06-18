@@ -44,6 +44,22 @@ flowchart LR
 
 > **本基盤は「認証に必要な最小限のユーザー情報」のみを保持。業務固有のユーザー情報（プロフィール詳細・取引履歴・部署移動履歴等）は各アプリ側で管理する。**
 
+### §FR-7.0.B Shared Responsibility Model（顧客所有・弊社ホスト）
+
+> **詳細は [ADR-037 Shared Responsibility Model + 軽量 IGA](../../../adr/037-shared-responsibility-and-lightweight-iga.md) / [§FR-8.4](08-admin.md#fr-84-shared-responsibility-model-と軽量-iga) 参照**
+
+[ADR-033](../../../adr/033-keycloak-2tier-broker-idp-architecture.md) 2-tier アーキテクチャの IdP-KC 移行ユーザーは **「顧客所有・弊社ホスト」の Shared Responsibility Model** で運用する（Auth0 Premium / Microsoft Entra External ID / Okta Workforce 同パターン）:
+
+| 観点 | フェデ顧客 | IdP-KC 移行顧客 |
+|---|---|---|
+| **ユーザー所有権** | 顧客 | **顧客**（変わらず）|
+| **物理保管場所** | 顧客 IdP | **弊社 IdP-KC** |
+| **インフラ運用** | 顧客 IT | **弊社** |
+| **CRUD 実施** | 顧客 IdP で | **弊社が提供する Tenant Admin Portal（[ADR-038](../../../adr/038-tenant-admin-portal.md)）で顧客が実施** |
+| **責任モデル** | 顧客責任のみ | **Shared Responsibility（顧客 + 弊社）**|
+
+→ **両ケースともユーザーは顧客所有**、本章 §FR-7.1〜7.4 の CRUD 規律は IdP-KC 移行ユーザーに**弊社が提供するツール経由で顧客が実施**する形になる。
+
 ### 管理対象ユーザーのカテゴリ（[§FR-1.2.0.0](01-auth.md#fr-1200-ローカルユーザーとは何か--利用者カテゴリ別の分析) と連動）
 
 本章で扱う「ユーザー」は **利用者カテゴリ P-1〜P-6 すべてを含む**が、CRUD 規模や運用主体はカテゴリ・採用シナリオ次第で大きく変わる:
