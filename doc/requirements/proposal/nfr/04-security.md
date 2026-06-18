@@ -247,6 +247,65 @@ flowchart LR
 
 ---
 
+## §NFR-4.6 Identity Threat Detection and Response (ITDR)
+
+> **詳細は [ADR-035 ITDR](../../../adr/035-identity-threat-detection-response.md) を参照**
+
+> **このサブセクションで定めること**: アイデンティティ層への攻撃（Compromised Credentials / MFA Bypass / Token Theft / Session Hijacking / Privileged Account Abuse / Anomaly Login）を**能動検知 + 自動対応**する ITDR 機能の方針。
+> **主な判断軸**: ATO 攻撃対策の必要性、SIEM 連携要否、規制業種要件
+> **§NFR-4 全体との関係**: §NFR-4.3 攻撃対策（受動防御）の能動版。[ADR-034 Adaptive Authentication](../../../adr/034-adaptive-authentication.md) と統合動作
+
+### 結論サマリ
+
+| 項目 | 採用方針 |
+|---|---|
+| **採用** | ITDR 機能を本基盤に組込（Gartner 2022+ 標準カテゴリ）|
+| **検知 6 領域** | Compromised Credentials / Anomaly Login / Token Theft / Session Hijacking / Privileged Account Abuse / MFA Bypass Attempt |
+| **対応 4 レベル** | L1 Log / L2 Re-auth / L3 Block + 通知 / L4 Critical（全 Token Revoke + Realm 凍結）|
+| **アーキテクチャ** | Keycloak Event Listener SPI → EventBridge → Lambda（Risk Engine）→ DynamoDB + SNS（Slack / SIEM）|
+| **SIEM 連携** | **OCSF**（第一推奨）/ CEF / LEEF / Syslog で顧客 SIEM へ出力 |
+
+### なぜ ITDR が必要か（業界トレンド）
+
+- アイデンティティ攻撃が侵入経路の **80%+**（Verizon DBIR 2024）
+- **MFA バイパス攻撃急増**（AiTM / MFA Fatigue / Pass-the-Cookie）
+- Compromised Credentials が侵害起点 60%
+- 既存 EDR / SIEM では Identity 層検知困難（Gartner 2024）
+
+### 段階的導入
+
+| Phase | 検知領域 |
+|---|---|
+| Phase 1 | Compromised Credentials（HIBP）+ Brute Force |
+| Phase 2 | Anomaly Login + Impossible Travel |
+| Phase 3 | Token Theft / Session Hijacking |
+| Phase 4 | MFA Bypass / Privileged Account Abuse + AI/ML |
+| Phase 5 | SIEM 連携（OCSF 出力）|
+
+### コスト試算（10M MAU、1 ログイン/MAU/日）
+
+| 項目 | 月額 |
+|---|---|
+| Lambda（月 3 億イベント）| 〜$1,500 |
+| DynamoDB | 〜$500 |
+| EventBridge / SNS | 〜$350 |
+| **合計** | **〜$2,500/月（〜$30K/年）**|
+
+→ Entra ID Protection 比 **約 100 倍コスト削減**。
+
+### TBD / 要確認
+
+| 確認項目 | ヒアリング ID | 回答例 |
+|---|---|---|
+| ITDR 採用方針 | **B-ITDR-1** | Phase 1 から / 段階導入 / 不採用 |
+| 検知対象優先順位 | **B-ITDR-2** | Compromised Cred 最優先 / Anomaly Login 最優先 / MFA Bypass 最優先 |
+| SIEM 連携の要否・形式 | **B-ITDR-3** | OCSF（推奨）/ CEF / LEEF / 不要 |
+| 顧客 SIEM 製品 | **B-ITDR-4** | Splunk / QRadar / Sentinel / Datadog / その他 / なし |
+| 通知先 | **B-ITDR-5** | Slack / PagerDuty / メール / SIEM のみ |
+| False Positive 許容範囲 | **B-ITDR-6** | 厳格（FP 多くても可）/ 通常 / UX 優先（FP 最小化）|
+
+---
+
 ## §NFR-4.5 クロスアカウント IAM 設計（共通基盤 ↔ アプリ）
 
 > **このサブセクションで定めること**: 共通基盤専用 AWS アカウントとアプリ AWS アカウント間の **IAM 信頼関係 / アクセス権限分離 / Service Credentials の保管方針**。   

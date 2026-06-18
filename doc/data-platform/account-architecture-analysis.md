@@ -268,49 +268,307 @@ flowchart TB
 
 §4.2 の図は要点だけを示しているが、実際の構成には複数の AWS サービスが連携している。**Producer 側 / カタログ層 / 利用者層 / IAM Role** の 4 グループに分けて各リソースの役割を解説する。
 
-##### 4.2.1.1 リソース関係図（カテゴリ別）
+##### 4.2.1.1 リソース関係図（AWS アカウント境界 + アクター + サービス/機能階層）
+
+> **図の読み方**:
+> - **太枠の Account** = **AWS アカウント境界**（Producer × N / 中央 BI / Catalog 同居 の 2 種類）
+> - **黄色丸**（👤）= **アクター**（人間の役割、IAM Role）
+> - **オレンジ枠** = **AWS サービス**（Glue、Lake Formation、Athena 等）
+> - **サービス枠内のアイテム** = そのサービスの **機能・コンポーネント**（LF-Tags は Lake Formation の機能、Glue Data Catalog は Glue の機能）
+> - **Catalog 層 / 利用者層 / 共通参照データ層は同じアカウント内**（Option B + D-2、§4.2 + [DP-ADR-003](adr/DP-ADR-003-common-domain-account-placement.md) で決定）— アカウント追加を最小化、IAM Role で責務分離
+> - **共通参照データ層**（顧客マスタ等）は中央 BI / Catalog アカウント内に同居（Phase 1）。Phase 2 以降で D-1 新設の再評価あり → [§4.2.1.X](#421x-共通参照データの配置--d-2中央同居採用)
 
 ```mermaid
 flowchart TB
-    subgraph Producer["Producer 側（各アプリアカウント）"]
-        S3raw["S3 raw 層<br/>生データ"]
-        S3cur["S3 curated 層<br/>クレンジング済"]
-        S3ana["S3 analytics 層<br/>分析用集計"]
-        GlueProd["Glue Data Catalog<br/>(各アプリのローカル)"]
+    %% Actors at top
+    Steward(["👤 データスチュワード<br/>役割 2<br/>DataStewardRole"])
+    Owner(["👤 データ責任者<br/>役割 1<br/>DataProductOwnerRole"])
+    Admin(["👤 カタログ管理者<br/>役割 3<br/>DataLakeAdminRole"])
+    Analyst(["👤 中央 BI チーム<br/>役割 4<br/>DataAnalystRole"])
+    Reader(["👤 業務利用者<br/>役割 6<br/>DataReaderRole"])
+    MasterMgr(["👤 共通参照<br/>データ管理者<br/>役割 5"])
+
+    %% Producer Account 1
+    subgraph App1Account["🟢 AWS アカウント: App 1 (Producer、既存活用)"]
+        direction TB
+        subgraph App1S3["Amazon S3"]
+            App1S3raw[raw 層]
+            App1S3cur[curated 層]
+            App1S3ana[analytics 層]
+        end
+        subgraph App1Glue["AWS Glue"]
+            App1GlueCat["Glue Data Catalog<br/>※App1 自身の S3 の<br/>テーブル定義"]
+            App1Crawler[Glue Crawler]
+            App1ETL[Glue ETL Jobs]
+        end
     end
 
-    subgraph CatLayer["カタログ層 (DataLakeAdminRole 管理)"]
-        LF["AWS Lake Formation<br/>(中央 Catalog + 権限管理)"]
-        LFTags["LF-Tags<br/>(タグベースアクセス制御)"]
-        KMS["KMS CMK<br/>(共通暗号鍵)"]
-        GlueCat["Glue Data Catalog<br/>(中央)"]
+    %% Producer Account N
+    subgraph AppNAccount["🟢 AWS アカウント: App N (Producer、既存活用)"]
+        direction TB
+        AppNetc["...App 1 と同じ構造で N 個..."]
     end
 
-    subgraph UserLayer["利用者層 (DataAnalystRole 管理)"]
-        Athena["Athena<br/>ワークグループ"]
-        QS["QuickSight Enterprise<br/>(BI ダッシュボード)"]
-        SM["SageMaker Studio<br/>(ML、Phase 2)"]
-        S3Res["S3 athena-results<br/>(クエリ結果保存)"]
+    %% Central BI / Catalog Account (Catalog + User + Common Reference Data layers in same account, Option B + D-2)
+    subgraph CentralAccount["🟠 AWS アカウント: 中央 BI / Catalog 同居 (Option B + D-2、新規 +1 のみ)"]
+        direction TB
+
+        subgraph CatLayer["📚 カタログ層（管理: DataLakeAdminRole）"]
+            direction LR
+            subgraph LakeFormation["AWS Lake Formation"]
+                LFTags[LF-Tags<br/>機能<br/>※domain=common 等]
+                LFGrants[Cross-account Grants<br/>機能]
+            end
+            subgraph GlueCentral["AWS Glue"]
+                GlueCatCentral["Glue Data Catalog<br/>※Lake Formation 利用基盤<br/>Producer Catalog を Federation 参照<br/>+ 'common_domain' DB を内包"]
+            end
+            subgraph KMSSvc["AWS KMS"]
+                KMSCMK[CMK 共通暗号鍵]
+            end
+        end
+
+        subgraph CommonRefLayer["🟡 共通参照データ層 (D-2 同居、管理: CommonReferenceDataManagerRole)"]
+            direction LR
+            subgraph CommonS3Svc["Amazon S3"]
+                CommonS3["common-domain バケット<br/>顧客マスタ / 組織マスタ<br/>標準勘定科目 等"]
+            end
+        end
+
+        subgraph UserLayer["📊 利用者層（管理: DataAnalystRole / DataReaderRole）"]
+            direction LR
+            subgraph AthenaSvc["Amazon Athena"]
+                AthenaWG[Workgroups]
+            end
+            subgraph QSSvc["Amazon QuickSight Enterprise"]
+                QSDash[ダッシュボード / SPICE]
+            end
+            subgraph SMSvc["Amazon SageMaker (Phase 2)"]
+                SMStudio[Studio]
+            end
+            subgraph S3Result["Amazon S3"]
+                S3Res[athena-results<br/>派生データ]
+            end
+        end
     end
 
-    S3raw -->|ETL| S3cur
-    S3cur -->|集計| S3ana
-    LF -->|統合| GlueCat
-    LF -->|タグ管理| LFTags
-    GlueProd -.federate.-> GlueCat
-    Athena -.認可問合せ.-> LF
-    Athena -.読込.-> S3ana
-    Athena -.結果保存.-> S3Res
-    QS -.SQL.-> Athena
-    SM -.学習データ.-> S3ana
-    KMS -.暗号化.-> S3raw
-    KMS -.暗号化.-> S3cur
-    KMS -.暗号化.-> S3ana
+    %% Producer side connections
+    Steward -.実装・運用.-> App1ETL
+    Steward -.実装・運用.-> App1Crawler
+    Owner -.公開承認.-> App1GlueCat
+    App1ETL -->|変換書込| App1S3raw
+    App1S3raw -->|ETL| App1S3cur
+    App1S3cur -->|集計| App1S3ana
+    App1Crawler -.スキャン.-> App1S3raw
+    App1Crawler -->|テーブル定義更新| App1GlueCat
 
-    style Producer fill:#e8f5e9
+    %% Central catalog
+    Admin -.LF / Tag 管理.-> LakeFormation
+    Admin -.鍵管理.-> KMSCMK
+    LakeFormation -.認可レイヤー.-> GlueCatCentral
+
+    %% Cross-account Federation (Producer → Central)
+    App1GlueCat -.Cross-account<br/>Federation.-> GlueCatCentral
+    AppNetc -.Federation.-> GlueCatCentral
+
+    %% Encryption (KMS → Producer S3)
+    KMSCMK -.暗号化.-> App1S3raw
+
+    %% Consumer queries (利用者層 → Producer S3 を直接読込)
+    Analyst -.クエリ作成.-> AthenaWG
+    Analyst -.ダッシュ作成.-> QSDash
+    Analyst -.ML 開発.-> SMStudio
+    Reader -.閲覧.-> QSDash
+    AthenaWG -.認可問合せ.-> LakeFormation
+    AthenaWG -.メタデータ参照.-> GlueCatCentral
+    AthenaWG -.データ直読.-> App1S3ana
+    AthenaWG -.結果保存.-> S3Res
+    QSDash -.SQL.-> AthenaWG
+    SMStudio -.学習データ取得.-> App1S3ana
+
+    %% Common Reference Data Layer (D-2 同居)
+    MasterMgr -.管理.-> CommonS3
+    MasterMgr -.スキーマ管理.-> GlueCatCentral
+    KMSCMK -.暗号化.-> CommonS3
+    AthenaWG -.横断クエリ.-> CommonS3
+
+    %% Styling - Account boundaries with thick borders
+    style App1Account fill:#e8f5e9,stroke:#388e3c,stroke-width:3px
+    style AppNAccount fill:#e8f5e9,stroke:#388e3c,stroke-width:3px
+    style CentralAccount fill:#fff3e0,stroke:#e65100,stroke-width:3px
+
+    %% Layer backgrounds
     style CatLayer fill:#ffebee
+    style CommonRefLayer fill:#fff8e1
     style UserLayer fill:#e3f2fd
+
+    %% AWS Service boxes
+    style LakeFormation fill:#ffcc99
+    style GlueCentral fill:#ffd5cc
+    style App1Glue fill:#ffd5cc
+    style App1S3 fill:#ccffcc
+    style S3Result fill:#ccddff
+    style CommonS3Svc fill:#ccffcc
+    style AthenaSvc fill:#ccddff
+    style QSSvc fill:#ccddff
+    style SMSvc fill:#ccddff
+    style KMSSvc fill:#fff
+
+    %% Actors
+    style Steward fill:#fffacd
+    style Owner fill:#fffacd
+    style Admin fill:#fffacd
+    style Analyst fill:#fffacd
+    style Reader fill:#fffacd
+    style MasterMgr fill:#fffacd
 ```
+
+###### AWS アカウント境界の整理
+
+| アカウント | 種類 | 数 | 役割 |
+|---|---|:---:|---|
+| 🟢 **App アカウント**（Producer）| 既存 | **N 個** | アプリ稼働 + Producer 役割兼任。S3 にデータを保管、Glue Catalog で自身のテーブル定義 |
+| 🟠 **中央 BI / Catalog アカウント**（Option B + D-2 同居）| 新規 | **1 個** | **カタログ層 / 利用者層 / 共通参照データ層を同居**。3 層は IAM Role で責務分離: `DataLakeAdminRole`（カタログ）/ `CommonReferenceDataManagerRole`（共通参照データ）/ `DataAnalystRole`+`DataReaderRole`（利用者） |
+
+→ **アカウント追加合計: +1 のみ**
+→ 共通ドメインアカウントの **D-1 新設は Phase 2 以降の再評価候補**（[DP-ADR-003](adr/DP-ADR-003-common-domain-account-placement.md)）
+
+###### アクター（役割と IAM Role）の整理
+
+| アクター | 役割 | IAM Role | 主な操作 |
+|---|---|---|---|
+| 👤 **データ責任者** | 役割 1 | `DataProductOwnerRole` | データ製品公開の承認、利用申請の承認 |
+| 👤 **データスチュワード** | 役割 2 | `DataStewardRole` | Producer 側 ETL / Crawler の運用、スキーマ管理、データ品質責任 |
+| 👤 **カタログ管理者** | 役割 3 | `DataLakeAdminRole` | Lake Formation 管理、LF-Tag 体系、KMS、クロスアカウント Grants |
+| 👤 **中央 BI チーム** | 役割 4 | `DataAnalystRole` | Athena / QuickSight / SageMaker での分析・ダッシュ作成 |
+| 👤 **共通参照データ管理者** | 役割 5 | （兼任、Phase 1）| 顧客マスタ等の整備・スキーマ管理 |
+| 👤 **業務利用者** | 役割 6 | `DataReaderRole` | QuickSight ダッシュボード閲覧 |
+| 👤 **監査担当者**（図には表示せず）| 役割 7 | （既存 Audit Role）| 監査アカウント（§5.8 参照）経由でログ確認 |
+
+###### サービスと機能の階層理解（重要）
+
+| AWS サービス | このサービスが含む機能 | 単独サービス / 他サービスとの関係 |
+|---|---|---|
+| **AWS Glue** | Glue Data Catalog（メタデータストア）/ Glue Crawler / Glue ETL Jobs / Glue Schema Registry / Glue Data Quality | 独立したサービス、上に他のサービス（Lake Formation / Athena）が乗る基盤 |
+| **AWS Lake Formation** | LF-Tags（タグベース ABAC）/ Cross-account Grants / 監査ログ | **自身は Catalog を持たず、Glue Data Catalog を利用**して認可レイヤーを提供する |
+| **Amazon Athena** | Workgroups / クエリエンジン（Trino ベース）/ Result Reuse | Glue Data Catalog からメタデータ取得、Lake Formation に認可問合せ、S3 を直接読込 |
+| **Amazon QuickSight** | ダッシュボード / SPICE（インメモリ）/ Q（自然言語）| データソースとして Athena 等を利用 |
+| **Amazon SageMaker** | Studio / Training / Inference / Model Registry | S3 / Glue Catalog を学習データ取得経路として利用 |
+| **AWS KMS** | CMK / 鍵ポリシー / 鍵ローテーション | 独立、各サービスから暗号化用途で参照 |
+| **Amazon S3** | バケット / Object Lock / ライフサイクル | 独立、データの実体保存先 |
+
+→ **「LF-Tags は Lake Formation の機能」「Glue Data Catalog は Glue の機能」**を図でも明示的に表現（各 AWS サービスの subgraph 内に機能を配置）。
+
+###### Producer 側の Glue Data Catalog の意味（明確化）
+
+**Producer 側 Glue Data Catalog は「その App 自身の S3 データ」を記述します**:
+
+| 機能 | 内容 |
+|---|---|
+| **何を記述するか** | App 自身の S3 raw / curated / analytics 各層のデータベース定義・テーブル定義・パーティション情報 |
+| **誰が書込むか** | Glue Crawler（スキーマ自動検出時）/ Glue ETL Jobs（書込み時に明示登録）/ Athena DDL（CREATE TABLE）|
+| **誰が読込むか** | Glue ETL（スキーマ参照）/ Athena（クエリ時のメタデータ）/ Lake Formation（Federation 経由で中央から参照）|
+| **中央への共有** | Cross-account Glue Catalog Federation で **中央 Glue Catalog から透過的に参照**される |
+
+**Central 側 Glue Data Catalog の意味**:
+
+| 機能 | 内容 |
+|---|---|
+| **何を記述するか** | Federation で参照する Producer Catalog のテーブル + 共通ドメインのテーブル + Athena CTAS 等で作成した派生テーブル |
+| **Lake Formation との関係** | **Lake Formation が認可レイヤーとしてこの Catalog を利用**（Lake Formation 自身は Catalog を持たない）|
+| **LF-Tags はどこに付くか** | この **中央 Glue Catalog のテーブル / 列**に LF-Tags が付与される |
+| **Athena は何を見るか** | クエリ時に **中央 Glue Catalog** からメタデータを取得、Lake Formation に認可問合せ、S3 を直接読込 |
+
+→ **「Lake Formation は Glue Catalog の上に乗る認可レイヤー」**という関係を明示的に図に反映（点線「認可レイヤー」で表現）。
+
+##### 4.2.1.X 共通参照データの配置 — D-2（中央同居）採用
+
+> **意思決定**: **Phase 1 では D-2（中央 BI / Catalog アカウントに同居）を採用**。共通ドメインアカウント新設（D-1）は Phase 2 以降の再評価候補として保留。
+> **判断記録**: [DP-ADR-003: 共通参照データの配置](adr/DP-ADR-003-common-domain-account-placement.md)
+> **背景**: 過去の議論（strawman §1.3 / 当章 §5.5）で「共通ドメインアカウント新設」を提案していたが、Phase 1 規模では責務分離効果に対しアカウント運用コストが見合わないと判断し、D-2 に集約した。**判断経緯は本節 A〜F で記録し、ADR を正とする**。
+
+###### A. 何のためのアカウントか
+
+「**特定のアプリに所属しないが、複数アプリから参照される共通参照データ**」を保管・管理する独立 AWS アカウント。
+
+**典型的に置く想定のデータ**:
+
+| データ | 例 | なぜ「共通」か |
+|---|---|---|
+| **顧客マスタ** | 顧客企業 ID / 名称 / 業種 / 契約プラン / 解約日 | 経費精算 SaaS の利用状況と CRM の商談履歴を突合する際に、両者が同じ顧客 ID 体系を使う必要がある |
+| **組織マスタ** | 顧客企業内の部署階層 / 従業員ロール | 多くの SaaS 製品が「同じ組織階層」を前提に動く |
+| **標準勘定科目マスタ** | 経費精算 SaaS の費目 / 会計連携用コード | 個別アプリのコードと SaaS 提供側の標準コードのマッピング |
+| **国・地域コード / 通貨マスタ** | ISO 3166 / ISO 4217 等 | アプリ非依存の汎用マスタ |
+| **共通分析ディメンション** | 業種分類 / 企業規模区分 / 商圏定義 | クロスアプリ分析の軸 |
+
+###### B. なぜ「特定アプリに寄せない」のか
+
+```
+❌ 経費精算 SaaS のアカウントに顧客マスタを置くと:
+   - CRM / 営業支援 SaaS / ERP からも参照するため、依存方向が「経費精算 → 他」と逆転
+   - 経費精算チームが顧客マスタの責任を負うのは責務範囲外
+   - 経費精算アカウントの障害・変更が全 SaaS の分析を止める
+
+✅ 共通ドメインアカウントに置くと:
+   - どの SaaS アプリにも従属せず、横断データの「中立な所有者」になる
+   - 共通参照データ管理者（役割 5）が責任を持つ
+   - 個別アプリの稼働とは独立した寿命を持てる
+```
+
+###### C. 採用した場合の構成
+
+| 要素 | 内容 |
+|---|---|
+| **アカウント** | AWS Organizations 配下の独立アカウント 1 個 |
+| **保管先** | S3 + Glue Data Catalog（Producer と同じ構造）|
+| **管理者** | 共通参照データ管理者（役割 5）。Phase 1 では中央 BI チームが兼任する想定 |
+| **更新方法** | 顧客マスタ等は契約管理システム or Salesforce 等から日次連携 / 標準コードは手動 GitOps |
+| **公開方法** | Cross-account Glue Catalog Federation で中央 Catalog から参照、Athena 横断クエリで利用 |
+| **コスト** | S3 数 GB + Glue Catalog 無料枠内 + 連携ジョブ（Lambda or Glue ETL）程度。月 $10-50 規模 |
+
+###### D. 代替案との比較
+
+| 代替案 | 概要 | メリット | デメリット | 評価 |
+|---|---|---|---|---|
+| **D-1: 共通ドメインアカウント新設**（現提案）| 専用アカウント +1 | 責務明確、SaaS 非依存、独立した寿命 | アカウント +1、管理者ロール定義が必要 | ⭕ **本案** |
+| **D-2: 中央 BI / Catalog アカウントに同居** | Catalog アカウント内に共通マスタ S3 を置く | アカウント追加なし | カタログ層と「共通参照データ」の責務が混在、Catalog 管理者と共通参照データ管理者の責任が曖昧化 | △ |
+| **D-3: 既存の代表アプリに寄せる** | 例: 経費精算 SaaS アカウントに置く | 新規アカウント不要 | **依存方向の逆転 / 責務範囲外 / 障害影響伝播**（上記 B の問題） | ❌ |
+| **D-4: マスタ専用 SaaS / MDM 製品導入** | Reltio / Informatica MDM 等 | 高機能（名寄せ、来歴管理）| SaaS 不採用方針に抵触、コスト高 | ❌ |
+| **D-5: 採用しない（共通参照データは持たない）** | アプリごとに独自マスタで管理、突合は都度 | アカウント +0 | クロスアプリ分析が事実上不可能 / 顧客マスタ 1 件の不整合が全社で発生 | ❌（分析価値が大きく毀損）|
+
+###### E. 採否を分ける質問（ヒアリング）
+
+| 質問 | 「YES なら D-1 採用」 |
+|---|---|
+| 複数 SaaS 製品で同じ顧客企業を参照することがあるか | ✅ クロスアプリ分析がある |
+| 顧客マスタ等を「どの SaaS にも所属しない中立データ」と扱いたいか | ✅ 責務分離を重視 |
+| 共通マスタの責任者を BI/Catalog チームと分離したいか | ✅ 役割 3 と役割 5 を分ける |
+| 将来 SaaS 製品を増やす計画があり、毎回マスタ依存を再設計したくないか | ✅ 拡張性を重視 |
+
+→ **3 つ以上 YES なら D-1（共通ドメインアカウント新設）を採用**、それ以外なら D-2（中央同居）に縮退、または D-5（持たない）も選択肢。
+
+###### F. Phase 1 採用方針と Phase 2 再評価条件
+
+**Phase 1 採用方針**: **D-2（中央 BI / Catalog アカウント同居）** → 詳細は [DP-ADR-003](adr/DP-ADR-003-common-domain-account-placement.md)
+
+| 観点 | Phase 1 採用内容 |
+|---|---|
+| **F-1**: 共通参照データの配置 | **中央 BI / Catalog アカウント内に同居**。独立 S3 バケット + Glue Catalog `common_domain` DB で識別 |
+| F-2: 役割 5 の兼任 | Phase 1 は中央 BI チームが兼任、`CommonReferenceDataManagerRole` を別途定義し IAM で責務分離 |
+| F-3: マスタソース | 契約管理 SaaS / Salesforce 等、顧客のシステム構成依存（ヒアリング項目）|
+| F-4: 書込み権限 | `CommonReferenceDataManagerRole` のみ、Producer / Consumer は読込のみ |
+
+**Phase 2 以降の D-1 移行トリガ**（[DP-ADR-003 §4.1](adr/DP-ADR-003-common-domain-account-placement.md) 参照）:
+
+| カテゴリ | トリガ条件 |
+|---|---|
+| 規模 | 共通参照データの S3 サイズが 100 GB 超 / 月間アクセス頻度が中央 BI 層の 50% 超 |
+| 組織 | 役割 5 が中央 BI チームから専任化 |
+| SaaS ポートフォリオ | 共通参照データに依存する SaaS 製品が 5 つ以上 |
+| マスタ管理機能 | 来歴管理・名寄せ等、Glue/Athena では不足する機能が要求 |
+| 障害影響 | Catalog 層障害で共通参照データ参照が年 2 回以上停止 |
+| 規制・監査 | アクセスログを物理分離する規制要件 |
+
+**移行容易性**: D-2 → D-1 は 3-4 週間で移行可能（DDL エクスポート + S3 Replication + Federation 再設定）。クエリで使う DB 名 `common_domain` を最初から固定することで、Federation 経由でも同じ名前を維持できる設計とする。
 
 ##### 4.2.1.2 Producer 側（各アプリアカウント）のリソース
 
@@ -464,7 +722,7 @@ flowchart LR
 |---|---|
 | 顧客会計システム連携 | Producer 側（経費精算 SaaS 内）+ AWS Transfer Family / Glue Custom Connector |
 | 法人カード明細 | 同上 + 外部 SaaS API 連携 |
-| 人事システムからの組織マスタ取り込み | 共通ドメインアカウント（顧客マスタ等の管理用）|
+| 人事システムからの組織マスタ取り込み | 中央 BI/Catalog アカウント内の共通参照データ層（D-2、[DP-ADR-003](adr/DP-ADR-003-common-domain-account-placement.md)）|
 
 ##### 4.2.2.4 ETL ツール選定マトリクス
 
@@ -510,7 +768,354 @@ ETL とは別だが密接に関連する処理:
 | 1 | 各アプリのデータエンジニアリングスキル | Producer 側 ETL の実装可否、研修必要性 |
 | 2 | 既存の ETL 基盤（cron / Airflow / 自前バッチ）の取扱 | 移行戦略、並行運用期間 |
 | 3 | リアルタイム性の要件（解約予兆検知の遅延許容）| ストリーム取り込みの採否 |
-| 4 | 顧客企業マスタ・契約管理システムとの連携方式 | 共通ドメインアカウントの ETL 設計 |
+| 4 | 顧客企業マスタ・契約管理システムとの連携方式 | 共通参照データ層の ETL 設計（D-2 中央同居、[DP-ADR-003](adr/DP-ADR-003-common-domain-account-placement.md)）|
+
+##### 4.2.2.8 案件側 ETL の詳細イメージ（**データプラットフォーム標準のスコープ外、参考情報**）
+
+> ⚠ **位置付け**: 案件側（各アプリチーム）の ETL 実装は **本データプラットフォーム標準のスコープ外**。各アプリチームの責任で選定・実装する。本節は「**案件側がどのような構成になるか**」のイメージを掴むための参考資料であり、標準として強制するものではない。
+>
+> ただし、案件側が「データレイクに正しいフォーマットで raw データを着地させる」ためのインターフェース（S3 バケット命名・パーティション規約・暗号化要件等）は標準として定める（[../proposal/fr/03-pipeline.md](proposal/fr/03-pipeline.md)）。
+
+###### 4.2.2.8.1 案件側 ETL の全体像（典型パターン）
+
+```mermaid
+flowchart TB
+    subgraph Sources["データソース（業務システム）"]
+        direction LR
+        Aurora[("Aurora / RDS<br/>業務 OLTP")]
+        Dynamo[("DynamoDB<br/>サービスメタ等")]
+        AppLog["アプリログ<br/>(CloudWatch /<br/>ECS / Lambda)"]
+        ExtSaaS["外部 SaaS<br/>(Salesforce 等)"]
+        ExtCust["顧客社内システム<br/>(会計 / HR 等)"]
+        SFTP["SFTP / Email 添付<br/>(顧客からの<br/>ファイル受領)"]
+    end
+
+    subgraph Step1["① 取込層 (Ingestion)"]
+        direction LR
+        DMS["AWS DMS<br/>(CDC / Bulk)"]
+        ZeroETL["Aurora Zero-ETL<br/>(将来)"]
+        KFH["Kinesis Data Firehose<br/>(ストリーム)"]
+        DataPipe["AppFlow<br/>(SaaS 連携)"]
+        Lambda1["Lambda<br/>(軽量 / API 取込)"]
+        Transfer["Transfer Family<br/>(SFTP 受領)"]
+    end
+
+    subgraph App["案件側アカウント (Producer)"]
+        direction TB
+        S3Raw["S3 raw 層<br/>(原本保管、不変)"]
+
+        subgraph Step2["② 変換層 (raw → curated)"]
+            direction LR
+            GlueETL1["Glue ETL Flex<br/>(Spark、PySpark)"]
+            GlueDQ["Glue Data Quality<br/>(品質チェック)"]
+            LambdaXform["Lambda<br/>(小規模変換)"]
+        end
+
+        S3Cur["S3 curated 層<br/>(Parquet、PII 除去、tenant_id 付与)"]
+
+        subgraph Step3["③ 集計層 (curated → analytics)"]
+            direction LR
+            AthenaCTAS["Athena CTAS<br/>(SQL 集計)"]
+            GlueETL2["Glue ETL Flex<br/>(複雑集計)"]
+        end
+
+        S3Ana["S3 analytics 層<br/>(集計済、パーティション最適化)"]
+
+        subgraph Orchestration["④ オーケストレーション / 監視"]
+            direction LR
+            StepFn["Step Functions<br/>(ワークフロー)"]
+            EvBridge["EventBridge<br/>Scheduler"]
+            CWAlarm["CloudWatch Alarms<br/>(エラー検知)"]
+            SNS["SNS / Chatbot<br/>(通知 → Slack/Teams)"]
+        end
+
+        subgraph CatalogProd["⑤ メタデータ管理"]
+            Crawler["Glue Crawler<br/>(スキーマ自動検出)"]
+            GlueCatProd["Glue Data Catalog<br/>(自アプリ分のテーブル定義)"]
+        end
+    end
+
+    Aurora --> DMS
+    Aurora -.将来.-> ZeroETL
+    Dynamo --> Lambda1
+    AppLog --> KFH
+    ExtSaaS --> DataPipe
+    ExtCust --> Lambda1
+    SFTP --> Transfer
+
+    DMS --> S3Raw
+    ZeroETL --> S3Raw
+    KFH --> S3Raw
+    DataPipe --> S3Raw
+    Lambda1 --> S3Raw
+    Transfer --> S3Raw
+
+    S3Raw --> GlueETL1
+    S3Raw --> LambdaXform
+    GlueETL1 --> S3Cur
+    LambdaXform --> S3Cur
+    GlueETL1 -.チェック.-> GlueDQ
+
+    S3Cur --> AthenaCTAS
+    S3Cur --> GlueETL2
+    AthenaCTAS --> S3Ana
+    GlueETL2 --> S3Ana
+
+    StepFn -.制御.-> GlueETL1
+    StepFn -.制御.-> GlueETL2
+    StepFn -.制御.-> AthenaCTAS
+    EvBridge -.起動.-> StepFn
+    StepFn -.失敗.-> CWAlarm
+    CWAlarm --> SNS
+
+    Crawler -.スキャン.-> S3Raw
+    Crawler -.スキャン.-> S3Cur
+    Crawler -.スキャン.-> S3Ana
+    Crawler -->|テーブル定義更新| GlueCatProd
+
+    style Sources fill:#f5f5f5
+    style App fill:#e8f5e9
+    style Step1 fill:#fff3e0
+    style Step2 fill:#fff3e0
+    style Step3 fill:#fff3e0
+    style Orchestration fill:#e3f2fd
+    style CatalogProd fill:#ffebee
+```
+
+###### 4.2.2.8.2 5 つのコンポーネント詳細
+
+| # | コンポーネント | 役割 | 代表選択肢 | 選定の考え方 |
+|---|---|---|---|---|
+| ① | **取込層 (Ingestion)** | 業務 DB / 外部システム → S3 raw への運搬 | **AWS DMS** (CDC/Bulk) / **Aurora Zero-ETL** / **Kinesis Data Firehose** / **AppFlow** / **Lambda** / **Transfer Family** | データソースの種類とリアルタイム性で選定（後述 4.2.2.8.3）|
+| ② | **変換層 (raw → curated)** | クレンジング、PII マスキング、Parquet 化、tenant_id 強制 | **Glue ETL Flex** (Spark) / **Lambda** (軽量) / **Glue Data Quality** (品質) | データ量と複雑度で選定。標準は Glue ETL Flex |
+| ③ | **集計層 (curated → analytics)** | パーティション化、集計、分析最適化 | **Athena CTAS** (SQL) / **Glue ETL Flex** (複雑) | SQL で済むなら Athena CTAS、Python ロジック必要なら Glue ETL |
+| ④ | **オーケストレーション / 監視** | ジョブの起動・依存関係・リトライ・通知 | **Step Functions** (ワークフロー) / **EventBridge Scheduler** (起動) / **CloudWatch Alarms** (検知) / **SNS / Chatbot** (通知) | 標準は Step Functions + EventBridge |
+| ⑤ | **メタデータ管理** | スキーマ自動検出、Catalog 登録 | **Glue Crawler** / **Glue Schema Registry** | 全 Producer 共通の標準 |
+
+###### 4.2.2.8.3 取込層の選定マトリクス（① 詳細）
+
+最も判断が割れるのが取込層。データソースとリアルタイム性で 6 パターンに分岐:
+
+| データソース | リアルタイム性 | 推奨ツール | 理由 / 補足 |
+|---|---|---|---|
+| **Aurora MySQL / PostgreSQL** | バッチ（日次）| **DMS Full Load + Glue Job** | DMS で初回全件 → Glue で日次差分（タイムスタンプ列）|
+| **Aurora MySQL / PostgreSQL** | ニアリアルタイム（分単位）| **DMS CDC** | バイナリログ / WAL から変更検知、S3 Sink |
+| **Aurora MySQL（v3.06+）/ PostgreSQL** | ニアリアルタイム（秒単位）| **Aurora Zero-ETL to Redshift** | 将来選択肢（Phase 3+、Redshift 採用時のみ。[DP-ADR-002](adr/DP-ADR-002-redshift-emr-not-adopted.md)）|
+| **DynamoDB** | ニアリアルタイム | **DynamoDB Streams + Kinesis Firehose** | Streams → Firehose → S3 raw、24 時間以内のデータのみ |
+| **DynamoDB** | バッチ | **DynamoDB Export to S3** | テーブルスナップショット、無料（ただし PITR 課金）|
+| **アプリログ（ECS / Lambda / EC2）** | ストリーム | **CloudWatch Logs → Kinesis Firehose → S3** | サブスクリプションフィルタで Firehose に流す |
+| **外部 SaaS（Salesforce / HubSpot 等）** | 日次 | **AWS AppFlow** | OAuth 認証、200+ SaaS コネクタ標準 |
+| **外部 SaaS（カスタム API）** | 日次 | **Lambda + EventBridge Scheduler** | AppFlow に対応がない場合の自作。`requests` で API 叩き S3 PUT |
+| **顧客社内システム（DB 直接接続不可）** | 日次 | **Transfer Family (SFTP)** | 顧客が SFTP でファイル投函、S3 にランディング |
+| **顧客社内システム（DB 直接接続不可）** | 日次 | **Email 受信 + SES + Lambda** | 顧客が CSV をメール添付、SES で受信 → Lambda で S3 配置 |
+| **既存基盤（オンプレ Hadoop / Hive）** | バッチ | **DataSync** | NAS / HDFS / S3 互換ストレージ → S3 |
+
+###### 4.2.2.8.4 変換層の典型実装（② 詳細）
+
+**raw → curated の典型処理**（経費精算 SaaS の例）:
+
+```python
+# Glue ETL Flex Job (PySpark) の擬似コード例
+# === Producer 側で実装、案件側のデータエンジニアが書く ===
+
+import sys
+from awsglue.transforms import *
+from awsglue.context import GlueContext
+from awsglue.dynamicframe import DynamicFrame
+from pyspark.context import SparkContext
+from pyspark.sql.functions import col, sha2, lit, when, current_timestamp
+
+glueContext = GlueContext(SparkContext.getOrCreate())
+
+# 1. raw 読込（DMS が出力した CDC 形式 JSON）
+raw_df = glueContext.create_dynamic_frame.from_catalog(
+    database="expense_app_raw",      # 自アプリの DB
+    table_name="expenses_cdc"        # raw テーブル
+).toDF()
+
+# 2. tenant_id 強制付与（多くの場合 DB に既に列がある）
+#    存在しなければエラー停止
+if "tenant_id" not in raw_df.columns:
+    raise ValueError("tenant_id is required for multi-tenant isolation")
+
+# 3. PII マスキング（メールアドレスを SHA-256 ハッシュ化）
+cleaned_df = raw_df \
+    .withColumn("email_hash", sha2(col("submitter_email"), 256)) \
+    .drop("submitter_email") \
+    .withColumn("processed_at", current_timestamp())
+
+# 4. データ品質: NULL チェック、型違反、金額の範囲チェック
+quality_df = cleaned_df.filter(
+    (col("tenant_id").isNotNull()) &
+    (col("amount") > 0) &
+    (col("amount") < 100000000)  # 1 億未満
+)
+
+# 5. Parquet で curated 層へ書込（パーティション = tenant_id + 日付）
+quality_df.write \
+    .mode("append") \
+    .partitionBy("tenant_id", "submitted_date") \
+    .parquet("s3://expense-app-curated/expenses/")
+```
+
+**変換層で典型的に行う処理**:
+
+| 処理 | 必須 / 推奨 | 内容 |
+|---|---|---|
+| **`tenant_id` 強制付与** | **必須** | 多テナント分離の根幹。欠落時はジョブ失敗 |
+| **PII マスキング** | **必須** | メール → SHA-256 / 個人名 → 仮名化 / 電話番号 → 末尾マスク |
+| **Parquet 変換** | 推奨 | JSON / CSV → Parquet で Athena コスト 75% 削減 |
+| **データ型統一** | 推奨 | 文字列の "true"/"True"/"1" → boolean に統一 |
+| **パーティション設計** | **必須** | `tenant_id=XXX/year=YYYY/month=MM/day=DD/` 形式で Athena 最適化 |
+| **重複排除** | 推奨 | CDC で同じレコードが複数回到着するため `row_number()` で最新のみ残す |
+| **品質チェック** | 推奨 | Glue Data Quality でルール定義（NULL 率 5% 以下、外部キー整合性等）|
+
+###### 4.2.2.8.5 集計層の典型実装（③ 詳細）
+
+**curated → analytics は Athena CTAS が第一選択**:
+
+```sql
+-- Producer 側で Athena CTAS を実行、analytics 層に集計テーブル生成
+-- 月次の経費精算サマリー（テナント別）
+
+CREATE TABLE expense_app_analytics.monthly_summary
+WITH (
+    format = 'PARQUET',
+    parquet_compression = 'SNAPPY',
+    partitioned_by = ARRAY['tenant_id', 'year_month'],
+    external_location = 's3://expense-app-analytics/monthly_summary/'
+) AS
+SELECT
+    tenant_id,
+    DATE_FORMAT(submitted_date, '%Y-%m') AS year_month,
+    COUNT(*) AS submission_count,
+    SUM(amount) AS total_amount,
+    AVG(amount) AS avg_amount,
+    COUNT(DISTINCT submitter_id) AS unique_submitters,
+    SUM(CASE WHEN status = 'rejected' THEN 1 ELSE 0 END) AS rejected_count
+FROM expense_app_curated.expenses
+WHERE submitted_date >= DATE '2026-01-01'
+GROUP BY tenant_id, DATE_FORMAT(submitted_date, '%Y-%m');
+```
+
+**Athena CTAS vs Glue ETL の選び分け**:
+
+| 観点 | Athena CTAS | Glue ETL |
+|---|---|---|
+| ロジック | SQL のみ | Python / Spark（任意ロジック）|
+| 開発速度 | ⭕ 速い（SQL のみ）| △ Spark コード必要 |
+| 実行コスト | スキャン量課金（$5/TB）| DPU 時間課金（Flex で $0.29）|
+| 大量データ向き | ❌（30 分 / クエリ制限）| ⭕ |
+| ML 前処理 / 複雑なロジック | ❌ | ⭕ |
+| **推奨** | **集計が中心ならこれ** | 複雑な変換や ML 前処理に |
+
+###### 4.2.2.8.6 オーケストレーションの典型実装（④ 詳細）
+
+**Step Functions + EventBridge Scheduler の典型構成**:
+
+```
+EventBridge Scheduler (Cron: 毎日 02:00 JST)
+    ↓ 起動
+Step Functions ステートマシン
+    ├── State 1: DMS タスク開始 (CDC リフレッシュ)
+    │       ↓ 待機 (5 分)
+    ├── State 2: Glue Crawler 実行 (raw のスキーマ更新)
+    │       ↓ 完了待ち
+    ├── State 3: Glue ETL Job (raw → curated)
+    │       ↓ 完了待ち、失敗時リトライ 3 回
+    ├── State 4: Glue Data Quality チェック
+    │       ↓ 失敗時 → CloudWatch Alarm → SNS → Slack 通知
+    ├── State 5: Athena CTAS (curated → analytics)
+    │       ↓
+    └── State 6: 完了通知 → SNS → Slack
+```
+
+**この構成のメリット**:
+- ジョブ間の依存関係を State Machine で宣言的に管理
+- 各 State のリトライ・タイムアウト・並列実行を細かく制御
+- 視覚的にパイプラインの状態が分かる（Step Functions コンソール）
+- IaC（CDK / Terraform）で全体を管理可能
+
+###### 4.2.2.8.7 IaC / CI/CD の典型構成
+
+**案件側の標準的な IaC / CI/CD 構成**:
+
+| レイヤー | ツール | 内容 |
+|---|---|---|
+| **インフラ定義** | AWS CDK (TypeScript / Python) / Terraform / SAM | S3 / Glue / Lambda / Step Functions / DMS の宣言 |
+| **ETL コード管理** | Git（GitHub / GitLab / CodeCommit）| Glue PySpark / Lambda コード / SQL クエリ |
+| **CI** | GitHub Actions / CodeBuild | プルリク時に PyLint / Flake8 / SQL Lint / 単体テスト |
+| **CD** | GitHub Actions / CodePipeline | dev → stg → prod のステージ別デプロイ、CDK Deploy 自動化 |
+| **テスト** | pytest + LocalStack / Moto（モック）| Glue Job をローカルで実行（重い場合は dev 環境で実機テスト）|
+| **シークレット** | Secrets Manager / Parameter Store | DB 接続情報、外部 SaaS API キー |
+
+###### 4.2.2.8.8 案件側 ETL のコスト見積もり（経費精算 SaaS 中規模を想定）
+
+**月次データ量の想定**: 1,000 顧客企業 × 平均 1,000 件 / 月 = **100 万件 / 月**、データサイズ約 **50 GB / 月**
+
+| コンポーネント | 単価 | 月次利用量 | 月額 |
+|---|---|---|---|
+| **DMS（t3.medium インスタンス）** | $0.044/h | 24h × 30 = 720h | ~$32 |
+| **DMS 通信料** | $0.09/GB（クロス AZ 不要なら $0）| 約 5 GB（差分のみ）| ~$0.5 |
+| **S3 raw 保管**（GB × 月）| $0.023/GB | 50 GB × 3 ヶ月分（90 日 lifecycle）| ~$3.5 |
+| **S3 curated / analytics**（Parquet 圧縮後）| $0.023/GB | 12.5 GB（75% 圧縮）| ~$0.3 |
+| **Glue ETL Flex（raw → curated）** | $0.29/DPU 時間 | 2 DPU × 0.5 h × 30 日 = 30 DPU 時間 | ~$8.7 |
+| **Athena CTAS（curated → analytics）** | $5/TB スキャン | 12.5 GB × 30 日 = 0.4 TB | ~$2 |
+| **Glue Crawler** | $0.44/DPU 時間 | 0.5 DPU × 0.2 h × 30 日 = 3 DPU 時間 | ~$1.3 |
+| **Step Functions** | $0.025/1,000 状態遷移 | 30 日 × ~50 遷移 = 1,500 遷移 | ~$0.04 |
+| **EventBridge Scheduler** | 無料枠内（< 14M 起動）| 30 起動 / 月 | $0 |
+| **CloudWatch Logs** | $0.50/GB 取込 | ~5 GB | ~$2.5 |
+| **Lambda（軽量変換）** | $0.20/100 万リクエスト | 数千リクエスト | ~$0.1 |
+| **合計** | | | **~$51 / 月** |
+
+→ **中規模アプリ 1 つあたり月 ~$50 程度**。10 アプリで $500 / 月、20 アプリで $1,000 / 月。Glue / Athena / S3 の課金体系上、規模が増えても準線形に拡大する。
+
+###### 4.2.2.8.9 案件側に必要な人材スキル
+
+データプラットフォーム標準を活かすため、案件側に必要なスキル:
+
+| スキル | レベル | 用途 |
+|---|---|---|
+| **SQL（標準クエリ + ウィンドウ関数）** | 中級 | Athena CTAS による集計、データ品質チェック |
+| **Python（基礎 + Pandas / boto3）** | 中級 | Lambda、Glue ETL（PySpark）、外部 API 連携 |
+| **PySpark（DynamicFrame / DataFrame）** | 初級〜中級 | Glue ETL の本体実装 |
+| **AWS CDK / Terraform** | 初級〜中級 | インフラ IaC |
+| **CloudWatch Logs / X-Ray** | 初級 | パイプライン障害調査 |
+| **Parquet / 列指向ストレージの理解** | 初級 | パーティション設計、コスト最適化 |
+| **CDC / イベントソーシング** | 初級 | DMS / DynamoDB Streams の運用 |
+| **データモデリング（スター / 正規化）** | 中級 | curated / analytics 層の設計 |
+
+→ **既存の Web アプリエンジニアから 2-3 名がデータエンジニアリングに転向**するイメージ。新規採用が難しい場合は、外部研修（AWS Data Engineering 学習パス、Udemy 等）で 3-6 ヶ月のオンボーディング想定。
+
+###### 4.2.2.8.10 案件側 ETL の運用負荷の目安
+
+**Phase 1 で 1 アプリあたり**:
+
+| 工数項目 | 月次 |
+|---|---|
+| パイプライン障害対応 | 4-8 時間 |
+| スキーマ変更追従（業務 DB に列追加等）| 2-4 時間 |
+| データ品質ルール調整 | 1-2 時間 |
+| コスト最適化（パーティション再設計等）| 月 0、四半期 8 時間 |
+| **合計（定常運用）** | **8-15 時間 / 月** |
+
+→ **案件側 0.1 人月（16 時間 / 月）程度**を初期想定。アプリチームの既存業務に組み込むことで、専任を新たに雇う必要は通常ない。ただし、新規パイプライン構築時は別途 2-4 週間の開発工数が必要。
+
+###### 4.2.2.8.11 標準として案件側に守ってもらうこと（インターフェース契約）
+
+データプラットフォーム標準のスコープ外ではあるが、**案件側 ETL の出力（S3 raw 着地データ）には標準が課す要件がある**:
+
+| カテゴリ | 案件側に求める標準 | 詳細参照 |
+|---|---|---|
+| **S3 バケット命名規約** | `<prefix>-<app>-<layer>-<env>` 等の命名統一 | [proposal/fr/02-storage.md](proposal/fr/02-storage.md) §FR-2.1 |
+| **パーティション規約** | `tenant_id=XXX/year=YYYY/month=MM/day=DD/` 形式 | [proposal/fr/02-storage.md](proposal/fr/02-storage.md) §FR-2.3 |
+| **暗号化** | SSE-KMS 必須、中央 CMK 利用 | [proposal/fr/02-storage.md](proposal/fr/02-storage.md) §FR-2.4 |
+| **Glue Catalog 登録** | curated / analytics 層は Glue Catalog 登録必須（Federation 元）| [proposal/fr/02-storage.md](proposal/fr/02-storage.md) §FR-2.5 |
+| **データ品質メトリクス** | Glue Data Quality 結果を中央集約用 S3 に出力 | [proposal/fr/03-pipeline.md](proposal/fr/03-pipeline.md) §FR-3.4 |
+| **`tenant_id` 必須付与** | curated 層以降、全テーブルに `tenant_id` 列が存在すること | [proposal/fr/05-governance.md](proposal/fr/05-governance.md) §FR-5.2 |
+| **CloudTrail Data Events 有効化** | S3 raw / curated / analytics の全バケット | [proposal/fr/05-governance.md](proposal/fr/05-governance.md) §FR-5.4 |
+
+→ 案件側は「**インターフェース契約を守れば、ETL の中身は自由に実装してよい**」というのが標準のスタンス（[../proposal/fr/03-pipeline.md §FR-3.0.A](proposal/fr/03-pipeline.md) 参照）。
 
 #### 4.2.3 Glue Crawler の位置付けと運用
 

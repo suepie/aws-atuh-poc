@@ -37,3 +37,6 @@
 | [031](031-amr-saml-mfa-evaluation.md) | amr / SAML AuthnContext MFA 評価の統合方針 | Proposed | 2026-06-15 |
 | [032](032-ciam-platform-cost-comparison-10m-mau.md) | 10M MAU 規模における CIAM プラットフォーム選定 — Keycloak / Cognito / Entra External ID / Auth0/Okta コスト比較 | Proposed | 2026-06-12 |
 | [033](033-keycloak-2tier-broker-idp-architecture.md) | Keycloak 2-tier アーキテクチャ（Broker Keycloak + IdP Keycloak） | Proposed | 2026-06-15 |
+| [034](034-adaptive-authentication.md) | Adaptive Authentication（Risk-based 認証）の設計 | Proposed | 2026-06-18 |
+| [035](035-identity-threat-detection-response.md) | Identity Threat Detection and Response (ITDR) 設計 | Proposed | 2026-06-18 |
+| [036](036-customer-audit-support.md) | Customer Audit Support（顧客監査支援）の設計 | Proposed | 2026-06-18 |

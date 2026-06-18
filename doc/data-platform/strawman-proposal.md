@@ -36,14 +36,14 @@
 |---|---|---|
 | Q1 アプリチームの分析スキル | なし | α（各アプリで分析）は**不採用** |
 | Q2 全社統合 KPI 要件 | あるかも | 中央 BI チームを**前提** |
-| Q3 共通参照データ | 今回検討 | **共通ドメインアカウントを新設** |
+| Q3 共通参照データ | 今回検討 | **中央 BI/Catalog アカウントに同居（D-2）**。新設は Phase 2 再評価（[DP-ADR-003](adr/DP-ADR-003-common-domain-account-placement.md)）|
 | Q4 専属 BI チーム | なし | **新設前提**（最小規模で開始）|
 | Q5 横断業務部門の利用 | 要ヒアリング | 中央 BI で受け入れ可能な構成にしておく |
 
 ### 1.3 採用パターンと担い手戦略
 
-- **Consumer パターン**: **β（中央 Consumer 集約）+ 共通ドメイン**
-- **アカウント配置**: **Option B（Catalog 同居 Consumer、+2 アカウント）**
+- **Consumer パターン**: **β（中央 Consumer 集約）+ 共通参照データ中央同居（D-2）**
+- **アカウント配置**: **Option B（Catalog 同居 Consumer、+1 アカウント）** + **D-2（共通参照データを中央同居）**
 - **担い手戦略**: **Path C（段階移行）** — Phase 1 で β、Phase 2 で γ
 - **採用 AWS サービス（Phase 1/2）**:
   - **クエリ**: Athena Standard On-Demand 一択（**Redshift 不採用**、[DP-ADR-002](adr/DP-ADR-002-redshift-emr-not-adopted.md)）
@@ -56,14 +56,14 @@
   - 「アプリチームスキルなし + BI チームなし」の両方を解決するため、まず BI チームを最小規模で立ち上げ、段階的にアプリチームを育成
   - 親会社統制アカウントが CloudTrail / Security Hub / Macie 等の監査・セキュリティ集約を担うため、データ標準で必要な中央責務は **「Catalog」だけ**に縮小される
   - Catalog を Consumer（中央 BI チーム）アカウント内に同居させ、**IAM Role 厳密分離**（`DataLakeAdminRole` ≠ `DataAnalystRole`）で責務分離を担保
-  - **アカウント追加 +2**（中央 BI / Catalog + 共通ドメイン）に抑えられる
+  - **アカウント追加 +1**（中央 BI / Catalog のみ。共通参照データは中央同居の D-2 採用、[DP-ADR-003](adr/DP-ADR-003-common-domain-account-placement.md)）に抑えられる
   - 将来規模拡大時には Catalog を別アカウントに分離可能な設計（Phase 2 で検討）
   - **Redshift / EMR の不採用**: Phase 1/2 の規模では Athena + QuickSight + Glue で完結。Phase 3+ で規模拡大時に再評価（[DP-ADR-002](adr/DP-ADR-002-redshift-emr-not-adopted.md)）
   - 詳細根拠は [account-architecture-analysis.md §5](account-architecture-analysis.md) 参照
 
 ---
 
-## 2. 仮案のアカウント構成（Option B: Catalog 同居 Consumer、+2）
+## 2. 仮案のアカウント構成（Option B: Catalog 同居 Consumer + D-2 共通参照データ同居、+1）
 
 ### 2.1 全体構成図
 
@@ -75,10 +75,9 @@ flowchart TB
         Auth["共通基盤アカウント<br/>(認証)"]
     end
 
-    subgraph New["新規追加 +2"]
+    subgraph New["新規追加 +1"]
         direction LR
-        BICat["🆕 中央 BI / Catalog アカウント<br/>(+1)<br/>= Consumer + Catalog<br/>・Lake Formation Catalog<br/>・LF-Tags<br/>・KMS CMK<br/>・Athena / QuickSight / SageMaker<br/>※IAM Role 厳密分離<br/>※SMC は Phase 2 候補 (DP-ADR-001)"]
-        Common["🆕 共通ドメインアカウント<br/>(+1)<br/>顧客マスタ / 組織マスタ等"]
+        BICat["🆕 中央 BI / Catalog アカウント<br/>(+1)<br/>= Consumer + Catalog + 共通参照データ (D-2)<br/>・Lake Formation Catalog<br/>・LF-Tags (domain=common 等)<br/>・KMS CMK<br/>・Athena / QuickSight / SageMaker<br/>・共通参照データ S3 + Glue 'common_domain' DB<br/>※IAM Role 厳密分離（DataLakeAdmin / CommonRefMgr / Analyst / Reader）<br/>※SMC は Phase 2 候補 (DP-ADR-001)<br/>※共通ドメイン新設は Phase 2 再評価 (DP-ADR-003)"]
     end
 
     subgraph Apps["既存アプリアカウント = Producer 兼任"]
@@ -89,13 +88,10 @@ flowchart TB
     end
 
     BICat -.Catalog + 権限管理.-> Apps
-    BICat -.Catalog + 権限管理.-> Common
     BICat -.横断クエリ.-> Apps
-    BICat -.横断クエリ.-> Common
 
     Parent -.CloudTrail / Audit 集約 (既存).-> BICat
     Parent -.CloudTrail / Audit 集約 (既存).-> Apps
-    Parent -.CloudTrail / Audit 集約 (既存).-> Common
     Auth -.JWT (将来 BI ログイン用).-> BICat
 
     style Existing fill:#f5f5f5
@@ -109,8 +105,7 @@ flowchart TB
 |---|---|---|---|
 | **親会社統制**（既存）| 全社 Audit / Security 集約 / NW 統制 | CloudTrail Org Trail / Security Hub / Macie / GuardDuty / Network Firewall | 監査ログのみ |
 | **共通基盤**（既存）| 認証 | Cognito / Keycloak | データなし |
-| **🆕 中央 BI / Catalog**（+1）| **Catalog 管理 + 横断分析の同居**<br/>・Catalog 側: Lake Formation / LF-Tags / KMS<br/>・Consumer 側: 横断分析 / 経営層 KPI / ML<br/>・**SMC は Phase 2 で再評価**（[DP-ADR-001](adr/DP-ADR-001-sagemaker-catalog-adoption-deferred.md)）| Lake Formation / KMS / Athena / QuickSight / SageMaker / S3 (結果保存) | 派生データのみ（バルクなし）|
-| **🆕 共通ドメイン**（+1）| 顧客マスタ・組織マスタ等 | S3 / Glue Catalog / RDS（オプション）| マスタデータ |
+| **🆕 中央 BI / Catalog**（+1）| **Catalog 管理 + 横断分析 + 共通参照データの同居**<br/>・Catalog 側: Lake Formation / LF-Tags / KMS<br/>・Consumer 側: 横断分析 / 経営層 KPI / ML<br/>・**共通参照データ層（D-2）**: 顧客マスタ等を `common_domain` DB で同居（[DP-ADR-003](adr/DP-ADR-003-common-domain-account-placement.md)）<br/>・**SMC は Phase 2 で再評価**（[DP-ADR-001](adr/DP-ADR-001-sagemaker-catalog-adoption-deferred.md)）| Lake Formation / KMS / Athena / QuickSight / SageMaker / S3 (結果保存) / S3 (common-domain) / Glue Catalog | 派生データ + 共通マスタ |
 | **既存アプリ × N**（Producer 兼任）| アプリ業務 + データ生産 | API GW / Lambda / Aurora / S3 (raw/curated/analytics) | 業務データ |
 
 ### 2.3 中央 BI / Catalog アカウント内の IAM Role 分離（責務分離の核）
@@ -145,7 +140,7 @@ flowchart TB
     subgraph Central["中央（新設）"]
         R3["3. データプラットフォーム<br/>運用者<br/>(Governance アカウント)"]
         R4["4. 中央 BI / 分析チーム<br/>(Consumer アカウント)"]
-        R5["5. 共通参照データ管理者<br/>(共通ドメイン)"]
+        R5["5. 共通参照データ管理者<br/>(中央 BI/Catalog 内同居 D-2)"]
     end
 
     subgraph Users["業務部門（Consumer 利用側）"]
@@ -235,11 +230,11 @@ flowchart TB
 > - どの部署配下が組織的に妥当か、最初の 2 名の役割分担、外部委託との分業ライン
 > - **Option B 採用に伴い、役割 3 と人員が重ならない**運用が可能か
 
-#### 役割 5. 共通参照データ管理者（共通ドメイン側 = 新設）
+#### 役割 5. 共通参照データ管理者（中央 BI/Catalog アカウント内、D-2 同居 = [DP-ADR-003](adr/DP-ADR-003-common-domain-account-placement.md)）
 
 | 項目 | 仮案 |
 |---|---|
-| **配置** | 中央 BI チームと近接（同部署内 or 兼任）|
+| **配置** | 中央 BI / Catalog アカウント内に同居（共通参照データ層）、中央 BI チームと近接（同部署内 or 兼任）。Phase 2 で D-1 新設再評価 |
 | **責任範囲** | 顧客マスタ・組織マスタ・商品マスタ等の整備・維持、各アプリへの提供、品質保証 |
 | **業務量** | Phase 1: 0.5 名分（中央 BI チームと兼任）、Phase 2: 1 名 |
 | **必要スキル** | 業務知識（顧客 / 商品 / 組織のマスタ定義）、SQL、Glue Catalog |
@@ -294,7 +289,7 @@ gantt
     section Phase 1 β 構築
     Governance アカウント新設       :p1-1, 2026-09, 2M
     BI アカウント新設               :p1-2, 2026-10, 2M
-    共通ドメインアカウント新設       :p1-3, 2026-11, 2M
+    共通参照データ層構築 (D-2 同居)   :p1-3, 2026-11, 2M
     最初のアプリ Producer 化         :p1-4, 2026-12, 3M
     最初の中央 BI ダッシュボード公開   :p1-5, 2027-03, 3M
 
@@ -309,10 +304,10 @@ gantt
 | 領域 | 到達目標 |
 |---|---|
 | **組織** | BI チーム 2 名稼働、Catalog 管理者 1 名配属（役割 3、別 Role）|
-| **アカウント** | **中央 BI / Catalog**（+1）/ **共通ドメイン**（+1）の **2 アカウント**開設・運用開始 |
-| **IAM Role 分離** | `DataLakeAdminRole` / `DataAnalystRole` / `DataReaderRole` の運用ルール確立、Permission Boundary・SCP・Config Rules 整備 |
+| **アカウント** | **中央 BI / Catalog**（+1）の **1 アカウント**開設・運用開始（共通参照データは D-2 で同居、[DP-ADR-003](adr/DP-ADR-003-common-domain-account-placement.md)）|
+| **IAM Role 分離** | `DataLakeAdminRole` / `CommonReferenceDataManagerRole` / `DataAnalystRole` / `DataReaderRole` の運用ルール確立、Permission Boundary・SCP・Config Rules 整備 |
 | **アプリ** | 全アプリの 30-50% が Producer 化（Catalog 登録、Lake Formation 委任）|
-| **共通参照データ** | 顧客マスタ / 組織マスタ 2 つ稼働 |
+| **共通参照データ** | 顧客マスタ / 組織マスタ 2 つ稼働（中央 BI/Catalog アカウント内 `common_domain` DB）|
 | **ダッシュボード** | 経営層向け週次 KPI、3-5 業務部門の基本ダッシュボード |
 | **コンプラ** | PII 棚卸しサイクル稼働、四半期権限レビュー稼働 |
 | **将来分離準備** | Catalog 分離手順書（Option C 移行）を整備、トリガ条件を明文化 |
@@ -349,7 +344,7 @@ gantt
 | 3 | アプリ運用者がスチュワードを兼任できる | 不可なら → 各アプリにスチュワード専任配置、または中央集約 |
 | 4 | 共通参照データの所管移管が合意できる | 不可なら → 二重管理 / 部分移管 / 既存所管を維持しつつ Catalog 登録のみ |
 | 5 | 業務部門が QuickSight を使う意思がある | 不可なら → 既存ツール（Excel 等）併用、または既存 BI ツール延命 |
-| 6 | アカウント追加 **+2** が組織として許容される | 不可なら → 共通ドメインを既存アプリに寄せる（-1）|
+| 6 | アカウント追加 **+1**（中央 BI/Catalog のみ）が組織として許容される | 不可なら → Option A（広義 Governance 同居）など更なる縮退検討 |
 | 7 | 経営層が統合 KPI を本気で使う | 使わないなら → 中央 BI チーム規模縮小、γ 移行の優先度低下 |
 | 8 | **新規「監査アカウント」が別組織により生成され、CloudTrail / Security Hub / Macie / GuardDuty / Config Aggregator 等の集約を担う**（Option B 成立の必須前提、データプラットフォーム標準のスコープ外として位置付け、Transit GW 等と同類）| [§5.8 監査責務分離の具体設計](account-architecture-analysis.md#58-監査責務分離の具体設計option-b-採用時--新規監査アカウント前提) 参照。監査アカウントが立てられない場合 → Option C（Catalog 独立 +3）または Option A（広義 Governance +3）に変更必要 |
 | 9 | 役割 3（Catalog 管理者）と役割 4（BI チーム）の人員が**重ならない**運用が可能 | 重なる場合 → 責務分離の効果が弱まる、Option C への分離移行検討 |
@@ -386,7 +381,7 @@ gantt
 |---|---|---|
 | C-1 | 人事 KPI（離職率・採用効率・在籍数推移）の可視化要件 | ダッシュボード要件 |
 | C-2 | 機密性（個人情報・給与情報）の取り扱い要件 | 機密度分類、Lake Formation 権限 |
-| C-3 | 組織マスタの所管はどこか、共通ドメインに移管できるか | 役割 5 |
+| C-3 | 組織マスタの所管はどこか、共通参照データ層（D-2 中央同居）に移管できるか | 役割 5 |
 
 #### D. 営業企画 / マーケティング
 
@@ -419,7 +414,7 @@ gantt
 |---|---|---|
 | G-1 | Catalog 管理者（役割 3）として既存チームから人員を出せるか | 役割 3、§5 前提 1 |
 | G-2 | Lake Formation / KMS / Macie の運用知識習得の研修ニーズ | 役割 3 |
-| G-3 | アカウント追加 **+2** が AWS Organizations 運用上許容できるか | §5 前提 6 |
+| G-3 | アカウント追加 **+1** が AWS Organizations 運用上許容できるか | §5 前提 6 |
 | G-4 | **【Option B 必須確認】新規監査アカウントの計画**: 監査アカウントが別組織により生成される予定か、運用主体は誰か、データプラットフォーム側からのログ送付仕様について合意可能か（[§5.8.8 残課題 8 項目](account-architecture-analysis.md#588-残課題監査アカウント別組織との合意事項) を確認）| §5 前提 8（Option B 成立可否を決める）|
 | G-5 | Catalog 管理者と BI 分析者の**人員が重ならない**運用が可能か（責務分離の前提）| §5 前提 9、役割 3 / 役割 4 の Role 分離 |
 | G-6 | 将来 Option C（Catalog 独立アカウント分離）への移行可能性（規模拡大時）| §4.3 Phase 2 移行条件 |
@@ -468,6 +463,7 @@ flowchart LR
 | 2026-05-27 (再改訂) | **SageMaker Catalog（旧 DataZone）は Phase 1 不採用に確定**（[DP-ADR-001](adr/DP-ADR-001-sagemaker-catalog-adoption-deferred.md)）。Phase 1 規模では ROI 低い、+$1,360/年コスト・運用複雑度を抑制。§2.1 図 / §2.2 表から DataZone を削除し「Phase 2 候補」と表記。§4.2 Phase 1 到達目標に「SMC 採用への布石」追加（ビジネスメタデータ規約・Confluence グロッサリ・README 必須化）。§4.3 Phase 2 移行条件に「SMC 再評価トリガ」6 条件を追加。役割 3b（SageMakerCatalogAdminRole）は Phase 1 では設けない |
 | 2026-06-17 | **監査責務分離の整理**: 前提 8 を「親会社統制が監査集約を担う」→「**新規『監査アカウント』が別組織により生成され、データプラットフォーム標準のスコープ外として位置付ける**（Transit GW 等と同類）」に書き換え。詳細は [account-architecture-analysis.md §5.8](account-architecture-analysis.md#58-監査責務分離の具体設計option-b-採用時--新規監査アカウント前提) 参照。§6 ヒアリング G-4 を「監査アカウント運用主体との合意 8 項目確認」に書き換え。運用メトリクスは各アプリ保持、監査・セキュリティ系のみ集約の方針 |
 | 2026-06-17 (2 改訂) | **Phase 1/2 の Redshift / EMR 不採用を確定**（[DP-ADR-002](adr/DP-ADR-002-redshift-emr-not-adopted.md)）。§1.3 採用パターンに「**採用 AWS サービス（Phase 1/2）**」セクションを追加: Athena Standard On-Demand 一択、Glue ETL Flex 中心、QuickSight Enterprise + SPICE。Phase 3+ で再評価。Phase 1/2 規模（〜55 名、〜6 TB スキャン/月）では Redshift Serverless（$2,103/月）が Athena（$33-105/月）の 20-60 倍高い、EMR Serverless と Glue Flex はコスト同等で運用ノウハウ集約により Glue 一択。proposal/fr/02-storage.md §FR-2.2 / 03-pipeline.md §FR-3.1 / 04-consumption.md §FR-4.1 にも反映 |
+| 2026-06-18 | **共通参照データの配置を D-2（中央 BI/Catalog 同居）に確定**（[DP-ADR-003](adr/DP-ADR-003-common-domain-account-placement.md)）。Phase 1 では共通ドメインアカウント新設（D-1）を行わず、中央 BI/Catalog アカウント内に独立 S3 バケット + Glue Data Catalog `common_domain` DB + `CommonReferenceDataManagerRole` で同居。アカウント追加 +2 → **+1** に縮減。§1.3 採用パターン / §2 構成図 / §2.2 アカウント一覧 / §3 役割 5 / §4.2 Phase 1 到達目標 / §5 前提 6 / §6 ヒアリング C-3 / G-3 を反映。Phase 2 以降の D-1 新設は規模・組織・SaaS ポートフォリオ拡大トリガで再評価 |
 
 ---
 

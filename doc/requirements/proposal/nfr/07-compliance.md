@@ -222,6 +222,63 @@ flowchart LR
 
 ---
 
+## §NFR-7.5 Customer Audit Support（顧客監査支援）
+
+> **詳細は [ADR-036 Customer Audit Support](../../../adr/036-customer-audit-support.md) を参照**
+
+> **このサブセクションで定めること**: B2B 顧客の SOC 2 / ISO 27001 / PCI DSS / HIPAA / FedRAMP 等の**監査要求に対する支援体制と提供物**。Trust Center 公開 / 個別 DDQ 対応 / オンサイト監査受入の 3 層構成。
+> **主な判断軸**: B2B エンタープライズ顧客の獲得意思、規制業種顧客の比率、Compliance Team 体制
+> **§NFR-7 全体との関係**: §NFR-7.1〜7.4 は本基盤自社の規制対応。§NFR-7.5 は**顧客の監査要求に応える体制**
+
+### 結論サマリ
+
+| 項目 | 採用方針 |
+|---|---|
+| **基本方針** | **3 層構成**（Trust Center 公開 / 顧客個別対応 / オンサイト監査受入）|
+| **Layer 1 Trust Center** | `compliance.example.com` で SOC 2 概要 / ISO 27001 / GDPR DPA / Subprocessor List 公開 |
+| **Layer 2 顧客個別** | DDQ / Compliance Matrix / NDA 下エビデンス提供、SLA 5 営業日 |
+| **Layer 3 オンサイト監査** | 大口顧客向け年 1-2 回、リモート可 |
+| **公開アーティファクト** | 標準 10 種（SOC 2 / ISO 27001 / PCI DSS AOC / GDPR DPA / SLA / Subprocessor List 等）|
+
+### 段階的導入
+
+| Phase | 内容 | タイミング |
+|---|---|---|
+| Phase 1 | Subprocessor List + GDPR DPA + SLA 公開 | MVP |
+| Phase 2 | SOC 2 Type I 監査受審 | 6 ヶ月後 |
+| Phase 3 | **SOC 2 Type II**（年次運用エビデンス）| 1 年後 |
+| Phase 4 | **ISO 27001 認証**取得 | 1.5 年後 |
+| Phase 5 | PCI DSS 認証（必要時）| 顧客需要次第 |
+| Phase 6 | FedRAMP 等（必要時）| 顧客需要次第 |
+
+### 業界実例
+
+Salesforce / Microsoft / AWS / Okta / Auth0 / Atlassian / GitHub / Slack 等、**全業界主要 SaaS が Trust Center 運営**（エンタープライズ顧客の前提条件）。
+
+### コスト試算（年額）
+
+| 項目 | 試算 |
+|---|---|
+| SOC 2 Type II 監査 | $80K |
+| ISO 27001 認証維持 | $40K |
+| Compliance Team（1 名）| 〜$150K |
+| Trust Center インフラ | $3K |
+| **合計** | **〜$273K/年**（エンタープライズ顧客 10 社獲得で回収）|
+
+### TBD / 要確認
+
+| 確認項目 | ヒアリング ID | 回答例 |
+|---|---|---|
+| エンタープライズ顧客の獲得意思 | **B-CAS-1** | 必須 / 望ましい / 不要 |
+| 規制業種顧客の比率見込み | **B-CAS-2** | 金融 N 社 / 医療 N 社 / 公共 N 社 / なし |
+| SOC 2 Type II 取得タイミング | **B-CAS-3** | MVP 1 年後 / 2 年後 / 不要 |
+| ISO 27001 認証取得 | **B-CAS-4** | 1.5 年後 / 不要 |
+| PCI DSS 認証要否 | **B-CAS-5** | 必要（カード処理顧客あり）/ 不要 |
+| Compliance Team の体制 | **B-CAS-6** | 専任 1 名 / 兼任 / 外部委託 / なし |
+| Trust Center 公開範囲 | **B-CAS-7** | Layer 1+2+3 完全 / Layer 1+2 / Layer 1 のみ |
+
+---
+
 ## 参考資料
 
 ### プロジェクト内 関連ドキュメント

@@ -684,6 +684,62 @@ SAML IdP (authnmethodsreferences)     ─┘                    ↓
 
 ---
 
+## §FR-3.6 Adaptive Authentication（Risk-based 認証）
+
+> **詳細は [ADR-034 Adaptive Authentication](../../../adr/034-adaptive-authentication.md) を参照**
+
+> **このサブセクションで定めること**: 認証時の**コンテキスト**（IP / デバイス / 地理 / 履歴）に基づき**リスクスコアを動的算出**し、認証強度（通常 / ステップアップ / Block）を自動調整する Adaptive Authentication の方針。§FR-3.3 静的ステップアップ MFA との補完関係を確定。
+> **主な判断軸**: ATO 攻撃対策の必要性、UX 維持 vs セキュリティのバランス、規制業種要件、プラットフォーム選択（Cognito Plus / Keycloak Custom SPI）
+> **§FR-3 全体との関係**: §FR-3.3 = 静的（操作の重要度ベース）+ §FR-3.6 = **動的（コンテキストベース）**。両者は補完関係で、二重防御を実現
+
+### 結論サマリ
+
+| 項目 | 採用方針 |
+|---|---|
+| **基本方針** | **コンテキストベース Risk Scoring** + Score 閾値で MFA / Block / 通常認証を動的決定 |
+| **評価軸** | 7 軸（IP レピュテーション / 地理 / Impossible Travel / デバイス指紋 / 失敗履歴 / 異常時刻 / Compromised Credentials）|
+| **アクション** | Low Score（0-30）→ 通常認証 / Medium（31-70）→ ステップアップ MFA / High（71-100）→ Block + 管理者通知 |
+| **ITDR 連携** | Risk Score 算出は [ADR-035 ITDR](../../../adr/035-identity-threat-detection-response.md) と統合 |
+
+### 静的 vs 動的の補完関係
+
+| 観点 | §FR-3.3 静的ステップアップ | §FR-3.6 Adaptive（動的）|
+|---|---|---|
+| 判定タイミング | アプリが `acr_values` で要求した時 | **すべてのログイン試行で自動評価** |
+| 判定根拠 | 操作の重要度 | **コンテキスト**（IP / 地理 / 履歴）|
+| UX | 重要操作時のみ MFA | **通常時は維持、異常時のみ MFA** |
+| 業界位置 | RFC 9470 | Gartner CARTA / NIST 800-63-4 |
+
+### プラットフォーム実装
+
+| 機能 | Cognito Plus | Keycloak |
+|---|:---:|:---:|
+| Brute Force Detection | ✅ 標準 | ✅ 標準 |
+| **Adaptive Authentication** | ✅ **Plus ティアで完成形**（$0.05/MAU 追加）| ⚠ **Custom Authenticator SPI 実装**（初期工数）|
+| Compromised Credentials | ✅ 内蔵 | ⚠ HIBP API 自前連携 |
+| Risk Score 算出 | ✅ Low/Med/High 自動 | ⚠ Custom 実装 |
+| Threat Intel 連携 | ✅ 内蔵 | ⚠ 自前 |
+
+→ **Keycloak 採用方針なら Custom Authenticator SPI 実装が前提**。Phase 1-4 で段階導入。
+
+### 段階的導入
+
+- **Phase 1**（初期）: Brute Force + Compromised Credentials
+- **Phase 2**（半年）: IP レピュテーション + 地理
+- **Phase 3**（1 年）: デバイス指紋 + Impossible Travel
+- **Phase 4**（必要時）: UEBA / AI-ML
+
+### TBD / 要確認
+
+| 確認項目 | ヒアリング ID | 回答例 |
+|---|---|---|
+| Adaptive Authentication 採用方針 | **B-AA-1** | 採用（Phase 1 から）/ 段階導入 / 不採用（静的のみ）|
+| リスクスコア閾値 | **B-AA-2** | デフォルト（0-30/31-70/71-100）/ 規制業種厳格 / B2C 緩和 |
+| Threat Intel 連携の要否 | **B-AA-3** | 商用 Threat Intel 採用（年額数百 USD〜）/ 無料 OSS のみ / 不要 |
+| 異常時の管理者通知方法 | **B-AA-4** | Slack / メール / PagerDuty / SIEM 経由 |
+
+---
+
 ### 参考資料（§FR-3 全体）
 
 - [NIST SP 800-63B Rev 4 公式](https://pages.nist.gov/800-63-4/sp800-63b.html)
