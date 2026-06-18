@@ -69,12 +69,14 @@ flowchart LR
 
 ### ベースライン
 
+> ⚠ **Phase 1/2 では EMR 不採用が確定**（[DP-ADR-002](../../adr/DP-ADR-002-redshift-emr-not-adopted.md)）。Glue ETL（Flex 推奨、$0.29/DPU 時間）と EMR Serverless（$0.30/4vCPU+16GB）は **コストほぼ同じ**だが、運用ノウハウ集約と学習コストを考えて Glue 一択。EMR は Phase 3+ 再評価時の候補として位置付け。
+
 | 用途 | 標準サービス | 採用条件 |
 |---|---|---|
-| 大量データ ETL / Spark 系処理 | **AWS Glue ETL** | 数 GB 〜 TB、複雑な変換、Spark 利用 |
+| 大量データ ETL / Spark 系処理 | **AWS Glue ETL Flex**（推奨）/ Standard（SLA 必要時）| 数 GB 〜 TB、複雑な変換、Spark 利用 |
 | パイプラインオーケストレーション | **Step Functions** | 複数ジョブの依存・分岐・並列・エラーハンドリング |
 | 小規模・軽量処理 | **Lambda** | 5 分・10GB 以内、変換ロジックがシンプル |
-| 大規模分散処理 | **EMR Serverless** | Glue で性能不足 / Spark 以外（Hive / Presto 等）が必要 |
+| 大規模分散処理（**Phase 3+ 候補**）| ~~EMR Serverless~~ → **Phase 1/2 不採用**、Glue ETL で対応 | Phase 3+ で Glue 性能不足 / Spark 以外（Hive / Presto 等）/ Lakehouse（Iceberg / Hudi / Delta Lake）/ Streaming Spark が必要になった時に再評価 |
 
 **スケジュール**:
 - EventBridge Scheduler を標準とする（cron / rate / one-time）。

@@ -62,23 +62,33 @@ flowchart LR
 
 ## §FR-4.1 クエリ（→ FR-VIEW §4.1）
 
-> **このサブセクションで定めること**: Athena / Redshift によるクエリ実行の標準（ワークグループ / コスト統制 / Federated Query）。
+> **このサブセクションで定めること**: Athena によるクエリ実行の標準（ワークグループ / コスト統制 / Federated Query）。Phase 1/2 では Redshift は不採用（[DP-ADR-002](../../adr/DP-ADR-002-redshift-emr-not-adopted.md)）。
 > **主な判断軸**: クエリパターン（探索的 vs 定形）/ 同時実行 / コスト統制（スキャン量制限）
 > **§FR-4 全体との関係**: 開発者・分析者ペルソナ（§FR-6）の主要ツール。BI（§FR-4.2）の裏側でも動く
 
 ### ベースライン
+
+> ⚠ **Phase 1/2 は Athena 一択**（[DP-ADR-002](../../adr/DP-ADR-002-redshift-emr-not-adopted.md)）。Redshift は Phase 3+ 再評価時の候補。
 
 **Athena ワークグループ**:
 - 用途別にワークグループを分離（探索 / 本番ジョブ / BI 裏側 / 監査クエリ等）。
 - ワークグループごとにクエリスキャン量上限を設定（コスト暴走防止）。
 - クエリ結果保存先を明示し、機密度別にバケットを分離。
 
-**Redshift クエリ**:
-- §FR-2.2 採用条件を満たすアプリのみ。
-- WLM（Workload Management）でユーザー種別ごとに優先度・同時実行を制御。
+**Athena Standard On-Demand**:
+- $5/TB スキャン、Phase 1/2 規模では月数十ドル。
+- 10 MB 最低、Parquet + 圧縮で 75% 削減推奨。
+- Partition Projection を活用し Glue Catalog コストも削減。
+
+**Athena Provisioned Capacity**（Phase 3+ 候補）:
+- 採算分岐は月 175 TB スキャン以上。
+- 応答時間 SLA・同時実行数確保・月次コスト予測可能性が必要な場合に検討。
+
+**~~Redshift クエリ~~** → **Phase 1/2 不採用**（[DP-ADR-002 §3.1](../../adr/DP-ADR-002-redshift-emr-not-adopted.md)）。
+- Phase 3+ 採用時は WLM でユーザー種別ごとに優先度・同時実行を制御。
 
 **Federated Query**:
-- Athena Federated Query / Redshift Federated Query で複数保存先横断を可能とする。
+- Athena Federated Query で複数保存先横断を可能とする。
 - ただし Federated Query は性能・コストに注意し、定形バッチでは使用しない。
 
 **コスト統制**:
@@ -90,6 +100,7 @@ flowchart LR
 - 各アプリでの想定クエリ頻度・同時実行数
 - Athena ワークグループ分離の粒度（部署別 vs 用途別）
 - Federated Query 利用範囲
+- Phase 3+ で Redshift 再評価のタイミング（[DP-ADR-002 §4.1 トリガ](../../adr/DP-ADR-002-redshift-emr-not-adopted.md)）
 
 ---
 

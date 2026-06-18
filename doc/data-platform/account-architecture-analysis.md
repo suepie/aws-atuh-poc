@@ -31,6 +31,8 @@ API プラットフォーム標準が「**Federated（中央集約 + 分散）**
 | バルクデータの集約 | **しない**（Producer の S3 に置いたまま、Catalog と権限のみ中央集約）|
 
 > **追補（§5 参照）**: 親会社統制アカウントが CloudTrail / Security Hub / Macie 等の監査・セキュリティ集約を担う場合、データ標準で必要な中央責務は **「Catalog Account」**（Lake Formation + LF-Tags + (SMC Phase 2 候補) + KMS）に縮小される。この場合 **Catalog を Consumer に同居させる Option B（+2 アカウント）が実用解として有力**。
+>
+> **追補 2（§5.8 参照）**: 監査責務を担うのは **新規の「監査アカウント」**（データプラットフォーム標準のスコープ外、Transit Gateway 等と同様に別組織が運用）。本標準は監査アカウントに対して **「何を送るか / 何を期待するか / 何を依存するか」を定義する側**に立つ。運用メトリクスは各アプリに保持、監査・セキュリティ系のみ集約。
 
 ### 業界根拠（要約）
 
@@ -262,7 +264,532 @@ flowchart TB
 - アプリ側は分析クエリを投げない（または最小限）
 - 同居の責務分離は IAM Role（`DataLakeAdminRole` / `DataAnalystRole`）で実装（[§5.5 緩和策](#55-option-b-が成立する条件と緩和策) 参照）
 
-### 4.3 Pattern γ: ハイブリッド — **業界標準推奨**（仮案 Phase 2 移行先）
+#### 4.2.1 §4.2 図に登場する AWS リソースの詳細解説
+
+§4.2 の図は要点だけを示しているが、実際の構成には複数の AWS サービスが連携している。**Producer 側 / カタログ層 / 利用者層 / IAM Role** の 4 グループに分けて各リソースの役割を解説する。
+
+##### 4.2.1.1 リソース関係図（カテゴリ別）
+
+```mermaid
+flowchart TB
+    subgraph Producer["Producer 側（各アプリアカウント）"]
+        S3raw["S3 raw 層<br/>生データ"]
+        S3cur["S3 curated 層<br/>クレンジング済"]
+        S3ana["S3 analytics 層<br/>分析用集計"]
+        GlueProd["Glue Data Catalog<br/>(各アプリのローカル)"]
+    end
+
+    subgraph CatLayer["カタログ層 (DataLakeAdminRole 管理)"]
+        LF["AWS Lake Formation<br/>(中央 Catalog + 権限管理)"]
+        LFTags["LF-Tags<br/>(タグベースアクセス制御)"]
+        KMS["KMS CMK<br/>(共通暗号鍵)"]
+        GlueCat["Glue Data Catalog<br/>(中央)"]
+    end
+
+    subgraph UserLayer["利用者層 (DataAnalystRole 管理)"]
+        Athena["Athena<br/>ワークグループ"]
+        QS["QuickSight Enterprise<br/>(BI ダッシュボード)"]
+        SM["SageMaker Studio<br/>(ML、Phase 2)"]
+        S3Res["S3 athena-results<br/>(クエリ結果保存)"]
+    end
+
+    S3raw -->|ETL| S3cur
+    S3cur -->|集計| S3ana
+    LF -->|統合| GlueCat
+    LF -->|タグ管理| LFTags
+    GlueProd -.federate.-> GlueCat
+    Athena -.認可問合せ.-> LF
+    Athena -.読込.-> S3ana
+    Athena -.結果保存.-> S3Res
+    QS -.SQL.-> Athena
+    SM -.学習データ.-> S3ana
+    KMS -.暗号化.-> S3raw
+    KMS -.暗号化.-> S3cur
+    KMS -.暗号化.-> S3ana
+
+    style Producer fill:#e8f5e9
+    style CatLayer fill:#ffebee
+    style UserLayer fill:#e3f2fd
+```
+
+##### 4.2.1.2 Producer 側（各アプリアカウント）のリソース
+
+| リソース | 概要 | 本構成での役割 | 補足 |
+|---|---|---|---|
+| **S3 (Simple Storage Service)** | AWS のオブジェクトストレージ。無制限容量・11 nines 耐久性 | データレイクの中核。各アプリが「自分のデータ」を所有 | 暗号化（SSE-KMS）必須、ライフサイクルポリシーで Standard → IA → Glacier の自動移行 |
+| **S3 raw 層** | 生データ層（Bronze）| アプリから直接取り込んだ生データ（JSON / CSV / Parquet 等）| 不変、Object Lock 検討、長期保管前提 |
+| **S3 curated 層** | 整形済み層（Silver）| クレンジング・正規化・PII マスキング済（Parquet 推奨）| ETL ジョブで生成、データ品質チェック後 |
+| **S3 analytics 層** | 分析用層（Gold）| 集計済み・分析に最適化されたテーブル（Parquet + パーティション）| BI / ML が直接クエリする層、`tenant_id` パーティション含む |
+| **Glue Data Catalog（ローカル）** | 各アプリのテーブル定義・スキーマ・パーティション情報 | アプリ内のテクニカルメタデータストア | 中央 Lake Formation に Federate されて統合される |
+
+##### 4.2.1.3 カタログ層（`DataLakeAdminRole` が管理）のリソース
+
+| リソース | 概要 | 本構成での役割 | 補足 |
+|---|---|---|---|
+| **AWS Lake Formation** | AWS の中央データレイクガバナンスサービス | データレイクの「**ガバナンス層**」。表 / 列 / 行レベルのアクセス制御、クロスアカウント Catalog 提供、監査ログ | 各 Producer の S3 を「Federated Catalog」として束ねる |
+| **Glue Data Catalog（中央）** | テーブル定義・スキーマ・パーティションのメタデータストア | Lake Formation の**下層**。Athena / Redshift Spectrum / EMR がメタデータを読む層 | Lake Formation = Glue Data Catalog + 権限管理層 |
+| **LF-Tags (Lake Formation Tags)** | リソース（DB / テーブル / 列）に付与するキーバリュー型タグ | **タグベースアクセス制御（TBAC）** を実装。例: `機密度=Restricted` / `ドメイン=Finance` / `PII=Yes` | 個別テーブルへの権限付与より運用効率が高い。「Finance ドメインの PII=No なテーブル全て、SELECT 許可」のような宣言的設定 |
+| **KMS CMK (Customer Managed Key)** | AWS の暗号鍵管理サービス、利用者が管理する鍵 | データレイク全体の暗号化に使用。鍵の生成・ローテーション・廃棄を管理 | アカウント間で鍵ポリシーを設定すれば、App 側からも CMK を使える（クロスアカウント暗号化） |
+
+##### 4.2.1.4 利用者層（`DataAnalystRole` が管理）のリソース
+
+| リソース | 概要 | 本構成での役割 | 補足 |
+|---|---|---|---|
+| **Athena** | AWS のサーバーレス SQL クエリエンジン（Trino ベース）| S3 上のデータを直接 SQL でクエリ。スキャンしたデータ量に応じた従量課金 | Lake Formation と統合され、認可は LF 経由 |
+| **Athena ワークグループ** | クエリ実行の論理コンテナ | **用途別に分離**: 探索用 / BI 用 / 監査用 / アプリ問い合わせ用 など | 各 WG にクエリ結果保存先・スキャン量上限（コスト統制）・ログ出力先・暗号化設定 |
+| **QuickSight Enterprise** | AWS の BI / ダッシュボードサービス | 経営層・CS・PM 等の業務利用者向けダッシュボード提供 | Enterprise Edition は **行レベルセキュリティ（RLS）対応** → テナント分離に重要 |
+| **QuickSight Author** | ダッシュボード作成可能なユーザー権限 | 中央 BI チームのリーダーが該当 | ライセンス: ユーザーあたり月額（Reader より高い）|
+| **QuickSight Reader** | ダッシュボード閲覧のみ可能なユーザー権限 | 業務利用者（経営層・CS・PM 等）が該当 | ライセンス: ユーザーあたり月額（Author より安い）、Author:Reader 比率は **1:10** 想定 |
+| **QuickSight SPICE** | インメモリ計算エンジン | ダッシュボード応答時間を秒オーダーに高速化 | ピーク負荷のあるダッシュボードは SPICE 利用必須 |
+| **SageMaker Studio** | AWS の機械学習プラットフォーム | 解約予兆検知 / 顧客健全性スコア / 業界別利用パターン分析 等の ML 開発 | Phase 2 から本格採用想定。Notebook / Training / Inference / Model Registry |
+| **S3 athena-results** | Athena のクエリ結果保存用 S3 バケット | クエリ結果の中間ファイル保存、再利用・キャッシュにも使用 | ワークグループ単位で別バケット推奨（機密度別分離）|
+
+##### 4.2.1.5 IAM Role 体系
+
+[§5.5 緩和策](#55-option-b-が成立する条件と緩和策) で定めた 3 階層 Role の権限詳細:
+
+| Role | 担当 | 主な権限 | 主な制約 |
+|---|---|---|---|
+| **`DataLakeAdminRole`** | 役割 3<br/>カタログ管理者（1-2 名）| ・Lake Formation 管理（Database / Table / Permission）<br/>・LF-Tags の作成・編集・付与<br/>・クロスアカウント Grant<br/>・KMS CMK 管理<br/>・データレイク全データへの読み権限（デバッグ用）| ・通常の業務 BI 操作はしない（QuickSight ダッシュボード作成等）<br/>・**Phase 1: 1-2 名のみ AssumeRole 可能**<br/>・常時ログインなし、必要時のみ一時利用 |
+| **`DataAnalystRole`** | 役割 4<br/>中央 BI チーム（2 名）| ・Athena クエリ実行（許可された WG 内）<br/>・QuickSight ダッシュボード作成・編集・閲覧<br/>・自分の S3 結果バケットへの書込み<br/>・SageMaker での ML 開発（Phase 2）| ・**Lake Formation 管理操作は Permission Boundary で拒否**<br/>・他アプリの S3 への書込み不可<br/>・KMS 管理操作は不可<br/>・LF-Tags の変更不可 |
+| **`DataReaderRole`** | 役割 6<br/>業務利用者（10 名）| ・QuickSight ダッシュボード閲覧のみ<br/>・許可された定形クエリのみ実行（Athena Saved Queries）| ・新規クエリ作成不可<br/>・データのダウンロード制限（QuickSight からの Export 制限）<br/>・LF-Tags / Lake Formation 管理は不可 |
+
+##### 4.2.1.6 Permission Boundary と SCP（補強）
+
+Role 間の境界を強制するためのガードレール:
+
+| 制御 | 仕組み | 目的 |
+|---|---|---|
+| **Permission Boundary** | 各 IAM Role に付与する「上限ポリシー」 | `DataAnalystRole` から `lakeformation:*` の API 呼び出しを拒否 → 役割 4 が Catalog を操作できないことを保証 |
+| **SCP (Service Control Policy)** | Organization レベルで設定するアカウント全体の制約 | 中央 BI / Catalog アカウント内で意図しない権限上昇（IAM Role 作成・PolicyVersion 変更等）を予防 |
+| **AWS Config Rules** | 構成監視ルール | 「`DataLakeAdminRole` と `DataAnalystRole` を兼任するユーザー」を検出 → 役割 3 / 4 の人員重複を防止（Option B 成立前提） |
+
+##### 4.2.1.7 図にはないが関連する重要リソース
+
+§4.2 図は要点だけを示しているため、以下も実構成では存在する:
+
+| リソース | 役割 | 配置 |
+|---|---|---|
+| **AWS RAM (Resource Access Manager)** | クロスアカウント Lake Formation 権限共有の裏で使用される AWS の基盤サービス | Lake Formation 内部で自動利用（明示的に意識不要）|
+| **CloudTrail Data Events** | データプレーン操作（S3 オブジェクトアクセス、Lake Formation 操作、KMS 鍵使用）のログ | [§5.8 監査責務分離](#58-監査責務分離の具体設計option-b-採用時--新規監査アカウント前提) で監査アカウントへ送付 |
+| **VPC エンドポイント** | プライベートネットワーク経由で S3 / Athena / Lake Formation にアクセス | 全アカウントで設定、データの公開ネットワーク経由を回避 |
+| **Glue ETL** | データ変換ジョブ（raw → curated → analytics）| Producer 側（各アプリ）が運用 |
+| **Glue Crawler** | スキーマ自動検出 + Glue Catalog 登録 | Producer 側で運用、新規データ発生時に実行 |
+
+#### 4.2.2 ETL 的な処理の配置
+
+##### 4.2.2.1 配置の原則: 「データを生む側が ETL する」
+
+Data Mesh の **Domain Ownership** 原則に従う:
+- **データの取り込み・整形・自前集計は Producer 側**（各アプリ）
+- **横断集計・SaaS 提供側の派生データ生成は Central 側**（中央 BI / Catalog）
+- **顧客企業ごとの分析（仮にスコープに含む場合）は Consumer 側**
+
+##### 4.2.2.2 図解: ETL のデータフロー全体像
+
+```mermaid
+flowchart LR
+    subgraph App["各アプリアカウント (Producer)"]
+        direction TB
+        DB["運用 DB<br/>Aurora/RDS/DynamoDB"]
+        Stream["イベント/ストリーム<br/>(SaaS アプリの動作ログ等)"]
+        Ext["外部システム<br/>(顧客の会計/HR システム)"]
+
+        Ingest["**取り込み**<br/>DMS / Lambda /<br/>Kinesis / EventBridge"]
+
+        S3R["S3 raw"]
+        ETL1["**raw → curated**<br/>Glue ETL / Step Functions"]
+        S3C["S3 curated"]
+        ETL2["**curated → analytics**<br/>Glue ETL / Athena CTAS"]
+        S3A["S3 analytics"]
+
+        Quality["Glue Data Quality<br/>(品質チェック)"]
+    end
+
+    subgraph Central["中央 BI / Catalog (Option B)"]
+        direction TB
+        CTAS["**横断集計**<br/>Athena CTAS<br/>(派生テーブル生成)"]
+        SMP["**ML 前処理**<br/>SageMaker Processing<br/>(Phase 2)"]
+        S3Derived["S3 派生データ<br/>(横断集計・ML 訓練データ)"]
+    end
+
+    DB --> Ingest
+    Stream --> Ingest
+    Ext --> Ingest
+    Ingest --> S3R
+    S3R --> ETL1
+    ETL1 --> S3C
+    S3C --> ETL2
+    ETL2 --> S3A
+    ETL1 -.チェック.-> Quality
+    ETL2 -.チェック.-> Quality
+
+    S3A -.横断クエリ.-> CTAS
+    CTAS --> S3Derived
+    S3A -.特徴量.-> SMP
+    SMP --> S3Derived
+
+    style App fill:#e8f5e9
+    style Central fill:#e3f2fd
+```
+
+##### 4.2.2.3 ETL の 3 種類と配置詳細
+
+###### A. Producer 側 ETL（各アプリアカウント、主役）
+
+最も多くの ETL がここに集中する。各アプリチームが**自データの所有者として実装責任**を持つ。
+
+| 段階 | 内容 | 主な用途 |
+|---|---|---|
+| **データ取り込み（Ingestion）** | 運用 DB / 外部システム → S3 raw | リアルタイム性・整合性の確保 |
+| **raw → curated** | クレンジング・正規化・PII マスキング・`tenant_id` 強制付与 | データ品質と機密度制御 |
+| **curated → analytics** | 集計・パーティション化・Parquet 化・分析用最適化 | 分析クエリのパフォーマンス向上 |
+
+###### B. Central 側 ETL（中央 BI / Catalog アカウント、横断分析用）
+
+顧客企業横断・SaaS 提供側の集計が中心。中央 BI チームが実装責任を持つ。
+
+| 内容 | 主な用途 |
+|---|---|
+| **横断テナント集計** | 顧客健全性スコア計算、業界別利用パターン分析 |
+| **派生データ生成** | BI 用の事前集計テーブル、月次レポート用集計 |
+| **ML 前処理** | 解約予兆検知モデルの訓練データ作成（Phase 2）|
+| **データ統合** | 複数アプリのデータを Join した派生テーブル |
+
+###### C. 外部連携系 ETL（Producer 側に組み込まれる）
+
+顧客企業のシステムからデータを取り込む特殊な ETL。
+
+| 内容 | 配置 |
+|---|---|
+| 顧客会計システム連携 | Producer 側（経費精算 SaaS 内）+ AWS Transfer Family / Glue Custom Connector |
+| 法人カード明細 | 同上 + 外部 SaaS API 連携 |
+| 人事システムからの組織マスタ取り込み | 共通ドメインアカウント（顧客マスタ等の管理用）|
+
+##### 4.2.2.4 ETL ツール選定マトリクス
+
+| 用途 | 推奨ツール | 配置 | 補足 |
+|---|---|---|---|
+| **バッチ取り込み** | AWS Glue ETL, Step Functions | Producer | スケジュール実行、複数ジョブのオーケストレーション |
+| **ストリーム取り込み** | Kinesis Data Firehose, MSK | Producer | リアルタイム性が必要な場合 |
+| **CDC 取り込み** | DMS, Aurora Zero-ETL | Producer | 運用 DB → S3 のニアリアルタイム同期 |
+| **小規模変換** | AWS Lambda | Producer | イベント駆動・軽量処理 |
+| **大規模 Spark 変換** | AWS Glue ETL（Spark mode）, EMR Serverless | Producer | TB 級データの一括変換 |
+| **横断集計（テナント横断）** | Athena CTAS（Create Table As Select）| Central | SQL ベースで完結、サーバーレス |
+| **ML 前処理** | SageMaker Processing | Central | Phase 2 から、scikit-learn / Spark 等 |
+| **データ品質チェック** | AWS Glue Data Quality | Producer 主体 | NULL 率・型違反・重複率の自動検出 |
+| **パイプライン管理** | AWS Step Functions, EventBridge Scheduler | Producer | リトライ・分岐・並列実行 |
+| **スキーマ自動検出** | AWS Glue Crawler | Producer | 新規データ発生時に Catalog 自動更新 |
+
+##### 4.2.2.5 関連する非 ETL 処理（補足）
+
+ETL とは別だが密接に関連する処理:
+
+| 処理 | 配置 | ツール | 内容 |
+|---|---|---|---|
+| **データ品質監視**（NULL 率・鮮度・重複率）| Producer | Glue Data Quality | パイプライン実行後にチェック、閾値超えで通知 |
+| **データリネージ追跡** | Central + Producer | Glue Lineage（将来）, OpenLineage | データの来歴可視化、SMC 採用時に強化 |
+| **メタデータ更新** | Producer | Glue Crawler | スキーマ変更時の Catalog 自動同期 |
+| **PII 検出・マスキング** | Producer の raw → curated 段階 | Macie（検出）+ Glue ETL（マスキング）| 個人情報を curated 層に持ち込まないための処理 |
+
+##### 4.2.2.6 重要な設計原則
+
+| # | 原則 | 説明 |
+|---|---|---|
+| 1 | **ELT を原則とする** | 生データはまず raw 層に着地、加工は下流（curated / analytics）で実施。例外は取り込み時点で PII マスキングが必須な場合のみ |
+| 2 | **冪等性の徹底** | すべての ETL ジョブは冪等に設計、再実行で同じ結果を得られる |
+| 3 | **テナント分離を ETL で強制** | raw → curated 変換時に `tenant_id` が確実に付与されるよう設計、欠落時はエラー |
+| 4 | **個別アプリの集計は Producer で完結** | 「自分のデータの集計」はアプリ責任。Central は横断・SaaS 全体の集計のみ |
+| 5 | **横断集計は SQL ファースト** | Central 側の派生データ生成は Athena CTAS が第一選択。Glue ETL は必要時のみ |
+| 6 | **品質チェックを必須化** | Glue Data Quality でパイプライン後に検証、品質劣化時は自動停止 |
+
+##### 4.2.2.7 残課題（ヒアリングで確認）
+
+| # | 質問 | 影響 |
+|---|---|---|
+| 1 | 各アプリのデータエンジニアリングスキル | Producer 側 ETL の実装可否、研修必要性 |
+| 2 | 既存の ETL 基盤（cron / Airflow / 自前バッチ）の取扱 | 移行戦略、並行運用期間 |
+| 3 | リアルタイム性の要件（解約予兆検知の遅延許容）| ストリーム取り込みの採否 |
+| 4 | 顧客企業マスタ・契約管理システムとの連携方式 | 共通ドメインアカウントの ETL 設計 |
+
+#### 4.2.3 Glue Crawler の位置付けと運用
+
+##### 4.2.3.1 Glue Crawler の役割
+
+| 機能 | 内容 |
+|---|---|
+| **スキーマ自動検出** | S3 上のデータ（CSV / JSON / Parquet / ORC 等）からスキーマを推論 |
+| **Glue Data Catalog 更新** | 検出したスキーマでテーブル定義を作成・更新 |
+| **パーティション検出** | `s3://.../year=YYYY/month=MM/day=DD/` のような Hive 形式のパーティション認識 |
+| **データフォーマット検出** | ファイル形式（Parquet vs JSON 等）の自動判定 |
+| **スキーマ進化追跡** | 既存テーブルへの列追加・型変更を検出（ポリシーで挙動制御）|
+
+##### 4.2.3.2 配置（Producer 側、各アプリアカウント内）
+
+```mermaid
+flowchart LR
+    subgraph App["各アプリアカウント (Producer)"]
+        Crawler["Glue Crawler"]
+        S3R["S3 raw 層"]
+        S3C["S3 curated 層"]
+        S3A["S3 analytics 層"]
+        GlueProd["Glue Data Catalog<br/>(ローカル)"]
+    end
+
+    subgraph Central["中央 BI / Catalog (Option B)"]
+        LF["Lake Formation"]
+        GlueCat["Glue Data Catalog<br/>(中央)"]
+        LFTags["LF-Tags"]
+    end
+
+    Crawler -->|スキャン| S3R
+    Crawler -->|スキャン| S3C
+    Crawler -->|スキャン| S3A
+    Crawler -->|テーブル定義更新| GlueProd
+    GlueProd -.federate.-> GlueCat
+    LF -.タグ付与.-> GlueCat
+    LFTags -.参照.-> LF
+
+    style App fill:#e8f5e9
+    style Central fill:#e3f2fd
+```
+
+**配置の原則**: Crawler は **データに最も近い場所**（Producer 側）で動かす。ローカル Glue Data Catalog を更新し、その結果が **Cross-account Glue Catalog Federation** で中央 Lake Formation に反映される。
+
+##### 4.2.3.3 各層での Crawler の必要性
+
+| 層 | Crawler の必要性 | 理由 |
+|---|:---:|---|
+| **S3 raw 層** | ⭐⭐⭐ 高 | 取り込み元（顧客の会計システム等）からのデータ形式・スキーマが未知の可能性、外部 SaaS のスキーマ変更追従に必要 |
+| **S3 curated 層** | ⭐⭐ 中 | ETL ジョブが明示的にスキーマ定義することが多いが、念のため Crawler で検証 |
+| **S3 analytics 層** | ⭐ 低 | Athena CTAS / Glue ETL（Spark）が**自動的に Glue Catalog に登録**するため Crawler 不要 |
+
+##### 4.2.3.4 実行タイミング
+
+| トリガ | 使い分け |
+|---|---|
+| **スケジュール**（毎日 / 毎時）| 定期的なデータ取り込み・raw 層のスキーマドリフト検出に最適 |
+| **EventBridge**（S3 ObjectCreated）| 不定期な大量データ取り込み時、リアルタイム性が必要な場合 |
+| **ETL パイプライン終了時**（Step Functions から呼出）| 推奨。ETL → Crawler → 通知 の一連のフローで運用 |
+| **手動実行** | 新規データソース追加時の検証 |
+
+##### 4.2.3.5 Lake Formation との連携フロー
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant ETL as ETL ジョブ<br/>(Glue / Step Functions)
+    participant S3 as S3 (App アカウント)
+    participant Crawler as Glue Crawler
+    participant GlueProd as Glue Catalog<br/>(App ローカル)
+    participant LFCentral as Lake Formation<br/>(中央 BI/Catalog)
+    participant Admin as DataLakeAdminRole
+
+    ETL->>S3: データ書込み（raw → curated → analytics）
+    Crawler->>S3: スキャン
+    Crawler->>GlueProd: テーブル定義更新
+    GlueProd-->>LFCentral: Catalog Federation で参照可能に
+    LFCentral->>Admin: スキーマ変更通知
+    Admin->>LFCentral: LF-Tags 付与・確認<br/>(機密度 / ドメイン / PII)
+    LFCentral->>LFCentral: 既存の Grant が新カラムに自動継承<br/>(LF-Tag ベース)
+```
+
+**重要**: スキーマ変更時、**新カラムへの LF-Tags は自動継承されない**ケースがある（タグ設計次第）。DataLakeAdminRole の運用プロセスとして「Crawler 実行後の LF-Tags レビュー」を組み込む必要。
+
+##### 4.2.3.6 ベストプラクティス（使う / 使わないの判断）
+
+| 状況 | 推奨アプローチ | 理由 |
+|---|---|---|
+| **未知形式の raw データ取り込み**（外部システム連携）| ✅ Crawler 必須 | スキーマが事前に分からない |
+| **ETL ジョブが明示的にスキーマ定義** | △ Crawler 不要 | ETL ジョブのスキーマが信頼できる |
+| **Athena CTAS で派生テーブル生成** | ❌ Crawler 不要 | Athena が自動カタログ登録 |
+| **大規模バケット**（数 TB 超 / 数百万ファイル）| ⚠ Crawler のスキャンコスト注意 | パーティションを限定したクロールを推奨 |
+| **ストリーミングデータ**（Kinesis Firehose）| △ Glue Schema Registry を使用 | Crawler よりも Schema Registry のほうが適切 |
+| **IaC 管理されたスキーマ** | ❌ Crawler 不要 | CDK / CloudFormation でスキーマを定義済み |
+
+##### 4.2.3.7 代替手段（Crawler を使わない選択肢）
+
+| 代替手段 | 用途 | 利点 |
+|---|---|---|
+| **AWS Glue Schema Registry** | ストリーミングデータ（Kinesis / MSK）のスキーマ管理 | スキーマ進化のバージョン管理、後方互換性チェック |
+| **IaC（CDK / CloudFormation）でスキーマ定義** | 既知の安定したスキーマ | バージョン管理、レビュー可能、再現性 |
+| **Lake Formation Resource Link** | クロスアカウント Catalog 参照 | Crawler 不要で他アカウントの Catalog を共有 |
+| **ETL ジョブ内でのスキーマ宣言** | Spark / Pandas で明示定義 | 型変換・バリデーションを ETL と同時実行 |
+| **Glue DataBrew** | データプロファイリング + スキーマ検出 | より高度な分析・品質チェック付き |
+
+##### 4.2.3.8 コスト感
+
+| 項目 | 単価 | 影響 |
+|---|---|---|
+| **クロール実行時間** | 1 DPU-hour あたり $0.44 | データ量・パーティション数次第で月数十 USD オーダー |
+| **データスキャン** | 別途 S3 GET リクエスト課金 | 大規模バケットでは無視できない |
+| **Glue Data Catalog ストレージ** | 月 100 万オブジェクトまで無料、超過後課金 | 数千テーブル程度なら無料枠内 |
+
+**最適化のコツ**:
+- **パーティション限定**: `s3://.../year=2026/month=06/` のように最新パーティションのみクロール
+- **除外パターン**: `.tmp` ファイル等の不要ファイルを除外
+- **更新検出モード**: 「Crawl new sub-folders only」で全スキャンを回避
+
+##### 4.2.3.9 残課題（ヒアリングで確認）
+
+| # | 質問 | 影響 |
+|---|---|---|
+| 1 | 各アプリのデータ取り込み形式の安定性 | Crawler を使うか IaC でスキーマ定義するか |
+| 2 | スキーマ進化（既存カラムの型変更等）への対応ポリシー | Crawler の `SchemaChangePolicy` 設定 |
+| 3 | Crawler 実行頻度の妥当性 | コスト・鮮度のバランス |
+| 4 | LF-Tags 再付与プロセスの自動化要否 | スキーマ変更時の Catalog 管理者運用 |
+
+#### 4.2.4 AWS RAM の役割と使用箇所
+
+##### 4.2.4.1 AWS RAM とは
+
+**AWS Resource Access Manager**: AWS リソースをアカウント間で共有するためのサービス。
+
+| 機能 | 内容 |
+|---|---|
+| **リソース共有の宣言** | 「このリソースをこの相手に共有する」を Resource Share として作成 |
+| **共有相手の指定** | (a) 個別 AWS アカウント ID / (b) Organization 内の OU / (c) Organization 全体 |
+| **権限の付与** | Resource Share 内で何ができるか（読み専用 / 書き可 / etc.）を managed permission で指定 |
+| **Auto-accept** | Organization 内なら **自動受諾** 可能（個別承認不要）|
+
+##### 4.2.4.2 質問への回答: 子アカウント同士で共有できるか
+
+**結論: YES、できる。Management アカウント経由は不要。**
+
+```mermaid
+flowchart TB
+    Mgmt["Management アカウント<br/>(Organization Root)"]
+
+    subgraph Children["子アカウント (Organizations Member)"]
+        direction LR
+        Audit["監査アカウント"]
+        BICat["中央 BI / Catalog"]
+        App1["App 1"]
+        App2["App 2"]
+        Common["共通ドメイン"]
+    end
+
+    Mgmt -.管理.-> Children
+
+    BICat -.RAM 共有可.-> App1
+    App1 -.RAM 共有可.-> BICat
+    Audit -.RAM 共有可（技術的には）.-> App1
+    App1 -.RAM 共有可.-> Common
+    Common -.RAM 共有可.-> BICat
+
+    style Mgmt fill:#f5f5f5
+    style Children fill:#e8f5e9
+```
+
+**仕組み**:
+1. 共有元アカウントが Resource Share を作成
+2. Resource Share に「このリソースをこの相手に共有」と宣言
+3. Organization 設定で **「AWS Organizations での共有を有効化」** をオンにしておくと、Org 内の共有は受信側で自動受諾される
+4. 受信側は IAM 権限を別途付与すれば共有リソースを利用可能
+
+**制約**:
+- 共有元は **そのリソースの所有者** でなければならない（自分が持っていないリソースは共有できない）
+- 受信側で利用するには **IAM 権限** が別途必要（RAM は「アクセスを許可する」だけ、IAM が「使うことを許可する」）
+- リソース種別ごとに共有可否が決まっている（[RAM 対応リソース一覧](https://docs.aws.amazon.com/ram/latest/userguide/shareable.html)）
+
+##### 4.2.4.3 本構成での RAM 使用箇所一覧
+
+| 共有元 | 共有先 | リソース | 用途 | 仕組み |
+|---|---|---|---|---|
+| **中央 BI / Catalog** | App アカウント（Producer）| Lake Formation 権限 | Producer が自分のデータを Lake Formation に登録できるようにする | **Lake Formation Cross-Account v3 が RAM を透過利用** |
+| **App アカウント**（Producer）| 中央 BI / Catalog | Glue Data Catalog テーブル | Producer の Catalog を中央 LF が参照（Federation）| Lake Formation 経由 |
+| **共通ドメインアカウント** | 中央 BI / Catalog | Glue Data Catalog テーブル | 共通参照データ（顧客マスタ等）を中央から参照 | 同上 |
+| **共通ドメインアカウント** | App アカウント | Glue Data Catalog テーブル | 各アプリが共通マスタを参照（例: 経費精算が顧客マスタを Join）| 同上 |
+| **将来 γ パターン採用時**: 中央 BI / Catalog | 各 Consumer アカウント | Lake Formation 権限 | 各アプリ内 Consumer がデータをクエリできる | Lake Formation Cross-Account |
+| **オプション**: 中央 BI / Catalog | App アカウント | KMS CMK | 暗号化鍵を App 側からも使えるように | **KMS 鍵ポリシー**（RAM ではなく Key Policy で制御）|
+| **監査アカウント** | データ標準アカウント | （基本なし）| 詳細は §4.2.4.5 参照 | — |
+
+##### 4.2.4.4 Lake Formation での RAM 透過利用
+
+**重要**: Lake Formation **Cross-Account Permissions v3**（現行）は、RAM を **自動的に裏で作成・管理** する。利用者が明示的に RAM Resource Share を作る必要はない。
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Admin as DataLakeAdminRole
+    participant LF as Lake Formation<br/>(中央 BI / Catalog)
+    participant RAM as AWS RAM
+    participant App as App アカウント
+
+    Admin->>LF: Grant SELECT ON sales TO App アカウント
+    LF->>RAM: Resource Share 自動作成<br/>(指定なし、透過的)
+    RAM->>App: 共有を自動受諾<br/>(Org 設定で auto-accept 有効)
+    Note over App: アプリ側でデータ閲覧可能に
+```
+
+→ **DataLakeAdminRole は LF Grant のみ意識すればよい**。RAM の存在は知っていれば十分。
+
+##### 4.2.4.5 監査アカウント → 案件アカウントの共有
+
+**技術的可否**: 可能（Organizations 内の子アカウント間共有）
+
+**ただし、本構成では基本的に不要**:
+- 監査アカウントは通常 **ログを受け取る側**（受信専用）
+- 監査アカウントから案件アカウントへの「リソース共有」は限定的なシナリオでのみ発生
+
+**監査アカウント → 案件アカウントの共有が発生しうる典型シナリオ**:
+
+| シナリオ | 内容 | 仕組み |
+|---|---|---|
+| **セキュリティ標準の AMI 配布** | 監査チームが標準化された AMI を全アカウントに共有 | RAM（AMI を Resource Share）|
+| **共通 KMS 鍵の利用許可** | 監査チームが管理する暗号鍵を案件アカウントが使用 | KMS 鍵ポリシー（RAM ではない）|
+| **Security Hub Insights / Custom Actions の共有** | カスタムフィルタを案件アカウントに展開 | Security Hub の Delegated Admin 機能 |
+| **Config Conformance Pack のデプロイ** | コンプラチェックルールを案件側にデプロイ | Config の Multi-Account 機能 |
+| **Network Firewall の共通ルール** | NW ファイアウォール設定を案件側に共有 | RAM（NW Firewall Rule Group を Resource Share）|
+
+**監査アカウントが管理側のサービス使用例**:
+- Security Hub Delegated Administrator
+- GuardDuty Delegated Administrator
+- Macie Delegated Administrator
+- Config Aggregator
+
+→ これらは **RAM ではなく各サービスの Delegated Admin / Aggregator 機能** で実現。RAM の直接利用は限定的。
+
+##### 4.2.4.6 RAM 設定の流れ（例: Lake Formation 共有を手動で確認する場合）
+
+```bash
+# 1. Lake Formation Grant 実行
+aws lakeformation grant-permissions \
+    --principal DataLakePrincipalIdentifier=arn:aws:iam::APP_ACCOUNT_ID:root \
+    --permissions SELECT \
+    --resource Table='{DatabaseName=sales,Name=transactions}'
+
+# 2. Lake Formation が裏で RAM Resource Share を作成
+# 3. RAM 側で確認
+aws ram list-resources \
+    --resource-owner SELF
+
+# 4. App アカウント側で受諾状態確認（auto-accept なら不要）
+aws ram get-resource-share-invitations
+```
+
+##### 4.2.4.7 注意点と落とし穴
+
+| # | 注意点 | 影響 |
+|---|---|---|
+| 1 | **Organization 設定の「RAM 共有有効化」が必須** | OFF の場合、子アカウント間共有が auto-accept にならず手動承認が必要 |
+| 2 | **共有先での IAM 権限付与が別途必要** | RAM が「リソースを見える」ようにするだけ、利用には IAM 権限が必要 |
+| 3 | **共有可能なリソースは限られる** | S3 バケットは RAM では共有できない（バケットポリシーで対応）|
+| 4 | **Resource Share の上限**: アカウントあたり 5000 個まで | 大規模環境で要監視 |
+| 5 | **Resource Link との違い**: Glue Catalog のクロスアカウント参照には **Resource Link** が必要（RAM 共有とは別）| Lake Formation 経由で自動生成される |
+| 6 | **削除順序**: 共有元で削除 → 共有先で自動的に見えなくなる | データへの影響なし、メタデータのみ |
+| 7 | **Auto-accept が効くのは Org 内のみ** | 別 Org への共有は手動受諾必要（本構成では発生しない）|
+
+##### 4.2.4.8 残課題（ヒアリングで確認）
+
+| # | 質問 | 影響 |
+|---|---|---|
+| 1 | Organizations の「**RAM 共有有効化**」設定状況 | 子アカウント間 auto-accept の可否 |
+| 2 | 監査アカウントから案件アカウントへ配布したいリソースの有無 | RAM 使用範囲の確定 |
+| 3 | KMS CMK のアカウント間利用の権限設計 | 鍵ポリシー設計（RAM ではなく Key Policy）|
+| 4 | Resource Share の管理ガバナンス（誰が作成・削除できるか）| `DataLakeAdminRole` の権限範囲 |
+
+
 
 各アプリは自分の分野の分析を自前で実施（Producer + Consumer）+ 中央 BI / 経営層向け横断分析は専用 Consumer。**Option B により Catalog を中央 BI Consumer に同居**。
 
@@ -481,6 +1008,212 @@ flowchart LR
 
 ---
 
+## 5.8 監査責務分離の具体設計（Option B 採用時 + 新規監査アカウント前提）
+
+### 5.8.1 前提
+
+**監査アカウントはデータプラットフォーム標準のスコープ外**で生成される。Transit Gateway / 共通 VPC エンドポイント / 共通 DNS 等の**共通インフラと同じ位置付け**で、「**他組織が運用するものを我々が利用させていただく**」という関係。
+
+```mermaid
+flowchart TB
+    subgraph OutOfScope["スコープ外（他組織が運用）"]
+        direction LR
+        Parent["親会社統制アカウント<br/>SoC / NW Firewall"]
+        AuditAcc["🔵 監査アカウント<br/>(別組織が生成・運用)<br/>・CloudTrail Org Trail<br/>・Security Hub / GuardDuty / Macie<br/>・Config Aggregator<br/>・監査ログ長期保管"]
+        TGW["Transit Gateway<br/>共通 VPC エンドポイント等"]
+    end
+
+    subgraph InScope["データプラットフォーム標準のスコープ"]
+        direction LR
+        BICat["中央 BI / Catalog<br/>(Option B)"]
+        Common["共通ドメイン"]
+        Apps["各アプリ × N<br/>(Producer)"]
+    end
+
+    InScope -.ログ・監査イベント送付.-> AuditAcc
+    InScope -.ネットワーク通信.-> TGW
+
+    style OutOfScope fill:#f5f5f5
+    style InScope fill:#e3f2fd
+    style AuditAcc fill:#fce4ec
+```
+
+**本標準の役割**: 監査アカウントに対して **「何を送るか / 何を期待するか / 何を依存するか」** を定義する側に立つ。
+
+### 5.8.2 アカウント体系（スコープ込み）
+
+| カテゴリ | アカウント | 運用主体 | データプラットフォーム標準での位置付け |
+|---|---|---|---|
+| **スコープ外（既存・他組織）** | 親会社統制 | 親会社 SoC | データ標準には直接関与しない |
+| **スコープ外（新規・他組織）** | **🔵 監査アカウント** | **別組織** | **ログ送付先・依存対象**として利用 |
+| **スコープ外（既存・他組織）** | Transit Gateway / 共通ネットワーク | ネットワーク統括 | データ通信の経路として利用 |
+| **スコープ内（既存）** | 共通基盤（認証）| 別チーム | 認証連携先として利用 |
+| **スコープ内（既存）** | 各アプリ × N | アプリチーム | Producer 兼任、ガイド対象 |
+| **スコープ内（新規 +1）** | 🆕 中央 BI / Catalog（Option B 同居）| データプラットフォームチーム | 本標準が設計・運用 |
+| **スコープ内（新規 +1）** | 🆕 共通ドメイン | データプラットフォームチーム + 各データ責任者 | 本標準が設計・運用 |
+
+### 5.8.3 監査アカウントへのログ送付経路
+
+データプラットフォーム側から監査アカウントへ送付するログを **送信元 × 種別 × 仕組み** で整理。
+
+| 送信元 | 種別 | 内容 | 送付の仕組み |
+|---|---|---|---|
+| **全アカウント** | コントロールプレーン監査 | CloudTrail Management Events | **Organization Trail**（監査アカウント側で設定済み前提）|
+| 中央 BI / Catalog | データプレーン監査 | Lake Formation データアクセスイベント、KMS 鍵使用イベント | **CloudTrail Data Events**（Organization Trail に統合）|
+| 中央 BI / Catalog | クエリ履歴 | Athena Workgroup クエリログ | **Athena Workgroup → S3 → クロスアカウント送付** |
+| 中央 BI / Catalog | BI アクセス | QuickSight アクティビティログ | **QuickSight Activity Log → CloudTrail → 監査アカウント** |
+| 各アプリ（Producer）| データアクセス | S3 サーバアクセスログ | **S3 Logging → 監査アカウントのログバケット**（クロスアカウント書込み）|
+| 各アプリ（Producer）| アプリ操作 | アプリケーション操作監査ログ | **CloudWatch Logs Subscription → Kinesis Firehose → 監査アカウント S3** |
+| 共通ドメイン | マスタ変更履歴 | 顧客マスタ更新ログ | 上記同様 |
+
+### 5.8.4 メトリクスの扱い（運用は各アプリ保持）
+
+**今回の方針確認**: 運用メトリクスは各アプリで保持（CloudWatch 標準）、監査・セキュリティ系のみ監査アカウントに集約。
+
+| 種別 | 主用途 | 配置 | 理由 |
+|---|---|---|---|
+| **運用メトリクス** | 障害検知 / SLO 監視 / オートスケール判定 | **各アプリの CloudWatch**（30 日デフォルト保持）| アプリチームの責任、即時性が必要 |
+| **セキュリティメトリクス** | GuardDuty Findings / Macie 検出 / Security Hub Findings | **監査アカウント集約** | 横断検知・SOC 連携 |
+| **コスト系** | Cost Explorer / CUR | **親会社統制 or Organization Master** | 経理連携 |
+| **長期保存メトリクス** | ML 用特徴量・容量計画 | **データプラットフォーム側で再集計**（必要に応じて）| 分析責務 |
+
+### 5.8.5 データプラットフォーム側で実装する必須項目
+
+監査アカウントが期待するログを「ちゃんと送る」ための実装責任:
+
+| # | 実装項目 | 実装場所 |
+|---|---|---|
+| 1 | **CloudTrail Data Events 有効化**（S3 / Lake Formation / KMS）| 中央 BI / Catalog アカウント |
+| 2 | **Lake Formation Audit Log 有効化** | 中央 BI / Catalog アカウント |
+| 3 | **Athena Workgroup でクエリログ出力設定** | 中央 BI / Catalog アカウント |
+| 4 | **QuickSight Activity Logging 有効化** | 中央 BI / Catalog アカウント |
+| 5 | **S3 Server Access Logging のクロスアカウント設定** | 各アプリアカウント + 共通ドメインアカウント |
+| 6 | **KMS CMK の使用イベント出力**（CloudTrail Data Events）| 中央 BI / Catalog アカウント |
+| 7 | **VPC Flow Logs 出力設定** | 各アカウントの VPC（送信先は監査アカウント側の設計次第）|
+| 8 | **アプリ操作ログの CloudWatch Logs Subscription 設定** | 各アプリアカウント |
+
+### 5.8.6 監査アカウント側に期待する設定（依存事項）
+
+データプラットフォーム標準が**監査アカウント運用主体に依頼する設定**:
+
+| # | 期待する設定 | データプラットフォーム側への影響 |
+|---|---|---|
+| 1 | **CloudTrail Organization Trail** 設定（全アカウント対象）| 各アカウントで個別に CloudTrail を立てる必要なし |
+| 2 | **Security Hub Delegated Admin** | 各アカウントの Security Hub 集約 |
+| 3 | **GuardDuty Delegated Admin** | 同上 |
+| 4 | **Macie Delegated Admin** | S3 PII スキャンの集約 |
+| 5 | **Config Aggregator** | 全アカウントの構成監視 |
+| 6 | **クロスアカウントログ受信用 S3 バケット**（Object Lock + 長期保管）| ログ送付先として利用 |
+| 7 | **クロスアカウント書込み権限の付与**（バケットポリシー）| 各アプリ・中央 BI から書込みできる |
+| 8 | **セキュリティ Findings 通知の管理プロセス** | データ標準で検出した PII 漏洩等の対応フロー |
+
+### 5.8.7 セキュリティアラート連携の流れ
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant DP as データプラットフォーム<br/>(各アプリ / 中央 BI)
+    participant Audit as 監査アカウント<br/>(別組織)
+    participant SOC as 親会社 SoC
+
+    Note over DP, SOC: 通常運用
+    DP->>Audit: ログ送付（CloudTrail / S3 / etc.）
+    Audit->>Audit: Security Hub / GuardDuty / Macie で分析
+
+    Note over DP, SOC: インシデント検知時
+    Audit->>SOC: Findings 通知
+    SOC->>Audit: トリアージ
+    SOC->>DP: 対応依頼（データ標準チームへ）
+    DP->>DP: 該当アプリ / Catalog 側で対応
+    DP->>SOC: 対応結果報告
+    Audit->>Audit: Findings クローズ
+```
+
+### 5.8.8 残課題（監査アカウント別組織との合意事項）
+
+| # | 確認事項 | 影響 |
+|---|---|---|
+| 1 | **監査アカウント運用主体との連絡窓口**（誰に何を聞くか）| 設計の進め方 |
+| 2 | **ログ送付の権限設計**（クロスアカウント IAM Role / バケットポリシー）| 実装方法 |
+| 3 | **監査アカウント側のログ保管期間** | データ標準側の §NFR-7 コンプラ要件と整合 |
+| 4 | **Findings 通知の受け取りフロー**（SNS / EventBridge / メール / Slack 等）| インシデント対応設計 |
+| 5 | **監査アカウント障害時のフォールバック**（自前で一時的に集約するか）| BCP / 5 nines 想定 |
+| 6 | **コスト負担モデル**（監査アカウントの利用料はデータ標準側に按分されるか）| 予算計画 |
+| 7 | **Athena クエリログ等のセンシティブ情報を含むログの扱い**（顧客企業データを参照したクエリ内容）| プライバシー設計 |
+| 8 | **Transit Gateway 経由のクロスアカウント通信のログ取得範囲** | ネットワーク監査 |
+
+### 5.8.9 図解: ログ送付の全体像
+
+```mermaid
+flowchart TB
+    subgraph DataPlatform["データプラットフォーム標準（スコープ内）"]
+        subgraph BICat["中央 BI / Catalog アカウント"]
+            LF[Lake Formation]
+            Athena
+            QS[QuickSight]
+            KMS[KMS CMK]
+        end
+
+        subgraph App1["App 1（Producer）"]
+            S1[S3]
+            DB1[運用 DB]
+            App1Logs[CloudWatch Logs]
+        end
+
+        subgraph App2["App 2（Producer）"]
+            S2[S3]
+            DB2[運用 DB]
+        end
+
+        subgraph CommonD["共通ドメイン"]
+            Master[顧客マスタ]
+        end
+    end
+
+    subgraph Audit["監査アカウント（スコープ外）"]
+        direction TB
+        CT[CloudTrail Organization Trail]
+        SH[Security Hub Delegated Admin]
+        GD[GuardDuty Delegated Admin]
+        Macie[Macie Delegated Admin]
+        Cfg[Config Aggregator]
+        LogBucket[(S3 長期保管バケット<br/>Object Lock)]
+    end
+
+    %% コントロールプレーン → CloudTrail
+    LF -.管理イベント.-> CT
+    Athena -.管理イベント.-> CT
+    QS -.管理イベント.-> CT
+    KMS -.管理イベント.-> CT
+    App1 -.管理イベント.-> CT
+    App2 -.管理イベント.-> CT
+    CommonD -.管理イベント.-> CT
+
+    %% データプレーン → CloudTrail Data Events
+    LF -.データイベント.-> CT
+    S1 -.S3 アクセスログ.-> LogBucket
+    S2 -.S3 アクセスログ.-> LogBucket
+
+    %% Athena クエリログ
+    Athena -.クエリログ.-> LogBucket
+
+    %% QuickSight アクティビティ
+    QS -.アクティビティログ.-> CT
+
+    %% アプリ操作ログ
+    App1Logs -.subscription.-> LogBucket
+
+    %% Macie が S3 をスキャン
+    S1 -.PII スキャン対象.-> Macie
+    S2 -.PII スキャン対象.-> Macie
+    Master -.PII スキャン対象.-> Macie
+
+    style DataPlatform fill:#e3f2fd
+    style Audit fill:#fce4ec
+```
+
+---
+
 ## 6. 決定状況と残課題
 
 ### 6.1 仮案で決定済み（[strawman-proposal.md](strawman-proposal.md) に反映済）
@@ -499,7 +1232,7 @@ flowchart LR
 |---|---|---|---|---|
 | 1 | **既存「共通基盤アカウント」のスコープ拡張** | 認証専用に閉じる / Service Catalog 配布元等も担わせる | API 側決定との整合 | API 標準化推進者との調整 |
 | 2 | **環境分離**（prod / stg / dev）| 同一アカウントで Realm 分離 / 環境別にアカウント分離 | アカウント数の倍加、運用負荷 | ヒアリング G（インフラチーム）|
-| 3 | **親会社統制の責務範囲確認**（Option B 成立の必須前提）| Macie / Security Hub / GuardDuty / Config Aggregator の集約担当範囲 | 担当範囲次第で Catalog Account のスコープが変わる、Option B/A/C 選定にも波及 | ヒアリング G-4 で確認 |
+| 3 | **監査アカウントとの合意事項**（Option B 成立 + §5.8 監査責務分離の前提）| [§5.8.8 残課題 8 項目](#588-残課題監査アカウント別組織との合意事項)（連絡窓口 / 権限設計 / 保管期間 / Findings 通知 / 障害時 FB / コスト按分 / クエリログ機密性 / TGW 通信ログ）| 監査アカウント運用主体との合意で確定 | ヒアリング G-4 / 監査アカウント運用主体への問合せ |
 | 4 | **役割 3（Catalog 管理者）と役割 4（BI チーム）の人員分離**（Option B 成立の前提）| 完全分離可能 / 部分重複 / 重複前提 | 責務分離の実質的な強度、Config Rules 検知設計 | ヒアリング G-5 で確認 |
 | 5 | **将来 Option C 移行のトリガ条件**（規模拡大時）| 4 条件のうちどれを発動条件とするか | Phase 2 計画、運用設計 | Phase 1 運用開始後にレビュー、[strawman-proposal.md §4.3](strawman-proposal.md) 参照 |
 | 6 | **DR / クロスリージョン設計** | リージョン障害時の Catalog / Consumer / 共通ドメイン の復旧戦略 | NFR-DR §NFR-5（未作成）の前提 | [proposal/nfr/05-dr.md](proposal/nfr/05-dr.md)（未作成）と連動 |
@@ -521,6 +1254,12 @@ flowchart LR
 | 7 | [powerpoint-outline-and-references.md §1.3-1.4](powerpoint-outline-and-references.md) | 構成概要図を **Option B 版（+2 アカウント、中央 BI / Catalog 同居）**に差し替え、§1.4「アカウント体系」スライドで Option A/B/C の選定根拠を提示 |
 | 8 | [strawman-proposal.md](strawman-proposal.md) | （反映済）Option B 仕様に改訂、§2 アカウント構成 +2、§3 役割 3 を `DataLakeAdminRole` として位置付け、§5 前提 8/9 追加、§6 ヒアリング G-4/5/6 追加 |
 | 9 | proposal/fr/06-personas.md（既存）| §FR-6 ペルソナ別実装パターンに **IAM Role 別の利用パターン**（`DataLakeAdminRole` / `DataAnalystRole` / `DataReaderRole`）を反映 |
+| 10 | [proposal/fr/05-governance.md](proposal/fr/05-governance.md) §FR-5.4 監査ログ | **§5.8 監査責務分離設計を反映**: 監査アカウントへのログ送付経路 7 種、データプラットフォーム側必須実装 8 項目、監査アカウント側に期待する 8 項目を明文化 |
+| 11 | proposal/nfr/04-security.md（既存・要更新）| §NFR-4 セキュリティに **監査アカウントとの責務分離**、ログ送付経路、クロスアカウント送付の暗号化要件を追記 |
+| 12 | proposal/nfr/06-operations.md（既存・要更新）| §NFR-6 運用に **メトリクスの責務分離**（運用は各アプリ / 監査・セキュリティは監査アカウント）を明示 |
+| 13 | proposal/common/04-tbd-summary.md（未作成）| **監査アカウント運用主体との合意事項 8 項目**（§5.8.8 残課題）を要確認事項として記録 |
+| 14 | [strawman-proposal.md §5 前提](strawman-proposal.md) | 前提 8 を **「監査アカウント運用主体との合意」** に書き換え（旧「親会社統制が CloudTrail / SH / Macie 等を集約」）|
+| 15 | [hearing-slide-deck.md §4.2](hearing-slide-deck.md) | スライド §4.2 を **「監査アカウントとの責務分離 + 期待する設定」** に再構成（旧「親会社統制の責務範囲確認」）|
 
 ### 7.1 反映の依存順序
 

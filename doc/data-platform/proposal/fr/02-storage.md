@@ -106,23 +106,40 @@ flowchart LR
 
 ### ベースライン
 
-**採用判定基準**:
+> ⚠ **Phase 1/2 では Redshift 不採用が確定**（[DP-ADR-002](../../adr/DP-ADR-002-redshift-emr-not-adopted.md)）。本サブセクションの採用判定基準は **Phase 3+ 再評価時の参照**として位置付ける。
+
+**Phase 1/2 の選択**: **Athena + QuickSight + SPICE** で代替。Redshift は採用しない。
+
+**採用判定基準（Phase 3+ 再評価時用）**:
 - **採用推奨**: 業務部門が BI ダッシュボードを定期的に閲覧する / 同時実行 10 ユーザー以上 / クエリレイテンシ秒オーダー要件
 - **不要**: 探索的クエリ中心 / 日次バッチ集計のみ / 同時実行少数 → Athena で十分
 
-**Redshift Serverless vs プロビジョンド**:
+**Redshift Serverless vs プロビジョンド**（Phase 3+ 採用時の参考）:
 - 初期導入・利用ピークが読めない段階は **Serverless** を推奨。
 - 24/365 高負荷で固定的なら **プロビジョンド + リザーブド** が TCO 優位。
 
-**Redshift Spectrum**:
+**Redshift Spectrum**（Phase 3+ 採用時の参考）:
 - S3 レイク上のデータをそのままクエリする橋渡し機能。Redshift 内データとの JOIN が可能。
 - 「主は Redshift、長期データはレイク」の構成で標準的に採用。
+
+### Phase 3 で再評価するトリガ
+
+[DP-ADR-002 §4.1](../../adr/DP-ADR-002-redshift-emr-not-adopted.md) 参照:
+
+| # | トリガ |
+|---|---|
+| 1 | 月間アクティブ Reader が 100 名以上 |
+| 2 | 業務時間中に日常的に 20+ クエリ同時実行 |
+| 3 | 1 秒以内応答が SLA として要求 |
+| 4 | Materialized View が常時必要 |
+| 5 | Concurrency Scaling 要件 |
+| 6 | 月間 1 PB スキャン超 |
 
 ### TBD / 要確認
 
 - 各アプリの BI 利用想定（同時実行・レイテンシ・週次/日次/リアルタイム）
-- Redshift 採用アプリ数の見込み（少数なら共有 Redshift クラスタの集約も検討）
-- Zero-ETL（Aurora → Redshift）採用範囲
+- Redshift 採用アプリ数の見込み（**Phase 3+ で再評価**、Phase 1/2 では検討対象外）
+- Zero-ETL（Aurora → Redshift）採用範囲（**Phase 3+ で再評価**）
 
 ---
 

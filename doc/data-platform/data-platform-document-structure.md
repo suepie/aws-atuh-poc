@@ -105,7 +105,8 @@ doc/data-platform/
 │
 ├── [意思決定記録]
 │   └── adr/                                 ← Architecture Decision Records（DP-ADR-NNN）
-│       └── DP-ADR-001-...-deferred.md       ← SageMaker Catalog 採否（Phase 1 不採用、Phase 2 再評価）
+│       ├── DP-ADR-001-...-deferred.md       ← SageMaker Catalog 採否（Phase 1 不採用、Phase 2 再評価）
+│       └── DP-ADR-002-...-not-adopted.md    ← Redshift / EMR 採否（Phase 1/2 不採用、Phase 3+ 再評価）
 │
 ├── [ヒアリング]
 │   ├── hearing-slide-deck.md                ← ヒアリング用スライド集（41 スライド、タイトル/内容/回答例）
@@ -537,6 +538,7 @@ flowchart LR
 | ADR | タイトル | ステータス |
 |---|---|:---:|
 | [DP-ADR-001](adr/DP-ADR-001-sagemaker-catalog-adoption-deferred.md) | SageMaker Catalog（旧 DataZone）採否判断 — Phase 1 不採用、Phase 2 再評価 | ✅ Accepted |
+| [DP-ADR-002](adr/DP-ADR-002-redshift-emr-not-adopted.md) | Phase 1/2 における Redshift / EMR の不採用判断 — Phase 3+ 再評価 | ✅ Accepted |
 
 ### 9.4 ヒアリング
 
