@@ -100,6 +100,7 @@ flowchart LR
 | [§C-API-3](common/03-shared-auth-boundary.md) | 共有認証基盤との接続点 |
 | [§C-API-4](common/04-audit-governance.md) | 監査アカウントとのガバナンス境界 |
 | [§C-API-5](common/05-self-service-catalog.md) | 標準提供物（Service Catalog / IaC モジュール） |
+| [§C-API-6](common/06-external-api-auth-architecture.md) ⭐ | 外部 API 認証アーキテクチャ — Engine / Relationship モデルと技術的担保 |
 
 ---
 

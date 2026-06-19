@@ -37,6 +37,8 @@ flowchart LR
 | 効率よく | アプリ開発者が **数クリック / IaC 一行** で標準準拠スタック起動 |
 | 運用負荷・コスト最小 | 製品の更新・バージョン管理は Platform チーム集約 |
 
+**Self-Service Developer Portal との関係（追記 2026-06-19）**: Service Catalog（IaC 製品配布）と **Self-Service Developer Portal**（Partner Client 作成 UI）は別物だが補完関係。前者はインフラ deploy 自律化、後者は Partner Auth 運用自律化。両者を組み合わせて [§C-API-6 §C-6.4](06-external-api-auth-architecture.md) の「アプリチーム完全自律 + 中央 Engine 活用」を実現。
+
 ### §C-5.0.4 本章で扱うサブセクション
 
 | § | サブセクション |

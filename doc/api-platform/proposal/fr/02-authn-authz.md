@@ -36,6 +36,8 @@
 | 効率よく | JWT 検証は API Gateway / ALB の **マネージド Authorizer 機能を優先**（Lambda Authorizer はカスタムロジック必須時のみ）|
 | 運用負荷・コスト最小 | JWKS は共有認証基盤の Discovery エンドポイントから取得、ローテーションは認証基盤側任せ |
 
+**責務分担の根拠（追記 2026-06-19）**: 本章は技術的な認証方式を扱うが、「**認証基盤チーム vs アプリチーム**」の責務分担は [§C-API-6 外部 API 認証アーキテクチャ](../common/06-external-api-auth-architecture.md) で統合的に整理。Engine（OAuth/JWT 技術機能）= 認証基盤チーム中央、Relationship（Partner との運用関係・credential 配布・ローテ調整）= 各アプリチーム自律という構造で全 4 領域（Public / Inbound Partner / Outbound SaaS / Private）を一貫させる。
+
 ### §2.0.4 本章で扱うサブセクション
 
 | § | サブセクション | 主題 |

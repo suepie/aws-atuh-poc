@@ -1,9 +1,11 @@
 # §FR-API-0 外部サービスからの API 実行 — 網羅的設計検討 / 章プロローグ
 
-> **本ドキュメントの位置付け**: API プラットフォーム標準（§FR-API-1〜8 + §C-API-3〜5）を「外部サービスから API を呼ばれる」という横断テーマで俯瞰するエントリポイント SSOT。**6 タイプの外部サービス × 10 観点のマトリクス**で全体像を提示し、各論は既存 doc に深く委譲する。
+> **本ドキュメントの位置付け**: API プラットフォーム標準（§FR-API-1〜8 + §C-API-3〜6）を「**外部サービスから API を呼ばれる（Inbound）**」という横断テーマで俯瞰するエントリポイント SSOT。**6 タイプの外部サービス × 10 観点のマトリクス**で全体像を提示し、各論は既存 doc に深く委譲する。
 > **対象読者**: API 設計者 / セキュリティ設計 / 顧客折衝担当 / 新規 API オーナー
 > **読み方**: §1〜2 で全体像把握 → §3 でタイプ判定 → §4 でタイプ別推奨パターン → §5〜10 で実装詳細
+> **Outbound（自アプリ → 外部 SaaS）**: 本章スコープ外。Outbound の対応は [§C-API-6 §C-6.2 Inbound/Outbound 対称性](../common/06-external-api-auth-architecture.md) 参照。
 > **関連 doc（深掘り時の道案内は §11）**:
+> - [§C-API-6 外部 API 認証アーキテクチャ（Engine/Relationship モデル）⭐](../common/06-external-api-auth-architecture.md) — 本章の責務分担モデルの根拠
 > - [§FR-API-1 公開境界 / 信頼プロファイル](01-exposure-boundary.md)
 > - [§FR-API-2 認証認可](02-authn-authz.md)（125 節、最重要 input source）
 > - [§FR-API-3 throttling / quota](03-throttling-quota.md)
