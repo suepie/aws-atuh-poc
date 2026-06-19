@@ -136,6 +136,272 @@
 
 → **「Bronze/Silver/Gold で語る」習慣を捨て、「P-1〜P-7 のどれか」で議論する**。
 
+#### 大分類別フロー（初期設定時 / 認証時）
+
+大分類 4 種（OAuth トークン / 証明書 / 共有秘密キー / AWS IAM 署名）について、**初期設定時のオンボーディング手順**と**実行時の認証フロー**を整理する。
+
+---
+
+##### 大分類 1: OAuth トークン（P-1 / P-2 / P-3）
+
+**特徴**：IdP で credential 認証 → Bearer JWT を取得 → API GW に提示。Token TTL（1h 標準）で被害限定。
+
+**初期設定時のフロー**
+
+```mermaid
+sequenceDiagram
+    participant App as アプリチーム
+    participant Partner
+    participant Portal as Self-Service<br/>Developer Portal
+    participant IdP as 共有認証基盤
+    participant SM as Partner 側<br/>Secrets Manager
+
+    App->>Partner: ① 契約・交渉（scope 設計）
+    App->>Portal: ② Partner Client 申請
+    Portal->>IdP: ③ Admin API で M2M Client 作成
+    IdP-->>Portal: ④ client_id, client_secret 発行
+    Portal-->>App: ⑤ credential 受領
+    App->>Partner: ⑥ 暗号化メール / 1Password 等で配布
+    Partner->>SM: ⑦ Secrets 保管
+```
+
+**認証時のフロー**
+
+```mermaid
+sequenceDiagram
+    participant Partner
+    participant Cache as Partner 側<br/>Token Cache
+    participant IdP as 共有認証基盤<br/>/oauth2/token
+    participant APIGW
+    participant Authz as JWT Authorizer
+    participant Lambda
+
+    Partner->>Cache: ① Token があるか確認
+    alt Token なし / 期限切れ
+        Partner->>IdP: ② /oauth2/token<br/>(client_id + secret)
+        IdP->>IdP: ③ credential 検証
+        IdP-->>Partner: ④ Bearer JWT (TTL 1h)
+        Partner->>Cache: ⑤ Cache に保存（TTL - 60s）
+    end
+    Partner->>APIGW: ⑥ Authorization: Bearer JWT
+    APIGW->>Authz: ⑦ JWT Authorizer 起動
+    Authz->>Authz: ⑧ 署名・iss・aud・exp・scope 検証
+    Authz-->>APIGW: ⑨ Allow + context
+    APIGW->>Lambda: ⑩ 認可済リクエスト
+    Lambda-->>Partner: ⑪ 200 OK
+```
+
+**要点**：
+- API GW 側設定は P-1/P-2/P-3 で **すべて同じ JWT Authorizer**
+- 差は IdP 側の Token 発行手順のみ（client cred / token-exchange / jwt-bearer）
+- Token Cache が運用上の鍵（毎回 /token を叩くと IdP 負荷増 + レイテンシ +200ms）
+
+---
+
+##### 大分類 2: 証明書 (mTLS) — P-4
+
+**特徴**：クライアント証明書を TLS handshake で検証、TLS 層で完結。CloudFront 経由不可（ALB / API GW Custom Domain 直接）。
+
+**初期設定時のフロー**
+
+```mermaid
+sequenceDiagram
+    participant App as アプリチーム
+    participant Sec as Security<br/>(CA 運用)
+    participant Partner
+    participant CA as 自社 Private CA<br/>(AWS Private CA等)
+    participant APIGW as API GW<br/>Custom Domain
+    participant Trust as Truststore
+
+    App->>Partner: ① 契約・交渉（規制要件確認）
+    Partner->>Partner: ② Partner が CSR 生成
+    Partner->>Sec: ③ CSR 送付
+    Sec->>CA: ④ CSR 署名要求
+    CA-->>Sec: ⑤ Client Cert 発行
+    Sec-->>Partner: ⑥ Client Cert + 中間 CA 配布
+    Partner->>Partner: ⑦ 秘密鍵 + 証明書 を保管
+    Sec->>Trust: ⑧ Partner CA bundle 登録
+    Sec->>APIGW: ⑨ mTLS Listener 設定 + CRL/OCSP 設定
+```
+
+**認証時のフロー**
+
+```mermaid
+sequenceDiagram
+    participant Partner
+    participant TLS as API GW<br/>Custom Domain<br/>(mTLS Listener)
+    participant Trust as Truststore
+    participant CRL as CRL/OCSP
+    participant APIGW
+    participant Lambda
+
+    Partner->>TLS: ① TLS Handshake 開始
+    TLS->>Partner: ② Server Cert 提示
+    Partner->>TLS: ③ Client Cert 提示
+    TLS->>Trust: ④ 証明書 chain 検証
+    Trust-->>TLS: ⑤ Valid
+    TLS->>CRL: ⑥ 失効確認 (CRL/OCSP)
+    CRL-->>TLS: ⑦ Not revoked
+    TLS->>TLS: ⑧ TLS 確立
+    Partner->>APIGW: ⑨ HTTPS リクエスト<br/>(cert binding 含む)
+    APIGW->>Lambda: ⑩ cert 情報 (Subject DN) を context に
+    Lambda-->>Partner: ⑪ 200 OK
+```
+
+**要点**：
+- 認証ステップは **TLS handshake 内で完結**、Bearer Token 不要（ただし FAPI 2.0 では併用推奨）
+- 証明書発行・配布・失効管理（CRL/OCSP）の運用負荷が高い
+- Overlap Period（旧新証明書併存 24-72h）必須
+
+---
+
+##### 大分類 3: 共有秘密キー（P-5 API Key + P-6 HMAC）
+
+**特徴**：事前共有された secret を提示（静的：API Key）または毎回署名計算（動的：HMAC）。AWS 公式：API Key は認証ではなく識別。
+
+###### P-5 API Key 初期設定時のフロー
+
+```mermaid
+sequenceDiagram
+    participant App as アプリチーム
+    participant Partner
+    participant APIGW
+    participant UP as Usage Plan
+
+    App->>Partner: ① 契約・交渉（プラン選定）
+    App->>APIGW: ② Usage Plan 作成<br/>(Throttle / Quota)
+    App->>APIGW: ③ API Key 発行
+    APIGW-->>App: ④ API Key 受領
+    App->>UP: ⑤ Usage Plan に API Key 紐付け
+    App->>Partner: ⑥ 暗号化メール等で配布
+    Partner->>Partner: ⑦ Secrets 保管
+```
+
+###### P-5 API Key 認証時のフロー
+
+```mermaid
+sequenceDiagram
+    participant Partner
+    participant APIGW
+    participant UP as Usage Plan
+    participant Lambda
+
+    Partner->>APIGW: ① x-api-key: <key>
+    APIGW->>UP: ② API Key 検証<br/>+ Throttle/Quota チェック
+    UP-->>APIGW: ③ 通過
+    APIGW->>Lambda: ④ リクエスト転送
+    Lambda-->>Partner: ⑤ 200 OK
+```
+
+###### P-6 HMAC 初期設定時のフロー
+
+```mermaid
+sequenceDiagram
+    participant App as アプリチーム
+    participant SaaS as 外部 SaaS<br/>(Stripe等)
+    participant SM as Secrets Manager
+    participant APIGW
+    participant Authz as Lambda Authorizer
+
+    App->>SaaS: ① SaaS 側 Console で<br/>Webhook 設定 (URL 指定)
+    SaaS-->>App: ② Webhook Secret 発行
+    App->>SM: ③ Secret を保管 (CMK)
+    App->>APIGW: ④ Webhook endpoint 作成
+    App->>Authz: ⑤ Lambda Authorizer 設定<br/>(Secret 読込み)
+```
+
+###### P-6 HMAC 認証時のフロー
+
+```mermaid
+sequenceDiagram
+    participant SaaS as 外部 SaaS
+    participant APIGW
+    participant Authz as Lambda Authorizer
+    participant SM as Secrets Manager
+    participant DDB as Idempotency Store<br/>(DynamoDB)
+    participant Lambda
+
+    SaaS->>APIGW: ① POST + X-Signature: HMAC<br/>+ X-Timestamp + body
+    APIGW->>Authz: ② Lambda Authorizer 起動
+    Authz->>SM: ③ Webhook Secret 取得
+    Authz->>Authz: ④ HMAC 計算 → 提示値と比較
+    Authz->>Authz: ⑤ Timestamp ±5min check<br/>(Replay 対策)
+    Authz->>DDB: ⑥ Idempotency-Key 重複確認
+    Authz-->>APIGW: ⑦ Allow
+    APIGW->>Lambda: ⑧ リクエスト転送
+    Lambda-->>SaaS: ⑨ 200 OK (即返却、処理は async)
+```
+
+**要点**：
+- P-5 API Key は **「認証ではなく識別」**（AWS 公式明記）、単独で使うのは非推奨
+- P-6 HMAC は **送信側が SaaS で OAuth が使えない**特殊ケース、Replay 対策 + Idempotency 必須
+- 両方とも secret ローテーション運用が必要
+
+---
+
+##### 大分類 4: AWS IAM 署名（P-7）
+
+**特徴**：AWS SDK が SigV4 で毎リクエスト署名。AWS マネージドで完結、credential 不要（STS 動的発行）、最小権限細粒度。
+
+**初期設定時のフロー**
+
+```mermaid
+sequenceDiagram
+    participant App as アプリチーム
+    participant Partner as Partner<br/>(AWS account 保有)
+    participant IAM as 自社 IAM
+    participant APIGW
+
+    App->>Partner: ① 契約・交渉<br/>(AWS account ID 取得)
+    App->>IAM: ② Cross-account IAM Role 作成<br/>(Trust Policy: Partner account)
+    IAM-->>App: ③ Role ARN 取得
+    App->>APIGW: ④ AuthorizationType=AWS_IAM 設定
+    App->>APIGW: ⑤ Resource Policy 設定<br/>(Partner ARN を Principal)
+    App->>Partner: ⑥ Role ARN + API GW URL 共有
+    Partner->>Partner: ⑦ Partner 側 IAM Role 設定<br/>(AssumeRole 権限)
+```
+
+**認証時のフロー**
+
+```mermaid
+sequenceDiagram
+    participant Partner as Partner<br/>(AWS Lambda / EC2 等)
+    participant STS as AWS STS
+    participant SDK as AWS SDK
+    participant APIGW
+    participant IAM as AWS IAM
+    participant Lambda
+
+    Partner->>STS: ① AssumeRole<br/>(Cross-account)
+    STS-->>Partner: ② 一時的 credential<br/>(AccessKey + SecretKey + SessionToken)
+    Partner->>SDK: ③ AWS SDK でリクエスト構築
+    SDK->>SDK: ④ SigV4 で署名
+    SDK->>APIGW: ⑤ SigV4 署名付きリクエスト
+    APIGW->>IAM: ⑥ AWS が SigV4 検証 + Policy 評価
+    IAM-->>APIGW: ⑦ Allow
+    APIGW->>Lambda: ⑧ リクエスト転送
+    Lambda-->>Partner: ⑨ 200 OK
+```
+
+**要点**：
+- credential は **STS で動的発行**（永続 secret なし、漏洩リスク最小）
+- 毎リクエストで SigV4 署名 → token 取得ステップ不要
+- Partner も AWS account 保有が前提（AWS 外 Partner には適用不可）
+
+---
+
+##### 大分類別フロー まとめ
+
+| 大分類 | 該当 P | 認証時の主要ステップ | 初期設定時の主要ステップ | API GW 側設定 |
+|---|---|---|---|---|
+| **OAuth トークン** | P-1/2/3 | IdP で Token 取得 → Bearer 提示 → JWT Authorizer 検証 | Self-Service Portal で M2M Client 作成 → secret 配布 | **JWT Authorizer** |
+| **証明書 (mTLS)** | P-4 | TLS Handshake で cert 検証 → 各リクエストへ context 注入 | Partner CSR 受領 → 自社 CA 署名 → Truststore 登録 | **mTLS Custom Domain** |
+| **共有秘密キー (API Key)** | P-5 | x-api-key 送信 → Usage Plan 検証 | API Key 発行 → Usage Plan 紐付け → 配布 | **API Key Required + Usage Plan** |
+| **共有秘密キー (HMAC)** | P-6 | HMAC 署名検証 + Timestamp + Idempotency | SaaS 側で Webhook 設定 → Secret 取得 → Secrets Manager 保管 | **Lambda Authorizer** |
+| **AWS IAM 署名** | P-7 | STS AssumeRole → SigV4 署名 → IAM 検証 | Cross-account Role 作成 → Trust Policy 設定 → ARN 共有 | **AuthorizationType=AWS_IAM** |
+
+→ **Type A（OAuth）= 「事前 Token 取得 → 使う」、Type B（mTLS / IAM）= 「リクエスト毎に署名」、Type C（API Key / HMAC）= 「静的 secret 提示」**の 3 類型に集約。
+
 #### ⚠️ Outbound（自社 → 外部 SaaS）の扱い
 
 Outbound は **接続先 SaaS が認証 protocol を決める**ため、Inbound のような「設計判断としての 7 パターン選定」は発生しない。我々がやることは **「SaaS の規定に従ってクライアント実装する + credential を Secrets Manager で安全保管する」**のみ。
