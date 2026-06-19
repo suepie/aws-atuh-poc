@@ -149,18 +149,37 @@ flowchart LR
 
 ---
 
-## §4.5 死守事項マトリクス
+## §4.5 死守事項マトリクス（Zero Trust 原則）
 
-**このサブセクションで定めること**：公開範囲別の死守事項を一覧で示す。
-**主な判断軸**：境界別に厳しさが異なる項目を明示。
+**このサブセクションで定めること**：公開範囲別の死守事項を一覧で示す。Zero Trust「**ネットワーク制限だけでは不十分、認証併用必須**」原則を明文化。
+**主な判断軸**：境界別に厳しさが異なる項目を明示しつつ、認証必須は **全 Profile で例外なし**。
 **§4 全体との関係**：§4.1〜§4.4 の集約ビュー。
+
+### §4.5.0 Zero Trust 原則（全 Profile 共通）⭐ 新規
+
+本標準は以下の Zero Trust 原則を採用する：
+
+1. **「Network のみ」で十分とする運用は禁止**（Insider threat / Lateral movement / Persistence からの悪用に脆弱）
+2. **全 Profile で認証が必須**（社内・社内限定でも IAM auth or JWT 必須）
+3. **Network + 認証は最低 2 層、深層では 4 層**（[§FR-API-2 §2.7](../fr/02-authn-authz.md) 参照）
+4. **Fail-closed がデフォルト**（Authorizer 未設定 = 設定エラー、[§FR-API-2 §2.8](../fr/02-authn-authz.md) 参照）
+5. **継続監査で漏れ防止**（Config Rule + Athena クエリ、[§FR-API-7 §7.2.2 / §FR-API-8 §8.1.2](../fr/07-guardrails.md) 参照）
+
+#### アンチパターン
+
+| アンチパターン | なぜ NG | 正しい方針 |
+|---|---|---|
+| 「Internal だから WAF も認証もなし」| Lateral movement で社内侵入後に悪用される | IAM auth / JWT 必須、WAF は Internet 公開時のみ |
+| 「同一 VPC 内なので SG だけで OK」| 同 VPC 内の他 service / EC2 から無認可で叩ける | IAM auth + SG の 2 層 |
+| 「IP allowlist だけで認証なしの Partner API」| IP spoofing / Insider threat / shared egress IP で侵入される | OAuth / mTLS + IP allowlist の 2 層 |
+| 「ヘルスチェック・内部 API だから認証なし」| ヘルスチェックエンドポイントから機密情報漏洩した実例多数 | 専用 path（`/_/healthz`）+ 別認証 or path 制限 |
 
 ### §4.5.1 ベースライン
 
 | 死守事項 | Public | Partner | Internal | Private |
 |---|:---:|:---:|:---:|:---:|
 | TLS 1.2+ 必須 | ✅ | ✅ | ✅ | ✅ |
-| 認証必須 | ✅ JWT | ✅ API Key/mTLS | ✅ IAM/JWT | ✅ IAM |
+| **認証必須**（Zero Trust 原則）| ✅ JWT | ✅ API Key/mTLS + OAuth | **✅ IAM/JWT（例外なし）** | **✅ IAM（例外なし）** |
 | WAF 必須 | ✅ | ✅ | ➖ | ➖ |
 | WAF rate-based | ✅ | ✅ | ➖ | ➖ |
 | CMK 暗号化 | ✅ | ✅ | ⚠ | ⚠ |
@@ -170,10 +189,14 @@ flowchart LR
 | ログ PII マスク | ✅ | ✅ | ✅ | ✅ |
 | Secrets Manager 必須 | ✅ | ✅ | ✅ | ✅ |
 | CloudTrail Data Events | 重要のみ | 重要のみ | ➖ | ➖ |
+| **Fail-closed Authorizer 必須** | ✅ | ✅ | ✅ | ✅ |
+| **Config Rule 認証監査** | ✅ | ✅ | ✅ | ✅ |
 
 ### §4.5.2 TBD / 要確認
 
 - Q: マトリクスの **粒度の妥当性**（業務カテゴリ単位の上書きも許容するか）→ `API-D-1241`
+- Q: 社内 / 社内限定 Profile の **「Network のみ」許容例外** の承認プロセス → `API-D-1242` ⭐
+- Q: ヘルスチェックエンドポイントの **認証要否**（path 別 / 専用 path / IP 制限）の標準 → `API-D-1243` ⭐
 
 ---
 

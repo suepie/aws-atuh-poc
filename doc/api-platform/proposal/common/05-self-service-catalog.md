@@ -73,11 +73,19 @@ flowchart LR
 - ADOT / X-Ray 有効化
 - アラート（標準セット）
 - IAM 最小権限ロール
+- ⭐ **Authorizer 必須化**（[§FR-API-2 §2.8 Fail-closed 原則](../fr/02-authn-authz.md)）：
+  - 全 API Gateway 製品テンプレで **Authorizer フィールド必須**（IAM / JWT / Lambda / Cognito、`AuthType=NONE` 不可）
+  - ALB ベースの製品テンプレで **認証統合 or アプリ middleware 認証タグ必須**
+  - Lambda Function URL 採用製品は `AuthType=AWS_IAM` 必須
+  - IaC validation hook（cfn-guard / CDK Aspect 等）で deploy 前に強制
+
+→ **アプリ開発者が「認証なし API」を Service Catalog 経由で作れない構造**を製品テンプレレベルで担保。例外は別途申請制（[§FR-API-2 §2.8.3](../fr/02-authn-authz.md)）。
 
 ### §C-5.1.2 TBD / 要確認
 
 - Q: **初期ラインナップ**を上記 8 種類で確定するか → `API-D-2201`
 - Q: 各製品の **対応リージョン**（東京 / 大阪両対応か） → `API-D-2202`
+- Q: Authorizer 強制の IaC validation hook 実装（cfn-guard / CDK Aspect / OPA）→ `API-B-251`（§FR-API-2 §2.8 と同じ）
 
 ---
 

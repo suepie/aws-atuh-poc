@@ -9,6 +9,7 @@
 
 | § | 章 | 主題 | 状態 |
 |---|---|---|:---:|
+| **[§FR-API-0](00-external-api-consumption-overview.md)** | **外部サービスからの API 実行 — 章プロローグ** | **6 タイプ（Partner B2B / 顧客 S2S / 顧客 Browser / Webhook / Open Public / 金融グレード）× 10 観点責任配置マトリクス + 推奨パターン + 決定フローチャート + 実装テンプレ。§FR-API-1〜8 + §C-API-* の Aggregator SSOT** | 🆕 |
 | [§FR-API-1](01-exposure-boundary.md) | 公開範囲（信頼プロファイル）| 5 Profile（パブリック認証有/オープン、社内、パートナー、社内限定）— ネットワーク × 認証 × 既定 WAF を統合 | 🚧 |
 | [§FR-API-2](02-authn-authz.md) | 認証認可 | 共有認証基盤連携 / API Key / mTLS / IAM auth / Authorizer 選定 | 🚧 |
 | [§FR-API-3](03-throttling-quota.md) | 流量制御 | throttle / burst / quota / 超過時挙動 | 🚧 |

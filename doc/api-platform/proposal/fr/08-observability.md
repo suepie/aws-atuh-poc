@@ -97,11 +97,96 @@ JSON フォーマットで以下を出力（マネージド変数を使用）：
 | **PII マスキング** | **CloudWatch Logs Data Protection Policy** で managed identifier（クレカ、SSN、AWS access key）マスク GA |
 | **長期保管** | S3 export + Glacier / Object Lock（WORM）、Athena でクエリ |
 
-### §8.1.2 TBD / 要確認
+### §8.1.2 認証検証用 Athena クエリ標準テンプレ（Fail-closed 担保）⭐ 新規
+
+[§FR-API-2 §2.8 Fail-closed 原則](02-authn-authz.md) の **発見的監査**として、定期実行 Athena クエリを標準化。
+
+#### A. API Gateway access log で「未認証通過」検出
+
+```sql
+-- 認証クレーム / IAM caller のないリクエストを検出
+-- 期待：パブリック（オープン）以外の Profile で 0 件
+SELECT
+  requestId,
+  requestTime,
+  path,
+  status,
+  userArn,
+  apiKey,
+  date_format(from_unixtime(epoch), '%Y-%m-%d') AS day
+FROM apigateway_access_logs
+WHERE
+  date >= date_format(current_date - interval '7' day, '%Y-%m-%d')
+  AND (userArn IS NULL OR userArn = '-')
+  AND (apiKey IS NULL OR apiKey = '-')
+  AND profile NOT IN ('public-open')  -- パブリック（オープン）は除外
+ORDER BY requestTime DESC
+LIMIT 100;
+```
+
+#### B. ALB access log で「Authorization ヘッダなし」検出
+
+```sql
+-- session cookie / Authorization ヘッダがないリクエストを検出
+SELECT
+  request_url,
+  user_agent,
+  client_ip,
+  COUNT(*) AS request_count
+FROM alb_access_logs
+WHERE
+  date >= date_format(current_date - interval '7' day, '%Y-%m-%d')
+  AND request_url NOT LIKE '/_/healthz%'  -- ヘルスチェック除外
+  AND request_url NOT LIKE '/assets/%'    -- 静的アセット除外
+  AND (
+    regexp_extract(request_headers, '(?i)authorization:\s*\S+', 0) IS NULL
+    AND regexp_extract(request_headers, '(?i)cookie:.*AWSELBAuthSession', 0) IS NULL
+  )
+  AND profile_tag IN ('public-auth', 'partner', 'internal')
+GROUP BY request_url, user_agent, client_ip
+ORDER BY request_count DESC
+LIMIT 100;
+```
+
+#### C. 認証失敗率の異常検知（401 / 403 急増）
+
+```sql
+-- 5 分窓で 401 / 403 の割合が閾値を超えたら通知
+SELECT
+  date_trunc('minute', requestTime) AS time_bucket,
+  COUNT(*) FILTER (WHERE status IN (401, 403)) AS auth_failures,
+  COUNT(*) AS total_requests,
+  ROUND(100.0 * COUNT(*) FILTER (WHERE status IN (401, 403)) / COUNT(*), 2) AS failure_rate_pct
+FROM apigateway_access_logs
+WHERE date_diff('minute', requestTime, NOW()) <= 5
+GROUP BY time_bucket
+HAVING ROUND(100.0 * COUNT(*) FILTER (WHERE status IN (401, 403)) / COUNT(*), 2) > 10  -- 10% 超で警告
+ORDER BY time_bucket DESC;
+```
+
+→ **実行頻度**：A は日次、B は日次、C は 5 分窓のリアルタイム（CloudWatch Alarm 連動）。
+→ 検出結果は **SecOps / Platform チーム**に通知。例外申請台帳との照合は手動 or 自動化（API-D-724）。
+
+#### Profile / 認証メタデータの必須化（クエリ前提）
+
+上記クエリを成立させるため、access log に以下フィールドを追加：
+
+```json
+{
+  "...既存フィールド...": "...",
+  "profile": "$context.stage.var.profile",     // public-auth / public-open / partner / internal / private
+  "authMethod": "$context.identity.user",      // iam / jwt / api_key / none
+  "tenantId": "$context.authorizer.claims.tenant_id"
+}
+```
+
+### §8.1.3 TBD / 要確認
 
 - Q: Log Group Retention の **業務カテゴリ別マッピング**（一般 30d / 監査 7y 等）→ `API-C-811`
 - Q: Data Protection Policy の **追加カスタムパターン**（社内固有の機密パターン）→ `API-C-812`
 - Q: 高ボリューム API（ヘルスチェック等）の **サンプリング率** → `API-C-813`
+- Q: 認証検証クエリ（A/B/C）の **実行頻度・通知先**確定 → `API-C-814` ⭐
+- Q: access log の `profile` / `authMethod` / `tenantId` フィールド **追加可否**（Stage Variables / Mapping Template 設定）→ `API-C-815` ⭐
 
 ---
 

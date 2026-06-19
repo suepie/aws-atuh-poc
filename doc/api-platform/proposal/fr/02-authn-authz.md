@@ -51,6 +51,8 @@
 | §2.4 | Authorizer 選定 | マネージド vs Lambda Authorizer の判断 |
 | **§2.5** | **アプリ側認可モデル & ユーザオンボーディング** ⭐ | **Hybrid モデル（C）、JIT / SCIM / Invitation / Self-Service、Pattern 1/2/3、role→permission マッピング** |
 | **§2.6** | **Permission ストレージの標準パターン** | **DynamoDB / Aurora スキーマ例、Cedar / Verified Permissions** |
+| **§2.7** | **Profile 別 認証フロー一覧（横並び比較）** ⭐ | **5 Profile の認証フロー mermaid 図 + 認証層 4 段早見表** |
+| **§2.8** | **Fail-closed 原則と Service Catalog による認証強制** ⭐ | **担保 3 層（Service Catalog テンプレ / Config Rule / Athena クエリ）+ 例外申請プロセス** |
 | §2.A | SSR モノリスでの留意点 | ALB + Cognito session、ALB Authentication |
 | **§2.B** | **未認証エンドポイントの標準保護パターン** | **アプリ UI を持たないデフォルト、Hosted UI 委譲** |
 
@@ -1315,6 +1317,202 @@ AWS Verified Permissions:
 - Q: 標準 DB（DynamoDB / Aurora）の **デフォルト選定** → `API-B-521`（既存）と整合
 - Q: Permission のキャッシュ戦略 → `API-B-242` Lambda Authorizer cache と一体化
 - Q: Cedar / Verified Permissions の **採用判断基準**（規模、複雑度）→ `API-D-245`
+
+---
+
+## §2.7 Profile 別 認証フロー一覧（横並び比較）
+
+**このサブセクションで定めること**：5 つの公開範囲（信頼プロファイル）の **認証フローを横並び**で示し、「どの Profile でどの認証層がどう動くか」を一元化。
+**主な判断軸**：Defense-in-depth（ネットワーク + 認証）の徹底、各層の責務明確化、Fail-closed 原則。
+**§2 全体との関係**：§2.1〜§2.6 の各 Profile / 認証手段の詳細を統合した運用視点。死守事項マトリクス [§NFR-API-4 §4.5](../nfr/04-security.md) と照合可能。
+
+### §2.7.1 横並び比較表
+
+| Profile | ネットワーク制御 | 認証層（必須）| Authorizer 種別 | Fail-closed |
+|---|---|---|---|:---:|
+| **パブリック（認証有）** | CloudFront + WAF | **JWT 必須**（共有認証基盤）| API GW JWT Authorizer / Cognito Authorizer / Lambda Authorizer | ✅ Authorizer 未設定 = 設定エラー |
+| **パブリック（オープン）** | CloudFront + WAF + Rate-based | 不要（[§2.B](02-authn-authz.md) 保護パターン） | – | ✅ 認証対象外を明示 |
+| **パートナー** | CloudFront + WAF + IP allowlist | **OAuth Client Credentials または mTLS**（[§2.2.7-§2.2.10](02-authn-authz.md)）| API GW JWT Authorizer + Usage Plan API Key | ✅ API Key 検証 + Authorizer 両方 |
+| **社内** | 同 Org + Resource Policy + VPC Lattice / PrivateLink | **IAM auth（SigV4）または JWT**（[§2.3](02-authn-authz.md)）| API GW IAM Authorization / VPC Lattice Auth Policy | ✅ IAM 拒否 = リクエスト拒否 |
+| **社内限定** | 同一 VPC + SG | **IAM auth または SG**（最低 2 層）| API GW IAM Authorization / SG 制御 | ✅ ネットワーク + 認証 両方必須 |
+
+→ **死守事項マトリクス**は [§NFR-API-4 §4.5.1](../nfr/04-security.md) を参照。Zero Trust 原則「Network だけでは NG、認証併用必須」。
+
+### §2.7.2 パブリック（認証有）の認証フロー
+
+```mermaid
+sequenceDiagram
+    participant Client as ブラウザ / モバイル
+    participant CF as CloudFront
+    participant WAF as AWS WAF
+    participant APIGW as API Gateway
+    participant Authz as JWT Authorizer
+    participant Auth as 共有認証基盤
+    participant Lambda as Lambda / ECS
+
+    Client->>CF: HTTPS リクエスト + Bearer JWT
+    CF->>WAF: WAF Managed Rules + Rate-based 評価
+    WAF->>APIGW: 通過
+    APIGW->>Authz: JWT Authorizer 起動
+    Authz->>Auth: JWKS 取得（キャッシュ 5-15 分）
+    Authz->>Authz: 署名・iss・aud・exp 検証
+    Authz->>Authz: テナント境界チェック（tenant_id）
+    Authz-->>APIGW: Allow + クレームを context に
+    APIGW->>Lambda: invoke + claims
+    Lambda-->>Client: 200 OK
+```
+
+→ 詳細は [§2.1 共有認証基盤との連携](02-authn-authz.md)。
+
+### §2.7.3 パートナーの認証フロー（OAuth Client Credentials）
+
+→ 詳細フローは [§2.2.7](02-authn-authz.md)（OAuth Client Credentials Bronze）、[§2.2.8](02-authn-authz.md)（Token Exchange Silver）を参照。
+
+API Gateway での認証層：
+
+```mermaid
+sequenceDiagram
+    participant Partner as Partner システム
+    participant CF as CloudFront
+    participant WAF as AWS WAF
+    participant APIGW as API Gateway REST
+    participant Authz as JWT Authorizer
+    participant UP as Usage Plan
+    participant Lambda as Lambda / ECS
+
+    Partner->>CF: x-api-key + Bearer JWT
+    CF->>WAF: IP allowlist + Managed Rules
+    WAF->>APIGW: 通過
+    APIGW->>UP: API Key 検証（throttle / quota）
+    UP->>Authz: 通過後 JWT Authorizer 起動
+    Authz->>Authz: OAuth Client Credentials token 検証
+    Authz-->>APIGW: Allow + client_id / scope
+    APIGW->>Lambda: invoke
+    Lambda-->>Partner: 200 OK
+```
+
+### §2.7.4 社内の認証フロー（IAM SigV4）
+
+```mermaid
+sequenceDiagram
+    participant App as 別アカウント Lambda / ECS
+    participant APIGW as API Gateway (Internal)<br/>or VPC Lattice
+    participant Lambda as Lambda / ECS
+
+    Note over App: ECS Task Role / Lambda Execution Role の<br/>Credentials で SigV4 署名
+    App->>APIGW: HTTPS + SigV4 署名
+    APIGW->>APIGW: IAM 認証（AWS_IAM auth type）
+    APIGW->>APIGW: Resource Policy 評価<br/>(aws:PrincipalOrgID, VPCE ID)
+    APIGW->>Lambda: invoke + caller identity
+    Lambda-->>App: 200 OK
+```
+
+詳細は [§2.3 IAM auth](02-authn-authz.md)。
+
+### §2.7.5 社内限定の認証フロー（IAM + VPC）
+
+```mermaid
+sequenceDiagram
+    participant App as 同一 VPC 内 Service A
+    participant ALB as Internal ALB / Lambda Function URL
+    participant SG as Security Group
+    participant Lambda as Service B (Lambda/ECS)
+
+    Note over App: VPC 内通信、外部接続なし
+    App->>ALB: HTTPS + SigV4（IAM auth）
+    ALB->>SG: SG 制御（source SG 限定）
+    SG->>ALB: 通過
+    ALB->>Lambda: invoke + IAM auth 確認
+    Lambda-->>App: 200 OK
+```
+
+→ **社内限定でも IAM auth 必須**（SG だけでは Zero Trust 原則に反する）。
+
+### §2.7.6 Profile 別 認証層と Authorizer 配置の早見表
+
+| Profile | 1 層目<br/>（ネットワーク）| 2 層目<br/>（認証）| 3 層目<br/>（認可）| 4 層目<br/>（アプリ）|
+|---|---|---|---|---|
+| パブリック（認証有）| CloudFront + WAF | JWT Authorizer | scope / role | アプリ permission |
+| パブリック（オープン）| CloudFront + WAF + 強 Rate | – | – | （オープン用途のみ）|
+| パートナー | CloudFront + WAF + IP allowlist | API Key + JWT | scope | アプリ permission |
+| 社内 | Resource Policy + VPC Lattice | IAM SigV4 / JWT | IAM Policy / scope | アプリ permission |
+| 社内限定 | SG + VPC | IAM SigV4 | IAM Policy | アプリ permission |
+
+→ **全 Profile で「ネットワーク + 認証」最低 2 層必須**。
+
+### §2.7.7 TBD / 要確認
+
+- Q: 社内限定 Profile での **SG のみ運用** を例外承認制とするか、原則禁止とするか → `API-B-249` ⭐
+- Q: VPC Lattice Auth Policy を **社内 Profile のデフォルト**とするか → `API-B-250`
+
+---
+
+## §2.8 Fail-closed 原則と Service Catalog による認証強制
+
+**このサブセクションで定めること**：「認証 Authorizer の設定漏れ」を **物理的に発生させない仕組み**。Service Catalog テンプレ + Config Rule + 監査ログによる 3 層 担保メカニズム。
+**主な判断軸**：人的ミスで認証なし API が公開される事故防止、Zero Trust 徹底、設定状況の継続監査。
+**§2 全体との関係**：§2.1〜§2.7 で定義した認証要件の **実装担保**。
+
+### §2.8.1 Fail-closed の原則
+
+**「Authorizer 未設定 = リクエスト通過」になってはならない**：
+
+| 違反パターン | Zero Trust 違反 | 防御策 |
+|---|:---:|---|
+| API Gateway method に Authorizer 未設定で deploy | ✅ | Service Catalog テンプレで Authorizer 必須化 |
+| ALB Listener に認証統合 / アプリ middleware 未設定 | ✅ | Service Catalog テンプレ + Config Rule |
+| ECS task で middleware の認証 path 漏れ | ✅ | アプリ側 middleware で `before_action :authenticate` 等の global filter 必須 |
+| Lambda Function URL に `AuthType=NONE` 設定 | ✅ | SCP で `AuthType=NONE` 禁止 |
+
+→ **「明示的に許可しない限り deny」がデフォルト**。
+
+### §2.8.2 担保メカニズム 3 層
+
+#### 層 1：Service Catalog テンプレで Authorizer 強制（IaC 段階）
+
+[§C-API-5 標準提供物](../common/05-self-service-catalog.md) の全製品テンプレで：
+
+- API Gateway method には **必ず Authorizer フィールド**（IAM / JWT / Lambda / Cognito）が設定済
+- ALB Listener には **認証統合 or アプリ middleware 必須**を IaC validation hook で検査
+- Lambda Function URL は **`AuthType=AWS_IAM` または `AuthType=AWS_IAM` 以外を選んだら例外申請**
+
+→ **アプリ開発者が「Authorizer なし」を作れない構造**。
+
+#### 層 2：Config Rule で継続監査（運用段階）
+
+[§FR-API-7 §7.2.2](07-guardrails.md) の Config Rules に以下を追加（後述詳細）：
+
+- API Gateway REST/HTTP API の全 method に Authorizer 設定済か
+- Lambda Function URL の `AuthType` が `NONE` でないか
+- ALB Listener Rule が認証統合済（OIDC / Cognito）か、または target group のタグで「アプリ middleware 認証あり」が明示されているか
+
+#### 層 3：アクセスログでの未認証リクエスト検出（発見段階）
+
+[§FR-API-8 §8.1](08-observability.md) のアクセスログを Athena で定期クエリ（後述詳細）：
+
+- API Gateway access log で `$context.identity.userArn` または認証クレームが空のリクエスト
+- ALB access log で session cookie / Authorization ヘッダがないリクエスト
+
+→ **何かが層 1 / 2 をすり抜けても、層 3 で発見できる**。
+
+### §2.8.3 例外申請プロセス
+
+「認証なし」が正当な場合の例外フロー：
+
+| 認証なしを許容するケース | 例外承認 | 監査ログ |
+|---|:---:|:---:|
+| パブリック（オープン）Profile 用ランディングページ | 不要（Profile で明示）| – |
+| ヘルスチェック（外部公開）| 必要 | ✅ 専用 path `/_/healthz` で識別 |
+| 内部社内ツールの暫定無認証 API | 必要 + 期限付き | ✅ 期限超過で自動アラート |
+| レガシー互換性維持の API Key only API | 必要 + 移行期限 | ✅ 期限超過で削除 |
+
+→ **「例外申請なき認証なし」はインシデント扱い**。
+
+### §2.8.4 TBD / 要確認
+
+- Q: Service Catalog テンプレでの **Authorizer 設定強制の IaC validation hook 種別**（cfn-guard / OPA / CDK Aspect）→ `API-B-251` ⭐
+- Q: Config Rule の **自動修復**（Authorizer 未設定 API の自動 disable）を採用するか → `API-D-722` 再掲
+- Q: 認証なし API の **例外申請台帳の保管場所**（Service Catalog / ServiceNow / Confluence）→ `API-D-742` 再掲
 
 ---
 

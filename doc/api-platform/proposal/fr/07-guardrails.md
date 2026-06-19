@@ -107,6 +107,8 @@ flowchart TB
 
 ### §7.2.2 ベースライン（Config Rules）
 
+#### A. リソース構成系
+
 - 必須タグ（§FR-API-4 §4.3 のセット）が欠落していないか
 - API Gateway / ALB に WAF がアタッチされているか
 - Lambda 関数の環境変数が KMS 暗号化されているか
@@ -114,10 +116,34 @@ flowchart TB
 - VPC Flow Logs が有効か
 - CloudWatch Log Group の Retention が設定されているか
 
+#### B. 認証 Authorizer 強制系（Fail-closed 担保）⭐ 新規
+
+[§FR-API-2 §2.8 Fail-closed 原則](02-authn-authz.md) を継続監査する Config Rules：
+
+| Config Rule | 検査内容 | 違反時の挙動 |
+|---|---|---|
+| `api-gw-method-authorizer-required` | API Gateway REST/HTTP API の **全 method に Authorizer 設定済**（NONE 以外）か | 非準拠 → 即時通知 + 例外台帳照合 |
+| `lambda-function-url-auth-type-iam` | Lambda Function URL の `AuthType` が `AWS_IAM`（または `NONE` でも例外台帳に登録済）か | 非準拠 → 即時通知 |
+| `alb-listener-authentication-enforced` | Internet-facing ALB の Listener Rule に **認証統合（OIDC / Cognito）or アプリ middleware 認証タグ**があるか | 非準拠 → 即時通知 |
+| `apigw-rest-api-public-access-blocked` | Private endpoint type 推奨の API が Regional / Edge で公開されていないか（例外台帳照合）| 警告 |
+
+→ 「**認証なし API が漏れた**」事故を Config Rule で自動検知。例外申請台帳と照合し、未登録の認証なし API は即時アラート。
+
+#### C. ネットワーク + 認証 両方必須系（Zero Trust 担保）⭐ 新規
+
+[§NFR-API-4 §4.5 Zero Trust 原則](../nfr/04-security.md) を担保する Config Rules：
+
+| Config Rule | 検査内容 |
+|---|---|
+| `internal-api-iam-auth-required` | 社内 / 社内限定 Profile タグの付いた API Gateway / ALB が **IAM auth または JWT Authorizer を設定済**か |
+| `sg-only-network-not-allowed` | 社内限定 Profile タグの API が **SG だけで認証 Authorizer なし** で構成されていないか（例外台帳照合）|
+
 ### §7.2.3 TBD / 要確認
 
 - Q: SCP / Config Rules の **既定セット**は Landing Zone Accelerator (LZA) を採用するか自前か → `API-D-721`
 - Q: Config Rule の **自動修復**（Systems Manager Automation）採用範囲 → `API-D-722`
+- Q: Authorizer 必須化 Config Rule の **自動修復**（API method を deny に変更）を採用するか → `API-D-723` ⭐
+- Q: 認証なし API 例外台帳と Config Rule の **照合自動化**（ServiceNow / DynamoDB 等のデータソース）→ `API-D-724` ⭐
 
 ---
 

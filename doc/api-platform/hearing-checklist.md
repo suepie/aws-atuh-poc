@@ -106,6 +106,9 @@
 | API-B-246 | 退職者の即時削除要件（SCIM 必須化 vs 次回ログイン無効化で OK）| §FR-API-2 §2.5, §C-API-3 §C-3.4 / §NFR-API-7 | 🟡 | ⏳ |
 | API-B-247 | 認証基盤 roles → アプリ permissions のマッピング規約（標準テンプレ提供か、アプリ判断か）| §FR-API-2 §2.5 | 🟡 | ⏳ |
 | API-B-248 | 初回ログイン時のプロフィール完成 UX 必須化スコープ | §FR-API-2 §2.5 | 🟢 | ⏳ |
+| API-B-249 ⭐ | **社内限定 Profile での SG のみ運用** を例外承認制とするか、原則禁止とするか（Zero Trust）| §FR-API-2 §2.7, §NFR-API-4 §4.5 | 🔥 | ⏳ |
+| API-B-250 | VPC Lattice Auth Policy を社内 Profile のデフォルトとするか | §FR-API-2 §2.7, §FR-API-6 §6.3 | 🟡 | ⏳ |
+| API-B-251 ⭐ | **Authorizer 強制の IaC validation hook 種別**（cfn-guard / OPA / CDK Aspect）| §FR-API-2 §2.8, §C-API-5 §C-5.1 | 🔥 | ⏳ |
 
 ### B-3: 流量制御・課金（§FR-API-3, §FR-API-4）
 
@@ -178,6 +181,8 @@
 | API-C-811 | Log Group Retention の業務カテゴリ別マッピング | §FR-API-8 §8.1 / §NFR-API-7 | 🟡 | ⏳ |
 | API-C-812 | Data Protection Policy の追加カスタムパターン | §FR-API-8 §8.1 / §NFR-API-4 | 🟢 | ⏳ |
 | API-C-813 | 高ボリューム API のサンプリング率 | §FR-API-8 §8.1 / §NFR-API-8 | 🟢 | ⏳ |
+| API-C-814 ⭐ | 認証検証 Athena クエリ（A 未認証通過 / B Authorization なし / C 認証失敗率）の **実行頻度・通知先** | §FR-API-8 §8.1.2 / §FR-API-2 §2.8 | 🔥 | ⏳ |
+| API-C-815 | access log の `profile` / `authMethod` / `tenantId` フィールド **追加可否**（Stage Variables / Mapping Template）| §FR-API-8 §8.1.2 | 🟡 | ⏳ |
 | API-C-821 | 新規プロジェクト ADOT 採用必須化 | §FR-API-8 §8.2 | 🟡 | ⏳ |
 | API-C-822 | 既存 X-Ray SDK プロジェクトの ADOT 移行スケジュール | §FR-API-8 §8.2 / §NFR-API-9 | 🟡 | ⏳ |
 | API-C-823 | サンプリング率の業務別デフォルト | §FR-API-8 §8.2 | 🟢 | ⏳ |
@@ -286,6 +291,8 @@
 | API-D-704 | Route53 Resolver DNS Firewall の既定 Domain List | §FR-API-7 §7.1 | 🟢 | ⏳ |
 | API-D-721 | SCP / Config Rules の既定セット（LZA / 自前） | §FR-API-7 §7.2 | 🔥 | ⏳ |
 | API-D-722 | Config Rule の自動修復採用範囲 | §FR-API-7 §7.2 | 🟡 | ⏳ |
+| API-D-723 ⭐ | Authorizer 必須化 Config Rule の **自動修復**（API method を deny に変更）を採用するか | §FR-API-7 §7.2.2 / §FR-API-2 §2.8 | 🔥 | ⏳ |
+| API-D-724 ⭐ | 認証なし API 例外台帳と Config Rule の **照合自動化**（ServiceNow / DynamoDB 等のデータソース）| §FR-API-7 §7.2.2 / §FR-API-2 §2.8.3 | 🟡 | ⏳ |
 | API-D-741 | 例外申請のリードタイム | §FR-API-7 §7.4 | 🟡 | ⏳ |
 | API-D-742 | 例外台帳の保管場所 | §FR-API-7 §7.4 | 🟢 | ⏳ |
 
@@ -303,6 +310,8 @@
 | API-D-1221 | Bot Control の対象 URI スコープ確定 | §NFR-API-4 §4.3 / §FR-API-7 | 🔥 | ⏳ |
 | API-D-1222 | Shield Advanced 採用範囲確定 | §NFR-API-4 §4.3 | 🟡 | ⏳ |
 | API-D-1241 | 死守事項マトリクスの粒度妥当性 | §NFR-API-4 §4.5 | 🟡 | ⏳ |
+| API-D-1242 ⭐ | **社内 / 社内限定 Profile の「Network のみ」許容例外**の承認プロセス | §NFR-API-4 §4.5, §FR-API-2 §2.7 / §2.8 | 🔥 | ⏳ |
+| API-D-1243 | **ヘルスチェックエンドポイントの認証要否**（path 別 / 専用 path / IP 制限）の標準 | §NFR-API-4 §4.5 | 🟡 | ⏳ |
 
 ### D-6: DR（§NFR-API-5）
 
