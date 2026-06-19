@@ -32,13 +32,24 @@
 
 ### 1.2 各カテゴリの現状認証方式（要ヒアリング埋め）
 
-| カテゴリ | 現状の認証方式 | 共通基盤の関与 | ヒアリング ID |
-|---|---|---|:---:|
-| **Public** | <span style="color:gray">TBD: 共有認証基盤（Keycloak / Cognito）が JWT 発行、各アプリ API GW が JWT 検証</span> | ✅（既定）| `H-CTX-1` |
-| **Partner** | <span style="color:gray">TBD: 現在連携 Partner なし / 既存連携あり（方式：____）</span> | <span style="color:gray">TBD</span> | `H-CTX-2` |
-| **Private** | <span style="color:gray">TBD: AWS IAM SigV4 / VPC Lattice / mTLS / その他</span> | <span style="color:gray">TBD</span> | `H-CTX-3` |
+| カテゴリ | 現状の認証方式 | 認証種別（大分類）| 該当 7 パターン（§2.1）| 共通基盤の関与 | ヒアリング ID |
+|---|---|---|---|---|:---:|
+| **Public** | <span style="color:gray">TBD: 共有認証基盤（Keycloak / Cognito）が JWT 発行、各アプリ API GW が JWT 検証</span> | **OAuth トークン** | P-1 / P-2 / P-3 のいずれか相当 | ✅（既定）| `H-CTX-1` |
+| **Partner** | <span style="color:gray">TBD: 現在連携 Partner なし / 既存連携あり（方式：____）</span> | <span style="color:gray">TBD: OAuth トークン / 証明書 (mTLS) / 共有秘密キー (API Key・HMAC) / AWS IAM / その他</span> | <span style="color:gray">TBD: P-1〜P-7 のうち該当</span> | <span style="color:gray">TBD</span> | `H-CTX-2` |
+| **Private** | <span style="color:gray">TBD: AWS IAM SigV4 / VPC Lattice / mTLS / その他</span> | <span style="color:gray">TBD: AWS IAM / 証明書 (mTLS) / その他</span> | <span style="color:gray">TBD: P-4 (mTLS) / P-7 (AWS IAM) 相当</span> | <span style="color:gray">TBD</span> | `H-CTX-3` |
+
+#### 認証種別（大分類）の定義
+
+| 大分類 | 内容 | 該当 7 パターン |
+|---|---|---|
+| **OAuth トークン** | IdP で credential 認証 → Bearer JWT 取得 → API 呼出に提示 | **P-1**（Client Credentials）/ **P-2**（Token Exchange）/ **P-3**（JWT Bearer）|
+| **証明書 (mTLS)** | クライアント証明書を TLS handshake で検証 | **P-4** mTLS |
+| **共有秘密キー** | 事前共有 secret を提示（静的）または署名計算（動的）| **P-5** API Key / **P-6** HMAC Signature |
+| **AWS IAM 署名** | AWS SDK が SigV4 で各リクエスト署名 | **P-7** AWS IAM Cross-account |
+| **その他** | 上記いずれにも該当しない独自方式 | 個別検討 |
 
 > ✏️ **ヒアリング埋め**：上記の TBD 部分は顧客の現状認証方式 / Partner 数 / Private 連携方式を確認して埋める。
+> 📎 **「大分類」と「7 パターン」の使い分け**：顧客との初期会話では「大分類」（OAuth / 証明書 / キー / IAM）で把握、技術詳細議論は「7 パターン」（P-1〜P-7）で精密化、というレイヤーで使い分ける。
 
 ### 1.3 §1.2「現状認証方式」と §2.1「7 パターン」の関係（Tier 廃止の補足）
 
@@ -90,15 +101,15 @@
 
 #### 7 パターン早見表（Inbound）
 
-| # | パターン | セキュリティ強度 | Partner 側に必要な機能 | 業界実例 | **Keycloak 対応** | **Cognito 対応** |
-|:---:|---|:---:|---|---|:---:|:---:|
-| **P-1** | **OAuth 2.0 Client Credentials Grant** | 中-高 | client_id / client_secret を保管できる | Salesforce, Microsoft Graph, Stripe (モダン版) | ✅ ネイティブ | ✅ Plus tier (2024-11 GA) |
-| **P-2** | **OAuth 2.0 Token Exchange (RFC 8693)** | 高 | 自社 OIDC IdP（Entra ID / Okta / Auth0 等）を保有 | OIDC Federation, Auth0 multi-org, Curity | ✅ ネイティブ（v22+ で v2 GA）| ❌ **未対応** |
-| **P-3** | **OAuth 2.0 JWT Bearer Grant (RFC 7523)** | 高 | 自社 PKI で JWT 署名できる | GitHub Apps, Snowflake | ✅ ネイティブ | ❌ 未対応 |
-| **P-4** | **mTLS（Mutual TLS, RFC 8705）** | 最高 | クライアント証明書発行運用ができる | 金融 / 決済 / FAPI 2.0 / 医療 | ✅ ネイティブ（X.509 Authenticator）| △ Cognito 単体不可、API GW Custom Domain mTLS で別レイヤー実装 |
-| **P-5** | **API Key + Usage Plan** | 低 | 文字列を保管できる | Stripe（一部）, Twilio, SendGrid | – 認証基盤対象外（API GW Usage Plan）| – 認証基盤対象外 |
-| **P-6** | **HMAC Signature（Webhook 受信）** | 中 | shared secret + 署名計算 | Stripe → 決済通知, GitHub → push event | – 認証基盤対象外（Lambda Authorizer 実装）| – 認証基盤対象外 |
-| **P-7** | **AWS IAM Cross-account (SigV4)** | 高 | AWS アカウント保有 + IAM Role 設定 | AWS-to-AWS Partner（VPC Peering / Lattice）| – 認証基盤対象外（AWS IAM）| – 認証基盤対象外 |
+| # | パターン | **大分類**（§1.2 連携）| セキュリティ強度 | Partner 側に必要な機能 | 業界実例 | **Keycloak 対応** | **Cognito 対応** |
+|:---:|---|:---:|:---:|---|---|:---:|:---:|
+| **P-1** | **OAuth 2.0 Client Credentials Grant** | **OAuth トークン** | 中-高 | client_id / client_secret を保管できる | Salesforce, Microsoft Graph, Stripe (モダン版) | ✅ ネイティブ | ✅ Plus tier (2024-11 GA) |
+| **P-2** | **OAuth 2.0 Token Exchange (RFC 8693)** | **OAuth トークン** | 高 | 自社 OIDC IdP（Entra ID / Okta / Auth0 等）を保有 | OIDC Federation, Auth0 multi-org, Curity | ✅ ネイティブ（v22+ で v2 GA）| ❌ **未対応** |
+| **P-3** | **OAuth 2.0 JWT Bearer Grant (RFC 7523)** | **OAuth トークン** | 高 | 自社 PKI で JWT 署名できる | GitHub Apps, Snowflake | ✅ ネイティブ | ❌ 未対応 |
+| **P-4** | **mTLS（Mutual TLS, RFC 8705）** | **証明書 (mTLS)** | 最高 | クライアント証明書発行運用ができる | 金融 / 決済 / FAPI 2.0 / 医療 | ✅ ネイティブ（X.509 Authenticator）| △ Cognito 単体不可、API GW Custom Domain mTLS で別レイヤー実装 |
+| **P-5** | **API Key + Usage Plan** | **共有秘密キー** | 低 | 文字列を保管できる | Stripe（一部）, Twilio, SendGrid | – 認証基盤対象外（API GW Usage Plan）| – 認証基盤対象外 |
+| **P-6** | **HMAC Signature（Webhook 受信）** | **共有秘密キー** | 中 | shared secret + 署名計算 | Stripe → 決済通知, GitHub → push event | – 認証基盤対象外（Lambda Authorizer 実装）| – 認証基盤対象外 |
+| **P-7** | **AWS IAM Cross-account (SigV4)** | **AWS IAM 署名** | 高 | AWS アカウント保有 + IAM Role 設定 | AWS-to-AWS Partner（VPC Peering / Lattice）| – 認証基盤対象外（AWS IAM）| – 認証基盤対象外 |
 
 #### Keycloak / Cognito 対応観点でのプラットフォーム選定示唆
 

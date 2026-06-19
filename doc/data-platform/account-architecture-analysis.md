@@ -369,7 +369,8 @@ flowchart TB
                 SMStudio[Studio]
             end
             subgraph S3Result["Amazon S3"]
-                S3Res[athena-results<br/>派生データ]
+                S3Res["athena-results × WG 別<br/>クエリ結果 + Result Reuse Cache<br/>※派生データは別バケット §4.2.1.14"]
+                S3Derived["central-derived<br/>CTAS 派生データ<br/>(月次集計 / ML 特徴量等)"]
             end
         end
     end
@@ -433,7 +434,8 @@ flowchart TB
     AthenaWG -.認可問合せ.-> LakeFormation
     AthenaWG -.メタデータ参照.-> GlueCatCentral
     AthenaWG -.データ直読.-> App1S3ana
-    AthenaWG -.結果保存.-> S3Res
+    AthenaWG -.クエリ結果保存.-> S3Res
+    AthenaWG -.CTAS 派生データ生成.-> S3Derived
     QSDash -.SQL.-> AthenaWG
     SMStudio -.学習データ取得.-> App1S3ana
 
@@ -670,7 +672,8 @@ Producer アカウント内には ETL パイプラインに必要な以下のコ
 | **QuickSight Reader** | ダッシュボード閲覧のみ可能なユーザー権限 | 業務利用者（経営層・CS・PM 等）が該当 | ライセンス: ユーザーあたり月額（Author より安い）、Author:Reader 比率は **1:10** 想定 |
 | **QuickSight SPICE** | インメモリ計算エンジン | ダッシュボード応答時間を秒オーダーに高速化 | ピーク負荷のあるダッシュボードは SPICE 利用必須 |
 | **SageMaker Studio** | AWS の機械学習プラットフォーム | 解約予兆検知 / 顧客健全性スコア / 業界別利用パターン分析 等の ML 開発 | Phase 2 から本格採用想定。Notebook / Training / Inference / Model Registry |
-| **S3 athena-results** | Athena のクエリ結果保存用 S3 バケット | クエリ結果の中間ファイル保存、再利用・キャッシュにも使用 | ワークグループ単位で別バケット推奨（機密度別分離）|
+| **S3 athena-results × WG 別** | Athena のクエリ結果保存用 S3 バケット（**ワークグループごとに分離**）| **クエリ結果 CSV + Result Reuse Cache のみ**（一時的、7-90 日で削除）| **ワークグループ単位で別バケット必須**（機密度・KMS 鍵・ライフサイクル・コスト按分を分離、詳細は [§4.2.1.14](#42114-athena-results-バケットの中身とワークグループ別分離)）|
+| **S3 central-derived** | CTAS / INSERT INTO で生成する**派生データ**用 S3 バケット | 月次集計・ML 特徴量・横断 KPI 等の長期保存テーブル（12-24 ヶ月）| **athena-results とは別バケット**。CTAS 時に `external_location` で明示指定（[§4.2.1.14 B 節](#42114-athena-results-バケットの中身とワークグループ別分離)）|
 
 ##### 4.2.1.5 IAM Role 体系
 
@@ -1644,6 +1647,222 @@ SPICE Refresh 時:
 | 3 | SPICE Dataset Owner を Service Role 化するか個人 Account か | セキュリティ / 監査要件 |
 | 4 | Phase 2 の SPICE 容量見積もり（テナント数増加 + ML 特徴量）| Capacity プランニング前提 |
 | 5 | 監査担当のダッシュボードは Direct Query で応答時間が許容できるか | SPICE 採否 |
+
+##### 4.2.1.14 「athena-results」バケットの中身とワークグループ別分離
+
+> **質問への回答**:
+> - 「athena-results」に入るのは **クエリ実行結果（CSV）+ メタデータ + Result Reuse Cache** であり、**「派生データ」という表現は不正確**。CTAS 出力等の派生データは別バケットに置くべき
+> - **ワークグループごとにバケット（最低でもプレフィックス）を分離する**のが標準。理由は権限・暗号化・ライフサイクル・コスト按分の 4 軸
+> - §4.2.1.1 図の「派生データ」表記は誤解を招くため、本節で正確な分類を整理し、図を修正
+
+###### A. 「athena-results」に実際に入るもの
+
+Athena は **クエリ実行のたびに S3 に結果を書き出す**。これは設定省略不可（クエリ結果ロケーション必須）。
+
+| 入るもの | 種類 | 用途 | ファイル例 |
+|---|---|---|---|
+| **SELECT クエリ結果** | CSV (UTF-8) | 利用者への表示前の中間保存、ダウンロード元 | `<query-id>.csv` |
+| **クエリメタデータ** | `.metadata` ファイル | スキーマ情報、再利用キャッシュ用のキー | `<query-id>.csv.metadata` |
+| **マニフェストファイル** | `.txt` | CTAS / INSERT 時の出力ファイルリスト | `<query-id>-manifest.csv` |
+| **Result Reuse Cache** | キャッシュ entry | 同一クエリの結果再利用（最大 7 日）| `cache/<query-id>/...` |
+| **Spark notebook 出力**（Phase 3+ Spark 採用時のみ）| Parquet / Notebook 結果 | Spark セッションの中間出力 | `spark/<session-id>/...` |
+
+→ **「派生データ」ではない**。**ほとんどが一時的な実行結果**。CTAS の生成テーブル本体は別途指定の `external_location` に書かれる（後述 B 節）。
+
+###### B. CTAS / INSERT INTO で生成される「派生データ」は別バケット
+
+ETL / 集計で生成する**長期保存テーブル**は、`athena-results` バケットには置かない:
+
+```sql
+-- 例: 月次集計テーブル（派生データ）の作成
+CREATE TABLE central_analytics.monthly_summary
+WITH (
+    format = 'PARQUET',
+    parquet_compression = 'SNAPPY',
+    partitioned_by = ARRAY['tenant_id', 'year_month'],
+    external_location = 's3://central-derived-prd/monthly_summary/'  -- ← 別バケット明示
+) AS
+SELECT ... FROM app1_curated.expenses;
+```
+
+→ **`external_location` に専用バケットを明示**することで、`athena-results` には manifest のみ書かれ、テーブル本体は別バケットに格納される。
+
+###### C. 派生データ・関連 S3 の正しい分類（5 種類）
+
+| # | バケット種別 | 用途 | 例 | ライフサイクル | 担当 |
+|---|---|---|---|---|---|
+| 1 | **Producer raw / curated / analytics** | 業務データの正本（Medallion）| `app1-raw-prd` / `app1-curated-prd` / `app1-analytics-prd` | 長期（curated 13ヶ月 / analytics 36ヶ月）| Producer (役割 2) |
+| 2 | **Central 派生データ** | 横断集計・ML 特徴量・BI 用事前集計テーブル（CTAS 出力）| `central-derived-prd/monthly_summary/` 等 | 中期（12-24 ヶ月）| 中央 BI チーム (役割 4) |
+| 3 | **Central athena-results** | クエリ実行結果 + Result Reuse Cache（一時）| `central-athena-results-prd/wg-*` | 短期（7-30 日）| 中央 BI チーム (役割 4) |
+| 4 | **共通参照データ** | 顧客マスタ等（D-2 中央同居）| `central-common-domain-prd` | 長期 | 共通参照データ管理者 (役割 5) |
+| 5 | **ログ / 監査** | CloudTrail Data Events / LF 監査ログ | 監査アカウント側 | 長期（7 年等）| 監査アカウント |
+
+→ **「派生データ ≠ athena-results」**。本 PoC でも 2 と 3 は明確に別バケット。
+
+###### D. ワークグループごとにバケットを分けるか
+
+**結論: 最低でもプレフィックス分離、機密度が異なるなら別バケット**
+
+| 分離方式 | 概要 | 適する状況 |
+|---|---|---|
+| **方式 1: 1 バケット + WG 別プレフィックス** | `s3://central-athena-results-prd/wg-bi-dashboard/...` 等 | WG 間で機密度・暗号化要件が同じ |
+| **方式 2: WG ごとに別バケット**（推奨）| `s3://central-results-bi-dashboard-prd` 等 | 機密度が異なる、別 KMS 鍵を使う、別ライフサイクル |
+| **方式 3: 用途別 + 重要度別の混合** | 高機密 WG のみ別バケット | コストと管理負荷のバランス |
+
+###### E. ワークグループ別分離が必要な 4 つの理由
+
+| # | 理由 | 詳細 | 分離しないとどうなるか |
+|---|---|---|---|
+| 1 | **暗号化** | WG ごとに異なる KMS CMK を割当て | 監査クエリの結果が一般 KMS 鍵で暗号化される、鍵漏洩時の影響範囲が広い |
+| 2 | **ライフサイクル** | 監査結果は 7 年保管、ダッシュ向けは 7 日削除等、保持期間が異なる | 全結果が監査の長期保管に合わせて巨大化、コスト悪化 |
+| 3 | **IAM 権限** | 利用者ごとに自分の結果のみ参照可、他人の結果は不可視 | 探索クエリの結果（PII 含む可能性）が同僚に見える |
+| 4 | **コスト按分** | バケット単位の Cost Allocation Tag で WG / チーム別コスト把握 | クエリ結果保存コストをチーム別に按分できない |
+
+→ **特に「① 暗号化」「③ 権限」は機密度が異なる WG で必須**。
+
+###### F. 本 PoC でのバケット構成（Phase 1）
+
+中央 BI / Catalog アカウント内に以下のバケットを配置:
+
+```
+中央 BI / Catalog アカウント (Option B + D-2)
+│
+├─ S3: 派生データ（CTAS 出力、長期保存）
+│   └─ central-derived-prd
+│       ├─ monthly_summary/         ← BI 用事前集計
+│       ├─ churn_features/          ← 解約予兆 ML 特徴量
+│       └─ cross_tenant_kpi/        ← 横断 KPI
+│
+├─ S3: Athena クエリ結果（WG 別、短期）
+│   ├─ central-results-bi-dashboard-prd      ← QuickSight Service Principal 専用
+│   │   └─ Lifecycle: 7 日後削除
+│   │
+│   ├─ central-results-bi-exploration-prd    ← BI チーム探索用
+│   │   └─ Lifecycle: 30 日後 IA、90 日後削除
+│   │
+│   ├─ central-results-reader-saved-prd      ← 業務利用者の定形クエリ用
+│   │   └─ Lifecycle: 7 日後削除
+│   │   └─ KMS: 利用者の Role からのみ復号可
+│   │
+│   ├─ central-results-audit-prd             ← 監査担当用
+│   │   └─ Lifecycle: 7 年保管（Object Lock）
+│   │   └─ KMS: 監査専用 CMK
+│   │   └─ アクセスログ強制
+│   │
+│   └─ central-results-app-producer-prd      ← Producer cross-account 用（共有プレフィックス）
+│       └─ Lifecycle: 30 日後削除
+│
+├─ S3: 共通参照データ（D-2 同居）
+│   └─ central-common-domain-prd
+│       ├─ customer_master/         ← 顧客マスタ
+│       └─ org_master/              ← 組織マスタ
+│
+└─ S3: SPICE 取込用一時保管（QuickSight 内部、明示的バケット不要）
+```
+
+→ クエリ結果バケットは **WG ごとに 5 個に分離**。派生データ用が別途 1 個、共通参照データが別途 1 個、合計 **7 バケット**。
+
+###### G. ワークグループ設定との対応（具体例）
+
+各 WG の設定で結果保存先・KMS 鍵を指定:
+
+```bash
+# 例: wg-bi-exploration の設定
+aws athena create-work-group \
+  --name wg-bi-exploration \
+  --configuration '{
+    "ResultConfiguration": {
+      "OutputLocation": "s3://central-results-bi-exploration-prd/queries/",
+      "EncryptionConfiguration": {
+        "EncryptionOption": "SSE_KMS",
+        "KmsKey": "arn:aws:kms:ap-northeast-1:CENTRAL:key/exploration-cmk-id"
+      }
+    },
+    "EnforceWorkGroupConfiguration": true,
+    "BytesScannedCutoffPerQuery": 107374182400,
+    "RequesterPaysEnabled": false,
+    "PublishCloudWatchMetricsEnabled": true
+  }' \
+  --tags 'Key=team,Value=bi' 'Key=purpose,Value=exploration'
+
+# 例: wg-audit の設定（より厳格）
+aws athena create-work-group \
+  --name wg-audit \
+  --configuration '{
+    "ResultConfiguration": {
+      "OutputLocation": "s3://central-results-audit-prd/queries/",
+      "EncryptionConfiguration": {
+        "EncryptionOption": "SSE_KMS",
+        "KmsKey": "arn:aws:kms:ap-northeast-1:CENTRAL:key/audit-cmk-id"
+      }
+    },
+    "EnforceWorkGroupConfiguration": true,
+    "BytesScannedCutoffPerQuery": 107374182400,
+    "PublishCloudWatchMetricsEnabled": true
+  }' \
+  --tags 'Key=team,Value=audit' 'Key=purpose,Value=audit' 'Key=retention,Value=7years'
+```
+
+`EnforceWorkGroupConfiguration: true` で利用者側の上書き不可を強制。
+
+###### H. バケットごとのライフサイクル / 暗号化 / 権限設計
+
+| バケット | ライフサイクル | KMS 鍵 | アクセス可能 Role |
+|---|---|---|---|
+| `central-derived-prd` | 12-24 ヶ月（テーブル別）| 中央共通 CMK | DataAnalystRole（書）/ Producer（読）/ QS Service（読）|
+| `central-results-bi-dashboard-prd` | 7 日削除 | QuickSight Service 専用 CMK | QuickSight Service Principal のみ |
+| `central-results-bi-exploration-prd` | 30 日 IA → 90 日削除 | 中央 BI 用 CMK | DataAnalystRole（自分の結果のみ）|
+| `central-results-reader-saved-prd` | 7 日削除 | Reader 用 CMK | DataReaderRole（自分の結果のみ）|
+| `central-results-audit-prd` | **7 年（Object Lock）** | **監査専用 CMK** | DataAuditorRole のみ、改竄防止 |
+| `central-results-app-producer-prd` | 30 日削除 | Producer 用共通 CMK | Producer の DataStewardRole |
+| `central-common-domain-prd` | 長期 | 中央共通 CMK | CommonReferenceDataManagerRole（書）/ DataAnalystRole（読）|
+
+###### I. 「自分の結果のみ参照可」の IAM 設計
+
+クエリ結果バケットでは、**利用者ごとに自分の結果のみ参照可**を担保する:
+
+```json
+// central-results-bi-exploration-prd のバケットポリシー例
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "DenyAccessToOthersResults",
+      "Effect": "Deny",
+      "Principal": "*",
+      "Action": "s3:GetObject",
+      "Resource": "arn:aws:s3:::central-results-bi-exploration-prd/queries/${aws:username}/*",
+      "Condition": {
+        "StringNotEquals": {
+          "s3:ExistingObjectTag/queryOwner": "${aws:username}"
+        }
+      }
+    }
+  ]
+}
+```
+
+→ Athena が結果に `queryOwner` タグを自動付与する設定と組み合わせる（Athena Workgroup Tagging）。
+
+###### J. 派生データ vs クエリ結果の明確な区別（用語整理）
+
+| 用語 | 意味 | 保管先 | ライフサイクル | 例 |
+|---|---|---|---|---|
+| **派生データ**（Derived Data）| ETL / CTAS で**意図的に作る**長期保存テーブル | `central-derived-prd` 等 | 12-24 ヶ月 | 月次集計 / ML 特徴量 / 横断 KPI |
+| **クエリ結果**（Query Result）| Athena が**実行のたびに自動生成**する一時 CSV | `central-results-*` | 7-90 日 | SELECT 結果 / CTAS の manifest |
+| **キャッシュ**（Result Reuse Cache）| Athena が**性能のため自動保存**する直近結果 | `central-results-*/cache/` | 最大 7 日（Athena 管理）| 同一クエリの再実行高速化 |
+
+→ §4.2.1.1 図の「athena-results 派生データ」表記は不正確。**「クエリ結果 + キャッシュ」**が正しい。派生データは別バケットを明示する。
+
+###### K. 残課題（ヒアリングで確認）
+
+| # | 質問 | 影響 |
+|---|---|---|
+| 1 | クエリ結果の保管期間（業界・コンプラ要件）| バケット別ライフサイクル設計 |
+| 2 | 監査クエリの保管要件（7 年必要か）| `central-results-audit-prd` の Object Lock 設定 |
+| 3 | 利用者間で「自分の結果のみ」の徹底度合い | IAM / バケットポリシー設計 |
+| 4 | クエリ結果からの再エクスポート（ダウンロード）の禁止要件 | DLP 対応 |
+| 5 | Result Reuse Cache の利用可否（PII 含むクエリで再利用される懸念）| WG ごとの Cache 設定 |
 
 #### 4.2.2 ETL 的な処理の配置
 
