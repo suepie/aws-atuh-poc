@@ -85,10 +85,13 @@ flowchart LR
 |---|---|---|
 | §C-6.1 | 認証作業の 2 軸分解（Engine vs Relationship）| 「認証基盤チーム」と「アプリチーム」の責任境界を技術機能と運用関係で再定義 |
 | §C-6.2 | Inbound / Outbound 対称性 | Inbound（外部→当社）と Outbound（当社→外部）で同じ責務分担構造が成立 |
+| §C-6.2.5 | **Inbound 認証パターン詳細（7 パターン × 5 大分類）** ⭐ | **OAuth/証明書/共有秘密キー/AWS IAM の 5 大分類 + P-1〜P-7 の詳細、Keycloak/Cognito 対応、フロー サマリ、Tier 廃止** |
+| §C-6.2.6 | **Outbound 認証パターン詳細（5 大分類）** ⭐ | **SaaS 別 protocol、大分類別フロー サマリ、中央ガバナンス 7 項目** |
 | §C-6.3 | 4 領域 × 担当 最終モデル | Public / Inbound Partner / Outbound SaaS / Private の 4 領域別の責務 |
 | §C-6.4 | Self-Service Developer Portal | アプリチーム自律と認証基盤 Engine の橋渡し UI |
 | §C-6.5 | ガバナンス Two-Track 設計 | 日常自律 + 増分リスク中央承認 のバランス |
 | §C-6.6 | 認証実装漏れの 6 パターン × 5 検知レイヤー | 「アプリに寄せる」の技術的前提となる検知の体系 |
+| §C-6.6.4〜.9 | **5 検知レイヤー詳細実装サンプル + 統合パイプライン** ⭐ | **cfn-guard / Config Rule / Semgrep / Athena / Synthetics の具体ルール・クエリ・コードサンプル、コスト試算** |
 | §C-6.7 | AWS リソース別 検知可能性マトリクス | API GW / Lambda URL / ALB / AppSync / VPC Lattice 等で何が検知できるか |
 | §C-6.8 | ALB / app-code 認証のグレーゾーン | アプリ実装認証の特殊事情と対策 |
 | §C-6.9 | 推奨検知ツールスタック | cfn-guard / Config Rules / Semgrep / Athena / Synthetics 等の組合せ |
@@ -229,6 +232,166 @@ flowchart LR
 
 - Q: Outbound で利用予定の **既存 SaaS リスト** 棚卸し → `API-A-264`（Phase A）
 - Q: Outbound と Inbound の **責務分担明示の合意プロセス**（誰がサインオフするか）→ `API-B-265`
+
+### §C-6.2.5 Inbound 認証パターン詳細（7 パターン × 5 大分類）
+
+**このサブセクションで定めること**：Inbound 認証の 7 パターンとそれを束ねる 5 大分類のフレーム、および Keycloak/Cognito 対応状況。
+**主な判断軸**：顧客との初期会話は「大分類」、技術詳細議論は「7 パターン」のレイヤー使い分け。Tier 表現（Bronze/Silver/Gold）は廃止。
+**§C-6 全体との関係**：§C-6.3 4 領域モデルの「② Inbound Partner Auth」の具体的選択肢。
+
+#### §C-6.2.5.1 7 パターン早見表
+
+| # | パターン | 大分類 | セキュリティ強度 | Keycloak | Cognito |
+|:---:|---|:---:|:---:|:---:|:---:|
+| **P-1** | OAuth 2.0 Client Credentials Grant | OAuth トークン | 中-高 | ✅ ネイティブ | ✅ Plus tier (2024-11 GA) |
+| **P-2** | OAuth 2.0 Token Exchange (RFC 8693) | OAuth トークン | 高 | ✅ ネイティブ（v22+）| ❌ **未対応** |
+| **P-3** | OAuth 2.0 JWT Bearer Grant (RFC 7523) | OAuth トークン | 高 | ✅ ネイティブ | ❌ 未対応 |
+| **P-4** | mTLS (Mutual TLS, RFC 8705) | 証明書 (mTLS) | 最高 | ✅ ネイティブ | △ API GW 別レイヤー |
+| **P-5** | API Key + Usage Plan | 共有秘密キー | 低 | – | – |
+| **P-6** | HMAC Signature（Webhook 受信）| 共有秘密キー | 中 | – | – |
+| **P-7** | AWS IAM Cross-account (SigV4) | AWS IAM 署名 | 高 | – | – |
+
+#### §C-6.2.5.2 5 大分類定義
+
+| 大分類 | 内容 | 該当パターン |
+|---|---|---|
+| **OAuth トークン** | IdP で credential 認証 → Bearer JWT 取得 → API 呼出に提示 | P-1 / P-2 / P-3 |
+| **証明書 (mTLS)** | クライアント証明書を TLS handshake で検証 | P-4 |
+| **共有秘密キー** | 事前共有 secret を提示（静的）または署名計算（動的）| P-5 / P-6 |
+| **AWS IAM 署名** | AWS SDK が SigV4 で各リクエスト署名 | P-7 |
+| **その他** | 上記いずれにも該当しない独自方式 | 個別検討 |
+
+#### §C-6.2.5.3 プラットフォーム選定示唆
+
+| 採用 protocol | 推奨プラットフォーム | 根拠 |
+|---|---|---|
+| P-1 のみ | Cognito Plus tier or Keycloak | どちらでも可、コスト・運用負荷で選定 |
+| **P-2 Token Exchange を採用** | **Keycloak 必須**（Cognito 未対応）| RFC 8693 サポートは Keycloak のみ |
+| **P-3 JWT Bearer Grant を採用** | **Keycloak 必須** | Cognito 未対応 |
+| **P-4 mTLS を採用** | Keycloak が望ましい | Cognito は API GW 別レイヤー必要 |
+| P-5/P-6/P-7 | 認証基盤に依存しない | プラットフォーム選定への影響なし |
+
+→ **Keycloak 採用根拠の中核は P-2 / P-3 / P-4**（[`project_platform_direction_keycloak`](memory) と整合）。
+
+#### §C-6.2.5.4 大分類別フロー（Inbound）
+
+各大分類について「初期設定時のオンボーディング手順」と「実行時の認証フロー」を整理。詳細 mermaid フロー図は **[customer-doc/01-external-api-auth-decision-guide.md §2.1「大分類別フロー」](../../customer-doc/01-external-api-auth-decision-guide.md)** に完備。本標準側ではサマリ表を掲載。
+
+##### Inbound 大分類別 認証時フロー サマリ
+
+| 大分類 | Step 1 | Step 2 | Step 3 | API GW 側設定 |
+|---|---|---|---|---|
+| OAuth トークン | IdP /oauth2/token で credential 認証 | Bearer JWT 取得 + Cache | API GW へ Bearer 提示 → JWT Authorizer 検証 | **JWT Authorizer** |
+| 証明書 (mTLS) | TLS Handshake で Client Cert 提示 | Truststore で chain 検証 + CRL/OCSP | cert binding を context に注入 → Lambda へ | **mTLS Custom Domain** |
+| 共有秘密キー (API Key) | x-api-key ヘッダで送信 | API GW Usage Plan で throttle/quota 検証 | リクエスト転送 | **API Key Required + Usage Plan** |
+| 共有秘密キー (HMAC) | POST + X-Signature + X-Timestamp + body | Lambda Authorizer で HMAC + Timestamp + Idempotency 検証 | リクエスト転送 | **Lambda Authorizer** |
+| AWS IAM 署名 | Partner: STS AssumeRole + SigV4 署名 | API GW: AWS IAM が SigV4 検証 + Policy 評価 | リクエスト転送 | **AuthorizationType=AWS_IAM** |
+
+##### Inbound 大分類別 初期設定時フロー サマリ
+
+| 大分類 | 主要工程 |
+|---|---|
+| OAuth トークン | ① 契約 → ② Self-Service Portal で M2M Client 作成 → ③ client_id/secret 発行 → ④ Partner へ secret 安全配布 → ⑤ Partner Secrets 保管 |
+| 証明書 (mTLS) | ① 契約 → ② Partner CSR 生成 → ③ 自社 CA 署名 → ④ Cert 配布 → ⑤ Truststore に Partner CA 登録 → ⑥ mTLS Listener 設定 |
+| 共有秘密キー (API Key) | ① 契約 → ② Usage Plan 作成 → ③ API Key 発行 → ④ Plan に紐付け → ⑤ Partner へ Key 配布 |
+| 共有秘密キー (HMAC) | ① SaaS Console で Webhook 設定 → ② Secret 発行 → ③ Secrets Manager 保管 → ④ Lambda Authorizer 設定 |
+| AWS IAM 署名 | ① 契約 + Partner account ID 取得 → ② Cross-account Role 作成 → ③ Trust Policy 設定 → ④ Role ARN 共有 → ⑤ Partner 側 AssumeRole 権限設定 |
+
+#### §C-6.2.5.5 Tier 表現の廃止
+
+旧設計で使用していた Bronze / Silver / Gold tier 表現は **本標準では廃止**：
+
+| 旧 Tier | 新 P-x 表現 | 廃止根拠 |
+|---|---|---|
+| Bronze | P-1 OAuth Client Credentials または P-5 API Key | 「Bronze って何？」が解消、具体 protocol で議論 |
+| Silver | P-2 Token Exchange | RFC 8693 という具体仕様 |
+| Gold | P-4 mTLS + P-1/P-2 併用 | mTLS + OAuth の組合せ明示可 |
+| 該当なし | P-3 / P-6 / P-7 | Tier フレームが網羅できなかった protocol を追加 |
+
+→ **本標準以降は「P-1〜P-7 のどれか」で議論**、Tier 表現は使わない。
+
+#### §C-6.2.5.6 TBD / 要確認
+
+- Q: P-2 Token Exchange の **採用想定**有無（Keycloak 採用必須性と直結）→ `API-A-2651`（Phase A）
+- Q: P-4 mTLS の **採用想定**有無（規制業界連携）→ `API-A-2652`（Phase A）
+- Q: P-3 JWT Bearer Grant の採用想定有無 → `API-B-2653`
+- Q: P-6 HMAC Webhook 受信の想定（Stripe / GitHub / Auth0 等）→ `API-A-2654`（Phase A）
+- Q: P-7 AWS IAM Cross-account の採用想定（AWS Marketplace 連携等）→ `API-B-2655`
+
+### §C-6.2.6 Outbound 認証パターン詳細（5 大分類）
+
+**このサブセクションで定めること**：Outbound 認証は外部 SaaS が protocol を決めるため、自由な設計判断ではなく「SaaS の規定に従ったクライアント実装 + Secrets Manager 保管」の運用設計。
+**主な判断軸**：自社で Engine を持たない、credential の安全保管 + ローテーション運用が中核。
+**§C-6 全体との関係**：§C-6.3 4 領域モデルの「③ Outbound SaaS Auth」の具体実装パターン。
+
+#### §C-6.2.6.1 Outbound の特性
+
+| 観点 | Inbound（§C-6.2.5）| Outbound（本セクション）|
+|---|---|---|
+| **誰がプロトコルを決めるか** | 自社が決める（Partner に従わせる）| **外部 SaaS が決める**（自社は従う）|
+| **設計判断** | Active な選択（7 パターンからの選定）| Passive な対応（SaaS の規定実装）|
+| **Engine 所在** | 自社認証基盤（Keycloak Partner Realm 等）| **外部 SaaS** |
+| **自社の責務** | Engine 運用 + Realm 管理 + Authorizer | **client 実装 + credential 安全保管 + ローテ運用** |
+
+#### §C-6.2.6.2 代表 SaaS 別 Outbound 認証
+
+| SaaS | 要求 protocol | 大分類 | 自社の実装 |
+|---|---|:---:|---|
+| **Stripe** | API Key | 共有秘密キー | Authorization: Bearer <key> |
+| **SendGrid** | API Key | 共有秘密キー | Authorization: Bearer <key> |
+| **OpenAI** | API Key | 共有秘密キー | Authorization: Bearer <key> |
+| **Slack** | OAuth Auth Code | OAuth トークン | OAuth Flow + Token Refresh |
+| **GitHub PAT** | API Key 相当 | 共有秘密キー | Header 送信 |
+| **GitHub App** | JWT Bearer + Installation Token | OAuth トークン | JWT 署名 + Token 取得 |
+| **Microsoft Graph** | OAuth Client Credentials | OAuth トークン | P-1 と同等の Outbound 版 |
+| **AWS Services** | AWS SDK SigV4 | AWS IAM 署名 | SDK 自動署名 |
+| **金融機関 API（一部）** | mTLS | 証明書 (mTLS) | mTLS Client 実装 |
+
+→ **Outbound 主流は「API Key」**（業界の SaaS 主流が API Key のため）。
+
+#### §C-6.2.6.3 大分類別フロー サマリ（Outbound）
+
+##### Outbound 大分類別 認証時フロー サマリ
+
+| 大分類 | Step 1 | Step 2 | Step 3 |
+|---|---|---|---|
+| OAuth トークン | Secrets Manager から secret 取得 | SaaS /token で Bearer 取得（Cache 活用）| SaaS API へ Bearer で呼出 |
+| 証明書 (mTLS) | Secrets Manager から cert + 秘密鍵 取得 | mTLS Handshake で SaaS へ接続 | HTTPS リクエスト送信 |
+| 共有秘密キー (API Key) | Secrets Manager から API Key 取得 | Authorization: Bearer or x-api-key ヘッダ | SaaS API 呼出 |
+| 共有秘密キー (HMAC) | Secrets Manager から shared secret 取得 | payload + HMAC 計算 + Timestamp | Partner endpoint へ POST |
+| AWS IAM 署名 | STS AssumeRole で一時 credential 取得 | AWS SDK で SigV4 署名 | Partner AWS Service へリクエスト |
+
+##### Outbound 大分類別 初期設定時フロー サマリ
+
+| 大分類 | 主要工程 |
+|---|---|
+| OAuth トークン | ① SaaS Console で Application 登録 → ② client_id/secret 受領 → ③ Secrets Manager 保管 → ④ Lambda IAM Role に Secret 取得権限 |
+| 証明書 (mTLS) | ① 契約 → ② CSR 生成 → ③ 自社 or SaaS 指定 CA で署名 → ④ Cert + 秘密鍵 を Secrets Manager 保管 → ⑤ SaaS に公開鍵 登録 |
+| 共有秘密キー (API Key) | ① SaaS 申込 → ② Console で API Key 発行 → ③ Secrets Manager 保管 → ④ Lambda IAM 権限付与 → ⑤ 自動ローテ設定 |
+| 共有秘密キー (HMAC) | ① Partner と Webhook 連携契約 → ② 自社で shared secret 生成 → ③ Partner へ暗号化配布 → ④ Secrets Manager 保管 |
+| AWS IAM 署名 | ① Partner と契約 → ② AWS account ID 共有 → ③ Partner 側で Cross-account Role 作成（Trust Policy: 自社）→ ④ 自社 Lambda Execution Role に AssumeRole 権限 |
+
+→ 詳細 mermaid フロー図は **[customer-doc/01-external-api-auth-decision-guide.md §2.1「Outbound 大分類別フロー」](../../customer-doc/01-external-api-auth-decision-guide.md)** に完備。
+
+#### §C-6.2.6.4 Outbound のガバナンス（中央管理項目）
+
+「Outbound は各アプリ自律」原則のもと、中央が担保すべきガバナンス：
+
+| 項目 | 中央の責務 | 仕組み |
+|---|---|---|
+| **Approved SaaS Allowlist** | 接続可能 SaaS を Security/Legal レビュー後にカタログ化 | Service Catalog テンプレ + Config Rule 強制 |
+| **Secrets Manager 必須化** | 環境変数 / コード埋め込みを禁止 | Config Rule `secretsmanager-secret-stored` |
+| **自動ローテーション** | 90/180/365 日周期で自動ローテ強制 | Config Rule `secretsmanager-rotation-enabled` |
+| **CMK 暗号化** | KMS カスタマーマネージドキー必須 | Service Catalog で `KmsKeyId` 必須化 |
+| **DPA / 法務確認** | APPI 28 条越境移転 / GDPR 28 条 Data Processor 契約 | 法務台帳 + タグ紐付け + 年次棚卸し |
+| **Egress filtering** | 接続先 SaaS の allowlist | VPC Endpoint + Network Firewall |
+| **コスト按分** | 外部 SaaS との通信量・課金 monitor | FinOps タグ + Cost Explorer |
+
+#### §C-6.2.6.5 TBD / 要確認
+
+- Q: 既存利用 SaaS の **棚卸しリスト**作成 → `API-A-266`（Phase A、§C-6.2.4 と統合）
+- Q: Approved SaaS Allowlist の **決裁プロセス**（誰が承認 / 棚卸し頻度）→ `API-B-2661`
+- Q: Outbound credential の **自動ローテ採用範囲**（全 SaaS / 重要 SaaS のみ）→ `API-C-2662`
 
 ---
 
@@ -480,7 +643,726 @@ sequenceDiagram
 
 → **L1+L2 だけだと P2 / P3 / P5 / P6 が漏れる**。L3 + L5 併用で多くを担保。
 
-### §C-6.6.4 担保率の率直評価
+### §C-6.6.4 L1: IaC Pre-Deploy 詳細
+
+**主要ツール**：
+
+| ツール | 種別 | コスト | AWS 対応 |
+|---|---|:---:|:---:|
+| **AWS CloudFormation Guard (cfn-guard)** | OSS / AWS 公式 | 無料 | ✅ CFN ネイティブ |
+| **cdk-nag** | OSS / CDK 用 Aspect | 無料 | ✅ CDK ネイティブ |
+| **Checkov** | OSS / マルチ IaC | 無料 | ✅ CFN / TF / K8s |
+| **OPA Conftest** | OSS / 言語非依存 | 無料 | ✅ |
+
+**設置場所**：
+
+```
+[Developer Local] → pre-commit hook (cfn-guard / cdk-nag)
+        ↓
+[GitHub Actions / GitLab CI] → cfn-guard validate / cdk synth + cdk-nag
+        ↓ Pass
+[Service Catalog Provisioning] → 強制テンプレ
+```
+
+**cfn-guard ルールサンプル**：
+
+```hcl
+# api-gw-authorizer-required.guard
+
+let api_gw_methods = Resources.*[ Type == 'AWS::ApiGateway::Method' ]
+
+rule api_gw_must_have_authorizer when %api_gw_methods !empty {
+    %api_gw_methods.Properties {
+        AuthorizationType != "NONE"
+        <<API GW Method must have non-NONE AuthorizationType>>
+    }
+}
+
+let lambda_urls = Resources.*[ Type == 'AWS::Lambda::Url' ]
+
+rule lambda_url_must_have_iam_auth when %lambda_urls !empty {
+    %lambda_urls.Properties {
+        AuthType == "AWS_IAM"
+        <<Lambda Function URL must use AWS_IAM auth, not NONE>>
+    }
+}
+
+let alb_listeners = Resources.*[ Type == 'AWS::ElasticLoadBalancingV2::Listener' ]
+
+rule alb_must_have_auth_action when %alb_listeners !empty {
+    %alb_listeners.Properties.DefaultActions[*] {
+        Type IN ["authenticate-oidc", "authenticate-cognito"]
+        <<ALB Listener must have authenticate-oidc or authenticate-cognito action>>
+    }
+}
+```
+
+**cdk-nag サンプル**：
+
+```typescript
+import { AwsSolutionsChecks } from 'cdk-nag';
+import { App, Aspects } from 'aws-cdk-lib';
+
+const app = new App();
+const stack = new MyApiStack(app, 'MyApiStack');
+
+Aspects.of(stack).add(new AwsSolutionsChecks({ verbose: true }));
+// cdk-nag は以下を自動検出:
+//  - APIG4: API GW Method の Authorization 設定
+//  - LMB5: Lambda Function URL の AuthType=NONE
+//  - ELB7: ALB の Access logging
+```
+
+**CI 統合（GitHub Actions）**：
+
+```yaml
+# .github/workflows/iac-validate.yml
+- name: cfn-guard validate
+  run: cfn-guard validate -r rules/auth-required.guard -d cloudformation/
+- name: Block PR on violation
+  if: failure()
+  run: exit 1
+```
+
+**検知可能漏れパターン**：
+
+| パターン | 検知可能性 |
+|---|:---:|
+| P1 AuthorizationType=NONE | ✅ 確実 |
+| P2 Authorizer 無効化（コード）| ❌ 不可 |
+| P3 アプリ 2 段検証なし | ❌ 不可 |
+| P4 path bypass | ⚠ Method 単位なら部分 |
+| P5 JWT 検証バグ | ❌ 不可 |
+| P6 ALB 認証 action なし | ✅ alb_must_have_auth_action で |
+
+**運用注意**：
+
+- **False positive 対策**：`/health` 等の例外は guard 注釈で個別承認
+- **段階導入**：既存 stack は warn、新規は error
+- **共通リポ配布**：rules/ を別リポで集中管理、各アプリは consumer
+- **コスト**：OSS、CI 計算時間のみ（無視できるレベル）
+
+### §C-6.6.5 L2: Config Rules（Deploy 後・継続監査）詳細
+
+**主要ツール**：
+
+| ツール | 種別 |
+|---|---|
+| **AWS Config Managed Rules** | AWS 公式（80+ rule）|
+| **AWS Config Custom Rules** | Lambda で自前判定 |
+| **Config Aggregator** | Org 全 account 集約 |
+| **Auto-remediation (SSM)** | 違反時の自動修復 |
+
+**設置場所**：
+
+```
+[Resource 作成 / 変更]
+        ↓ CloudTrail event
+[AWS Config] → ルール評価
+        ↓ NON_COMPLIANT
+[EventBridge] → Lambda → Slack / Jira
+        ↓ (オプション)
+[SSM Run Document] → 自動修復
+```
+
+**マネージドルール一覧（認証関連）**：
+
+| ルール名 | 検知内容 |
+|---|---|
+| `api-gw-method-authorizer-required` | API GW Method の AuthorizationType≠NONE |
+| `api-gwv2-authorization-type-configured` | HTTP API の Authorizer 設定 |
+| `lambda-function-url-auth` | Lambda Function URL の AuthType=AWS_IAM |
+| `appsync-authorization-check` | AppSync の AuthenticationType 設定 |
+| `alb-http-to-https-redirection-check` | HTTPS リダイレクト強制 |
+| `api-gw-execution-logging-enabled` | API GW の execution log 有効化 |
+
+**Custom Rule サンプル（ALB 認証 action）**：
+
+```python
+# config-rule-alb-auth-action.py
+import boto3
+import json
+
+def lambda_handler(event, context):
+    invoking_event = json.loads(event['invokingEvent'])
+    config_item = invoking_event['configurationItem']
+    compliance = 'NOT_APPLICABLE'
+
+    if config_item['resourceType'] == 'AWS::ElasticLoadBalancingV2::Listener':
+        config = config_item.get('configuration', {})
+        default_actions = config.get('defaultActions', [])
+
+        has_auth = any(
+            action.get('type') in ['authenticate-oidc', 'authenticate-cognito']
+            for action in default_actions
+        )
+
+        compliance = 'COMPLIANT' if has_auth else 'NON_COMPLIANT'
+
+    config_client = boto3.client('config')
+    config_client.put_evaluations(
+        Evaluations=[{
+            'ComplianceResourceType': config_item['resourceType'],
+            'ComplianceResourceId': config_item['resourceId'],
+            'ComplianceType': compliance,
+            'OrderingTimestamp': config_item['configurationItemCaptureTime'],
+        }],
+        ResultToken=event['resultToken']
+    )
+```
+
+**自動修復例（SSM Automation）**：
+
+```yaml
+schemaVersion: '0.3'
+description: 'Auto-disable API GW Method with AuthorizationType=NONE'
+parameters:
+  RestApiId: { type: String }
+  ResourceId: { type: String }
+  HttpMethod: { type: String }
+mainSteps:
+  - name: DisableMethod
+    action: aws:executeAwsApi
+    inputs:
+      Service: apigateway
+      Api: UpdateMethod
+      restApiId: '{{ RestApiId }}'
+      resourceId: '{{ ResourceId }}'
+      httpMethod: '{{ HttpMethod }}'
+      patchOperations:
+        - op: replace
+          path: /authorizationType
+          value: 'AWS_IAM'
+```
+
+**検知可能漏れパターン**：
+
+| パターン | 検知可能性 |
+|---|:---:|
+| P1 AuthorizationType=NONE | ✅ 確実 |
+| P2 Authorizer 無効化 | ❌ Config は設定のみ |
+| P3 アプリ 2 段検証なし | ❌ 不可 |
+| P4 path bypass | ⚠ Method 単位なら |
+| P5 JWT 検証バグ | ❌ 不可 |
+| P6 ALB 認証 action なし | ✅ Custom Rule で |
+
+**運用注意**：
+
+- **コスト**：$0.001 / evaluation、Org 全体で月 $50-200
+- **遅延**：drift 発生から検知まで数分〜数十分
+- **Auto-remediation の慎重採用**：production trafic 中断リスクあり、まず通知から
+- **Aggregator 設定**：Org 全 account を 1 つに集約、ダッシュボード化
+- **例外管理**：承認済例外 API を別タグで識別、Rule から除外
+
+### §C-6.6.6 L3: Static Code（コード AST 解析）詳細
+
+**主要ツール**：
+
+| ツール | 種別 | 特徴 |
+|---|---|---|
+| **Semgrep** | OSS / 多言語 | YAML でルール記述、CI 統合容易 |
+| **ast-grep** | OSS / 多言語 | TreeSitter ベース、高速 |
+| **CodeQL** | GitHub Advanced Security | 強力だが学習曲線、SaaS 課金 |
+| **Snyk Code** | 商用 | 既知脆弱パターン中心 |
+
+**設置場所**：
+
+```
+[Developer Local] → pre-commit hook (semgrep --config auto)
+        ↓
+[CI Pipeline] → semgrep ci
+        ↓ Pass
+[Deploy]
+```
+
+**Semgrep ルール: FastAPI 認証 middleware 必須**：
+
+```yaml
+rules:
+  - id: fastapi-missing-auth-middleware
+    pattern: |
+      $APP = FastAPI(...)
+    pattern-not-inside: |
+      $APP = FastAPI(...)
+      ...
+      $APP.add_middleware($MIDDLEWARE, ...)
+    message: "FastAPI app is missing auth middleware. Use app.add_middleware(AuthMiddleware, ...)"
+    languages: [python]
+    severity: ERROR
+    metadata:
+      cwe: CWE-306
+      category: security
+```
+
+**Semgrep ルール: Spring Boot @PreAuthorize 必須**：
+
+```yaml
+rules:
+  - id: spring-controller-missing-preauthorize
+    patterns:
+      - pattern-either:
+        - pattern: |
+            @RestController
+            class $CLS {
+              ...
+              @GetMapping(...)
+              public $RT $METHOD(...) { ... }
+            }
+        - pattern: |
+            @RestController
+            class $CLS {
+              ...
+              @PostMapping(...)
+              public $RT $METHOD(...) { ... }
+            }
+      - pattern-not-inside: |
+          @PreAuthorize(...)
+          public $RT $METHOD(...) { ... }
+      - pattern-not-inside: |
+          @Secured(...)
+          public $RT $METHOD(...) { ... }
+    message: "Controller method missing @PreAuthorize or @Secured"
+    languages: [java]
+    severity: WARNING
+```
+
+**Semgrep ルール: JWT 検証バグ検出（P-5 漏れ対策）**：
+
+```yaml
+rules:
+  - id: jwt-decode-without-verify
+    pattern-either:
+      - pattern: jwt.decode($TOKEN, ..., verify=False, ...)
+      - pattern: jwt.decode($TOKEN, ..., algorithms=["none"], ...)
+      - patterns:
+        - pattern: jwt.decode($TOKEN, ...)
+        - pattern-not: jwt.decode($TOKEN, ..., key=$K, ...)
+        - pattern-not: jwt.decode($TOKEN, $K, ...)
+    message: "JWT decoded without proper signature verification (P-5)"
+    languages: [python]
+    severity: ERROR
+```
+
+**Semgrep ルール: tenant 越境チェック検出**：
+
+```yaml
+rules:
+  - id: missing-tenant-validation
+    patterns:
+      - pattern: |
+          def handler(event, context):
+            ...
+            tenant_id = event['pathParameters'].get('tenant_id')
+            ...
+      - pattern-not-inside: |
+          def handler(event, context):
+            ...
+            jwt_tenant = event['requestContext']['authorizer']['tenant_id']
+            ...
+            if $REQ_TENANT != $JWT_TENANT:
+              ...
+    message: "Handler uses tenant_id from path but doesn't validate against JWT claim (P-3)"
+    languages: [python]
+    severity: ERROR
+```
+
+**Semgrep ルール: Express.js 認証ミドルウェア欠落**：
+
+```yaml
+rules:
+  - id: express-route-missing-auth
+    pattern-either:
+      - pattern: |
+          $APP.get('/api/$PATH', $HANDLER)
+      - pattern: |
+          $APP.post('/api/$PATH', $HANDLER)
+    pattern-not:
+      - pattern: |
+          $APP.get('/api/$PATH', authMiddleware, $HANDLER)
+      - pattern: |
+          $APP.post('/api/$PATH', authMiddleware, $HANDLER)
+    message: "Express route under /api/ missing authMiddleware"
+    languages: [javascript, typescript]
+    severity: ERROR
+```
+
+**検知可能漏れパターン**：
+
+| パターン | 検知可能性 |
+|---|:---:|
+| P1 AuthorizationType=NONE | – |
+| P2 Authorizer 無効化（コード）| ⚠ パターン依存 |
+| P3 アプリ 2 段検証なし | ✅ tenant validation ルールで |
+| P4 path bypass | ⚠ ハンドラ列挙ルールで部分 |
+| P5 JWT 検証バグ | ✅ 確実 |
+| P6 ALB + コード素通り | ✅ 認証 middleware ルールで |
+
+**運用注意**：
+
+- **言語別整備の負荷**：Python / Node / Go / Java で別ルールセット必要
+- **False positive 多発リスク**：段階導入で warn → error
+- **公開レジストリ活用**：`p/owasp-top-ten` / `p/security-audit` プリセット
+- **CI 統合**：`returntocorp/semgrep-action` で簡単
+- **コスト**：OSS 無料、Pro 版は $20-40 / dev / 月
+
+### §C-6.6.7 L4: Runtime Log（実トラフィック分析）詳細
+
+**主要ツール**：
+
+| ツール | 種別 | 用途 |
+|---|---|---|
+| **Athena on CloudTrail** | AWS マネージド | API 呼出履歴の長期分析 |
+| **Athena on API GW access log** | AWS マネージド | 認証ヘッダ・status の分析 |
+| **CloudWatch Logs Insights** | リアルタイム検索 | 直近のクエリ |
+| **QuickSight ダッシュボード** | BI | 経営報告 |
+
+**設置場所**：
+
+```
+[実トラフィック] → CloudTrail / API GW access log → S3
+        ↓
+[Athena scheduled query] → 違反検出
+        ↓
+[EventBridge / SNS] → Slack / Jira
+        ↓ (定期)
+[QuickSight] → ダッシュボード
+```
+
+**Athena クエリ Q1: 未認証通過の検出**：
+
+```sql
+SELECT
+  request_id,
+  request_time,
+  http_method,
+  resource_path,
+  ip_address,
+  status,
+  authorization_header_present,
+  api_key_id
+FROM apigw_access_logs
+WHERE date_added >= current_date - INTERVAL '1' DAY
+  AND resource_path LIKE '/api/%'
+  AND (authorization_header_present = false OR authorization_header_present IS NULL)
+  AND api_key_id IS NULL
+  AND status BETWEEN 200 AND 299
+ORDER BY request_time DESC
+LIMIT 100;
+```
+
+**Athena クエリ Q2: 認証成功率の異常監視**：
+
+```sql
+SELECT
+  date_trunc('hour', request_time) AS hour,
+  api_id,
+  resource_path,
+  COUNT(*) AS total_requests,
+  COUNT(CASE WHEN status IN (401, 403) THEN 1 END) AS auth_failures,
+  ROUND(
+    CAST(COUNT(CASE WHEN status IN (401, 403) THEN 1 END) AS DOUBLE)
+    / COUNT(*) * 100, 2
+  ) AS failure_rate_pct
+FROM apigw_access_logs
+WHERE request_time >= current_timestamp - INTERVAL '24' HOUR
+GROUP BY 1, 2, 3
+HAVING COUNT(*) > 100
+   AND CAST(COUNT(CASE WHEN status IN (401, 403) THEN 1 END) AS DOUBLE) / COUNT(*) > 0.1
+ORDER BY failure_rate_pct DESC;
+```
+
+**Athena クエリ Q3: tenant 越境疑い検出**：
+
+```sql
+SELECT
+  request_id,
+  request_time,
+  jwt_tenant_id,
+  requested_tenant_id,
+  client_id,
+  status,
+  ip_address
+FROM apigw_access_logs
+WHERE date_added >= current_date - INTERVAL '7' DAY
+  AND jwt_tenant_id IS NOT NULL
+  AND requested_tenant_id IS NOT NULL
+  AND jwt_tenant_id != requested_tenant_id
+  AND status = 200
+ORDER BY request_time DESC;
+```
+
+**Athena クエリ Q4: 同一 token の cross-IP 利用検出（漏洩疑い）**：
+
+```sql
+SELECT
+  client_id,
+  COUNT(DISTINCT ip_address) AS distinct_ips,
+  array_agg(DISTINCT ip_address) AS ip_list,
+  MIN(request_time) AS first_seen,
+  MAX(request_time) AS last_seen
+FROM apigw_access_logs
+WHERE request_time >= current_timestamp - INTERVAL '24' HOUR
+  AND client_id IS NOT NULL
+GROUP BY client_id
+HAVING COUNT(DISTINCT ip_address) > 5
+ORDER BY distinct_ips DESC;
+```
+
+**必須メタデータフィールド（access log）**：
+
+```json
+{
+  "requestId": "$context.requestId",
+  "userArn": "$context.identity.userArn",
+  "apiKeyId": "$context.identity.apiKeyId",
+  "client_id": "$context.authorizer.client_id",
+  "tenant_id": "$context.authorizer.tenant_id",
+  "scope": "$context.authorizer.scope",
+  "profile": "partner-silver",
+  "authMethod": "P-2 Token Exchange"
+}
+```
+
+**検知可能漏れパターン**：
+
+| パターン | 検知可能性 |
+|---|:---:|
+| P1 AuthorizationType=NONE | ✅ Q1 で |
+| P2 Authorizer 無効化 | ✅ Q2 で（401 が 0 件 = 異常）|
+| P3 tenant 越境 | ✅ Q3 で |
+| P4 path bypass | ✅ path 別集計 |
+| P5 JWT 検証バグ | ⚠ 異常 token 来訪時のみ |
+| P6 ALB | ⚠ 観測のみでは不足 |
+
+**運用注意**：
+
+- **コスト**：Athena $5/TB scan、Partition により絞込必要（date / api_id）
+- **スケジュール実行**：AWS Step Functions or EventBridge Scheduler で日次/時次
+- **アラート閾値調整**：false positive を減らすため初期は warning のみ
+- **長期保存**：90 日 → S3 Glacier、コスト最適化
+- **PII マスキング**：CloudWatch Logs Data Protection Policy で IP / email マスク
+
+### §C-6.6.8 L5: Behavioral（能動探査）詳細
+
+**主要ツール**：
+
+| ツール | 種別 | 用途 |
+|---|---|---|
+| **CloudWatch Synthetics canary** | AWS マネージド | 定期合成監視、軽量 |
+| **OWASP ZAP** | OSS | 深掘り pen test |
+| **Burp Suite Enterprise** | 商用 | 高度 pen test |
+| **Postman / Newman scheduled** | 開発者親和性高 | 定期 API テスト |
+
+**設置場所**：
+
+```
+[CloudWatch Synthetics] → 5min interval → 各 endpoint へ probe
+        ↓ failure
+[EventBridge] → SNS → Slack / PagerDuty
+        ↓ 月次
+[OWASP ZAP automation] → 深掘り → レポート
+```
+
+**Synthetics canary サンプル（Node.js）**：
+
+```javascript
+// synthetics-canary-auth-check.js
+const synthetics = require('Synthetics');
+const log = require('SyntheticsLogger');
+
+const protectedEndpoints = [
+  { url: 'https://api.example.com/api/users', expected: [401, 403] },
+  { url: 'https://api.example.com/api/orders', expected: [401, 403] },
+  { url: 'https://api.example.com/api/admin', expected: [401, 403] },
+];
+
+const authCheckCanary = async function () {
+  const failures = [];
+
+  for (const endpoint of protectedEndpoints) {
+    // Probe 1: 認証ヘッダなし → 401/403 期待
+    const noAuthRes = await makeRequest(endpoint.url, {});
+    if (!endpoint.expected.includes(noAuthRes.statusCode)) {
+      failures.push({
+        endpoint: endpoint.url,
+        probe: 'no-auth',
+        expected: endpoint.expected,
+        actual: noAuthRes.statusCode,
+        severity: 'CRITICAL'
+      });
+    }
+
+    // Probe 2: 無効トークン → 401 期待
+    const invalidTokenRes = await makeRequest(endpoint.url, {
+      'Authorization': 'Bearer eyJhbGciOiJub25lIn0.eyJzdWIiOiJoYWNrZXIifQ.'
+    });
+    if (invalidTokenRes.statusCode !== 401) {
+      failures.push({
+        endpoint: endpoint.url,
+        probe: 'invalid-token',
+        expected: 401,
+        actual: invalidTokenRes.statusCode,
+        severity: 'CRITICAL'
+      });
+    }
+
+    // Probe 3: alg=none token → 401 期待（P-5 検証バグ検出）
+    const noneAlgRes = await makeRequest(endpoint.url, {
+      'Authorization': 'Bearer ' + craftNoneAlgToken()
+    });
+    if (noneAlgRes.statusCode !== 401) {
+      failures.push({
+        endpoint: endpoint.url,
+        probe: 'none-alg-token',
+        expected: 401,
+        actual: noneAlgRes.statusCode,
+        severity: 'CRITICAL - JWT verification bug suspected'
+      });
+    }
+  }
+
+  if (failures.length > 0) {
+    log.error('Auth check failures:', JSON.stringify(failures, null, 2));
+    throw new Error(`${failures.length} authentication checks failed`);
+  }
+  log.info('All authentication checks passed');
+};
+
+exports.handler = async () => {
+  return await synthetics.executeStep('authCheck', authCheckCanary);
+};
+```
+
+**tenant 越境 probe サンプル**：
+
+```javascript
+async function tenantIsolationProbe() {
+  const tenantATokenVar = await synthetics.getSecret('test-tenant-a-token');
+  const tenantBResource = '/api/tenants/tenant-b/orders';
+
+  const res = await makeRequest(
+    `https://api.example.com${tenantBResource}`,
+    { 'Authorization': `Bearer ${tenantATokenVar}` }
+  );
+
+  if (res.statusCode === 200) {
+    log.error('TENANT BOUNDARY VIOLATION: Tenant A token accessed Tenant B');
+    throw new Error('Cross-tenant access allowed - critical violation');
+  }
+  if (res.statusCode !== 403) {
+    log.warn(`Unexpected status ${res.statusCode} for cross-tenant probe`);
+  }
+}
+```
+
+**OWASP ZAP 自動化サンプル**：
+
+```yaml
+env:
+  contexts:
+    - name: api-test
+      urls:
+        - https://api-test.example.com/api/
+      includePaths:
+        - https://api-test.example.com/api/.*
+      authentication:
+        method: oauth2
+        parameters:
+          tokenEndpoint: https://auth.example.com/oauth2/token
+          clientId: ${ZAP_CLIENT_ID}
+          clientSecret: ${ZAP_CLIENT_SECRET}
+jobs:
+  - type: spider
+    parameters:
+      maxDuration: 5
+  - type: activeScan
+    parameters:
+      maxDuration: 30
+  - type: report
+    parameters:
+      template: traditional-html
+      reportFile: zap-report.html
+```
+
+**検知可能漏れパターン**：
+
+| パターン | 検知可能性 |
+|---|:---:|
+| P1 AuthorizationType=NONE | ✅ 確実（probe で 200 返る）|
+| P2 Authorizer 無効化 | ✅ 確実（無効 token で 200 返る）|
+| P3 tenant 越境 | ✅ 専用 probe で |
+| P4 path bypass | ✅ 全 endpoint enum で |
+| P5 JWT 検証バグ | ✅ alg=none / 期限切れ probe で |
+| P6 ALB + コード素通り | ✅ 確実 |
+
+**運用注意**：
+
+- **コスト**：Synthetics $0.0012/run × 5min interval × 30 days ≈ $10/月/canary
+- **production 直接探査の影響**：read-only probe に限定、write は test env で
+- **endpoint enumeration**：OpenAPI spec から自動生成 or Resource Explorer
+- **alert 頻度**：critical のみ即時、warning はバッチ
+- **stage 別実行**：production / staging で probe 内容を変える
+
+### §C-6.6.9 統合パイプラインと総合コスト
+
+**統合パイプライン**：
+
+```mermaid
+flowchart TB
+    subgraph Pre["Pre-Deploy 段階"]
+        Git[Git push]
+        Pre1[L1 cfn-guard]
+        Pre3[L3 Semgrep]
+        Git --> Pre1
+        Git --> Pre3
+    end
+
+    subgraph Deploy["Deploy 段階"]
+        SC[Service Catalog<br/>強制テンプレ]
+        Pre1 -->|Pass| SC
+        Pre3 -->|Pass| SC
+    end
+
+    subgraph Post["Post-Deploy 継続"]
+        L2[L2 Config Rules<br/>常時]
+        L4[L4 Athena<br/>日次バッチ]
+        L5[L5 Synthetics<br/>5min 周期]
+        SC --> L2
+        SC --> L4
+        SC --> L5
+    end
+
+    subgraph Alert["アラート"]
+        EB[EventBridge]
+        Slack
+        Jira
+        L2 -->|NON_COMPLIANT| EB
+        L4 -->|anomaly| EB
+        L5 -->|test fail| EB
+        EB --> Slack
+        EB --> Jira
+    end
+
+    style Pre fill:#e8f5e9
+    style Deploy fill:#fff9c4
+    style Post fill:#fff3e0
+    style Alert fill:#ffcdd2
+```
+
+**総合コスト想定（10 アプリ規模）**：
+
+| Layer | 月額コスト目安 |
+|---|---|
+| L1 cfn-guard / cdk-nag | $0（OSS）|
+| L2 Config Rules | $50-200 |
+| L3 Semgrep OSS | $0 / Pro $20-40/dev |
+| L4 Athena | $100-500（log volume 次第）|
+| L5 Synthetics canary | $50-200 |
+| **合計** | **$200-1000 / 月** |
+
+→ アプリ 10 個規模なら **月 $500（約 ¥75,000）程度**。担保率 95-99% を考えれば妥当な投資。
+
+### §C-6.6.10 担保率の率直評価
 
 各 Layer 構成での総合担保率：
 
@@ -495,7 +1377,7 @@ sequenceDiagram
 
 → **L1+L2+L3+L5（4 層）で 95%+**、5 Layer 全部で **99%**。
 
-### §C-6.6.5 顧客説明用：本設計の意義
+### §C-6.6.11 顧客説明用：本設計の意義
 
 | 観点 | メッセージ |
 |---|---|
@@ -504,10 +1386,14 @@ sequenceDiagram
 | **業界標準性** | OWASP API Security Top 10 / CIS Benchmark / PCI DSS Req 6 / 11 と整合 |
 | **率直なリスク開示** | 「100% にはならない」を明示、残り 1-5% のリスクを顧客に正しく提示 |
 
-### §C-6.6.6 TBD / 要確認
+### §C-6.6.12 TBD / 要確認
 
 - Q: 6 パターンの **追加 / 統廃合**（業務固有の漏れパターンあれば）→ `API-D-275`
 - Q: 担保率の **目標値設定**（95% / 99% / 99.5%）→ `API-D-276`
+- Q: L3 Semgrep ルールセットの **言語別整備優先順位** → `API-D-2761`
+- Q: L5 Synthetics canary の **探査頻度**（5min / 15min / 1h）→ `API-C-2762`
+- Q: L2 Config Rule **自動修復採用範囲**（通知のみ / 自動修復）→ `API-D-2763`
+- Q: 外部 pen test（年 1 回） **ベンダー選定**と予算 → `API-D-2764`
 
 ---
 

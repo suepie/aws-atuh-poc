@@ -437,6 +437,204 @@ Outbound は **接続先 SaaS が認証 protocol を決める**ため、Inbound 
 
 → **Outbound の主流は P-5 API Key**（業界の SaaS 主流が API Key のため）。本資料の §2.4 配置比較も「API Key 中心の Outbound」を前提に整理している。
 
+#### Outbound 大分類別フロー（初期設定時 / 認証時）
+
+Outbound（自社 → 外部 SaaS）における大分類別の「初期設定時のオンボーディング手順」と「実行時の認証フロー」を整理する。Inbound と対称構造（Engine 提供者が外部 SaaS、自社は client として実装）。
+
+---
+
+##### Outbound 大分類 1: OAuth トークン（例: Microsoft Graph / Salesforce）
+
+**初期設定時のフロー**
+
+```mermaid
+sequenceDiagram
+    participant App as アプリチーム
+    participant SaaS as 外部 SaaS Console
+    participant SM as 自社 Secrets Manager
+    participant Lambda
+
+    App->>SaaS: ① SaaS 申込 / Console で<br/>Application 登録 + scope 申請
+    SaaS-->>App: ② client_id, client_secret 発行
+    App->>SM: ③ Secret を保管 (CMK + 自動ローテ)
+    App->>Lambda: ④ Lambda IAM Role に<br/>Secret 取得権限付与
+```
+
+**認証時のフロー**
+
+```mermaid
+sequenceDiagram
+    participant Lambda
+    participant SM as Secrets Manager
+    participant Cache as Token Cache
+    participant SToken as SaaS /oauth2/token
+    participant SAPI as SaaS API
+
+    Lambda->>Cache: ① Token あるか
+    alt なし / 期限切れ
+        Lambda->>SM: ② Secret 取得
+        Lambda->>SToken: ③ client_id + secret で /token
+        SToken-->>Lambda: ④ Bearer JWT
+        Lambda->>Cache: ⑤ Cache 保存（TTL - 60s）
+    end
+    Lambda->>SAPI: ⑥ Authorization: Bearer JWT
+    SAPI-->>Lambda: ⑦ 200 OK
+```
+
+---
+
+##### Outbound 大分類 2: 証明書 (mTLS)（例: 金融機関 API 連携）
+
+**初期設定時のフロー**
+
+```mermaid
+sequenceDiagram
+    participant App as アプリチーム
+    participant SaaS as 外部 SaaS / 金融機関
+    participant CA as 自社 CA or<br/>SaaS 指定 CA
+    participant SM as Secrets Manager
+
+    App->>SaaS: ① 契約・規制要件確認<br/>(CA 指定の有無)
+    App->>CA: ② CSR 生成 + 署名要求
+    CA-->>App: ③ Client Cert + 秘密鍵
+    App->>SM: ④ Cert + 秘密鍵を保管 (CMK)
+    App->>SaaS: ⑤ 公開鍵 / Cert を SaaS に登録
+```
+
+**認証時のフロー**
+
+```mermaid
+sequenceDiagram
+    participant Lambda
+    participant SM as Secrets Manager
+    participant SaaS as 外部 SaaS
+
+    Lambda->>SM: ① Cert + 秘密鍵 取得
+    Lambda->>SaaS: ② TLS Handshake +<br/>Client Cert 提示
+    SaaS->>SaaS: ③ Truststore で検証
+    SaaS-->>Lambda: ④ TLS 確立
+    Lambda->>SaaS: ⑤ HTTPS リクエスト
+    SaaS-->>Lambda: ⑥ 200 OK
+```
+
+---
+
+##### Outbound 大分類 3-a: API Key（例: Stripe / SendGrid / OpenAI）⭐ Outbound 主流
+
+**初期設定時のフロー**
+
+```mermaid
+sequenceDiagram
+    participant App as アプリチーム
+    participant SaaS as 外部 SaaS Console
+    participant SM as Secrets Manager
+    participant Lambda
+
+    App->>SaaS: ① SaaS 申込 / アカウント開設
+    SaaS-->>App: ② Console で API Key 発行
+    App->>SM: ③ API Key を保管 (CMK)
+    App->>Lambda: ④ Lambda IAM Role に<br/>Secret 取得権限付与
+    App->>App: ⑤ (可能なら) 自動ローテーション設定
+```
+
+**認証時のフロー**
+
+```mermaid
+sequenceDiagram
+    participant Lambda
+    participant SM as Secrets Manager
+    participant SaaS as 外部 SaaS API
+
+    Lambda->>SM: ① API Key 取得 (or Cache)
+    Lambda->>SaaS: ② Authorization: Bearer <key><br/>or x-api-key: <key>
+    SaaS->>SaaS: ③ Key 検証
+    SaaS-->>Lambda: ④ 200 OK
+```
+
+---
+
+##### Outbound 大分類 3-b: HMAC（自社が Webhook 送信側）
+
+**初期設定時のフロー**
+
+```mermaid
+sequenceDiagram
+    participant App as アプリチーム
+    participant Partner as Partner (受信側)
+    participant SM as Secrets Manager
+
+    App->>Partner: ① Webhook 連携契約
+    App->>App: ② shared secret 生成
+    App->>Partner: ③ 暗号化チャネルで配布
+    App->>SM: ④ secret を保管 (CMK)
+    Partner->>Partner: ⑤ 受信 endpoint 設定 + secret 保管
+```
+
+**認証時のフロー**
+
+```mermaid
+sequenceDiagram
+    participant Lambda
+    participant SM as Secrets Manager
+    participant Partner as Partner endpoint
+
+    Lambda->>SM: ① shared secret 取得
+    Lambda->>Lambda: ② payload + HMAC 計算<br/>+ Timestamp 付与
+    Lambda->>Partner: ③ POST + X-Signature<br/>+ X-Timestamp + body
+    Partner->>Partner: ④ HMAC 検証 + Replay チェック
+    Partner-->>Lambda: ⑤ 200 OK
+```
+
+---
+
+##### Outbound 大分類 4: AWS IAM 署名（例: AWS Service / AWS Marketplace Partner）
+
+**初期設定時のフロー**
+
+```mermaid
+sequenceDiagram
+    participant App as アプリチーム
+    participant Partner as Partner (AWS account)
+    participant PIAM as Partner IAM
+    participant Lambda
+
+    App->>Partner: ① AWS account ID 共有
+    Partner->>PIAM: ② Cross-account Role 作成<br/>(Trust Policy: 自社 account)
+    Partner-->>App: ③ Role ARN 受領
+    App->>Lambda: ④ Lambda Execution Role に<br/>AssumeRole 権限付与
+```
+
+**認証時のフロー**
+
+```mermaid
+sequenceDiagram
+    participant Lambda
+    participant STS as AWS STS
+    participant SDK as AWS SDK
+    participant Partner as Partner AWS Service
+
+    Lambda->>STS: ① AssumeRole (Cross-account)
+    STS-->>Lambda: ② 一時 credential
+    Lambda->>SDK: ③ AWS SDK で<br/>リクエスト構築 + SigV4 署名
+    SDK->>Partner: ④ SigV4 署名付きリクエスト
+    Partner->>Partner: ⑤ IAM 検証
+    Partner-->>Lambda: ⑥ 200 OK
+```
+
+---
+
+##### Outbound 大分類別フロー まとめ
+
+| 大分類 | 設定主体 | Engine 提供 | 自社の主要作業 |
+|---|---|---|---|
+| OAuth トークン | 外部 SaaS の Application 機能 | 外部 SaaS | client_id/secret 受領 + Secrets Manager 保管 + Token Cache |
+| 証明書 (mTLS) | 自社 CA or SaaS 指定 CA | 外部 SaaS の Truststore | CSR 生成 + Cert 保管 + mTLS Client 実装 |
+| API Key | 外部 SaaS Console | 外部 SaaS | Key 受領 + Secrets Manager 保管 |
+| HMAC | 自社（Webhook 送信側）| 自社 + Partner | secret 生成 + 配布 + HMAC 計算実装 |
+| AWS IAM | Partner AWS account | AWS IAM + STS | Lambda Execution Role に AssumeRole 権限 |
+
+→ Outbound では **「Engine は外部 SaaS（一部は自社）」「自社は client として実装 + credential を Secrets Manager で安全保管」**が共通構造。
+
 #### 各パターンの特徴詳細
 
 ##### P-1: OAuth 2.0 Client Credentials Grant
