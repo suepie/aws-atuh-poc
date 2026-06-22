@@ -298,7 +298,7 @@ flowchart TB
             App1Dynamo[("DynamoDB<br/>サービスメタ")]
             App1AppLog["アプリログ<br/>ECS / Lambda"]
             App1ExtSaaS["外部 SaaS<br/>Salesforce 等"]
-            App1ExtCust["顧客社内システム<br/>SFTP / Email"]
+            App1ExtCust["顧客社内システム<br/>※SFTP 連携アプリのみ<br/>オプション"]
         end
 
         subgraph App1Ingest["📥 取込層 (Ingestion)"]
@@ -306,7 +306,7 @@ flowchart TB
             App1DMS[AWS DMS<br/>CDC / Bulk]
             App1KFH[Kinesis<br/>Data Firehose]
             App1AppFlow[AWS AppFlow]
-            App1Transfer[Transfer Family<br/>+ Lambda]
+            App1Transfer["Transfer Family<br/>+ Lambda<br/>※オプション、<br/>該当アプリのみ"]
         end
 
         subgraph App1S3["Amazon S3"]
@@ -2136,9 +2136,16 @@ flowchart TB
 | **アプリログ（ECS / Lambda / EC2）** | ストリーム | **CloudWatch Logs → Kinesis Firehose → S3** | サブスクリプションフィルタで Firehose に流す |
 | **外部 SaaS（Salesforce / HubSpot 等）** | 日次 | **AWS AppFlow** | OAuth 認証、200+ SaaS コネクタ標準 |
 | **外部 SaaS（カスタム API）** | 日次 | **Lambda + EventBridge Scheduler** | AppFlow に対応がない場合の自作。`requests` で API 叩き S3 PUT |
-| **顧客社内システム（DB 直接接続不可）** | 日次 | **Transfer Family (SFTP)** | 顧客が SFTP でファイル投函、S3 にランディング |
-| **顧客社内システム（DB 直接接続不可）** | 日次 | **Email 受信 + SES + Lambda** | 顧客が CSV をメール添付、SES で受信 → Lambda で S3 配置 |
+| **顧客社内システム（DB 直接接続不可）** ※オプション | 日次 | **Transfer Family (SFTP)** | 顧客が SFTP でファイル投函、S3 にランディング。**「該当アプリのみ採用」**: カード会社連携 / 顧客 HR システム / 顧客 ERP との連携など、API 不可な統合がある場合のみ。月 $216/サーバ |
+| **顧客社内システム（DB 直接接続不可）** ※オプション | 日次 | **Email 受信 + SES + Lambda** | 顧客が CSV をメール添付、SES で受信 → Lambda で S3 配置。**Transfer Family より安価**な代替（SES は受信無料）|
 | **既存基盤（オンプレ Hadoop / Hive）** | バッチ | **DataSync** | NAS / HDFS / S3 互換ストレージ → S3 |
+
+> ⚠ **Transfer Family のスコープ整理**:
+> - **ベースラインには含めない**。SFTP/FTPS/AS2 でしか連携できない顧客・パートナーがいる **特定アプリのみオプション採用**
+> - 想定される採用ケース: ① 法人カード会社の利用明細 CSV 受領 / ② 顧客 HR システムの組織マスタ CSV 受領 / ③ 顧客 ERP への月次集計 CSV 送信 / ④ レガシー大企業との B2B ファイル連携
+> - **代替案**: 月数件程度ならば SES（Email 添付）or 顧客側で S3 PUT 用 IAM Role 提供（**$0/月**）の方が安価
+> - **共有化選択肢**: 複数アプリで SFTP 需要があれば、中央 BI/Catalog アカウントまたは専用「外部連携アカウント」に **1 個だけ Transfer Family** を立て、ディレクトリ単位でアプリ別に振り分ける構成も可（$216/月固定）
+> - コスト試算は [§4.5.2](#452-producer-アカウント側1-アプリあたり) で「該当アプリのみ」として再計算
 
 ###### 4.2.2.8.4 変換層の典型実装（② 詳細）
 
@@ -2787,187 +2794,133 @@ flowchart TB
 > - 訓練データ時点（2024-2026 安定値）で補完した項目には **🔍 要 Tokyo 単価検証** マークを付与
 > - 全項目に AWS 公式 URL を併記。**実発注前は必ず最新公式単価で再試算**すること
 
-### 4.5.2 Producer アカウント側（1 アプリあたり）
+### 4.5.2 統合料金一覧表（全配置・全分類）
 
-> 経費精算 SaaS 中規模（100 万件/月、データサイズ 50 GB/月）を想定。アプリ数 × 1 アプリあたり単価で全体を見積もる。
+> 経費精算 SaaS 中規模（100 万件/月、データサイズ 50 GB/月）を想定。Producer アカウントの月額は **1 アプリあたり**。
+> **配置場所**: Producer = 各案件アプリアカウント / 中央 = 中央 BI/Catalog アカウント / 横断 = 全アカウント共通
+> **「要Tokyo単価検証」**: WebFetch で Tokyo リージョン固有単価が抽出できなかった項目。AWS Pricing Calculator で最終検証。
 
-#### A. データ取込層（Ingestion）
+| 配置場所 | 分類 | サービス | 項目 | 単価($) | 単位 | 月次想定 | 月額($) | 公式URL | 備考 |
+|---|---|---|---|---|---|---|---|---|---|
+| Producer | 取込層 | AWS DMS | t3.medium インスタンス | 0.044 | per hour | 720h（常時稼働）| 32 | https://aws.amazon.com/jp/dms/pricing/ | Single-AZ、t3.small なら半額。要Tokyo単価検証。最適化: Compute Savings Plans で 30-40% 削減。残課題: Reserved/SP 発注タイミング |
+| Producer | 取込層 | AWS DMS | DMS Storage (gp2) | 0.115 | per GB/month | 10 GB | 1.2 | https://aws.amazon.com/jp/dms/pricing/ | CDC ログ保管用。要Tokyo単価検証 |
+| Producer | 取込層 | AWS DMS | 同一リージョン内データ転送 | 0 | — | — | 0 | https://aws.amazon.com/jp/dms/pricing/ | 「DMS へのデータ転送はすべて無料」明記 |
+| Producer | 取込層 | Kinesis Data Firehose | Direct PUT 取込 | 0.029 | per GB | 20 GB（アプリログ）| 0.6 | https://aws.amazon.com/jp/kinesis/data-firehose/pricing/ | 最初の 500 TB/月、5KB 単位切上げ |
+| Producer | 取込層 | Kinesis Data Firehose | Format Conversion (Parquet) | 0.018 | per GB | 20 GB | 0.4 | https://aws.amazon.com/jp/kinesis/data-firehose/pricing/ | JSON → Parquet 変換オプション |
+| Producer | 取込層 | Kinesis Data Firehose | VPC delivery（時間料金）| 0.01 | per hour per AZ | 720h × 1 AZ | 7.2 | https://aws.amazon.com/jp/kinesis/data-firehose/pricing/ | VPC 内 S3 配信時のみ |
+| Producer | 取込層 | Kinesis Data Firehose | VPC delivery（GB 料金）| 0.01 | per GB | 20 GB | 0.2 | https://aws.amazon.com/jp/kinesis/data-firehose/pricing/ | 同 VPC delivery |
+| Producer | 取込層 | AWS AppFlow | Flow Run | 0.001 | per run | 30 回（日次 SaaS 連携）| 0.03 | https://aws.amazon.com/jp/appflow/pricing/ | 成功した実行のみ |
+| Producer | 取込層 | AWS AppFlow | Data Processing | 0.02 | per GB | 5 GB（外部 SaaS）| 0.1 | https://aws.amazon.com/jp/appflow/pricing/ | 処理データ量 |
+| Producer | 取込層 ※オプション | AWS Transfer Family | SFTP endpoint | 0.30 | per hour | 720h（採用アプリのみ）| 216 | https://aws.amazon.com/jp/aws-transfer-family/pricing/ | **ベースライン外**。SFTP 連携が必要なアプリのみ。残課題: SFTP 受領が必要な顧客の数。最適化: 必要時のみ起動（$216→$50）または中央集約（$216/月固定でアプリ数に依存しない）。詳細 §4.2.2.8.3 |
+| Producer | 取込層 ※オプション | AWS Transfer Family | データ転送（Upload/Download）| 0.04 | per GB | 5 GB | 0.2 | https://aws.amazon.com/jp/aws-transfer-family/pricing/ | SFTP/FTPS/FTP 共通 |
+| Producer | 取込層 | AWS Lambda | リクエスト | 0.20 | per 1M | 100 万回 | 0.04 | https://aws.amazon.com/jp/lambda/pricing/ | 無料枠 1M req/月 → 実質 $0 想定 |
+| Producer | 取込層 | AWS Lambda | コンピューティング | 0.0000166667 | per GB-second | 256MB × 1s × 100 万回 = 256K GB-s | 4.3 | https://aws.amazon.com/jp/lambda/pricing/ | 無料枠 400K GB-s/月。最適化: Graviton2 で同単価 34% 性能向上（実効単価 25% 減）|
+| Producer | ストレージ層 | Amazon S3 Standard | raw 層ストレージ | 0.025 | per GB/month | 50 GB（90 日保持）× 3 ヶ月分 = 150 GB | 3.8 | https://aws.amazon.com/jp/s3/pricing/ | 要Tokyo単価検証（Virginia の +9% 程度）。最適化: S3 Lifecycle で raw→Glacier 13 ヶ月以降、80% 削減 |
+| Producer | ストレージ層 | Amazon S3 Standard | curated/analytics 層（Parquet 圧縮後）| 0.025 | per GB/month | 12.5 GB（75% 圧縮）× 13 ヶ月分 = 162 GB | 4.1 | https://aws.amazon.com/jp/s3/pricing/ | curated 13 ヶ月、analytics 36 ヶ月想定。要Tokyo単価検証 |
+| Producer | ストレージ層 | Amazon S3 Standard-IA | 13 ヶ月以降の curated | 0.0138 | per GB/month | 0 GB（Phase 1 は未到達）| 0 | https://aws.amazon.com/jp/s3/pricing/ | Lifecycle で IA 移行、最小 30 日。要Tokyo単価検証 |
+| Producer | ストレージ層 | Amazon S3 Glacier Flexible Retrieval | raw の 90 日後 | 0.0045 | per GB/month | 累積、Phase 1 後半で発生 | 0.3 | https://aws.amazon.com/jp/s3/pricing/ | 取出に 1 分〜12 時間。要Tokyo単価検証。最適化: Lifecycle 活用で長期保管コスト 80% 減 |
+| Producer | ストレージ層 | Amazon S3 | PUT/POST/COPY リクエスト | 0.0047 | per 1,000 requests | 100 万件 ÷ 1K = 1,000 → ETL バッチで 30 回 = 30K | 0.14 | https://aws.amazon.com/jp/s3/pricing/ | 大量ファイルでなく Parquet ブロック単位なら少ない。要Tokyo単価検証 |
+| Producer | ストレージ層 | Amazon S3 | GET/SELECT リクエスト | 0.00037 | per 1,000 requests | Athena からの読込数十万 | 0.4 | https://aws.amazon.com/jp/s3/pricing/ | クエリ頻度依存。要Tokyo単価検証 |
+| Producer | ストレージ層 | Amazon S3 | Lifecycle Transition リクエスト | 0.01 | per 1,000 requests | 月数百 | 0.01 | https://aws.amazon.com/jp/s3/pricing/ | Standard → IA → Glacier 移行時。要Tokyo単価検証 |
+| Producer | Glue 層 | AWS Glue ETL Flex | DPU-hour | 0.29 | per DPU-hour | 2 DPU × 0.5h × 30 日 = 30 DPU-h | 8.7 | https://aws.amazon.com/jp/glue/pricing/ | 要Tokyo単価検証。最適化: Standard $0.44 から Flex $0.29 で 34% 減（SLA 不要時に Flex を選択）|
+| Producer | Glue 層 | AWS Glue ETL Standard | DPU-hour | 0.44 | per DPU-hour | Phase 1 は Flex のみ | 0 | https://aws.amazon.com/jp/glue/pricing/ | 1 分単位、最小 1 分 |
+| Producer | Glue 層 | AWS Glue Crawler | DPU-hour | 0.44 | per DPU-hour | 0.5 DPU × 0.2h × 30 日 = 3 DPU-h | 1.3 | https://aws.amazon.com/jp/glue/pricing/ | 最小 10 分 |
+| Producer | Glue 層 | AWS Glue Data Quality | DPU-hour | 0.44 | per DPU-hour | 2 DPU × 0.1h × 30 日 = 6 DPU-h | 2.6 | https://aws.amazon.com/jp/glue/pricing/ | 品質ルール実行 |
+| Producer | Glue 層 | AWS Glue Data Catalog | ストレージ（100K オブジェクト/月）| 1.00 | per 100K objects/month | 10K objects（無料枠内）| 0 | https://aws.amazon.com/jp/glue/pricing/ | 最初の 100 万オブジェクト無料 |
+| Producer | Glue 層 | AWS Glue Data Catalog | リクエスト | 1.00 | per 1M requests | 数十万（無料枠内）| 0 | https://aws.amazon.com/jp/glue/pricing/ | 最初の 100 万リクエスト/月無料 |
+| Producer | Glue 層 | AWS Glue Schema Registry | スキーマ管理 | 0 | — | — | 0 | https://aws.amazon.com/jp/glue/pricing/ | 完全無料 |
+| Producer | オーケスト層 | AWS Step Functions Standard | 状態遷移 | 0.000025 | per state transition | 30 日 × 50 遷移 = 1,500 | 0.04 | https://aws.amazon.com/jp/step-functions/pricing/ | 無料枠 4K/月、Tokyo 単価は Virginia 換算 |
+| Producer | オーケスト層 | Amazon EventBridge Scheduler | 起動 | 1.00 | per 1M invocations | 月 30 起動（日次）| 0 | https://aws.amazon.com/jp/eventbridge/pricing/ | 無料枠 14M/月内 |
+| Producer | オーケスト層 | Amazon CloudWatch Logs | Ingestion | 0.50 | per GB | 5 GB（ETL ログ + アプリログ）| 2.5 | https://aws.amazon.com/jp/cloudwatch/pricing/ | 無料枠 5 GB/月 → 実質 $0 想定可 |
+| Producer | オーケスト層 | Amazon CloudWatch Logs | Storage（アーカイブ）| 0.03 | per GB/month | 累積 30 GB（13 ヶ月）| 0.9 | https://aws.amazon.com/jp/cloudwatch/pricing/ | Logs Group 保持期間に依存 |
+| Producer | オーケスト層 | Amazon CloudWatch Alarms | Standard | 0.10 | per alarm/month | 20 アラーム | 2 | https://aws.amazon.com/jp/cloudwatch/pricing/ | 無料枠 10 アラーム |
+| Producer | オーケスト層 | Amazon CloudWatch | カスタムメトリクス | 0.30 | per metric/month | 30 メトリクス | 6 | https://aws.amazon.com/jp/cloudwatch/pricing/ | 無料枠 10 メトリクス |
+| Producer | オーケスト層 | Amazon CloudWatch | API Requests | 0.01 | per 1,000 requests | 数千リクエスト | 0.05 | https://aws.amazon.com/jp/cloudwatch/pricing/ | 無料枠 100 万/月 |
+| Producer | オーケスト層 | Amazon SNS | 通知 | 0.50 | per 1M publishes | 数百件 | 0.01 | https://aws.amazon.com/jp/sns/pricing/ | Slack/Teams 通知。要Tokyo単価検証 |
+| 中央 | カタログ層 | AWS Lake Formation | 全機能（LF-Tag, Data Filter, Cross-account Grants 含む）| 0 | — | — | 0 | https://aws.amazon.com/jp/lake-formation/pricing/ | 「無料で提供」と明記 |
+| 中央 | カタログ層 | AWS Lake Formation Storage Optimizer | スキャンバイト | バイト単位（MB 単位切上げ）| per byte | テーブル数次第 | 数 $ | https://aws.amazon.com/jp/lake-formation/pricing/ | テーブル圧縮機能 |
+| 中央 | カタログ層 | AWS Glue Data Catalog（中央）| Federation 集約分 | 0 | — | 追加コスト最小 | 0 | https://aws.amazon.com/jp/glue/pricing/ | 無料枠で吸収 |
+| 中央 | カタログ層 | AWS KMS | CMK 鍵管理 | 1.00 | per key/month | 5 鍵（中央共通 / BI 探索 / Reader / 監査 / Producer 共通）| 5 | https://aws.amazon.com/jp/kms/pricing/ | 削除予定鍵は無料 |
+| 中央 | カタログ層 | AWS KMS | API リクエスト | 0.03 | per 10K requests | 100 万 req（S3/Athena/QS 暗号化操作）| 3 | https://aws.amazon.com/jp/kms/pricing/ | 無料枠 20K/月 |
+| 中央 | Athena 層 | Amazon Athena Standard On-Demand | スキャン量 | 5.00 | per TB scanned | 100 GB スキャン/月（最小 10MB/クエリ）| 0.5 | https://aws.amazon.com/jp/athena/pricing/ | 要Tokyo単価検証。最適化: Parquet + パーティションでスキャン量 75% 削減、Result Reuse で再スキャン 30% 削減 |
+| 中央 | Athena 層 | Amazon Athena Provisioned Capacity（Phase 3+ 候補）| DPU-hour | 0.30 | per DPU-hour | Phase 1 は不採用 | 0 | https://aws.amazon.com/jp/athena/pricing/ | 最小 4 DPU、損益分岐 175 TB/月 |
+| 中央 | Athena 層 | Amazon Athena Spark（Phase 3+ 候補）| DPU-hour | 0.35 | per DPU-hour | 不採用 | 0 | https://aws.amazon.com/jp/athena/pricing/ | ML 前処理用、Phase 1 は SageMaker Studio |
+| 中央 | Athena 層 | Amazon Athena Result Reuse | キャッシュ | 0 | — | キャッシュヒット率 30% 想定 | -0.15 | https://aws.amazon.com/jp/athena/pricing/ | 最適化: 同一クエリのキャッシュヒットで再スキャン削減 |
+| 中央 | QuickSight 層 | Amazon QuickSight Author | ユーザー単価 | 24 | per user/month | 中央 BI Author 5 名 | 120 | https://aws.amazon.com/jp/quicksight/pricing/ | 年契約、月契約は $33 |
+| 中央 | QuickSight 層 | Amazon QuickSight Author Pro | ユーザー単価 + 基盤費 | 40 + 250 | per user/month + 月額固定 | Phase 1 は通常 Author のみ | 0 | https://aws.amazon.com/jp/quicksight/pricing/ | Q & Paginated Reports 込み、5 名以上で検討 |
+| 中央 | QuickSight 層 | Amazon QuickSight Reader（旧 Named）| ユーザー単価 | 3 | per user/month | 50 名 | 150 | https://aws.amazon.com/jp/quicksight/pricing/ | 月額上限あり、Author の 1/8 単価。残課題: 最終想定数（50/100/300）。最適化: 50 名超で Reader Capacity Pricing 検討（$250/月〜、Named より安価）|
+| 中央 | QuickSight 層 | Amazon QuickSight Reader Pro | ユーザー単価 + 基盤費 | 20 + 250 | per user/month + 月額固定 | Phase 1 不採用 | 0 | https://aws.amazon.com/jp/quicksight/pricing/ | Q を Reader に開放したい場合 |
+| 中央 | QuickSight 層 | Amazon QuickSight SPICE | 容量 | 0.38 | per GB/month | 92 GB - 50 GB（Author 5 名 × 10 GB 無料）= 42 GB 課金 | 16 | https://aws.amazon.com/jp/quicksight/pricing/ | Author 1 名あたり 10 GB 無料、Reader 10 GB 無料。最適化: Full → Incremental Refresh で 80% 削減 |
+| 中央 | QuickSight 層 | Amazon QuickSight Paginated Reports | レポート単位 | 1.00 | per report unit | 月 100 件 | 100 | https://aws.amazon.com/jp/quicksight/pricing/ | 月次レポート用、500 件 = $500 |
+| 中央 | 結果・派生データ | Amazon S3（central-derived）| Parquet 派生データ | 0.025 | per GB/month | 50 GB（月次集計・ML 特徴量等）| 1.3 | https://aws.amazon.com/jp/s3/pricing/ | 12-24 ヶ月保持。要Tokyo単価検証 |
+| 中央 | 結果・派生データ | Amazon S3（athena-results × 5 WG）| 一時クエリ結果 | 0.025 | per GB/month | 10 GB（7-90 日 Lifecycle 後）| 0.25 | https://aws.amazon.com/jp/s3/pricing/ | 5 バケットでも合計 10 GB。要Tokyo単価検証 |
+| 中央 | 結果・派生データ | Amazon S3（audit-results、7 年 Object Lock）| 監査結果 | 0.025 + 0.0125（Glacier 移行後）| per GB/month | 累積（Phase 1 で 20 GB）| 0.5 | https://aws.amazon.com/jp/s3/pricing/ | Object Lock 7 年。残課題: 監査ログ保持年数（1/3/7 年）。要Tokyo単価検証 |
+| 中央 | 結果・派生データ | Amazon S3（central-common-domain）| 顧客マスタ等 | 0.025 | per GB/month | 5 GB | 0.13 | https://aws.amazon.com/jp/s3/pricing/ | D-2 同居。要Tokyo単価検証 |
+| 中央 | 結果・派生データ | Amazon S3 | リクエスト（全 5 バケット合算 PUT + GET）| 上記単価 | 各 | 全体で数十万 | 1 | https://aws.amazon.com/jp/s3/pricing/ | クエリ頻度依存。要Tokyo単価検証 |
+| 中央 | ML 層（Phase 2）| Amazon SageMaker Studio Notebook | ml.t3.medium | 0.05 | per hour | 100h/月（試行）| 5 | https://aws.amazon.com/jp/sagemaker-ai/pricing/ | 無料枠 250h × 2 ヶ月。要Tokyo単価検証。残課題: Phase 2 の ML 利用規模 |
+| 中央 | ML 層（Phase 2）| Amazon SageMaker Training | ml.m5.large | 0.115 | per hour | 50h/月（解約予兆モデル訓練）| 5.8 | https://aws.amazon.com/jp/sagemaker-ai/pricing/ | バッチ訓練。要Tokyo単価検証 |
+| 中央 | ML 層（Phase 2）| Amazon SageMaker Inference Endpoint | ml.m5.large | 0.115 | per hour | 720h × 1 endpoint | 83 | https://aws.amazon.com/jp/sagemaker-ai/pricing/ | リアルタイム推論用、Phase 2 で要件確定後。要Tokyo単価検証。残課題: Inference 常時稼働の有無。最適化: Compute Savings Plans で 30-40% 削減 |
+| 中央 | ML 層（Phase 2）| Amazon SageMaker Storage（EBS gp3）| ストレージ | 0.10 | per GB/month | 100 GB | 10 | https://aws.amazon.com/jp/sagemaker-ai/pricing/ | Notebook ボリューム。要Tokyo単価検証 |
+| 横断 | リソース共有 | AWS RAM | リソース共有 | 0 | — | — | 0 | https://aws.amazon.com/jp/ram/pricing/ | クロスアカウント共有の基盤、完全無料 |
+| 横断 | 監査ログ | AWS CloudTrail Management Events | 直近 90 日のイベント履歴 | 0 | — | — | 0 | https://aws.amazon.com/jp/cloudtrail/pricing/ | アカウントごとに 1 つ目の Trail は無料 |
+| 横断 | 監査ログ | AWS CloudTrail Data Events（S3）| データプレーン操作 | 0.10 | per 100K events | 中央 + Producer 10 アカウント × 月 1M events = 10M | 10 | https://aws.amazon.com/jp/cloudtrail/pricing/ | S3 Object 操作の追跡 |
+| 横断 | 監査ログ | AWS CloudTrail Insights（Management）| 分析イベント | 0.35 | per 100K events analyzed | 中央のみ、月 5M analyzed | 17.5 | https://aws.amazon.com/jp/cloudtrail/pricing/ | 異常検知（PutBucketPolicy 急増等）|
+| 横断 | 監査ログ | AWS CloudTrail Lake | データ取込（1 年保持）| 0.75 | per GB | 月 5 GB | 3.75 | https://aws.amazon.com/jp/cloudtrail/pricing/ | 一元検索基盤。残課題: 監査ログ保持年数（1/3/7 年） |
+| 横断 | 監査ログ | AWS CloudTrail Lake | クエリ（スキャン量）| 0.005 | per GB scanned | 月 100 GB スキャン | 0.5 | https://aws.amazon.com/jp/cloudtrail/pricing/ | 監査調査時のみ |
+| 横断 | ネットワーク | AWS PrivateLink VPC Interface Endpoint | 時間料金 | 0.01 | per hour per AZ | 8 endpoints × 3 AZ × 720h = 17,280 | 172.8 | https://aws.amazon.com/jp/privatelink/pricing/ | S3 / Glue / Athena / LF / KMS / STS / CloudWatch / CloudTrail。要Tokyo単価検証。最適化: S3/DynamoDB は Gateway Endpoint（無料）に変更、月 $20 削減 |
+| 横断 | ネットワーク | AWS PrivateLink VPC Interface Endpoint | データ処理 | 0.01 | per GB processed | 100 GB | 1 | https://aws.amazon.com/jp/privatelink/pricing/ | 段階単価、1 PB 超で $0.006 |
+| 横断 | ネットワーク | AWS PrivateLink VPC Gateway Endpoint | S3 / DynamoDB | 0 | — | — | 0 | https://aws.amazon.com/jp/privatelink/pricing/ | 完全無料、優先的に使用 |
+| 横断 | 構成監視 | AWS Config | 継続記録項目 | 0.003 | per Configuration Item | 月 10,000 items | 30 | https://aws.amazon.com/jp/config/pricing/ | リソース変更履歴 |
+| 横断 | 構成監視 | AWS Config Rules | 評価 | 0.001 | per evaluation | 月 100K 評価 | 100 | https://aws.amazon.com/jp/config/pricing/ | 最初の 10 万件単価、以後段階値引き |
+| 横断 | データ転送 | AWS データ転送 | 同一リージョン内・AZ 内 | 0 | — | — | 0 | https://aws.amazon.com/jp/vpc/pricing/ | 同一 AZ は無料 |
+| 横断 | データ転送 | AWS データ転送 | クロス AZ（同一リージョン）| 0.01 | per GB | 50 GB | 0.5 | https://aws.amazon.com/jp/vpc/pricing/ | EC2/RDS 等、受信側課金。要Tokyo単価検証 |
+| 横断 | データ転送 | AWS データ転送 | インターネット egress（外向き）| 0.114 | per GB | 5 GB（小規模）| 0.6 | https://aws.amazon.com/jp/vpc/pricing/ | Tokyo 最初 10 TB。QuickSight Embedded 等で発生。要Tokyo単価検証。残課題: インターネット egress の量 |
 
-| サービス | 項目 | 単価 | 単位 | 月次想定 | 月額 | 公式 URL | 備考 |
-|---|---|---|---|---|---|---|---|
-| **AWS DMS** 🔍 | t3.medium インスタンス | $0.044 | per hour | 720h（常時稼働）| **$32** | [DMS pricing](https://aws.amazon.com/jp/dms/pricing/) | Single-AZ、t3.small なら半額 |
-| **AWS DMS** 🔍 | DMS Storage (gp2) | $0.115 | per GB/month | 10 GB | $1.2 | 同上 | CDC ログ保管用 |
-| **AWS DMS** | 同一リージョン内データ転送 | **無料** | — | — | $0 | 同上 | 「DMS へのデータ転送はすべて無料」明記 |
-| **Kinesis Data Firehose** | Direct PUT 取込 | **$0.029** | per GB | 20 GB（アプリログ）| $0.6 | [Firehose pricing](https://aws.amazon.com/jp/kinesis/data-firehose/pricing/) | 最初の 500 TB/月、5KB 単位切上げ |
-| **Kinesis Data Firehose** | Format Conversion (Parquet) | **$0.018** | per GB | 20 GB | $0.4 | 同上 | JSON → Parquet 変換オプション |
-| **Kinesis Data Firehose** | VPC delivery（時間料金）| **$0.01** | per hour per AZ | 720h × 1 AZ | $7.2 | 同上 | VPC 内 S3 配信時のみ |
-| **Kinesis Data Firehose** | VPC delivery（GB 料金）| **$0.01** | per GB | 20 GB | $0.2 | 同上 | 同上 |
-| **AWS AppFlow** | Flow Run | **$0.001** | per run | 30 回（日次 SaaS 連携）| $0.03 | [AppFlow pricing](https://aws.amazon.com/jp/appflow/pricing/) | 成功した実行のみ |
-| **AWS AppFlow** | Data Processing | **$0.02** | per GB | 5 GB（外部 SaaS）| $0.1 | 同上 | 処理データ量 |
-| **AWS Transfer Family** | SFTP endpoint | **$0.30** | per hour | 720h | $216 | [Transfer Family pricing](https://aws.amazon.com/jp/aws-transfer-family/pricing/) | 1 サーバ常時稼働、複数プロトコル有効化で倍掛け |
-| **AWS Transfer Family** | データ転送（Upload/Download）| **$0.04** | per GB | 5 GB | $0.2 | 同上 | SFTP/FTPS/FTP 共通 |
-| **AWS Lambda** | リクエスト | **$0.20** | per 1M | 100 万回 | $0.04 | [Lambda pricing](https://aws.amazon.com/jp/lambda/pricing/) | 無料枠 1M req/月 → 実質 $0 想定 |
-| **AWS Lambda** | コンピューティング | **$0.0000166667** | per GB-second | 256MB × 1s × 100 万回 = 256K GB-s | $4.3 | 同上 | 無料枠 400K GB-s/月、Graviton2 で 34% 改善 |
-| **小計 (取込層)** | | | | | **~$262/月** | | Transfer Family が最大コスト要因 |
+#### 4.5.2.A 配置場所別の小計
 
-#### B. ストレージ層（S3 Medallion）
-
-| サービス | 項目 | 単価 | 単位 | 月次想定 | 月額 | 公式 URL | 備考 |
-|---|---|---|---|---|---|---|---|
-| **S3 Standard** 🔍 | raw 層ストレージ | $0.025 | per GB/month | 50 GB（90 日保持）× 3 ヶ月分 = 150 GB | $3.8 | [S3 pricing](https://aws.amazon.com/jp/s3/pricing/) | Tokyo 単価、Virginia の +9% 程度 |
-| **S3 Standard** 🔍 | curated/analytics 層（Parquet 圧縮後）| $0.025 | per GB/month | 12.5 GB（75% 圧縮）× 13 ヶ月分 = 162 GB | $4.1 | 同上 | curated 13 ヶ月、analytics 36 ヶ月想定 |
-| **S3 Standard-IA** 🔍 | 13 ヶ月以降の curated | $0.0138 | per GB/month | 0 GB（Phase 1 は未到達）| $0 | 同上 | Lifecycle で IA 移行、最小 30 日 |
-| **S3 Glacier Flexible Retrieval** 🔍 | raw の 90 日後 | $0.0045 | per GB/month | 累積、Phase 1 後半で発生 | $0.3 | 同上 | 取出に 1 分〜12 時間 |
-| **S3 PUT/POST/COPY** 🔍 | リクエスト | $0.0047 | per 1,000 requests | 100 万件 ÷ 1K = 1,000 → ETL バッチで 30 回 = 30K | $0.14 | 同上 | 大量ファイルでなく Parquet ブロック単位なら少ない |
-| **S3 GET/SELECT** 🔍 | リクエスト | $0.00037 | per 1,000 requests | Athena からの読込数十万 | $0.4 | 同上 | クエリ頻度依存 |
-| **S3 Lifecycle Transition** 🔍 | 移行リクエスト | $0.01 | per 1,000 requests | 月数百 | $0.01 | 同上 | Standard → IA → Glacier 移行時 |
-| **小計 (ストレージ)** | | | | | **~$9/月** | | 1 アプリでは安価、データ量増で線形拡大 |
-
-#### C. 変換・カタログ層（Glue）
-
-| サービス | 項目 | 単価 | 単位 | 月次想定 | 月額 | 公式 URL | 備考 |
-|---|---|---|---|---|---|---|---|
-| **Glue ETL Flex** 🔍 | DPU-hour | $0.29 | per DPU-hour | 2 DPU × 0.5h × 30 日 = 30 DPU-h | **$8.7** | [Glue pricing](https://aws.amazon.com/jp/glue/pricing/) | Flex は SLA 不要時、Standard $0.44 の 34% 安 |
-| **Glue ETL Standard** | DPU-hour | **$0.44** | per DPU-hour | Phase 1 は Flex のみ | $0 | 同上 | 1 分単位、最小 1 分 |
-| **Glue Crawler** | DPU-hour | **$0.44** | per DPU-hour | 0.5 DPU × 0.2h × 30 日 = 3 DPU-h | $1.3 | 同上 | 最小 10 分 |
-| **Glue Data Quality** | DPU-hour | **$0.44** | per DPU-hour | 2 DPU × 0.1h × 30 日 = 6 DPU-h | $2.6 | 同上 | 品質ルール実行 |
-| **Glue Data Catalog ストレージ** | 100K オブジェクト/月 | **$1.00** | per 100K objects/月 | 10K objects（無料枠内）| **$0** | 同上 | 最初の 100 万オブジェクト無料 |
-| **Glue Data Catalog リクエスト** | 100 万リクエスト | **$1.00** | per 1M requests | 数十万（無料枠内）| **$0** | 同上 | 最初の 100 万リクエスト/月無料 |
-| **Glue Schema Registry** | スキーマ管理 | **無料** | — | — | $0 | 同上 | 完全無料 |
-| **小計 (Glue)** | | | | | **~$13/月** | | Catalog の無料枠が効く |
-
-#### D. オーケストレーション・監視層
-
-| サービス | 項目 | 単価 | 単位 | 月次想定 | 月額 | 公式 URL | 備考 |
-|---|---|---|---|---|---|---|---|
-| **Step Functions Standard** | 状態遷移 | **$0.000025** | per state transition | 30 日 × 50 遷移 = 1,500 | $0.04 | [Step Functions pricing](https://aws.amazon.com/jp/step-functions/pricing/) | 無料枠 4K/月、Tokyo 単価は Virginia 換算 |
-| **EventBridge Scheduler** | 起動 | **$1.00** | per 1M invocations | 月 30 起動（日次）| **$0** | [EventBridge pricing](https://aws.amazon.com/jp/eventbridge/pricing/) | 無料枠 14M/月内 |
-| **CloudWatch Logs Ingestion** | 取込 | **$0.50** | per GB | 5 GB（ETL ログ + アプリログ）| **$2.5** | [CloudWatch pricing](https://aws.amazon.com/jp/cloudwatch/pricing/) | 無料枠 5 GB/月 → 実質 $0 想定可 |
-| **CloudWatch Logs Storage** | アーカイブ | **$0.03** | per GB/month | 累積 30 GB（13 ヶ月）| $0.9 | 同上 | Logs Group 保持期間に依存 |
-| **CloudWatch Alarms** | Standard | **$0.10** | per alarm/month | 20 アラーム | $2 | 同上 | 無料枠 10 アラーム |
-| **CloudWatch カスタムメトリクス** | 1 メトリクス | **$0.30** | per metric/month | 30 メトリクス | $6 | 同上 | 無料枠 10 メトリクス |
-| **CloudWatch API Requests** | 1,000 リクエスト | **$0.01** | per 1K | 数千リクエスト | $0.05 | 同上 | 無料枠 100 万/月 |
-| **SNS** 🔍 | 通知 | $0.50 | per 1M publishes | 数百件 | $0.01 | [SNS pricing](https://aws.amazon.com/jp/sns/pricing/) | Slack/Teams 通知 |
-| **小計 (オーケストレーション)** | | | | | **~$12/月** | | アラート設定数に依存 |
-
-#### E. Producer アカウント合計（1 アプリ）
-
-| カテゴリ | 月額 |
-|---|---|
-| A. データ取込層 | $262 |
-| B. ストレージ層 | $9 |
-| C. Glue 層 | $13 |
-| D. オーケストレーション・監視 | $12 |
-| **合計（1 アプリ/月）** | **~$296** |
-
-→ **Transfer Family SFTP $216 が最大コスト**。SFTP 不要なら $80/月程度に縮小可能。10 アプリで月 $3,000、20 アプリで月 $6,000 規模。
-
----
-
-### 4.5.3 中央 BI / Catalog アカウント
-
-#### A. カタログ・ガバナンス層
-
-| サービス | 項目 | 単価 | 単位 | 月次想定 | 月額 | 公式 URL | 備考 |
-|---|---|---|---|---|---|---|---|
-| **AWS Lake Formation** | 全機能（LF-Tag, Data Filter, Cross-account Grants 含む）| **完全無料** | — | — | **$0** | [Lake Formation pricing](https://aws.amazon.com/jp/lake-formation/pricing/) | 「無料で提供」と明記 |
-| **Lake Formation Storage Optimizer** | スキャンバイト | バイト単位課金（メガバイト単位切上げ）| per byte | テーブル数次第 | 数 $ | 同上 | テーブル圧縮機能 |
-| **Glue Data Catalog（中央）** | 同 Producer 側 Glue 単価 | $0 | — | Federation で集約、追加コスト最小 | $0 | [Glue pricing](https://aws.amazon.com/jp/glue/pricing/) | 無料枠で吸収 |
-| **AWS KMS CMK** | 鍵あたり | **$1.00** | per key/month | 5 鍵（中央共通 / BI 探索 / Reader / 監査 / Producer 共通）| **$5** | [KMS pricing](https://aws.amazon.com/jp/kms/pricing/) | 削除予定鍵は無料 |
-| **AWS KMS リクエスト** | API 呼出 | **$0.03** | per 10K requests | 100 万 req（S3/Athena/QS 暗号化操作）| $3 | 同上 | 無料枠 20K/月 |
-| **小計 (カタログ層)** | | | | | **~$8/月** | | Lake Formation が無料な点が大きい |
-
-#### B. クエリ層（Athena）
-
-| サービス | 項目 | 単価 | 単位 | 月次想定 | 月額 | 公式 URL | 備考 |
-|---|---|---|---|---|---|---|---|
-| **Athena Standard On-Demand** 🔍 | スキャン量 | $5.00 | per TB scanned | 100 GB スキャン/月（最小 10MB/クエリ）| $0.5 | [Athena pricing](https://aws.amazon.com/jp/athena/pricing/) | Parquet + パーティション最適化前提 |
-| **Athena Provisioned Capacity（Phase 3+ 候補）** | DPU-hour | **$0.30** | per DPU-hour | Phase 1 は不採用 | $0 | 同上 | 最小 4 DPU、損益分岐 175 TB/月 |
-| **Athena Spark（Phase 3+ 候補）** | DPU-hour | **$0.35** | per DPU-hour | 不採用 | $0 | 同上 | ML 前処理用、Phase 1 は SageMaker Studio |
-| **Athena Result Reuse** | キャッシュ | **無料**（再スキャン削減効果のみ）| — | キャッシュヒット率 30% 想定 | -$0.15 | 同上 | スキャン量削減 |
-| **小計 (Athena)** | | | | | **~$0.5/月** | | スキャン量がカギ、SPICE で大幅削減 |
-
-#### C. BI 層（QuickSight）
-
-| サービス | 項目 | 単価 | 単位 | 月次想定 | 月額 | 公式 URL | 備考 |
-|---|---|---|---|---|---|---|---|
-| **QuickSight Author** | ユーザー単価 | **$24** | per user/month | 中央 BI Author 5 名 | $120 | [QuickSight pricing](https://aws.amazon.com/jp/quicksight/pricing/) | 年契約、月契約は $33 |
-| **QuickSight Author Pro** | ユーザー単価 + 基盤費 | **$40** + $250 | per user/month + 月額固定 | Phase 1 は通常 Author のみ | $0 | 同上 | Q & Paginated Reports 込み、5 名以上で検討 |
-| **QuickSight Reader（旧 Named）** | ユーザー単価 | **$3** | per user/month | 50 名 | $150 | 同上 | 月額上限あり、Author の 1/8 単価 |
-| **QuickSight Reader Pro** | ユーザー単価 + 基盤費 | **$20** + $250 | per user/month + 月額固定 | Phase 1 不採用 | $0 | 同上 | Q を Reader に開放したい場合 |
-| **QuickSight SPICE** | 容量 | **$0.38** | per GB/month | 92 GB - 50 GB（Author 5 名 × 10 GB 無料）= 42 GB 課金 | **$16** | 同上 | Author 1 名あたり 10 GB 無料、Reader 10 GB 無料 |
-| **QuickSight Paginated Reports** | レポート単位 | **$1.00** | per report unit | 月 100 件 | $100 | 同上 | 月次レポート用、500 件 = $500 |
-| **小計 (QuickSight)** | | | | | **~$386/月** | | Reader 数が増えると線形に増加、50 名超で Capacity Pricing 検討 |
-
-#### D. クエリ結果・派生データ層
-
-| サービス | 項目 | 単価 | 単位 | 月次想定 | 月額 | 公式 URL | 備考 |
-|---|---|---|---|---|---|---|---|
-| **S3（central-derived）** 🔍 | Parquet 派生データ | $0.025 | per GB/month | 50 GB（月次集計・ML 特徴量等）| $1.3 | [S3 pricing](https://aws.amazon.com/jp/s3/pricing/) | 12-24 ヶ月保持 |
-| **S3（athena-results × 5 WG）** 🔍 | 一時クエリ結果 | $0.025 | per GB/month | 10 GB（7-90 日 Lifecycle 後）| $0.25 | 同上 | 5 バケットでも合計 10 GB |
-| **S3（audit-results、7 年 Object Lock）** 🔍 | 監査結果 | $0.025 + $0.0125（Glacier 移行後）| per GB/month | 累積（Phase 1 で 20 GB）| $0.5 | 同上 | Object Lock 7 年 |
-| **S3（central-common-domain）** 🔍 | 顧客マスタ等 | $0.025 | per GB/month | 5 GB | $0.13 | 同上 | D-2 同居 |
-| **S3 リクエスト（全 5 バケット合算）** 🔍 | PUT + GET | 上記単価 | 各 | 全体で数十万 | $1 | 同上 | クエリ頻度依存 |
-| **小計 (S3 派生 + 結果)** | | | | | **~$3/月** | | データ量増で線形拡大 |
-
-#### E. ML 層（Phase 2、参考）
-
-| サービス | 項目 | 単価 | 単位 | 月次想定（Phase 2）| 月額 | 公式 URL | 備考 |
-|---|---|---|---|---|---|---|---|
-| **SageMaker Studio Notebook** 🔍 | ml.t3.medium | $0.05 | per hour | 100h/月（試行）| $5 | [SageMaker pricing](https://aws.amazon.com/jp/sagemaker-ai/pricing/) | 無料枠 250h × 2 ヶ月 |
-| **SageMaker Training** 🔍 | ml.m5.large | $0.115 | per hour | 50h/月（解約予兆モデル訓練）| $5.8 | 同上 | バッチ訓練 |
-| **SageMaker Inference Endpoint** 🔍 | ml.m5.large | $0.115 | per hour | 720h × 1 endpoint | $83 | 同上 | リアルタイム推論用、Phase 2 で要件確定後 |
-| **SageMaker Storage（EBS）** 🔍 | gp3 | $0.10 | per GB/month | 100 GB | $10 | 同上 | Notebook ボリューム |
-| **小計 (SageMaker Phase 2)** | | | | | **~$104/月** | | Phase 1 は不要、Phase 2 で発生 |
-
-#### F. 中央 BI / Catalog アカウント合計
-
-| カテゴリ | Phase 1 月額 | Phase 2 月額（+SageMaker）|
+| 配置場所 | カテゴリ | 月額($) |
 |---|---|---|
-| A. カタログ・ガバナンス | $8 | $8 |
-| B. Athena クエリ | $0.5 | $0.5 |
-| C. QuickSight BI | $386 | $386 |
-| D. クエリ結果・派生データ | $3 | $3 |
-| E. SageMaker ML | $0 | $104 |
-| **合計** | **~$398/月** | **~$502/月** |
-
-→ **QuickSight ライセンス（$270）が最大コスト**、次いで SPICE と Reports。
-
----
-
-### 4.5.4 横断・共通インフラ
-
-| サービス | 項目 | 単価 | 単位 | 月次想定 | 月額 | 公式 URL | 備考 |
-|---|---|---|---|---|---|---|---|
-| **AWS RAM** | リソース共有 | **完全無料** | — | — | $0 | [RAM pricing](https://aws.amazon.com/jp/ram/pricing/) | クロスアカウント共有の基盤 |
-| **CloudTrail Management Events** | 直近 90 日のイベント履歴 | **無料** | — | — | $0 | [CloudTrail pricing](https://aws.amazon.com/jp/cloudtrail/pricing/) | アカウントごとに 1 つ目の Trail は無料 |
-| **CloudTrail Data Events（S3）** | データプレーン操作 | **$0.10** | per 100K events | 中央 + Producer 10 アカウント × 月 1M events = 10M | $10 | 同上 | S3 Object 操作の追跡 |
-| **CloudTrail Insights（Management）** | 分析イベント | **$0.35** | per 100K events analyzed | 中央のみ、月 5M analyzed | $17.5 | 同上 | 異常検知（PutBucketPolicy 急増等）|
-| **CloudTrail Lake 取込（1 年保持）** | データ取込 | **$0.75** | per GB | 監査要件次第、月 5 GB | $3.75 | 同上 | 一元検索基盤 |
-| **CloudTrail Lake クエリ** | スキャン量 | **$0.005** | per GB scanned | 月 100 GB スキャン | $0.5 | 同上 | 監査調査時のみ |
-| **VPC Interface Endpoint** 🔍 | 時間料金 | **$0.01** | per hour per AZ | 8 endpoints × 3 AZ × 720h = 17,280 | $172.8 | [PrivateLink pricing](https://aws.amazon.com/jp/privatelink/pricing/) | S3 / Glue / Athena / LF / KMS / STS / CloudWatch / CloudTrail |
-| **VPC Interface Endpoint** | データ処理 | **$0.01** | per GB processed | 100 GB | $1 | 同上 | 段階単価、1 PB 超で $0.006 |
-| **VPC Gateway Endpoint** | S3 / DynamoDB | **完全無料** | — | — | $0 | 同上 | できる限り Gateway を使う |
-| **AWS Config** | 継続記録項目 | **$0.003** | per Configuration Item | 月 10,000 items | $30 | [Config pricing](https://aws.amazon.com/jp/config/pricing/) | リソース変更履歴 |
-| **AWS Config Rules** | 評価 | **$0.001** | per evaluation | 月 100K 評価 | $100 | 同上 | 最初の 10 万件単価、以後段階値引き |
-| **データ転送（同一リージョン内）** | AZ 内 | **無料** | — | — | $0 | [VPC pricing](https://aws.amazon.com/jp/vpc/pricing/) | 同一 AZ は無料 |
-| **データ転送（クロス AZ、同一リージョン）** 🔍 | 受信側課金 | $0.01 | per GB | 50 GB | $0.5 | 同上 | EC2/RDS 等 |
-| **データ転送（インターネット egress）** 🔍 | 外向き | $0.114 | per GB (Tokyo, 最初 10 TB) | 5 GB（小規模）| $0.6 | 同上 | QuickSight Embedded 等で発生 |
-| **小計 (横断インフラ)** | | | | | **~$337/月** | | VPC Endpoint と Config Rules が主体 |
+| **Producer**（1 アプリ）| 取込層（ベースライン）| 46 |
+| Producer（1 アプリ）| 取込層（Transfer Family 採用時 = +216）| 262 |
+| Producer（1 アプリ）| ストレージ層 | 9 |
+| Producer（1 アプリ）| Glue 層 | 13 |
+| Producer（1 アプリ）| オーケスト層 | 12 |
+| **Producer 合計**（ベースライン、1 アプリ）| | **80** |
+| **Producer 合計**（Transfer Family 採用、1 アプリ）| | **296** |
+| **中央**（Phase 1）| カタログ層 | 8 |
+| 中央（Phase 1）| Athena 層 | 0.5 |
+| 中央（Phase 1）| QuickSight 層 | 386 |
+| 中央（Phase 1）| 結果・派生データ | 3 |
+| 中央（Phase 2）| ML 層（+SageMaker）| 104 |
+| **中央 合計**（Phase 1）| | **398** |
+| **中央 合計**（Phase 2）| | **502** |
+| **横断**| リソース共有 + 監査ログ + ネットワーク + 構成監視 + データ転送 | **337** |
 
 ---
+### 4.5.3 全体合計（Phase 1）
 
-### 4.5.5 全体合計（Phase 1）
+**ベースライン構成**（Transfer Family を含まない）:
 
 | カテゴリ | 内訳 | 月額 |
 |---|---|---|
-| **Producer アカウント** | $296/アプリ × N | $296 × N |
+| **Producer アカウント** | $80/アプリ × N | $80 × N |
 | **中央 BI / Catalog アカウント** | 単一 | $398 |
 | **横断インフラ** | 全アカウント分散負担 | $337 |
-| **合計（1 アプリ時）** | | **~$1,031/月** |
-| **合計（5 アプリ時）** | $296 × 5 + $398 + $337 | **~$2,215/月** |
-| **合計（10 アプリ時）** | $296 × 10 + $398 + $337 | **~$3,695/月** |
-| **合計（20 アプリ時）** | $296 × 20 + $398 + $337 | **~$6,655/月** |
+| **合計（1 アプリ時）** | $80 + $398 + $337 | **~$815/月** |
+| **合計（5 アプリ時）** | $80 × 5 + $398 + $337 | **~$1,135/月** |
+| **合計（10 アプリ時）** | $80 × 10 + $398 + $337 | **~$1,535/月** |
+| **合計（20 アプリ時）** | $80 × 20 + $398 + $337 | **~$2,335/月** |
+
+**Transfer Family 採用時の加算**（オプション、SFTP 連携必要なアプリ数 × $216）:
+
+| Transfer Family 配置 | 加算コスト | 想定ケース |
+|---|---|---|
+| Producer 個別配置（2 アプリ採用想定）| **+$432/月** | カード連携 1 アプリ + 顧客 HR 連携 1 アプリ |
+| Producer 個別配置（5 アプリ採用想定）| **+$1,080/月** | SFTP 連携が広く必要な業種 |
+| **中央 1 個に集約**（推奨）| **+$216/月固定** | アプリ数によらず 1 個、ディレクトリ単位で振分け |
+| 不採用（API のみ） | $0 | レガシー連携なし |
+
+→ **典型ケース（10 アプリ + 中央集約 SFTP 1 個）= $1,535 + $216 = ~$1,751/月**
 
 **Phase 2 追加（SageMaker + リソース増分）**:
 
@@ -2979,13 +2932,13 @@ flowchart TB
 | SPICE 容量増（92 GB → 200 GB）| +$28 |
 | **Phase 2 増分小計** | **+$434/月** |
 
-→ Phase 2 全体: 10 アプリで **~$4,129/月**、20 アプリで **~$7,089/月**
+→ Phase 2 全体（ベースライン + Transfer Family 中央集約）: 10 アプリで **~$2,185/月**、20 アプリで **~$2,985/月**
 
 > **比較参考**: 既存の SaaS BI（Tableau Cloud 等）を採用した場合、Author 単価 $70/月、Viewer 単価 $15/月で、同規模で月 $1,500-3,000 のライセンス費のみで上記試算と同等以上。AWS ネイティブの方がトータルで安価かつ統合度が高い。
 
 ---
 
-### 4.5.6 コスト最適化の主要レバー（10 項目）
+### 4.5.4 コスト最適化の主要レバー（10 項目）
 
 | # | 最適化レバー | 削減効果 | 実施タイミング |
 |---|---|---|---|
@@ -3004,7 +2957,7 @@ flowchart TB
 
 ---
 
-### 4.5.7 コスト試算の残課題（ヒアリング項目）
+### 4.5.5 コスト試算の残課題（ヒアリング項目）
 
 | # | 質問 | 影響 |
 |---|---|---|
@@ -3019,7 +2972,7 @@ flowchart TB
 
 ---
 
-### 4.5.8 公式リソース一覧（再掲）
+### 4.5.6 公式リソース一覧（再掲）
 
 | サービス | 公式料金ページ |
 |---|---|
@@ -3044,7 +2997,8 @@ flowchart TB
 | AWS Config | https://aws.amazon.com/jp/config/pricing/ |
 | AWS RAM | https://aws.amazon.com/jp/ram/pricing/ |
 
-> 🔍 マーク = WebFetch で Tokyo リージョン固有単価が抽出できなかった項目。AWS Pricing Calculator で最終検証を必須とする。Lake Formation / KMS / QuickSight / Lambda / CloudWatch / CloudTrail / Step Functions / EventBridge / AppFlow / Transfer Family / Config は WebFetch で確認済み（Tokyo リージョンで同一）。
+> **「要Tokyo単価検証」マーク**（§4.5.2 備考列内）= WebFetch で Tokyo リージョン固有単価が抽出できなかった項目。AWS Pricing Calculator で最終検証を必須とする。
+> **WebFetch で確認済み**（Tokyo リージョンで同一単価）: Lake Formation / KMS / QuickSight / Lambda / CloudWatch / CloudTrail / Step Functions / EventBridge / AppFlow / Transfer Family / Config / Firehose / Glue Catalog 無料枠。
 
 ---
 
