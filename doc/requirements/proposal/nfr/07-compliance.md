@@ -300,6 +300,59 @@ Salesforce / Microsoft / AWS / Okta / Auth0 / Atlassian / GitHub / Slack 等、*
 
 ---
 
+## §NFR-7.6 アクセシビリティ（WCAG 2.2 AA + JIS X 8341-3）
+
+> **詳細は [ADR-043 アクセシビリティ設計](../../../adr/043-accessibility-wcag-2-2-aa.md) を参照**
+
+> **このサブセクションで定めること**: 認証基盤の全 UI 接点（ログイン / Account Console / Launchpad / Sorry / Tenant Admin Portal / Trust Center）のアクセシビリティ準拠基準と検証プロセス。
+> **主な判断軸**: 障害者差別解消法（2024/4 民間義務化）、JIS X 8341-3:2016、WCAG 2.2 AA、規制業種顧客（自治体 / 公的機関）要件
+> **§NFR-7 全体との関係**: 規制対応の一環、§NFR-7.5 Customer Audit Support の Trust Center で ACR 公開
+
+### 結論サマリ
+
+| 項目 | 採用方針 |
+|---|---|
+| **適合レベル** | **WCAG 2.2 AA + JIS X 8341-3:2016 AA**（AAA は推奨のみ）|
+| **対象 UI** | ログイン / Account Console / Launchpad / Sorry / Tenant Admin Portal / Trust Center 全 UI |
+| **Tenant Admin Portal 追加準拠** | **ATAG 2.0 AA**（オーサリングツール基準）|
+| **検証プロセス** | axe-core（CI）+ NVDA / VoiceOver / TalkBack（月次手動）+ 当事者テスト（年 1）|
+| **CI 統合** | PR 時 axe-core 自動チェック、AA 違反は merge ブロック |
+| **ACR 公開** | VPAT 2.5 形式で半年ごと、Trust Center 公開（§NFR-7.5 連動）|
+| **CAPTCHA 配慮** | Cloudflare Turnstile（[ADR-042](../../../adr/042-bot-detection-captcha.md)）の Accessibility 機能必須化 |
+
+### 規制対応マッピング
+
+| 規制 / ガイドライン | 充足方法 |
+|---|---|
+| **障害者差別解消法**（2024/4 民間義務化） | WCAG 2.2 AA + 申出時の代替手段提供 |
+| **JIS X 8341-3:2016 AA** | WCAG 2.2 AA で完全包含 |
+| **総務省 みんなの公共サイト運用ガイドライン**（2024）| AA + ACR を Trust Center 公開 |
+| **EAA**（EU Accessibility Act 2025/6 施行）| EN 301 549 ACR で対応 |
+| **米国 ADA / Section 508**（DOJ 2024）| VPAT 2.5 で対応 |
+
+### コスト
+
+| 項目 | コスト |
+|---|---|
+| Phase 0 初期（Theme 開発 + CI 統合） | 〜500 万円（3 ヶ月）|
+| 当事者テスト（年 1 + Major 改修時） | 〜200 万円 / 年 |
+| ACR 半期更新 | 〜100 万円 / 年 |
+| アクセシビリティ専任（0.2 FTE） | 〜200 万円 / 年 |
+| **年次合計** | **〜500 万円 / 年** |
+
+### TBD / 要確認
+
+| 確認項目 | ヒアリング ID | 回答例 |
+|---|---|---|
+| 規制業種顧客の見込み（自治体 / 公的機関）| **B-A11Y-1** | あり / なし / 不明 |
+| 適合レベル | **B-A11Y-2** | **AA（推奨）** / A のみ / AAA 一部 |
+| ACR 公開 | **B-A11Y-3** | **必須（推奨）** / Trust Center のみ / 非公開 |
+| 当事者テスト委託先 | **B-A11Y-4** | インフォアクシア / ミツエーリンクス / 内製 / 不要 |
+| CAPTCHA Accessibility 機能 | **B-A11Y-5** | Audio + 多言語必須 / Audio のみ / 不要 |
+| Mobile アプリ対応 | **B-A11Y-6** | 同時対応 / Phase 2 / 範囲外 |
+
+---
+
 ## 参考資料
 
 ### プロジェクト内 関連ドキュメント

@@ -45,3 +45,6 @@
 | [039](039-centralized-network-account-edge-layer.md) | 中央集約 Network 専用アカウント設計（CloudFront + WAF + Lambda@Edge） | Proposed | 2026-06-23 |
 | [040](040-pam-jit-admin-privilege-management.md) | PAM / JIT 管理者権限管理（APPI / PCI DSS 準拠） | Proposed | 2026-06-23 |
 | [041](041-workload-identity-spiffe.md) | Workload Identity 設計（SPIFFE/SPIRE + AWS IAM Roles for Service Accounts） | Proposed | 2026-06-23 |
+| [042](042-bot-detection-captcha.md) | Bot Detection / CAPTCHA 設計（Credential Stuffing 対策の多層防御） | Proposed | 2026-06-23 |
+| [043](043-accessibility-wcag-2-2-aa.md) | アクセシビリティ設計（WCAG 2.2 AA + JIS X 8341-3 準拠） | Proposed | 2026-06-23 |
+| [044](044-tabletop-exercise-incident-drill.md) | Tabletop Exercise / セキュリティインシデント訓練設計 | Proposed | 2026-06-23 |

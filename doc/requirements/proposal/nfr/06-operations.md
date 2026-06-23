@@ -533,6 +533,68 @@ resource "aws_cognito_managed_login_branding" "payment" {
 
 ---
 
+## §NFR-6.6 Tabletop Exercise / セキュリティインシデント訓練
+
+> **詳細は [ADR-044 Tabletop Exercise / セキュリティインシデント訓練設計](../../../adr/044-tabletop-exercise-incident-drill.md) を参照**
+
+> **このサブセクションで定めること**: 技術設計（ADR-035 ITDR / 040 PAM / 042 Bot Detection）の**実効性を「人と組織」で検証**する演習体系。
+> **主な判断軸**: SOC 2 CC7.4 / PCI DSS §12.10.2 / APPI 通知体制の同時充足、Red Team 内製 vs 外部委託
+> **§NFR-6 全体との関係**: §NFR-6.1 監視 / §NFR-6.5 緊急対応の実効性検証、§NFR-7 コンプライアンス連動
+
+### 結論サマリ — 3 種 × 4 頻度マトリクス
+
+| 演習種別 | 対象 | 頻度 | 期間 | 関係者 |
+|---|---|---|---|---|
+| **A. 経営 Tabletop** | 重大インシデント（10M ユーザー漏洩等）| 年 1 回 | 半日 | 経営 + IR Lead + 法務 + 広報 |
+| **B. 技術 Tabletop** | ITDR シナリオ別 | 四半期 | 2-3h | SOC / IR / SRE |
+| **C. Functional Exercise**（Break-Glass 含む）| 実環境承認・操作 | 半期 | 4h | IR + 該当チーム |
+| **D. Game Day**（AWS 障害注入）| Region 障害 / failover | 半期 | 1 日 | SRE + IR |
+| **E. Red Team / Purple Team** | 外部委託 + 内部 SOC | 年 1 回 | 1-2 週間 | 外部 + 内部 |
+| **F. 顧客通知シミュレーション** | 大規模漏洩想定の通知プロセス | 半期 | 2h | IR + 法務 + 広報 + CS |
+
+### シナリオライブラリ（MITRE ATT&CK ベース、12 件）
+
+S-01 Credential Stuffing / S-02 Account Takeover / S-03 Insider Threat / S-04 Phishing + MFA Bypass / S-05 Supply Chain / S-06 Keycloak Lockout / S-07 Region 障害 / S-08 Aurora 破壊 / S-09 Cloudflare 障害 / S-10 緊急監査対応 / S-11 大規模漏洩通知 / S-12 Workload Identity 異常
+
+### 規制対応
+
+| 規制 | 条項 | 充足方法 |
+|---|---|---|
+| SOC 2 Type II | CC7.4 IR プロセス + 年次演習 | 経営 Tabletop（年 1）+ AAR |
+| PCI DSS v4.0 | §12.10.2 IR プラン年次テスト | 全種別演習 |
+| ISO 27001 | A.5.24 IR 計画 + 演習 | 全種別演習 |
+| APPI ガイドライン | 漏えい等報告体制 + 訓練 | 顧客通知シミュレーション（半期）|
+| NIST CSF 2.0 | RC.IM-3 演習結果から改善 | AAR + Action Items 90 日トラッキング |
+
+### 改善ループ
+
+```
+演習 → Hot Wash（直後）→ AAR（5 営業日内）→ CISO Review → Action Items（Jira/PR 化）→ 90 日トラッキング → 次回演習で改善検証
+```
+
+### コスト
+
+| 項目 | 年額 |
+|---|---|
+| 演習プログラム Lead（0.3 FTE）| 〜300 万円 |
+| 内製運営（Tabletop / Functional）| 〜100 万円 |
+| Red Team 外部委託（年 1）| 〜1,000 万円 |
+| Game Day 環境費 | 〜100 万円 |
+| ツール / プラットフォーム | 〜100 万円 |
+| **合計** | **〜1,600 万円 / 年** |
+
+### TBD / 要確認
+
+| 確認項目 | ヒアリング ID | 回答例 |
+|---|---|---|
+| 演習プログラム Lead の配置 | **B-TTX-1** | CISO 直轄（推奨）/ SRE 兼任 / 外部委託 |
+| Red Team 委託先 | **B-TTX-2** | NRI セキュア / マクニカ / Mandiant / 不採用 |
+| 経営 Tabletop への取締役参加 | **B-TTX-3** | 全員 / CISO のみ / オブザーバーのみ |
+| 顧客通知シミュレーション言語 | **B-TTX-4** | 日本語のみ / 日英 / 多言語 |
+| 演習結果の Trust Center 公開範囲 | **B-TTX-5** | サマリのみ / 詳細 AAR（NDA 配下）/ 非公開 |
+
+---
+
 ## 参考資料
 
 - [AWS Support Plans](https://aws.amazon.com/premiumsupport/plans/)

@@ -2843,7 +2843,7 @@ flowchart TB
 | 中央 | カタログ層 | 必須 | AWS Glue Data Catalog（中央）| Federation 集約分 | 0 | — | 追加コスト最小 | 0 | https://aws.amazon.com/jp/glue/pricing/ | 無料枠で吸収 |
 | 中央 | カタログ層 | 必須 | AWS KMS | CMK 鍵管理 | 1.00 | per key/month | 5 鍵（中央共通 / BI 探索 / Reader / 監査 / Producer 共通）| 5 | https://aws.amazon.com/jp/kms/pricing/ | 削除予定鍵は無料 |
 | 中央 | カタログ層 | 必須 | AWS KMS | API リクエスト | 0.03 | per 10K requests | 100 万 req（S3/Athena/QS 暗号化操作）| 3 | https://aws.amazon.com/jp/kms/pricing/ | 無料枠 20K/月 |
-| 中央 | Athena 層 | 必須 | Amazon Athena Standard On-Demand | スキャン量 | 5.00 | per TB scanned | 100 GB スキャン/月（最小 10MB/クエリ）| 0.5 | https://aws.amazon.com/jp/athena/pricing/ | 要Tokyo単価検証。最適化: Parquet + パーティションでスキャン量 75% 削減、Result Reuse で再スキャン 30% 削減 |
+| 中央 | Athena 層 | 必須 | Amazon Athena Standard On-Demand | スキャン量 | 5.00 | per TB scanned | 300 GB スキャン/月（**想定、Parquet + パーティション + Partition Projection + Result Reuse 前提**）。レンジ: **最良 100 GB / 想定 300 GB / 最悪 1,000 GB**。最小 10MB/クエリ | 1.5 | https://aws.amazon.com/jp/athena/pricing/ | 要Tokyo単価検証。**料金は設計次第で 10-1000 倍変動**: ①ファイル形式（CSV/JSON だと Parquet の 10 倍） ②列指定（SELECT * は 10 倍）③パーティション指定（無視で全走査）④`LIMIT` は効かない（全スキャン後トリミング）。**Glue Catalog Partition Projection 採用が前提**（[§FR-4.1](proposal/fr/04-consumption.md) / Partition 数 1M 超で Glue 課金回避）。最適化: ①Parquet+Snappy 圧縮で 75-90% 削減 ②パーティション設計（tenant_id + 日付）で 50-99% 削減 ③Result Reuse で 30-70% ヒット ④CTAS で集計テーブル化（参照側 90-99% 削減）⑤Workgroup スキャン量上限必須（暴走防止）。DDL（CREATE/ALTER/DROP/SHOW/DESCRIBE）は無料、失敗クエリも無料。残課題: SPICE 未使用時は 10 倍 = $15/月 |
 | 中央 | Athena 層 | 任意 | Amazon Athena Provisioned Capacity（Phase 3+ 候補）| DPU-hour | 0.30 | per DPU-hour | Phase 1 は不採用 | 0 | https://aws.amazon.com/jp/athena/pricing/ | 最小 4 DPU、損益分岐 175 TB/月 |
 | 中央 | Athena 層 | 任意 | Amazon Athena Spark（Phase 3+ 候補）| DPU-hour | 0.35 | per DPU-hour | 不採用 | 0 | https://aws.amazon.com/jp/athena/pricing/ | ML 前処理用、Phase 1 は SageMaker Studio |
 | 中央 | Athena 層 | 任意 | Amazon Athena Result Reuse | キャッシュ | 0 | — | キャッシュヒット率 30% 想定 | -0.15 | https://aws.amazon.com/jp/athena/pricing/ | 最適化: 同一クエリのキャッシュヒットで再スキャン削減 |
@@ -2890,12 +2890,12 @@ flowchart TB
 | **Producer 合計**（ベースライン、1 アプリ）| | **85** |
 | **Producer 合計**（Transfer Family 採用、1 アプリ）| | **301** |
 | **中央**（Phase 1）| カタログ層 | 8 |
-| 中央（Phase 1）| Athena 層 | 0.5 |
+| 中央（Phase 1）| Athena 層 | 1.5 |
 | 中央（Phase 1）| QuickSight 層 | 386 |
 | 中央（Phase 1）| 結果・派生データ | 3 |
 | 中央（Phase 2）| ML 層（+SageMaker）| 104 |
-| **中央 合計**（Phase 1）| | **398** |
-| **中央 合計**（Phase 2）| | **502** |
+| **中央 合計**（Phase 1）| | **399** |
+| **中央 合計**（Phase 2）| | **503** |
 | **横断**| リソース共有 + 監査ログ + ネットワーク + 構成監視 + データ転送（VPC Flow Logs は CloudWatch 送信時 +$5）| **342** |
 
 #### 4.5.2.B 必須/任意の行数集計（参考）
@@ -2918,12 +2918,12 @@ flowchart TB
 | カテゴリ | 内訳 | 月額 |
 |---|---|---|
 | **Producer アカウント** | $85/アプリ × N | $85 × N |
-| **中央 BI / Catalog アカウント** | 単一 | $398 |
+| **中央 BI / Catalog アカウント** | 単一 | $399 |
 | **横断インフラ** | 全アカウント分散負担（VPC Flow Logs 込み）| $342 |
-| **合計（1 アプリ時）** | $85 + $398 + $342 | **~$825/月** |
-| **合計（5 アプリ時）** | $85 × 5 + $398 + $342 | **~$1,165/月** |
-| **合計（10 アプリ時）** | $85 × 10 + $398 + $342 | **~$1,590/月** |
-| **合計（20 アプリ時）** | $85 × 20 + $398 + $342 | **~$2,440/月** |
+| **合計（1 アプリ時）** | $85 + $399 + $342 | **~$826/月** |
+| **合計（5 アプリ時）** | $85 × 5 + $399 + $342 | **~$1,166/月** |
+| **合計（10 アプリ時）** | $85 × 10 + $399 + $342 | **~$1,591/月** |
+| **合計（20 アプリ時）** | $85 × 20 + $399 + $342 | **~$2,441/月** |
 
 **Transfer Family 採用時の加算**（オプション、SFTP 連携必要なアプリ数 × $216）:
 
@@ -2934,7 +2934,7 @@ flowchart TB
 | **中央 1 個に集約**（推奨）| **+$216/月固定** | アプリ数によらず 1 個、ディレクトリ単位で振分け |
 | 不採用（API のみ） | $0 | レガシー連携なし |
 
-→ **典型ケース（10 アプリ + 中央集約 SFTP 1 個）= $1,590 + $216 = ~$1,806/月**
+→ **典型ケース（10 アプリ + 中央集約 SFTP 1 個）= $1,591 + $216 = ~$1,807/月**
 
 **Phase 2 追加（SageMaker + リソース増分）**:
 
@@ -2946,7 +2946,7 @@ flowchart TB
 | SPICE 容量増（92 GB → 200 GB）| +$28 |
 | **Phase 2 増分小計** | **+$434/月** |
 
-→ Phase 2 全体（ベースライン + Transfer Family 中央集約）: 10 アプリで **~$2,240/月**、20 アプリで **~$3,090/月**
+→ Phase 2 全体（ベースライン + Transfer Family 中央集約）: 10 アプリで **~$2,241/月**、20 アプリで **~$3,091/月**
 
 > **比較参考**: 既存の SaaS BI（Tableau Cloud 等）を採用した場合、Author 単価 $70/月、Viewer 単価 $15/月で、同規模で月 $1,500-3,000 のライセンス費のみで上記試算と同等以上。AWS ネイティブの方がトータルで安価かつ統合度が高い。
 

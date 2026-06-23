@@ -191,6 +191,7 @@ flowchart LR
 |---|---|
 | ブルートフォース | 連続失敗で一時ロック（5 回 / 30 分）|
 | 侵害クレデンシャル検出 | **有効**（Cognito Plus or Keycloak+HIBP）|
+| **Bot Detection / CAPTCHA** | **3 層防御**（WAF Bot Control + ATP + Turnstile Invisible）→ 詳細 [ADR-042](../../../adr/042-bot-detection-captcha.md) |
 | DDoS 対策 | Shield Standard（AWS 標準）|
 | ペネトレーションテスト | 年 1 回（顧客要件次第）|
 | 脆弱性スキャン | ECR Image Scan + Inspector |
@@ -201,6 +202,44 @@ flowchart LR
 |---|---|
 | 侵害クレデンシャル検出 Must | はい（Cognito Plus / Keycloak+HIBP）/ いいえ |
 | ペネトレーションテスト頻度 | 年 N 回 / なし |
+| **Bot Detection 製品** | **AWS WAF Bot Control + Turnstile（推奨）**/ Akamai Bot Manager / DataDome |
+| **WAF ATP（ログイン Credential Stuffing 検知）** | 採用（推奨）/ 不採用 |
+| **CAPTCHA 製品** | Cloudflare Turnstile（推奨、プライバシー配慮）/ reCAPTCHA v3 / hCaptcha / AWS WAF Captcha |
+
+---
+
+## §NFR-4.9 Bot Detection / Credential Stuffing 対策
+
+> **詳細は [ADR-042 Bot Detection / CAPTCHA 設計](../../../adr/042-bot-detection-captcha.md) を参照**
+
+> **このサブセクションで定めること**: 認証エンドポイントへの自動化攻撃（Credential Stuffing / Brute Force / Scraping / Account Enumeration）防御の体系。**§NFR-4.3** の延長で、ボット自体の判定層を補完。
+> **主な判断軸**: PCI DSS v4.0 §6.4.2（2025/3 強制）、商用 Bot Manager の要否、CAPTCHA UX 摩擦
+> **§NFR-4 全体との関係**: §NFR-4.3 攻撃対策の延長、§NFR-4.6 ITDR と統合スコアリング
+
+### 結論サマリ
+
+| 層 | 採用方式 | 配置 |
+|---|---|---|
+| **L1 Network 層** | AWS WAF Bot Control（Common + Targeted）+ ATP | 🟣 Network Acct |
+| **L2 アプリ層** | Cloudflare Turnstile（Invisible）+ Keycloak Authenticator SPI | 🟠 Auth Acct |
+| **L3 アカウント層** | ITDR Anomaly Login + Adaptive Auth（既存 ADR-034 / 035）| 🟠 Auth Acct |
+
+### 採用方針の核
+
+- **3 層多層防御**で阻止率 99%+
+- **リスクベース動作**（Adaptive Auth Score 連動）で平時 UX 影響ゼロ
+- **Turnstile プライマリ + WAF Captcha フォールバック**（プライバシー配慮 + 障害耐性）
+- **商用 Bot Manager 不要**（Akamai 等比 8-12 倍コスト削減、年 $5K で実現）
+- **Account Enumeration 対策**：Keycloak 汎用エラー + Constant-time response
+
+### 規制対応
+
+| 規制 | 条項 | 充足方法 |
+|---|---|---|
+| PCI DSS v4.0 §6.4.2 | パブリック向け Web アプリの自動攻撃防御 | WAF Bot Control + ATP |
+| PCI DSS v4.0 §8.3.6 | パスワード試行制限 | Keycloak `bruteForceProtected` |
+| NIST SP 800-63B Rev 4 §5.2.2 | Rate-limit + Throttling | WAF Rate Limit + Keycloak `failureFactor` |
+| OWASP ASVS L2 V2.2.1 | Anti-automation | Bot Control + Turnstile |
 
 ---
 

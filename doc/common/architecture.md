@@ -49,6 +49,9 @@
 | **[ADR-039](../adr/039-centralized-network-account-edge-layer.md) 中央集約 Network アカウント** | **CloudFront + WAF + Lambda@Edge + Route 53 + ACM を Network 専用 Acct に集約** |
 | **[ADR-040](../adr/040-pam-jit-admin-privilege-management.md) PAM / JIT 管理者** | **IAM Identity Center + Session Manager + Keycloak Composite Role + Break-Glass** |
 | **[ADR-041](../adr/041-workload-identity-spiffe.md) Workload Identity** | **EKS Pod Identity + Keycloak Federated Identity Credentials**（client_secret 廃止）|
+| **[ADR-042](../adr/042-bot-detection-captcha.md) Bot Detection / CAPTCHA** | **AWS WAF Bot Control + ATP + Cloudflare Turnstile（Invisible）の 3 層防御** |
+| **[ADR-043](../adr/043-accessibility-wcag-2-2-aa.md) Accessibility WCAG 2.2 AA** | **Keycloak Theme カスタム + axe-core CI + ACR Trust Center 公開** |
+| **[ADR-044](../adr/044-tabletop-exercise-incident-drill.md) Tabletop Exercise** | **3 種 × 4 頻度マトリクス**（経営 Tabletop / 技術 Tabletop / Functional / Game Day / Red Team / 顧客通知シミュ）|
 
 ---
 
@@ -77,6 +80,9 @@
 | 顧客 UI | **自作 Tenant Admin Portal SPA** | ADR-038 |
 | 特権アクセス | **JIT 昇格 + Session Manager + Break-Glass**（APPI / PCI DSS 準拠）| ADR-040 |
 | Workload 認証 | **EKS Pod Identity + Keycloak FedID**（Secret ゼロ化、PCI DSS §8.6）| ADR-041 |
+| Bot 防御 | **3 層**（WAF Bot Control + ATP / Turnstile Invisible / ITDR Anomaly）| ADR-042 |
+| Accessibility | **WCAG 2.2 AA + JIS X 8341-3**（障害者差別解消法 / EAA 対応、ACR 公開）| ADR-043 |
+| インシデント訓練 | **3 種 × 4 頻度マトリクス**（SOC 2 / PCI DSS / APPI 演習要件充足）| ADR-044 |
 
 ---
 
@@ -810,6 +816,119 @@ App が 403 + X-Sorry-Reason ヘッダ返却
 | App Access Log | Pod 間 HTTP 呼び出し | 🟢 App Acct CloudWatch → 🔵 Audit Acct S3 |
 
 → ITDR（§3.10）と統合し、**Service Account の異常使用**（通常 Pod 以外からの Token 利用 / Cross-Acct 異常 AssumeRole）を検知。
+
+### 3.17 Bot Detection / Credential Stuffing 対策（ADR-042）
+
+> 認証エンドポイントへの自動化攻撃を 3 層多層防御で阻止率 99%+。PCI DSS v4.0 §6.4.2（2025/3 強制）を充足。
+
+#### 3.17.1 3 層 Bot Defense コンポーネント
+
+| 層 | コンポーネント | 配置 | 判定対象 | UX 影響 |
+|---|---|---|---|---|
+| **L1 Network 層** | **AWS WAF Bot Control**（Common + Targeted、`/realms/*/auth` に Targeted 限定）+ **ATP**（Account Takeover Prevention、ログイン経路のみ）| 🟣 Network Acct（[ADR-039](../adr/039-centralized-network-account-edge-layer.md)）| TLS Fingerprint / IP Reputation / Header 異常 / ログイン成功率 | なし（透明）|
+| **L2 アプリ層** | **Cloudflare Turnstile**（Invisible、`data-size="invisible"`）+ **Keycloak Authenticator SPI**（カスタム TurnstileAuthenticator）| 🟠 Auth Platform Acct | デバイス指紋 + ふるまい | Invisible 時なし |
+| **L3 アカウント層** | ITDR Anomaly Login + Adaptive Auth（既存 ADR-034 / 035）| 🟠 Auth Platform Acct | アカウント単位異常 | ステップアップ MFA |
+
+#### 3.17.2 Account Enumeration 対策
+
+| 対策 | Keycloak 設定 |
+|---|---|
+| 汎用エラーメッセージ | `Username Type=email` 固定、`Invalid username or password` のみ |
+| Constant-time response | カスタム Authenticator で意図的遅延（200ms）|
+| PW Reset で「メール送信した」と常に表示 | Forgot Password 成功画面共通化 |
+| Brute Force Protection | `failureFactor=5` + `maxFailureWaitSeconds=900` |
+
+#### 3.17.3 監査ログ + ITDR 統合
+
+| ログ | 保管先 |
+|---|---|
+| WAF Logs（Bot Control / ATP）| Kinesis Firehose → 🔵 Audit Acct S3 |
+| Turnstile siteverify API ログ | Keycloak Event Logs |
+| Adaptive Auth Score | DynamoDB（ADR-034）|
+
+→ ITDR EventBridge へ集約し、WAF ATP + Turnstile Score + Adaptive Auth Score を統合スコアリング。
+
+### 3.18 Accessibility 設計（ADR-043）
+
+> WCAG 2.2 AA + JIS X 8341-3:2016 AA 準拠を全 UI 接点で必須。障害者差別解消法（2024/4 民間義務化）+ EAA（2025/6 EU 施行）対応。
+
+#### 3.18.1 対象 UI と準拠目標
+
+| UI | 準拠目標 | 検証 | ACR 公開 |
+|---|---|---|---|
+| Keycloak ログイン画面（Theme `custom-accessible`）| WCAG 2.2 AA + JIS X 8341-3 AA | axe-core + NVDA / VoiceOver + 当事者テスト | ✅ |
+| Account Console | 同上 | 同上 | ✅ |
+| Launchpad SPA（[ADR-021](../adr/021-post-login-landing-ux.md)）| 同上 | 同上 | ✅ |
+| Sorry SPA | 同上 | axe-core + 手動 | ✅ |
+| Tenant Admin Portal（[ADR-038](../adr/038-tenant-admin-portal.md)）| WCAG 2.2 AA + **ATAG 2.0 AA** | axe-core + 手動 + ATAG 専用テスト | ✅ |
+| Trust Center / Customer Portal（[ADR-036](../adr/036-customer-audit-support.md)）| WCAG 2.2 AA | axe-core + 手動 | ✅ |
+
+#### 3.18.2 CI / 検証パイプライン
+
+```
+PR → axe-core via Playwright（CI、AA 違反は merge ブロック）
+   → NVDA / VoiceOver 月次手動テスト（社内）
+   → 当事者テスト年 1 回（インフォアクシア等）
+   → ACR（VPAT 2.5 形式）半期更新 → Trust Center 公開
+```
+
+#### 3.18.3 CAPTCHA Accessibility 必須化（ADR-042 連動）
+
+Cloudflare Turnstile の以下機能を必ず有効化:
+- Audio CAPTCHA フォールバック（WCAG 1.1.1 / 1.4.2）
+- キーボード操作（WCAG 2.1.1）
+- `data-language="ja"`（WCAG 3.1.1）
+- 高コントラスト対応（WCAG 1.4.3）
+
+→ WCAG 3.3.8「アクセシブルな認証（最低限）」基準準拠。
+
+### 3.19 Tabletop Exercise / インシデント訓練（ADR-044）
+
+> 技術設計（ADR-035 ITDR / 040 PAM / 042 Bot Detection）の実効性を「人と組織」で検証。SOC 2 CC7.4 / PCI DSS §12.10.2 / APPI 通知体制を 1 つの設計で同時充足。
+
+#### 3.19.1 演習体系 — 3 種 × 4 頻度マトリクス
+
+| 演習種別 | 対象 | 頻度 | 期間 | 関係者 |
+|---|---|---|---|---|
+| **A. 経営 Tabletop** | 重大インシデント想定 | 年 1 | 半日 | 経営 + IR + 法務 + 広報 |
+| **B. 技術 Tabletop** | ITDR シナリオ別 | 四半期 | 2-3h | SOC / IR / SRE |
+| **C. Functional Exercise**（Break-Glass）| 実環境承認・操作 | 半期 | 4h | IR + 該当チーム |
+| **D. Game Day**（AWS 障害注入）| Region 障害 / failover | 半期 | 1 日 | SRE + IR |
+| **E. Red Team / Purple Team** | 外部委託 + 内部 SOC | 年 1 | 1-2 週 | 外部 + 内部 |
+| **F. 顧客通知シミュレーション** | 大規模漏洩想定 | 半期 | 2h | IR + 法務 + 広報 + CS |
+
+#### 3.19.2 シナリオライブラリ（12 件、MITRE ATT&CK ベース）
+
+| ID | シナリオ | 関連 ADR |
+|---|---|---|
+| S-01 | Credential Stuffing 大規模攻撃 | ADR-035 / 042 |
+| S-02 | Account Takeover + データ exfiltration | ADR-035 |
+| S-03 | Insider Threat（管理者の不正操作）| ADR-040 |
+| S-04 | Phishing → MFA Bypass → Privilege Escalation | ADR-035 |
+| S-05 | Supply Chain Attack | Phase C 別 ADR |
+| S-06 | Keycloak Realm Lockout | ADR-040 Break-Glass |
+| S-07 | Region 障害（AWS Tokyo 全停止）| ADR-033 + Game Day |
+| S-08 | Aurora データ破壊（Ransomware 想定）| NFR-5 DR |
+| S-09 | Cloudflare（Turnstile）障害 | ADR-042 フォールバック |
+| S-10 | Customer Audit 緊急対応 | ADR-036 |
+| S-11 | 10M ユーザー漏洩想定の顧客通知 | APPI 第 26 条 / GDPR 33 条 |
+| S-12 | Workload Identity 異常 | ADR-041 |
+
+#### 3.19.3 改善ループ
+
+```
+演習 → Hot Wash → AAR（5 営業日内、NIST SP 800-84 準拠）→ CISO Review → Action Items 化（Jira/PR）→ 90 日トラッキング → 次回演習で改善検証
+```
+
+#### 3.19.4 監査エビデンス（ADR-036 Trust Center 連動）
+
+| エビデンス | 公開範囲 | 更新頻度 |
+|---|---|---|
+| 演習年間カレンダー | Trust Center 公開部 | 年次 |
+| 実施実績サマリ + KPI 達成率 | Trust Center 公開部 | 半期 |
+| 詳細 AAR | Customer Portal（NDA）| 演習ごと |
+| Break-Glass 訓練記録 | Customer Portal | 半期 |
+| Red Team レポートサマリ | Customer Portal（NDA）| 年次 |
 
 ---
 
