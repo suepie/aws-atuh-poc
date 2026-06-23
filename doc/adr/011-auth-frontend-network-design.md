@@ -2,7 +2,9 @@
 
 - **ステータス**: Proposed（要件定義フェーズで Accepted に昇格予定）
 - **日付**: 2026-04-21
+- **⚠ 2026-06-23 更新**: **[ADR-039 中央集約 Network 専用アカウント設計](039-centralized-network-account-edge-layer.md)** で **CloudFront / WAF / Lambda@Edge を Network 専用アカウントに集約**することが確定。本 ADR の N5（カスタムドメイン）/ N10（WAF）/ Pattern C（CloudFront）は、Auth Platform Acct ではなく **Network Acct での実装に変更**。詳細は ADR-039 §A 参照。Cross-account origin（CloudFront → Auth Acct ALB）には **VPC Origins（2024-12 GA）** または **Public ALB + secret header** を採用。
 - **関連**:
+  - [ADR-039 中央集約 Network 専用アカウント設計](039-centralized-network-account-edge-layer.md)（**本 ADR の上位方針**）
   - [keycloak-network-architecture.md §6](../common/keycloak-network-architecture.md)（本番課題 N1 / N5 / N10 / N16）
   - [ADR-008](008-keycloak-start-dev-for-poc.md)（PoC での HTTP:80 採用）
   - [ADR-010](010-keycloak-private-subnet-vpc-endpoints.md)（Private Subnet + VPC Endpoint）

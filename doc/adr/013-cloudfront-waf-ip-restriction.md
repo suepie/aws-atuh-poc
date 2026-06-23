@@ -2,7 +2,9 @@
 
 - **ステータス**: Proposed（要件定義フェーズで Accepted に昇格予定）
 - **日付**: 2026-04-24
+- **⚠ 2026-06-23 更新**: **[ADR-039](039-centralized-network-account-edge-layer.md)** で **CloudFront + WAF を Network 専用アカウントに集約**することが確定。本 ADR の CloudFront / WAF は **Network Acct での実装に変更**、WAF ルールは Network チームが一元管理（Terraform PR 経由）。IP 制限・Bot Control・Rate Limiting は Network Acct で全社統一適用。本 ADR の置き換え方針自体は不変だが、**配置アカウントが変更**。
 - **関連**:
+  - [ADR-039 中央集約 Network 専用アカウント設計](039-centralized-network-account-edge-layer.md)（**本 ADR の上位方針**）
   - [ADR-011](011-auth-frontend-network-design.md)（認証基盤前段の統合判断、Pattern C を本 ADR で詳細化）
   - [keycloak-network-architecture.md §9](../common/keycloak-network-architecture.md)（CloudFront + WAF 後の構成）
 

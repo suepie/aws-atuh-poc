@@ -1,238 +1,1222 @@
-# 全体アーキテクチャ（PoC実構成）
+# 認証基盤 全体アーキテクチャ（本番想定構成）
 
-**最終更新**: 2026-03-30
+**最終更新**: 2026-06-23
+**対象**: 要件定義フェーズ確定済の構成（ADR-001〜038 反映）
+**前バージョン（PoC 実構成）**: [architecture-poc-history.md](architecture-poc-history.md)（参考、2026-03-30 時点）
 
 ---
 
-## 1. PoC 全体構成図
+## 0. 本資料の位置付け
 
-### 1.1 Cognito構成（Phase 1-5）+ Keycloak構成（Phase 6-7）
+### 0.1 目的
+
+要件定義フェーズで確定したすべての構成要素を網羅的に整理し、**本番想定構成の唯一のソース**となる。後工程で drawio に転記して詳細図を作成する前提で、まず Mermaid で要素を可視化する。
+
+### 0.2 ドキュメント構成
+
+| 章 | 内容 | 詳細度 |
+|---|---|---|
+| §1 | 全体概要（4 軸方針 + 主要アーキ判断のサマリ）| ハイレベル |
+| §2 | アーキテクチャ全体構成図 | **大きな Mermaid 1 枚 + 凡例**（全要素入り）|
+| §3 | レイヤー別 構成要素詳細（14 サブセクション）| AWS リソースレベル詳細 |
+| §4 | 主要シーケンス図（6 枚）| ユースケース別フロー |
+| §5 | データフロー詳細（4 枚）| 認証 / 監査 / ITDR / SCIM |
+| §6 | 関連 ADR / 出典マッピング | トレーサビリティ |
+
+### 0.3 確定 ADR との対応
+
+| 主要 ADR | 構成要素への影響 |
+|---|---|
+| [ADR-017](../adr/017-multitenant-l2-single-realm.md) マルチテナント L2 | Broker KC = Single Realm + Organizations |
+| [ADR-018](../adr/018-user-identifier-3layer-emailless.md) 識別子 3 階層 | Layer A `sub` / Layer B `external_id` / Layer C IdP `sub` |
+| [ADR-019](../adr/019-existing-system-migration.md) 移行戦略 | User Storage SPI（並走期）|
+| [ADR-020](../adr/020-hrd-hint-keys-mixed-login.md) HRD ヒントキー | First Browser Flow + HRD Authenticator |
+| [ADR-021](../adr/021-post-login-landing-ux.md) Landing UX | Launchpad SPA + Sorry |
+| [ADR-022](../adr/022-aws-edge-sorry-control.md) AWS edge Sorry | CloudFront + Lambda@Edge |
+| [ADR-023](../adr/023-servicenow-sp-integration.md) ServiceNow SP | SAML JIT + side_door + sso_source |
+| [ADR-025](../adr/025-scim-positioning-and-receive-stance.md) SCIM | SCIM 2.0 Server（Phase Two plugin）|
+| [ADR-026](../adr/026-aal-mismatch-stepup-mfa.md) ステップアップ MFA | Step-up Authenticator |
+| [ADR-029](../adr/029-local-user-categories-and-scope-scenarios.md) 利用者カテゴリ | P-1〜P-6 + I-1〜I-5 + M-1〜M-5 |
+| [ADR-030](../adr/030-minimal-jwt-claim-design.md) 最小 JWT | Protocol Mapper 設定 |
+| [ADR-031](../adr/031-amr-saml-mfa-evaluation.md) amr/SAML 統合評価 | Identity Provider Mapper |
+| [ADR-032](../adr/032-ciam-platform-cost-comparison-10m-mau.md) CIAM コスト | Keycloak OSS 確定 |
+| **[ADR-033](../adr/033-keycloak-2tier-broker-idp-architecture.md) 2-tier アーキ** | **Broker KC + IdP KC の物理分離** |
+| [ADR-034](../adr/034-adaptive-authentication.md) Adaptive Auth | Risk Engine Lambda |
+| [ADR-035](../adr/035-identity-threat-detection-response.md) ITDR | EventBridge + Lambda + DynamoDB |
+| [ADR-036](../adr/036-customer-audit-support.md) Customer Audit | Trust Center + Customer Portal |
+| [ADR-037](../adr/037-shared-responsibility-and-lightweight-iga.md) Shared Responsibility | 軽量 IGA 機能 |
+| [ADR-038](../adr/038-tenant-admin-portal.md) Tenant Admin Portal | Admin SPA + Lambda |
+| **[ADR-039](../adr/039-centralized-network-account-edge-layer.md) 中央集約 Network アカウント** | **CloudFront + WAF + Lambda@Edge + Route 53 + ACM を Network 専用 Acct に集約** |
+
+---
+
+## 1. 全体概要
+
+### 1.1 基本方針 4 軸
+
+| 軸 | 内容 |
+|---|---|
+| **絶対安全** | NIST SP 800-63B Rev 4 準拠 + ITDR + Adaptive Auth + Zero Trust |
+| **どんなアプリでも** | OIDC / SAML / SCIM 標準準拠、Broker パターン |
+| **効率よく** | 顧客追加で各システム変更不要、IaC（Terraform）|
+| **低運用負荷・コスト** | Keycloak OSS、10M MAU で Entra/Cognito 比 100 倍コスト削減 |
+
+### 1.2 主要アーキ判断
+
+| 判断 | 採用方針 | 根拠 ADR |
+|---|---|---|
+| プラットフォーム | **Keycloak OSS（自社ホスト）**、Cognito / Entra External ID は MAU 単価でコスト破綻 | ADR-032 |
+| マルチテナント | **Single Realm + Organizations**（L2 論理分離、Multi-Realm は性能劣化）| ADR-017 |
+| アーキテクチャ | **2-tier**（Broker KC + IdP KC 物理分離）| ADR-033 |
+| 識別子 | **3 階層**（Layer A `sub` / Layer B `external_id` / Layer C IdP `sub`）| ADR-018 |
+| 認証強度 | **静的ステップアップ + 動的 Adaptive Auth の二重防御** | ADR-026 + ADR-034 |
+| 検知 | **ITDR**（6 検知領域 × 4 対応レベル）| ADR-035 |
+| 責務分担 | **Shared Responsibility Model**（顧客所有・弊社ホスト）| ADR-037 |
+| 顧客 UI | **自作 Tenant Admin Portal SPA** | ADR-038 |
+
+---
+
+## 2. アーキテクチャ全体構成図
+
+> **本セクションでは大きな Mermaid 1 枚で全要素を表示**。drawio 転記時の元データ。
+
+### 2.1 図の読み方（凡例）
+
+| 表記 | 意味 |
+|---|---|
+| **太枠の subgraph**（🟠 / 🟢 / 🔵 / 🟣）| **AWS アカウント境界** |
+| 黄色丸 👤 | **アクター**（人間の役割、IAM Role）|
+| オレンジ枠 | **AWS サービス**（EKS / Aurora / Lambda 等）|
+| サービス枠内のアイテム | **そのサービスの機能・コンポーネント** |
+| 実線矢印 → | **データ / リクエストの流れ** |
+| 点線矢印 -.-> | **認可 / 監査 / 暗号化 等の付随処理** |
+| 雷マーク 🔐 | **暗号化境界 / KMS CMK 適用** |
+
+### 2.2 アーキテクチャ全体図
 
 ```mermaid
 flowchart TB
-    subgraph External["外部サービス"]
-        Auth0["🔵 Auth0 Free<br/>（Entra ID 代替）"]
+    %% ===== Actors (top) =====
+    P1(["👤 P-1<br/>基盤運用管理者"])
+    P2(["👤 P-2<br/>テナント管理者"])
+    P3(["👤 P-3<br/>IdP あり顧客従業員"])
+    P4(["👤 P-4<br/>IdP なし顧客従業員"])
+    SNBG(["👤 SN Break Glass<br/>管理者"])
+    I1(["👤 I-1<br/>AWS 運用者"])
+    CustAuditor(["👤 顧客監査人<br/>外部"])
+
+    %% ===== Customer Side =====
+    subgraph CustomerSide["🔵 顧客環境（社外）"]
+        direction TB
+        subgraph CustIdP["顧客 IdP（フェデ顧客）"]
+            Entra["Microsoft Entra ID<br/>OIDC + SAML"]
+            Okta["Okta<br/>OIDC + SAML"]
+            ADFS["ADFS<br/>SAML"]
+        end
+        SN["🏢 ServiceNow SP<br/>Multi-Provider SSO Plugin<br/>per-user sso_source"]
+        CustHR["顧客 HR システム<br/>SCIM Client"]
+        CustSIEM["顧客 SIEM<br/>Splunk / Sentinel / 他"]
     end
 
-    subgraph Client["クライアント"]
-        SPA_C["📱 React SPA（Cognito版）<br/>localhost:5173<br/>oidc-client-ts<br/>UserManager x3"]
-        SPA_K["📱 React SPA（Keycloak版）<br/>localhost:5174<br/>oidc-client-ts<br/>UserManager x1"]
-        SPA_K2["📱 React SPA（SSO検証）<br/>localhost:5175"]
+    %% ===== Network Account (NEW, ADR-039) =====
+    subgraph NetAcct["🟣 AWS アカウント: Network Acct（NEW, ADR-039）"]
+        direction TB
+
+        subgraph EdgeLayer["☁️ Edge 層（全社集約）"]
+            direction LR
+            R53["Route 53<br/>全 Hosted Zone"]
+            ACM["ACM<br/>全 TLS 証明書 us-east-1"]
+            WAF["AWS WAF<br/>Web ACL + Bot Control<br/>+ Rate Limit + Geo"]
+            Shield["AWS Shield Advanced<br/>全社購入"]
+            subgraph CFDist["CloudFront Distributions（全集約）"]
+                CFAuth["auth.example.com<br/>Broker KC 前段"]
+                CFAdmin["admin.basis.example.com<br/>Admin SPA"]
+                CFLP["launchpad.example.com<br/>Launchpad SPA + /sorry"]
+                CFTC["compliance.example.com<br/>Trust Center"]
+                CFApp["apps.example.com/*<br/>全業務アプリ前段"]
+            end
+            LE["Lambda@Edge<br/>origin-response<br/>403 Sorry 制御"]
+        end
     end
 
-    subgraph Tokyo["東京リージョン (ap-northeast-1)"]
-        subgraph CognitoLayer["Cognito（Phase 1-5）"]
-            CentralPool["🔴 集約 Cognito<br/>auth-poc-central<br/>+ Auth0 IdP"]
-            LocalPool["🟢 ローカル Cognito<br/>auth-poc-local"]
+    %% ===== Auth Platform Account =====
+    subgraph AuthAcct["🟠 AWS アカウント: Auth Platform Account"]
+        direction TB
+
+        subgraph AuthNetLayer["🔗 ALB 層"]
+            direction LR
+            ExtALB["External ALB<br/>Broker KC<br/>※ Network Acct CF からのみ受信<br/>secret header 検証"]
+            IntALB["Internal ALB<br/>JWKS / Admin API / IdP-KC"]
         end
 
-        subgraph APILayer["API レイヤー（Phase 3）"]
-            APIGW["🟣 API Gateway<br/>GET /v1/test"]
-            Authorizer["🟠 Lambda Authorizer<br/>マルチissuer<br/>(central/local/dr)"]
-            Backend["🟢 Backend Lambda"]
+        subgraph SPALayer["🖥 SPA 層（S3 + OIDC）"]
+            direction LR
+            S3Admin["S3: Admin SPA"]
+            S3LP["S3: Launchpad SPA + Sorry"]
+            S3TC["S3: Trust Center (公開)"]
+            S3CP["S3: Customer Portal (認証要)"]
         end
 
-        subgraph KeycloakLayer["Keycloak（Phase 6-7）"]
-            ALB["🌐 Public ALB<br/>auth-poc-kc-alb<br/>HTTP:80<br/>JWKS=全IP, 他=IP制限, 他=403"]
-            AdminALB["🔒 Admin ALB<br/>auth-poc-kc-admin-alb<br/>HTTP:80 (管理者IP限定)"]
-            ECS["🐳 ECS Fargate<br/>Keycloak 26.0.8<br/>2 vCPU / 4 GB<br/>start-dev"]
-            RDS["🗄️ RDS PostgreSQL 16.13<br/>db.t4g.micro"]
-            ECR["📦 ECR"]
+        subgraph Tier1["🟡 Tier 1: Broker Keycloak"]
+            direction TB
+            subgraph BrokerEKS["EKS Cluster (Broker)"]
+                BKPods["Keycloak Pods<br/>10-20 / Multi-AZ<br/>1,250 MB / pod"]
+                BKCache["Infinispan Cache<br/>(distributed)"]
+            end
+            subgraph BrokerKCInternals["Broker KC Internals"]
+                BRealm["Single Realm + Organizations<br/>全顧客分"]
+                BFlow["First Browser Flow<br/>+ HRD Authenticator<br/>+ Risk-based Authenticator SPI<br/>+ Step-up Flow"]
+                BMapper["Protocol Mapper<br/>tenant_id / external_id / azp / roles"]
+                BIdPMap["Identity Provider Mapper<br/>amr / SAML AC → mfa_indicator"]
+                BSPI["Custom SPI<br/>(Event Listener / User Storage)"]
+            end
+            subgraph BrokerDB["Aurora PostgreSQL (Broker)"]
+                BAurora[("r6g.2xlarge × 3-4<br/>Multi-AZ<br/>I/O-Optimized")]
+            end
+            BKMS["🔐 KMS CMK (Broker 専用)"]
+            BSecret["Secrets Manager"]
+        end
+
+        subgraph Tier2["🟢 Tier 2: IdP Keycloak"]
+            direction TB
+            subgraph IdPKCEKS["EKS Cluster (IdP-KC)"]
+                IKPods["Keycloak Pods<br/>5-10 / Multi-AZ"]
+            end
+            subgraph IdPKCInternals["IdP-KC Internals"]
+                IRealm["Single Realm + Organizations<br/>IdP なし顧客のみ"]
+                IAccount["Account Console<br/>(エンドユーザー<br/>セルフサービス)"]
+                IRegFlow["Registration Flow<br/>+ Custom Approval<br/>Authenticator"]
+            end
+            subgraph IdPKCDB["Aurora PostgreSQL (IdP-KC)"]
+                IAurora[("r6g.xlarge × 2-3<br/>Multi-AZ")]
+            end
+            IKMS["🔐 KMS CMK (IdP-KC 専用)"]
+        end
+
+        subgraph ITDRLayer["⚡ ITDR + Adaptive Auth"]
+            direction LR
+            EB["EventBridge<br/>Event Bus"]
+            RiskLambda["Risk Engine Lambda<br/>(Node.js/Python)<br/>7 軸スコア算出"]
+            ITDRDB[("DynamoDB<br/>履歴 / IP / デバイス")]
+            ThreatIntel["Threat Intel<br/>HIBP / Spamhaus"]
+            SNS["SNS<br/>通知配信"]
+            SIEMConv["Lambda<br/>OCSF 変換"]
+        end
+
+        subgraph AdminBackend["🔧 Tenant Admin Portal Backend"]
+            direction LR
+            APIGW["API Gateway<br/>api.basis.example.com<br/>/admin/*"]
+            LambdaAuth["Lambda Authorizer<br/>(L1 JWT 検証)"]
+            AdminLambda["Admin Lambda<br/>(L2 tenant_id 検証<br/>+ L3 Org スコープ)"]
+            AdminDDB[("DynamoDB<br/>設定 + 監査ログ")]
+        end
+
+        subgraph SCIMLayer["🔄 SCIM / Webhook"]
+            SCIMServer["SCIM 2.0 Server<br/>(Phase Two plugin)<br/>受信 /Users /Groups"]
+            WebhookLambda["Webhook Lambda<br/>(発信 SCIM / 通知)"]
+        end
+
+        subgraph TCBackend["📋 Trust Center / Customer Portal"]
+            TCAuth["Customer Portal<br/>OIDC 認証"]
         end
     end
 
-    subgraph Osaka["大阪リージョン (ap-northeast-3)"]
-        DRPool["🟣 DR Cognito<br/>auth-poc-dr-osaka<br/>+ Auth0 IdP<br/>（コンソール手動作成）"]
+    %% ===== App Accounts =====
+    subgraph AppAcct["🟢 AWS アカウント: App Account A (N 個)"]
+        direction TB
+        AppALB["Internal ALB<br/>VPC Origins で<br/>Network Acct CF から受信"]
+        AppAPI["App API Gateway<br/>+ Lambda Authorizer"]
+        AppCompute["ECS / Lambda<br/>アプリ実体"]
+        AppDB[("App DB<br/>Aurora / DynamoDB")]
     end
 
-    %% Cognito SPA
-    SPA_C -->|"OIDC"| CentralPool
-    SPA_C -->|"OIDC"| LocalPool
-    SPA_C -->|"OIDC (DR)"| DRPool
-    SPA_C -->|"Bearer Token"| APIGW
+    %% ===== Audit Account =====
+    subgraph AuditAcct["🔵 AWS アカウント: Audit / Compliance Account"]
+        direction LR
+        CTAggr["CloudTrail<br/>Organization Trail"]
+        AuditS3[("S3: 監査ログ集約")]
+        Athena["Athena<br/>監査クエリ"]
+        SIEMOut["EventBridge → Lambda<br/>OCSF 変換 → 顧客 SIEM"]
+    end
 
-    %% Keycloak SPA
-    SPA_K -->|"OIDC"| ALB
-    SPA_K2 -->|"OIDC (SSO検証)"| ALB
+    %% ===== Migration Layer (並走期のみ) =====
+    subgraph MigrationLayer["⏳ 移行層（並走期のみ）"]
+        OldIAM[("旧 IAM<br/>並走中")]
+        SNRESTAuth["ServiceNow REST API<br/>/api/now/auth<br/>(SN PW 検証)"]
+    end
 
-    %% Auth0
-    Auth0 <-->|"OIDC"| CentralPool
-    Auth0 <-->|"OIDC"| DRPool
-    Auth0 <-->|"Identity<br/>Brokering"| ECS
+    %% ===== Connections: Actors → SPA / Apps =====
+    P1 -->|AWS Console| AuthAcct
+    P2 -->|OIDC SSO| CFAdmin
+    P3 -->|OIDC| CFAuth
+    P3 -->|SSO| CFApp
+    P3 -->|SAML SSO| SN
+    P4 -->|ID/PW + MFA| CFAuth
+    SNBG -->|/side_door.do| SN
+    I1 -->|IAM Identity Center| AuthAcct
+    CustAuditor -->|公開| CFTC
+    CustAuditor -->|OIDC| TCAuth
 
-    %% API Layer
-    APIGW --> Authorizer --> Backend
+    %% ===== Edge: DNS / TLS / WAF / Shield =====
+    R53 -.DNS解決.-> CFAuth
+    R53 -.DNS解決.-> CFAdmin
+    R53 -.DNS解決.-> CFLP
+    R53 -.DNS解決.-> CFTC
+    R53 -.DNS解決.-> CFApp
+    ACM -.TLS.-> CFAuth
+    ACM -.TLS.-> CFAdmin
+    ACM -.TLS.-> CFLP
+    ACM -.TLS.-> CFTC
+    ACM -.TLS.-> CFApp
+    WAF -.保護.-> CFAuth
+    WAF -.保護.-> CFAdmin
+    WAF -.保護.-> CFLP
+    WAF -.保護.-> CFTC
+    WAF -.保護.-> CFApp
+    Shield -.DDoS 防御.-> CFAuth
+    Shield -.DDoS 防御.-> CFApp
 
-    %% Keycloak Internal
-    ALB --> ECS --> RDS
-    AdminALB --> ECS
-    ECR -.-> ECS
+    %% ===== CloudFront (Network Acct) → Cross-account origins =====
+    CFAuth -->|Public ALB origin<br/>+ secret header| ExtALB
+    CFAdmin -->|OAC| S3Admin
+    CFLP -->|OAC| S3LP
+    CFTC -->|OAC| S3TC
+    CFTC -->|OAC| S3CP
+    CFApp -->|VPC Origins<br/>cross-account| AppALB
+    ExtALB --> BKPods
 
-    style CognitoLayer fill:#fff0f0,stroke:#cc0000
-    style KeycloakLayer fill:#f5f0ff,stroke:#6600cc
-    style APILayer fill:#f0f0ff,stroke:#0000cc
-    style Osaka fill:#f5f0ff,stroke:#6600cc
+    %% ===== Broker KC ↔ Customer IdP =====
+    Entra <-.OIDC/SAML.-> BKPods
+    Okta <-.OIDC/SAML.-> BKPods
+    ADFS <-.SAML.-> BKPods
+
+    %% ===== Broker KC ↔ IdP-KC =====
+    BKPods <-.OIDC 内部.-> IntALB
+    IntALB --> IKPods
+
+    %% ===== Broker KC → SN (SAML 発行) =====
+    BKPods -.SAML 発行.-> SN
+
+    %% ===== Broker KC → Apps =====
+    BKPods -.JWT 発行.-> AppAPI
+
+    %% ===== KC Internals =====
+    BKPods --- BRealm
+    BKPods --- BFlow
+    BKPods --- BMapper
+    BKPods --- BIdPMap
+    BKPods --- BSPI
+    BKPods --> BAurora
+    BKPods -.読み.- BSecret
+    BKMS -.🔐 暗号化.-> BAurora
+
+    IKPods --- IRealm
+    IKPods --- IAccount
+    IKPods --- IRegFlow
+    IKPods --> IAurora
+    IKMS -.🔐 暗号化.-> IAurora
+
+    %% ===== Tenant Admin Portal flow =====
+    S3Admin -->|API 呼出| APIGW
+    APIGW --> LambdaAuth
+    LambdaAuth --> AdminLambda
+    AdminLambda -->|Admin REST API<br/>via Internal ALB| IntALB
+    AdminLambda --> AdminDDB
+
+    %% ===== SCIM =====
+    CustHR -.SCIM Push.-> SCIMServer
+    SCIMServer --> BKPods
+    WebhookLambda -.SCIM Push.-> SN
+
+    %% ===== ITDR =====
+    BSPI -.Event.-> EB
+    EB --> RiskLambda
+    RiskLambda --> ITDRDB
+    RiskLambda -.IP/Hash 問合.-> ThreatIntel
+    RiskLambda -->|高リスク| SNS
+    SNS -.Slack/PagerDuty.-> I1
+    SNS --> SIEMConv
+    SIEMConv -.OCSF.-> CustSIEM
+    RiskLambda -.Score 返却.-> BFlow
+
+    %% ===== App-side flow (Network Acct CF経由) =====
+    AppALB --> AppAPI
+    AppALB --> AppCompute
+    AppAPI --> AppCompute
+    AppCompute --> AppDB
+    AppCompute -.403 + X-Sorry-Reason.-> LE
+    LE -.302 to /sorry.-> CFLP
+
+    %% ===== Audit =====
+    BKPods -.Event.-> CTAggr
+    IKPods -.Event.-> CTAggr
+    AdminLambda -.Event.-> CTAggr
+    AppCompute -.Event.-> CTAggr
+    CTAggr --> AuditS3
+    AuditS3 --> Athena
+    AuditS3 --> SIEMOut
+    SIEMOut -.OCSF.-> CustSIEM
+
+    %% ===== Migration (並走期のみ、点線) =====
+    BSPI -.User Storage SPI.-> OldIAM
+    BSPI -.User Storage SPI.-> SNRESTAuth
+    SNRESTAuth -.PW 検証.-> SN
+
+    %% ===== Customer Portal → Trust Center backend =====
+    TCAuth -.OIDC.-> BKPods
+
+    %% ===== Styling =====
+    style CustomerSide fill:#e3f2fd,stroke:#1565c0,stroke-width:3px
+    style NetAcct fill:#f3e5f5,stroke:#6a1b9a,stroke-width:3px
+    style AuthAcct fill:#fff3e0,stroke:#e65100,stroke-width:3px
+    style AppAcct fill:#e8f5e9,stroke:#388e3c,stroke-width:3px
+    style AuditAcct fill:#e1f5fe,stroke:#0277bd,stroke-width:3px
+    style MigrationLayer fill:#fafafa,stroke:#666,stroke-dasharray: 3 3
+
+    style EdgeLayer fill:#f3e5f5
+    style AuthNetLayer fill:#fff8e1
+    style SPALayer fill:#e0f7fa
+    style Tier1 fill:#fff8e1
+    style Tier2 fill:#e8f5e9
+    style ITDRLayer fill:#fce4ec
+    style AdminBackend fill:#e3f2fd
+    style SCIMLayer fill:#f1f8e9
+    style TCBackend fill:#fff3e0
+
+    style BrokerEKS fill:#ffe0b2
+    style IdPKCEKS fill:#c8e6c9
+    style BrokerKCInternals fill:#ffe0b2
+    style IdPKCInternals fill:#c8e6c9
+    style CFDist fill:#fffde7
+
+    style P1 fill:#fffacd
+    style P2 fill:#fffacd
+    style P3 fill:#fffacd
+    style P4 fill:#fffacd
+    style SNBG fill:#fffacd
+    style I1 fill:#fffacd
+    style CustAuditor fill:#fffacd
+
+    style BKMS fill:#fff,stroke:#d32f2f
+    style IKMS fill:#fff,stroke:#d32f2f
 ```
 
-### 1.2 本番想定構成との対応
+> **注**: 図が複雑なため drawio 転記時には**論理ゾーン別に色分け / レイヤー再配置**を推奨。Mermaid の制約で配置が固定できない要素は drawio で手動調整。
 
-| 要素 | PoC | 本番想定 | 差異 |
-|------|-----|---------|------|
-| 集約Cognito | User Pool A（東京） | 共通認証基盤アカウント | アカウント分離のみ |
-| ローカルCognito | User Pool B（東京） | 各サービスアカウント | 同上 |
-| DR Cognito | User Pool C（大阪） | 共通認証基盤（大阪DR） | 同一構成 |
-| 外部IdP | Auth0 Free | Entra ID / Okta | OIDC設定は同一構造 |
-| JWKS取得 | HTTPS（3 User Pool） | クロスアカウント HTTPS | **動作差異なし** |
-| API Gateway | 東京のみ | 各サービスアカウント | 大阪にはAPI GWなし |
-| Keycloak | ECS Fargate + RDS | ECS Fargate + Aurora | start-dev → start --optimized + HTTPS |
-| Keycloak Public ALB | HTTP:80、L7パスベースIP制限 | HTTPS:443 + WAF | 詳細: [keycloak-network-architecture.md](keycloak-network-architecture.md) |
-| Keycloak Admin ALB | internet-facing + SG制限 | `internal` + VPN/DirectConnect | 管理画面は非公開化必須 |
+### 2.3 AWS アカウント境界の整理
+
+> **2026-06-23 更新**: [ADR-039](../adr/039-centralized-network-account-edge-layer.md) により **Network 専用 Acct を新設**、CloudFront / WAF / Lambda@Edge / Route 53 / ACM を全社集約。最小構成が **3 → 4 アカウント**に変更。
+
+| アカウント | 役割 | 主要リソース | 数 | 配置タイミング |
+|---|---|---|:---:|---|
+| 🟣 **Network Acct**（必須、NEW）| **エッジ層集約**（CloudFront / WAF / Lambda@Edge / Route 53 / ACM / Shield Advanced）| 全 CloudFront Distribution + WAF + 全 ACM 証明書 + Route 53 Hosted Zone | **1** | 初期から必須 |
+| 🟠 **Auth Platform Acct** | 認証基盤コア | EKS（Broker KC + IdP KC）+ Aurora × 2 + KMS × 2 + SPA S3 + ITDR Lambda + Admin Lambda + Trust Center 内部 | **1** | 初期から |
+| 🟢 **App Acct A, B, C...** | 各業務アプリ稼働 | **Internal ALB**（VPC Origins 経由で Network Acct CF から受信）+ アプリ実体 + App API | **N** | アプリ別 |
+| 🔵 **Audit/Compliance Acct** | 監査ログ集約 | CloudTrail Organization Trail + 監査 S3 + Athena + SIEM Lambda | **1** | 初期から |
+
+→ **最小構成 = Network + Auth Platform + App + Audit の 4 アカウント**（ADR-039 で 1 増）。
+
+#### アカウント間の責務分担（変更点ハイライト）
+
+| 領域 | 旧（〜ADR-038）| 新（ADR-039〜）|
+|---|---|---|
+| CloudFront / WAF | 各アカウントが個別保有 | **Network Acct に集約** |
+| Lambda@Edge（Sorry）| Auth Acct | **Network Acct**（CF と同一 Acct 必須）|
+| Route 53 | 各アカウントで分散 | **Network Acct に集約** |
+| ACM 証明書（CloudFront 用）| 各アカウント | **Network Acct（us-east-1）に集約** |
+| App の ALB | 公開 ALB | **Internal ALB**（VPC Origins で Network Acct CF から接続）|
+| WAF ルール管理 | 各チームで分散 | **Network チームが一元管理**（Terraform PR）|
+| AWS Shield Advanced | 検討せず | **Network Acct で全社購入**（$3K/月 × 1）|
 
 ---
 
-## 2. コンポーネント一覧
+## 3. レイヤー別 構成要素詳細
 
-### 2.1 Cognito（Phase 1-5）
+### 3.1 アクター（人間 + M2M）
 
-| User Pool | リージョン | 名前 | 役割 | Auth0 IdP |
-|-----------|----------|------|------|-----------|
-| A（集約） | 東京 | auth-poc-central | 共通認証基盤 | Terraform |
-| B（ローカル） | 東京 | auth-poc-local | パートナーユーザー | なし |
-| C（DR） | 大阪 | auth-poc-dr-osaka | 災害復旧 | コンソール手動（※） |
+#### 3.1.1 人間アクター（利用者カテゴリ P-1〜P-6 + I-1〜I-5）
 
-※ 大阪の制限: [ADR-007](../adr/007-osaka-auth0-idp-limitation.md)
+| ID | アクター | 利用者カテゴリ | 認証方式 | 主なアクセス先 | 根拠 ADR |
+|:---:|---|---|---|---|---|
+| 👤 P-1 | 基盤運用管理者 | A | 弊社 IdP + Break Glass ローカル | AWS IAM Identity Center / Keycloak Admin Console | ADR-029 |
+| 👤 P-2 | テナント管理者 | A | 顧客 IdP / IdP-KC | **Tenant Admin Portal**（`admin.basis.example.com`）| ADR-029, 038 |
+| 👤 P-3 | IdP あり顧客従業員 | A | 顧客 IdP（Entra/Okta 等）| 各業務アプリ / Launchpad / ServiceNow | ADR-029 |
+| 👤 P-4 | IdP なし顧客従業員 | A | IdP-KC（PW + MFA）| 同上 | ADR-029, 033 |
+| 👤 P-5 | ゲスト / 外部協力者 | A | 招待 URL + ローカル / ソーシャル | 限定アクセス | ADR-029 |
+| 👤 P-6 | B2C エンドユーザー | A | （対象外） | — | ADR-029 |
+| 👤 — | ServiceNow Break Glass 管理者 | A 派生 | SN ローカル PW + Hardware MFA | ServiceNow 直接（`/side_door.do`）| ADR-023 §J-3-A |
+| 👤 I-1 | AWS インフラ運用者 | B | AWS IAM Identity Center | AWS Console / CLI / Terraform | ADR-029 |
+| 👤 I-2 | Keycloak 運用者 | B | AWS IAM + kubectl auth | EKS / Bastion 経由 | ADR-029 |
+| 👤 I-3 | 監視・SRE 担当 | B | AWS IAM / Datadog SSO | CloudWatch / Grafana（Read-Only）| ADR-029 |
+| 👤 I-4 | セキュリティ監査者 | B | SIEM 認証 | CloudTrail / SIEM（Read-Only）| ADR-029 |
+| 👤 I-5 | ベンダー / SI サポート | B | IAM Role STS 一時付与（24-72h）| 限定リソース | ADR-029 |
+| 👤 — | **顧客監査人**（外部）| — | Customer Portal OIDC | **Trust Center + Customer Portal** | ADR-036 |
 
-### 2.2 API Gateway + Lambda（Phase 3）
+#### 3.1.2 M2M アクター（Category C）
 
-| リソース | 役割 | 詳細 |
-|---------|------|------|
-| API Gateway | REST API | GET /v1/test, CORS有効 |
-| Lambda Authorizer | JWT検証 + 認可 | Python 3.11, PyJWT, マルチissuer(central/local/dr) |
-| Backend Lambda | サンプルAPI | Context情報を返却 |
+| ID | M2M | 認証方式 | 用途 | 根拠 ADR |
+|:---:|---|---|---|---|
+| M-1 | アプリ間サービス（OBO）| **Token Exchange（RFC 8693）** + Client Credentials | マイクロサービス間でユーザー文脈伝播 | ADR-029, FR-6.3 |
+| M-2 | CI/CD パイプライン | AWS IAM Role（GitHub OIDC Federation）| IaC デプロイ | ADR-029 |
+| M-3 | SCIM プロビジョニング元 | 本基盤発行 SCIM Bearer Token | 顧客 IdP → 本基盤 | ADR-025, 029 |
+| M-4 | Webhook 受信側 | **HMAC 署名** | 本基盤 → 外部システム通知 | ADR-029 |
+| M-5 | IoT / CLI デバイス | Device Code Flow（RFC 8628）| 入力制約デバイス | ADR-029 |
 
-### 2.3 Keycloak（Phase 6-7）
+### 3.2 AWS アカウント構成
 
-| リソース | 名前 | 仕様 |
-|---------|------|------|
-| ALB | auth-poc-kc-alb | HTTP:80, ヘルスチェック: /realms/master |
-| ECS Fargate | auth-poc-kc-service | 2 vCPU / 4 GB, Keycloak 26.0.8 (start-dev) |
-| RDS PostgreSQL | auth-poc-kc-db | 16.13, db.t4g.micro, 停止可能 |
-| ECR | auth-poc-kc-repo | カスタムKeycloakイメージ |
-| Keycloak Realm | auth-poc | Client: auth-poc-spa / auth-poc-spa-2 |
-| Identity Provider | auth0 | Auth0をOIDC IdPとしてBrokering |
+#### 3.2.1 Auth Platform Account 詳細
 
-### 2.4 React SPA
+| 領域 | 主要リソース | 構成 | 根拠 |
+|---|---|---|---|
+| Network | VPC + Private Subnet（Multi-AZ）+ NAT GW + VPC Endpoint | 単一 VPC、Multi-AZ | ADR-010 |
+| Tier 1 Broker | EKS Cluster + Aurora PostgreSQL（I/O-Optimized）+ KMS CMK | r6g.2xlarge × 3-4 | ADR-033 |
+| Tier 2 IdP-KC | EKS Cluster（別）+ Aurora PostgreSQL（別）+ KMS CMK（別）| r6g.xlarge × 2-3 | ADR-033 |
+| Edge | CloudFront（複数 distribution）+ ACM + WAF + Route 53 | ドメイン別 distribution | ADR-011, 013 |
+| ITDR | EventBridge + Risk Engine Lambda + DynamoDB + SNS | サーバーレス | ADR-035 |
+| Admin Backend | API Gateway + Admin Lambda + DynamoDB（設定 / 監査ログ）| サーバーレス | ADR-038 |
+| Sorry | Lambda@Edge（origin-response trigger） | グローバル | ADR-022 |
+| Trust Center | S3 + CloudFront + OIDC Customer Portal | 公開 + 認証要 | ADR-036 |
+| 監視 | CloudWatch + CloudTrail | 標準 | NFR-6 |
 
-| アプリ | ポート | 接続先 | UserManager数 | 用途 |
-|--------|:-----:|--------|:------------:|------|
-| app/ | 5173 | Cognito (central/local/dr) + Keycloak（統合） | 4 | Phase 1-9: 統合検証（多 IdP）|
-| app-keycloak/ | 5174 | Keycloak (auth-poc-spa) | 1 | Phase 6-7 当時の Keycloak 単体 SPA（参照用に維持）|
-| app-sso-peer/ | 5175 | Keycloak (auth-poc-spa-2)（旧 app-keycloak-2） | 1 | Phase 7/9: cross-client SSO 検証用ピア SPA |
+#### 3.2.2 App Account（N 個）詳細
 
-### 2.5 Terraform state の分離
+| 領域 | 主要リソース | 役割 |
+|---|---|---|
+| Compute | ECS / Lambda / EC2 等（アプリ次第）| アプリ実体 |
+| Edge | CloudFront + Lambda@Edge（origin-response）| 403 → Sorry リダイレクト |
+| API | API Gateway + Lambda Authorizer | OIDC JWT 検証 + アプリ API |
+| データ | Aurora / DynamoDB 等（アプリ次第）| アプリデータ |
 
-| state | ディレクトリ | 管理対象 | 独立destroy |
-|-------|------------|---------|:-----------:|
-| 東京 Cognito + API | infra/ | Cognito x2 + API GW + Lambda x2 | ✅ |
-| 大阪 DR | infra/dr-osaka/ | DR Cognito | ✅ |
-| Keycloak | infra/keycloak/ | ALB + ECS + RDS + ECR | ✅ |
+#### 3.2.3 Audit/Compliance Account 詳細
+
+| 領域 | リソース | 役割 |
+|---|---|---|
+| ログ集約 | CloudTrail Organization Trail + S3 + Athena | 全アカウントの AWS API 監査 |
+| アプリログ集約 | CloudWatch Logs Cross-account + Kinesis Firehose | アプリ層ログ集約 |
+| SIEM 連携 | EventBridge + Lambda（OCSF 変換）| 顧客 SIEM へ出力 |
+
+### 3.3 Network 層（外部 → 内部の流れ）
+
+| # | コンポーネント | 役割 | 設定詳細 | 根拠 |
+|:---:|---|---|---|---|
+| 1 | Route 53 | DNS | 公開ドメイン 5 種 + Private Hosted Zone | ADR-011 |
+| 2 | ACM | TLS 証明書 | カスタムドメイン × 5 | ADR-011 |
+| 3 | CloudFront | CDN | 複数 distribution（Auth / Admin / Launchpad / Trust Center / App 前段）| ADR-011, 013, 022 |
+| 4 | Lambda@Edge | Edge Function | origin-response trigger、403 検出 → 302 Sorry リダイレクト | ADR-022 |
+| 5 | AWS WAF | Web ACL | IP 制限 / Bot Control / Rate Limit | ADR-013 |
+| 6 | External ALB | 公開 LB | Broker KC 受信 | ADR-011 |
+| 7 | Internal ALB | 内部 LB | JWKS / Admin API / IdP-KC 連携 | ADR-012 |
+| 8 | VPC | ネットワーク | Multi-AZ、Private Subnet + Public Subnet | ADR-010 |
+| 9 | VPC Endpoint | 内外通信 VPC 完結 | S3 / KMS / Secrets / Logs / SES 等 | ADR-010 |
+| 10 | カスタムドメイン | 役割別 | `auth.example.com` / `admin.basis.example.com` / `launchpad.example.com` / `compliance.example.com` / `api.basis.example.com` | ADR-011, 038, 021, 036 |
+
+### 3.4 認証コア Tier 1：Broker Keycloak
+
+#### 3.4.1 構成要素
+
+| カテゴリ | コンポーネント | 詳細 | 根拠 |
+|---|---|---|---|
+| Compute | EKS Cluster（Tier 1 専用）| Keycloak 26.x コンテナ、HA Multi-AZ | ADR-033 |
+| Pod | Keycloak Pods | 10-20 pod、auto-scaling、1,250 MB / pod | ADR-033 |
+| DB | Aurora PostgreSQL（I/O-Optimized）| r6g.2xlarge × 3-4、Multi-AZ | ADR-033 |
+| Cache | Infinispan（Keycloak 内蔵）| Session / User cache、distributed | ADR-033 |
+| 鍵 | KMS CMK（Broker 専用）| DB 暗号化 + JWT 署名鍵 | ADR-033 |
+| Secrets | AWS Secrets Manager | DB password / admin credentials | NFR-4 |
+
+#### 3.4.2 Realm 構成
+
+| 項目 | 設定 | 根拠 |
+|---|---|---|
+| Realm 数 | **1**（Single Realm + Organizations）| ADR-017 |
+| Organization 数 | 顧客テナント数（数百〜千+）| ADR-017 |
+| Default IdP | （未設定）= 自動 redirect 無効 | ADR-038 §J-3-B |
+| Identifier-First | **有効**（Keycloak v26 Organizations 標準）| ADR-020 |
+
+#### 3.4.3 Authentication Flow
+
+| Flow | 構成要素 | 役割 | 根拠 |
+|---|---|---|---|
+| First Browser Flow | Identity Provider Redirector + HRD Authenticator | IdP 振り分け（メールドメイン / 識別子先行）| ADR-020 |
+| Browser Flow | Custom Conditional Authenticator（Risk-based）| Adaptive Auth Score 連動 | ADR-034 |
+| First Broker Login | Confirm Link Existing + Verify by Email + Detect Existing Broker User | アカウントリンク確認 | ADR-027 |
+| Step-up Flow | ACR to LoA Mapping | 操作の重要度別 MFA 強制 | ADR-026 |
+
+#### 3.4.4 Custom SPI
+
+| SPI | 用途 | 根拠 |
+|---|---|---|
+| Risk-based Authenticator SPI | コンテキストベース動的判定（IP / 地理 / デバイス等） | ADR-034 |
+| Event Listener SPI | ITDR / 監査ログ Webhook | ADR-035 |
+| User Storage SPI | 旧 DB / ServiceNow REST API キャッシュ移行（並走期）| ADR-019, 023 §J-2 |
+| Custom Authorization SPI | SoD ルール判定（軽量 IGA）| ADR-037 |
+
+#### 3.4.5 Protocol Mapper（JWT クレーム生成）
+
+| Mapper | 出力クレーム | 根拠 |
+|---|---|---|
+| Standard | `sub` / `iss` / `exp` / `iat` / `aud` | OIDC 標準 |
+| Custom | `tenant_id`（Organization から）| ADR-018, 030 |
+| Custom | `external_id`（Layer B）| ADR-018 |
+| Custom | `azp`（接続元アプリ ID）| ADR-030 |
+| Custom | `roles`（テナント別ロール）| ADR-030 |
+| Conditional | `legacy_user_id`（並走期、後で外す）| ADR-019 |
+
+#### 3.4.6 Identity Provider Mapper
+
+| Mapper | 受信値 | コピー先 | 根拠 |
+|---|---|---|---|
+| OIDC `amr` → `mfa_indicator` | `amr` | User Attribute `mfa_indicator` | ADR-031 |
+| SAML `AuthnContextClassRef` → `mfa_indicator` | `Saml.AuthnContextClassRef` | 同上 | ADR-031 |
+| SAML Microsoft `authnmethodsreferences` → `mfa_indicator` | 拡張属性 | 同上 | ADR-031 |
+
+### 3.5 認証コア Tier 2：IdP Keycloak
+
+#### 3.5.1 構成要素
+
+| カテゴリ | コンポーネント | 詳細 | 根拠 |
+|---|---|---|---|
+| Compute | EKS Cluster（Tier 2 専用、Tier 1 と分離）| Keycloak 26.x | ADR-033 |
+| Pod | Keycloak Pods | 5-10 pod、auto-scaling | ADR-033 |
+| DB | Aurora PostgreSQL（別クラスタ）| r6g.xlarge × 2-3 | ADR-033 |
+| 鍵 | KMS CMK（IdP-KC 専用、Broker と分離）| DB 暗号化 + 署名鍵 | ADR-033 |
+| Realm | Single Realm + Organizations | IdP なし顧客のみ | ADR-033 |
+| Account Console | Keycloak 標準 | エンドユーザーセルフサービス（PW リセット / MFA 管理）| ADR-029 |
+| Registration Flow | Custom Approval Authenticator | サインアップ承認 | ADR-019 §C |
+
+#### 3.5.2 接続先（Tier 1 から）
+
+- **OIDC RP として Broker KC からのみ接続を受ける**（インターネット直接公開しない）
+- Internal ALB 経由、VPC 内通信
+- Broker KC は `kc_idp_hint=idp-kc` で routing
+
+### 3.6 外部 IdP 接続（受信側、フェデ顧客）
+
+| IdP 製品 | プロトコル | 接続パターン | 根拠 |
+|---|---|---|---|
+| Microsoft Entra ID | OIDC + SAML | 標準（`amr` 標準対応）| ADR-031 |
+| Okta | OIDC + SAML | 標準 | ADR-031 |
+| Google Workspace | OIDC + SAML | 標準 | ADR-031 |
+| ADFS | SAML（Claim Rule 要設定）| 顧客側設定要 | ADR-031 |
+| HENNGE One | SAML | 個別確認 | ADR-020 |
+| 内部 IdP（Tier 2）| OIDC | Broker からのみ | ADR-033 |
+| 弊社内 IdP（P-1 用）| OIDC | Entra ID 等 | ADR-029 |
+
+### 3.7 外部 SP 接続（発行側、本基盤 → SaaS）
+
+| SP | プロトコル | パターン | 根拠 |
+|---|---|---|---|
+| **ServiceNow** | SAML 2.0（Multi-Provider SSO Plugin）| パターン B SSO + SAML JIT 推奨 / per-user `sso_source` | ADR-023 |
+| Salesforce | SAML | 業界標準 | ADR-023 §F |
+| Workday | SAML | 同上 | ADR-023 §F |
+| 業務アプリ A/B/C | OIDC | Authorization Code + PKCE / BFF | ADR-014 |
+| Launchpad SPA | OIDC | 同上 | ADR-021 |
+| Tenant Admin Portal SPA | OIDC（admin ロール検証）| 同上 | ADR-038 |
+| Customer Portal（Trust Center 認証部）| OIDC | 顧客監査人向け | ADR-036 |
+
+### 3.8 UI レイヤー（SPA 群 5 種）
+
+| SPA | ドメイン | 配信 | 用途 | 根拠 |
+|---|---|---|---|---|
+| **Launchpad SPA** | `launchpad.example.com` | CloudFront + S3 | 認証後の entitled apps タイル + Sorry 統合 | ADR-021 |
+| **Tenant Admin Portal SPA** | `admin.basis.example.com` | CloudFront + S3 | ユーザー CRUD / IGA / 監査ログ UI（顧客テナント管理者向け）| ADR-038 |
+| **Sorry SPA**（Launchpad 内 or 独立）| `launchpad.example.com/sorry` | CloudFront + S3 | 権限なし時の案内 + entitled apps リスト | ADR-022 |
+| **Trust Center**（公開部分）| `compliance.example.com` | CloudFront + S3 | SOC 2 概要 / ISO 27001 / GDPR DPA / Subprocessor List 等 | ADR-036 |
+| **Customer Portal**（認証要部分）| `compliance.example.com/portal` | CloudFront + S3 + OIDC | DDQ / Compliance Matrix / NDA 下エビデンス | ADR-036 |
+
+### 3.9 プロビジョニング・統合層
+
+| カテゴリ | コンポーネント | 役割 | 根拠 |
+|---|---|---|---|
+| 受信 SCIM | SCIM 2.0 Server（Phase Two Keycloak plugin）| 顧客 IdP からの自動同期 | ADR-025 |
+| 発信 SCIM | Keycloak Event Listener SPI + SCIM Client Lambda | ServiceNow 等への push（パターン C オプション）| ADR-023 |
+| Webhook | Phase Two `keycloak-events` + Lambda | 外部システム通知 | ADR-035 |
+| JIT | Keycloak First Broker Login Flow | フェデユーザー自動作成 | ADR-027 |
+| User Storage SPI | Keycloak Custom SPI | 旧 DB / SN REST API キャッシュ移行（並走期）| ADR-019, 023 §J-2 |
+
+### 3.10 セキュリティ・検知層（ITDR + Adaptive Auth）
+
+#### 3.10.1 ITDR コンポーネント（ADR-035）
+
+| コンポーネント | 役割 | 設定 |
+|---|---|---|
+| EventBridge | イベント Routing | Keycloak Event Listener からのイベント受信 |
+| Risk Engine Lambda | スコア算出 + アクション判定 | Node.js / Python、7 軸評価 |
+| DynamoDB（On-Demand）| 履歴 | ログイン履歴 / IP 履歴 / デバイス履歴 |
+| Threat Intel | 外部連携 | HIBP API / Spamhaus / Cisco Talos |
+| SNS | 通知配信 | Slack / PagerDuty / SIEM 統合 |
+| SIEM 連携 | 顧客 SIEM | OCSF（推奨）/ CEF / LEEF / Syslog |
+
+#### 3.10.2 検知 6 領域 × 対応 4 レベル
+
+| 検知領域 | L1 Log | L2 Re-auth | L3 Block | L4 Critical |
+|---|:---:|:---:|:---:|:---:|
+| Compromised Credentials | ✅ | ✅ | ✅ | — |
+| Anomaly Login | ✅ | ✅ | ✅ | — |
+| Token Theft / Replay | ✅ | — | ✅ | ✅ |
+| Session Hijacking | ✅ | ✅ | ✅ | — |
+| Privileged Account Abuse | ✅ | — | ✅ | ✅ |
+| MFA Bypass Attempt | ✅ | — | ✅ | ✅ |
+
+#### 3.10.3 Adaptive Authentication（ADR-034）
+
+| Score 範囲 | アクション |
+|---|---|
+| 0-30 Low | 通常認証 |
+| 31-70 Medium | ステップアップ MFA |
+| 71-100 High | Block + 管理者通知 |
+
+### 3.11 AWS edge Sorry 制御（ADR-022）
+
+| コンポーネント | 役割 | 配置 |
+|---|---|---|
+| CloudFront Distribution（業務アプリ前段）| メインの edge | App Account 内 |
+| Lambda@Edge（origin-response trigger）| 403 検出 → 302 Sorry リダイレクト | グローバル |
+| Sorry SPA | `/sorry?app=x&reason=Y` で表示 | Auth Platform Account（Launchpad SPA 統合）|
+
+### 3.12 監査・コンプライアンス層（ADR-036, NFR-7）
+
+| コンポーネント | 役割 | 配置 |
+|---|---|---|
+| CloudTrail Organization Trail | AWS API 監査（全アカウント）| Audit Account |
+| CloudWatch Logs / Metrics | アプリログ・メトリクス | 各アカウント → Audit Account 集約 |
+| Keycloak Event Logs | 認証イベント | Broker / IdP-KC 両方 |
+| DynamoDB（監査ログ）| Tenant Admin Portal 操作ログ | Auth Platform Account（ADR-038）|
+| SIEM 連携 | 顧客 SIEM へ出力 | EventBridge + Lambda（OCSF 変換）|
+| Trust Center（公開部）| 標準 10 アーティファクト公開 | Auth Platform Account |
+| Customer Portal（認証要部）| NDA 下エビデンス | OIDC 認証要 |
+
+### 3.13 Tenant Admin Portal バックエンド（ADR-038）
+
+| コンポーネント | 役割 | 設定 |
+|---|---|---|
+| API Gateway（`api.basis.example.com/admin/*`）| Admin API エンドポイント | OIDC JWT 検証（Lambda Authorizer）|
+| Admin Lambda（テナントスコープ検証）| 3 層スコープチェック | Node.js / Python |
+| Lambda Authorizer | L1 JWT 検証 | API Gateway 統合 |
+| DynamoDB（テナント設定）| Portal 設定 | テナント別 |
+| DynamoDB（監査ログ）| 全管理操作ログ | EventBridge 連動 |
+| Keycloak Admin API（呼出先）| Broker + IdP-KC | Internal ALB 経由 |
+
+### 3.14 移行層（ADR-019、並走期のみ）
+
+| コンポーネント | 役割 | 廃止タイミング |
+|---|---|---|
+| User Storage SPI（Broker / IdP-KC）| 旧 DB → Keycloak DB キャッシュ移行 | 並走期終了で廃止 |
+| 旧 IAM（並走対象）| 既存認証システム | アプリ単位順次廃止 |
+| ServiceNow REST API（`/api/now/auth`）| 既存 SN ユーザー PW 検証 | 並走期終了で廃止 |
+| 識別子マッピング DB | 旧 user_id ↔ Layer A `sub` | 並走期終了で外す or Layer B `external_id` として永続化 |
 
 ---
 
-## 3. 認証パターン一覧
+## 4. 主要シーケンス図
 
-### Cognito（Phase 1-5: 5パターン）
+### 4.1 フェデ顧客の SSO ログイン（SP-Initiated）
 
-| # | パターン | フロー | Phase |
-|---|---------|--------|:-----:|
-| 1 | 集約Cognito Hosted UI | SPA → Cognito → PW認証 → SPA | 1 |
-| 2 | Auth0 フェデレーション | SPA → Cognito → Auth0 → Cognito → SPA | 2 |
-| 3 | ローカルCognito | SPA → ローカルCognito → PW認証 → SPA | 4 |
-| 4 | DR Hosted UI | SPA → 大阪Cognito → PW認証 → SPA | 5 |
-| 5 | DR Auth0 フェデレーション | SPA → 大阪Cognito → Auth0 → 大阪Cognito → SPA | 5 |
+```mermaid
+sequenceDiagram
+    autonumber
+    actor U as Acme 社員 (P-3)
+    participant App as 業務アプリ
+    participant CF as CloudFront<br/>(App 前段)
+    participant API as App API GW<br/>+ Lambda Authorizer
+    participant BKC as Broker Keycloak
+    participant Entra as Acme Entra ID
+    participant LP as Launchpad SPA
 
-### Keycloak（Phase 6-7: 3パターン）
+    U->>App: ① アプリ A にアクセス
+    App->>BKC: ② OIDC 認可要求<br/>(client_id=app-a, scope=openid)
+    BKC->>BKC: ③ Organizations から acme テナント特定<br/>(email ドメイン HRD)
+    BKC->>Entra: ④ SAML AuthnRequest
+    Entra->>U: ⑤ ログイン画面
+    U->>Entra: ⑥ ID/PW + MFA
+    Entra->>BKC: ⑦ SAML Response<br/>(NameID + amr=[pwd,mfa])
+    BKC->>BKC: ⑧ JIT で実体ユーザー作成 / 突合<br/>+ Identity Provider Mapper で mfa_indicator 抽出<br/>+ Protocol Mapper で JWT 生成
+    BKC->>App: ⑨ JWT 発行<br/>(sub, tenant_id=acme, roles, azp)
+    App->>API: ⑩ Bearer JWT で API 呼出
+    API->>API: ⑪ JWT 検証
+    API-->>App: ⑫ 応答
+    App-->>U: ⑬ アプリ表示
+    Note over U,LP: 別アプリ B にアクセス時は SSO セッションで JWT 即時発行
+```
 
-| # | パターン | フロー | Phase |
-|---|---------|--------|:-----:|
-| 6 | ローカルユーザー + MFA | SPA → Keycloak → PW + TOTP → SPA | 6-7 |
-| 7 | Auth0 Identity Brokering | SPA → Keycloak → Auth0 → Keycloak(JIT) → SPA | 7 |
-| 8 | SSO（複数Client） | Client A認証済み → Client B → PW/MFA不要 | 7 |
+### 4.2 IdP-KC 移行顧客のログイン（2-tier、ADR-033）
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor U as DeltaCo 社員 (P-4)
+    participant App as 業務アプリ
+    participant BKC as Broker Keycloak
+    participant IKC as IdP Keycloak
+    participant DDB as IdP-KC Aurora
+
+    U->>App: ① アプリ A にアクセス
+    App->>BKC: ② OIDC 認可要求
+    BKC->>BKC: ③ Organizations から delta テナント特定<br/>+ IdP-KC が IdP として紐付け済
+    BKC->>IKC: ④ 内部 OIDC 認可要求<br/>(client_id=broker-rp、Internal ALB 経由)
+    IKC->>U: ⑤ ログイン画面 (IdP-KC が描画)
+    U->>IKC: ⑥ email + PW + MFA
+    IKC->>DDB: ⑦ ユーザー検索 + PW 検証
+    DDB-->>IKC: 認証成功
+    IKC->>BKC: ⑧ OIDC ID Token + Access Token
+    BKC->>BKC: ⑨ JIT で Broker 側にフェデユーザーレコード作成<br/>+ Protocol Mapper で統一 JWT 生成
+    BKC->>App: ⑩ 統一 JWT 発行<br/>(sub, tenant_id=delta, roles)
+    App-->>U: ⑪ アプリ表示
+    Note over U,DDB: ユーザーから見ると 1 つのログイン画面（IdP-KC）<br/>2 回目以降は Broker SSO セッションで即時
+```
+
+### 4.3 ServiceNow Inbound（既存 SN ローカルユーザー SAML JIT + 並走 SPI、ADR-023 §J）
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor U as ServiceNow ユーザー
+    participant SN as ServiceNow
+    participant BKC as Broker Keycloak
+    participant IKC as IdP Keycloak
+    participant SPI as User Storage SPI
+    participant SNAPI as SN REST API<br/>/api/now/auth
+
+    Note over U,SNAPI: 並走期初回ログイン（PW がまだ IdP-KC に無い）
+    U->>SN: ① ServiceNow にアクセス
+    SN->>SN: ② Multi-Provider SSO で sso_source 判定<br/>(顧客の通常ユーザー → Broker へ)
+    SN->>BKC: ③ SAML AuthnRequest
+    BKC->>IKC: ④ 内部 OIDC 認可要求
+    IKC->>U: ⑤ ログイン画面
+    U->>IKC: ⑥ user_name + PW
+    IKC->>SPI: ⑦ User Storage SPI で legacy 認証
+    SPI->>SNAPI: ⑧ POST /api/now/auth (user_name, PW)
+    SNAPI-->>SPI: ⑨ 認証成功
+    SPI-->>IKC: ⑩ 認証成功
+    IKC->>IKC: ⑪ Keycloak DB に PW 再ハッシュ保存<br/>(PBKDF2 / Argon2)
+    IKC->>BKC: ⑫ OIDC ID Token
+    BKC->>BKC: ⑬ JIT で Broker レコード作成
+    BKC->>SN: ⑭ SAML Response<br/>(NameID=user_name)
+    SN->>SN: ⑮ sys_user 突合<br/>(user_name = Layer B external_id)
+    SN-->>U: ⑯ ログイン完了
+
+    Note over U,SNAPI: 2 回目以降は SPI 経由不要（IdP-KC DB 直接利用）
+    Note over U,SNAPI: 並走期終了後、SN ローカル PW は無効化（Break Glass 除く）
+```
+
+### 4.4 Tenant Admin Portal でユーザー作成（3 層テナントスコープ、ADR-038）
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor TA as テナント管理者 (P-2)
+    participant LP as Launchpad
+    participant BKC as Broker KC
+    participant SPA as Admin SPA
+    participant APIGW as API Gateway
+    participant LA as Lambda Authorizer<br/>(L1 JWT 検証)
+    participant AL as Admin Lambda<br/>(L2 + L3)
+    participant IKAdmin as IdP-KC Admin API
+    participant DDB as Audit DynamoDB
+    participant EB as EventBridge
+
+    TA->>LP: ① Launchpad アクセス
+    LP->>BKC: ② OIDC SSO
+    BKC-->>LP: ③ JWT (admin role + tenant_id=acme)
+    LP-->>TA: ④ 「管理画面」タイル表示
+    TA->>SPA: ⑤ Admin SPA を開く
+    TA->>SPA: ⑥ 「新規ユーザー作成」フォーム入力
+
+    SPA->>APIGW: ⑦ POST /admin/users<br/>(JWT + body)
+    APIGW->>LA: ⑧ L1: JWT 署名・有効期限検証
+    LA-->>APIGW: ⑨ JWT 認証 OK
+    APIGW->>AL: ⑩ Lambda invoke
+    AL->>AL: ⑪ L2: JWT.tenant_id 抽出<br/>+ admin role 検証
+    AL->>IKAdmin: ⑫ L3: POST /admin/realms/main/users<br/>?organization=acme
+    IKAdmin->>IKAdmin: ⑬ Organization スコープでユーザー作成
+    IKAdmin-->>AL: ⑭ 作成成功
+    AL->>EB: ⑮ Event: admin.users.create<br/>(tenant_id, actor, user_id)
+    EB->>DDB: ⑯ 監査ログ保存
+    AL-->>SPA: ⑰ 201 Created
+    SPA-->>TA: ⑱ 完了表示
+```
+
+### 4.5 Adaptive Auth + ITDR 連携（異常検知 → ステップアップ、ADR-034 + 035）
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor U as ユーザー
+    participant BKC as Broker KC<br/>(Risk-based Authenticator SPI)
+    participant EB as EventBridge
+    participant RL as Risk Engine Lambda
+    participant TI as Threat Intel<br/>(HIBP / Spamhaus)
+    participant DDB as ITDR DynamoDB
+    participant SNS as SNS
+    participant Slack as Slack / PagerDuty
+
+    U->>BKC: ① ログイン試行 (email + PW)
+    BKC->>BKC: ② PW 検証 OK
+    BKC->>EB: ③ Event: login.attempt<br/>(IP, User-Agent, geo)
+    EB->>RL: ④ Risk Engine Lambda 起動
+    RL->>TI: ⑤ Compromised Credentials 確認 (HIBP)
+    RL->>TI: ⑥ IP レピュテーション確認
+    RL->>DDB: ⑦ 過去ログイン履歴取得
+    RL->>RL: ⑧ 7 軸スコア算出<br/>(IP/Geo/Device/失敗履歴/<br/>異常時刻/Impossible Travel/<br/>Compromised Cred)
+    alt Score 0-30 (Low)
+        RL-->>BKC: ⑨a 通常認証 OK
+        BKC-->>U: ⑩a JWT 発行
+    else Score 31-70 (Medium)
+        RL-->>BKC: ⑨b ステップアップ要求
+        BKC->>U: ⑩b OTP / Push 入力画面
+        U->>BKC: ⑪b OTP 入力
+        BKC-->>U: ⑫b JWT 発行 (amr=mfa)
+    else Score 71-100 (High)
+        RL-->>BKC: ⑨c Block
+        BKC->>BKC: ⑩c Account Lockout (24h)
+        RL->>SNS: ⑪c 高リスク通知
+        SNS->>Slack: ⑫c 管理者通知
+        BKC->>U: ⑬c エラー (Generic message)
+    end
+    RL->>DDB: ⑭ 検知履歴保存
+```
+
+### 4.6 退職時 Deprovision（顧客 IdP SCIM Push のケース）
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant HR as 顧客 HR
+    participant CIdP as 顧客 IdP<br/>(Entra/Okta)
+    participant SCIM as SCIM 2.0 Server<br/>(Broker KC)
+    participant BKC as Broker KC
+    participant WL as Webhook Lambda
+    participant SN as ServiceNow
+    participant App as App A
+    participant EB as EventBridge
+
+    HR->>CIdP: ① 退職処理（HR システム）
+    CIdP->>SCIM: ② SCIM DELETE /Users/{userName}<br/>(or PUT active=false)
+    SCIM->>BKC: ③ User 無効化 + Token 即時 Revocation
+    BKC->>EB: ④ Event: user.disabled
+    EB->>WL: ⑤ Webhook Lambda 起動
+
+    par 並列処理
+        WL->>SN: ⑥a SCIM DELETE (sys_user.active=false)<br/>or 弊社運用が手動
+    and
+        WL->>App: ⑥b Webhook 通知 (HMAC 署名)
+        App->>App: ⑦ App 側セッション破棄
+    end
+
+    Note over BKC,App: 以降、退職者は SSO 不能<br/>(Broker JWT 発行不可)
+    Note over SN: SN ローカル PW も無効化済の場合は SN 単体でも入れない
+```
+
 
 ---
 
-## 4. ディレクトリ構成
+## 5. データフロー詳細
+
+### 5.1 認証フロー（全体集約図）
+
+すべての認証フロー（フェデ / IdP-KC / SAML SP / Token Exchange）を集約した俯瞰図:
+
+```mermaid
+flowchart LR
+    subgraph Sources["認証源"]
+        ExtIdP["顧客 IdP<br/>(Entra/Okta/ADFS)"]
+        IdPKC["IdP Keycloak<br/>(IdP なし顧客)"]
+        SocialIdP["弊社 IdP<br/>(P-1 管理者)"]
+    end
+
+    subgraph Broker["Broker Keycloak"]
+        FBL["First Broker Login Flow<br/>(JIT + アカウントリンク)"]
+        Realm["Realm + Organizations<br/>(tenant_id 解決)"]
+        Mapper["Protocol Mapper<br/>(JWT 生成)"]
+        StepUp["Step-up Flow<br/>(AAL 引上げ)"]
+        Risk["Risk Authenticator<br/>(ITDR Score 連動)"]
+    end
+
+    subgraph Outputs["JWT 受信側"]
+        App["業務アプリ<br/>(API Bearer)"]
+        SN["ServiceNow<br/>(SAML SP)"]
+        LP["Launchpad SPA"]
+        Admin["Admin SPA"]
+    end
+
+    ExtIdP -->|OIDC/SAML| FBL
+    IdPKC -->|OIDC| FBL
+    SocialIdP -->|OIDC| FBL
+    FBL --> Realm
+    Realm --> Risk
+    Risk -->|低リスク| Mapper
+    Risk -->|中リスク| StepUp
+    StepUp --> Mapper
+    Mapper -->|OIDC ID/Access Token| App
+    Mapper -->|SAML Assertion| SN
+    Mapper -->|OIDC| LP
+    Mapper -->|OIDC + admin role| Admin
+
+    style Sources fill:#e3f2fd
+    style Broker fill:#fff3e0
+    style Outputs fill:#e8f5e9
+```
+
+### 5.2 監査ログフロー（全アカウント → Audit Account）
+
+```mermaid
+flowchart LR
+    subgraph AuthAcct["🟠 Auth Platform Account"]
+        BKCLog["Broker KC<br/>Event Log"]
+        IKCLog["IdP-KC<br/>Event Log"]
+        AdminAct["Admin Lambda<br/>監査"]
+        ITDRLog["ITDR DynamoDB"]
+        CTAuth["CloudTrail<br/>(Auth)"]
+    end
+
+    subgraph AppAccts["🟢 App Accounts"]
+        AppLog["アプリログ"]
+        CTApp["CloudTrail (App)"]
+    end
+
+    subgraph Audit["🔵 Audit Account"]
+        OrgTrail["Organization Trail"]
+        AuditS3[("S3: 監査集約")]
+        Athena["Athena"]
+        Conv["Lambda<br/>OCSF 変換"]
+        DDBAudit[("DynamoDB<br/>管理操作ログ")]
+    end
+
+    subgraph Outputs["出力先"]
+        CustSIEM["顧客 SIEM<br/>(Splunk/Sentinel)"]
+        TC["Trust Center<br/>(SLA レポート)"]
+    end
+
+    BKCLog -.Webhook.-> AuditS3
+    IKCLog -.Webhook.-> AuditS3
+    AdminAct -.EventBridge.-> DDBAudit
+    ITDRLog -.export.-> AuditS3
+    CTAuth -.Org Trail.-> OrgTrail
+    CTApp -.Org Trail.-> OrgTrail
+    AppLog -.Cross-account Logs.-> AuditS3
+    OrgTrail --> AuditS3
+    AuditS3 --> Athena
+    AuditS3 --> Conv
+    DDBAudit --> Conv
+    Conv -.OCSF.-> CustSIEM
+    Athena -.月次集計.-> TC
+
+    style AuthAcct fill:#fff3e0
+    style AppAccts fill:#e8f5e9
+    style Audit fill:#f3e5f5
+    style Outputs fill:#e3f2fd
+```
+
+### 5.3 ITDR イベントフロー（ADR-035）
+
+```mermaid
+flowchart LR
+    subgraph KC["Broker / IdP KC"]
+        Event["認証 / 異常イベント<br/>(login.success/fail, token.issued)"]
+        EL["Event Listener SPI"]
+        Event --> EL
+    end
+
+    subgraph AWS["AWS Serverless"]
+        EB["EventBridge<br/>Event Bus"]
+        RL["Risk Engine Lambda"]
+        DDB[("DynamoDB<br/>履歴")]
+        SNS["SNS"]
+    end
+
+    subgraph Ext["外部"]
+        HIBP["HIBP API"]
+        Spamhaus["Spamhaus IP Intel"]
+    end
+
+    subgraph Actions["対応アクション"]
+        L1["L1 Log only"]
+        L2["L2 Re-auth<br/>(KC へ通知)"]
+        L3["L3 Block + Lockout<br/>(KC API 呼出)"]
+        L4["L4 Realm 凍結<br/>+ Incident"]
+    end
+
+    subgraph Notify["通知"]
+        Slack["Slack"]
+        PD["PagerDuty"]
+        SIEM["顧客 SIEM<br/>(OCSF)"]
+    end
+
+    EL --> EB
+    EB --> RL
+    RL --> HIBP
+    RL --> Spamhaus
+    RL --> DDB
+    RL --> L1
+    RL --> L2
+    RL --> L3
+    RL --> L4
+    L2 -.API.-> KC
+    L3 -.API.-> KC
+    L3 --> SNS
+    L4 --> SNS
+    SNS --> Slack
+    SNS --> PD
+    SNS --> SIEM
+
+    style KC fill:#fff3e0
+    style AWS fill:#fff8e1
+    style Ext fill:#e3f2fd
+    style Actions fill:#fce4ec
+    style Notify fill:#e8f5e9
+```
+
+### 5.4 SCIM プロビジョニングフロー（受信 / 発信）
+
+```mermaid
+flowchart LR
+    subgraph Sources["送信元（顧客側 / 弊社側）"]
+        CustHR["顧客 HR システム"]
+        CustIdP["顧客 IdP<br/>(Entra/Okta)"]
+        OurHR["弊社 HR"]
+    end
+
+    subgraph Receive["📥 受信 SCIM (本基盤)"]
+        SCIMServer["SCIM 2.0 Server<br/>(Phase Two plugin)"]
+        BrokerKC["Broker Keycloak"]
+        IdPKC2["IdP Keycloak"]
+    end
+
+    subgraph Send["📤 発信 SCIM (本基盤 → 外部)"]
+        EL2["Event Listener SPI"]
+        SendLambda["SCIM Client Lambda"]
+        SN2["ServiceNow"]
+        OtherSaaS["Salesforce / Workday<br/>(将来)"]
+    end
+
+    CustHR -.SCIM Push.-> SCIMServer
+    CustIdP -.SCIM Push.-> SCIMServer
+    OurHR -.SCIM Push.-> SCIMServer
+    SCIMServer --> BrokerKC
+    BrokerKC -.fed link.-> IdPKC2
+    BrokerKC --> EL2
+    EL2 --> SendLambda
+    SendLambda -.SCIM v2.-> SN2
+    SendLambda -.SCIM v2.-> OtherSaaS
+
+    style Sources fill:#e3f2fd
+    style Receive fill:#fff3e0
+    style Send fill:#e8f5e9
+```
+
+
+---
+
+## 6. 関連 ADR / 出典マッピング
+
+§0.3 に上掲。各構成要素には根拠 ADR を明示済。
+
+### 6.1 PoC 構成との対応（前バージョン）
+
+PoC 実構成（2026-03-30 時点）は [architecture-poc-history.md](architecture-poc-history.md) を参照。本番想定構成との主な差分:
+
+| 項目 | PoC | 本番想定 |
+|---|---|---|
+| プラットフォーム | Cognito + Keycloak（並列検証）| **Keycloak 2-tier（Broker + IdP-KC）**（ADR-033）|
+| アカウント | 1 アカウント | **3-4 アカウント分離**（Auth + App × N + Audit + Network）|
+| マルチテナント | User Pool 単位 | **Single Realm + Organizations**（ADR-017）|
+| 識別子 | email 中心 | **Layer A/B/C 3 階層**（ADR-018）|
+| MFA | 静的 | **静的 + Adaptive Auth 二重防御**（ADR-026 + 034）|
+| 検知 | なし | **ITDR**（ADR-035）|
+| Admin UI | Keycloak Admin Console | **Tenant Admin Portal SPA**（ADR-038）|
+| 監査支援 | なし | **Trust Center + Customer Portal**（ADR-036）|
+
+---
+
+## 7. drawio 転記時の注意
+
+### 7.1 §2.2 全体図の drawio 化方針
+
+Mermaid の制約で配置が固定できないため、drawio 転記時に以下を意識:
+
+| 項目 | 推奨 |
+|---|---|
+| アカウント境界 | **太枠 + アカウント色**で明示（🟠 Auth Platform / 🟢 App / 🔵 Audit / 🟣 Network）|
+| アクター配置 | 図の左端に縦並び（顧客側）+ 右端（弊社運用）|
+| AWS サービスアイコン | **AWS 公式 simpleicons / AWS Architecture Icons** を使用 |
+| データフロー色分け | 認証 = 黒、認可 = 緑、監査 = グレー、暗号化 = 赤 |
+| 凡例 | 別ボックスで配置 |
+| Tier 1 vs Tier 2 | **垂直に積む**（上が Broker、下が IdP-KC）|
+| 移行層（並走期）| **点線 + 灰色背景**で「期間限定」を示す |
+
+### 7.2 推奨レイアウト（drawio 用）
 
 ```
-aws-auth-poc/
-├── app/                          # React SPA（Cognito版, port:5173）
-│   ├── src/
-│   │   ├── auth/
-│   │   │   ├── config.ts         # 集約Cognito OIDC設定（prefix: oidc.central.）
-│   │   │   ├── localConfig.ts    # ローカルCognito設定（prefix: oidc.local.）
-│   │   │   ├── drConfig.ts       # DR Cognito設定（prefix: oidc.dr.）
-│   │   │   ├── AuthProvider.tsx  # 認証コンテキスト（3つのUserManager管理）
-│   │   │   ├── CallbackPage.tsx  # OAuthコールバック（3 UserManager順番試行）
-│   │   │   └── tokenUtils.ts    # JWTデコード
-│   │   ├── components/           # AuthFlow / TokenViewer / ApiTester / LogViewer
-│   │   └── pages/
-│   ├── .env.example
-│   └── vite.config.ts
-│
-├── app-keycloak/                 # React SPA（Keycloak版, port:5174）
-│   ├── src/
-│   │   ├── auth/
-│   │   │   ├── config.ts         # Keycloak OIDC設定（OIDC Discovery自動）
-│   │   │   ├── AuthProvider.tsx  # 認証コンテキスト（UserManager 1つ）
-│   │   │   └── CallbackPage.tsx  # OAuthコールバック（シンプル）
-│   │   ├── components/           # Cognito版と同構造
-│   │   └── pages/
-│   ├── .env.example
-│   └── vite.config.ts            # port: 5174
-│
-├── app-sso-peer/                 # React SPA（cross-client SSO 検証用, port:5175）旧 app-keycloak-2
-│   └── ...                       # app-keycloakのコピー、client_id=auth-poc-spa-2
-│
-├── keycloak/                     # Keycloakコンテナ・設定
-│   ├── Dockerfile                # Keycloak 26.0 ベースイメージ
-│   ├── docker-compose.yml        # ローカル開発用（参考）
-│   ├── deploy.sh                 # ECRにpush + ECS更新
-│   ├── stop.sh                   # ECS+RDS停止（コスト削減）
-│   ├── start.sh                  # ECS+RDS起動
-│   └── config/
-│       ├── realm-export.json     # Realm設定（Git管理）
-│       ├── export-realm.sh       # 設定エクスポート
-│       └── import-realm.sh       # 設定インポート
-│
-├── infra/                        # Terraform（東京 Cognito + API Gateway）
-│   ├── main.tf
-│   ├── cognito.tf                # 集約Cognito + ローカルCognito + Auth0 IdP
-│   ├── api-gateway.tf            # API GW + Lambda Authorizer + Backend + CloudWatch Logs
-│   ├── outputs.tf
-│   └── dr-osaka/                 # Terraform（大阪 DR Cognito）
-│       ├── cognito.tf
-│       └── outputs.tf
-│
-├── infra/keycloak/               # Terraform（Keycloak）★独立state
-│   ├── main.tf                   # Provider + VPC + 自動IP取得
-│   ├── security-groups.tf        # ALB/ECS/RDS の SG（IPアドレス自動取得）
-│   ├── rds.tf                    # RDS PostgreSQL 16.13
-│   ├── ecr.tf                    # ECRリポジトリ
-│   ├── alb.tf                    # ALB + Target Group
-│   ├── ecs.tf                    # ECS Fargate（2 vCPU / 4 GB）
-│   └── outputs.tf                # URL + 停止/起動コマンド
-│
-├── lambda/
-│   ├── authorizer/
-│   │   ├── index.py              # JWT検証（マルチissuer: central/local/dr）
-│   │   ├── requirements.txt
-│   │   └── build.sh              # venv + Linux向けビルド
-│   └── backend/
-│       └── index.py              # サンプルAPI
-│
-└── doc/
-    ├── design/                   # 設計・検証結果・手順
-    ├── adr/                      # Architecture Decision Records（001-009）
-    ├── reference/                # 参考情報（認証基礎/Cognito/Keycloak）
-    └── old/                      # 過去の検討ドキュメント（読み取り専用）
+┌─────────────────────────────────────────────────────────┐
+│  Actors (top row)                                        │
+├─────────────────┬───────────────────┬───────────────────┤
+│ Customer Side   │ Auth Platform     │ App Accounts      │
+│ (左、青)         │  (中央、橙)        │ (右、緑)           │
+│                 │                   │                   │
+│ ・顧客 IdP       │  ┌─Edge Layer──┐  │ ┌─CloudFront──┐  │
+│ ・ServiceNow    │  └────┬────────┘  │ │ ・Lambda@Edge│  │
+│ ・顧客 HR        │       ↓           │ │ ・App API    │  │
+│ ・顧客 SIEM      │  ┌─SPA Layer──┐   │ │ ・App Compute│  │
+│                 │  └────┬────────┘  │ └──────────────┘  │
+│                 │       ↓           │                   │
+│                 │  ┌─Tier 1 Broker┐ │                   │
+│                 │  │ Keycloak     │ │                   │
+│                 │  └────┬─────────┘ │                   │
+│                 │       ↓           │                   │
+│                 │  ┌─Tier 2 IdP-KC┐ │                   │
+│                 │  │ Keycloak     │ │                   │
+│                 │  └──────────────┘ │                   │
+│                 │  ┌─ITDR/Admin/  │ │                   │
+│                 │  │  TC Layer    │ │                   │
+│                 │  └──────────────┘ │                   │
+├─────────────────┴───────────────────┴───────────────────┤
+│  Audit Account (bottom、紫)                              │
+└─────────────────────────────────────────────────────────┘
 ```
+
+### 7.3 drawio 推奨ツール
+
+- **draw.io（diagrams.net）**: 無料、AWS Architecture Icons 標準搭載
+- **AWS Application Composer**: AWS 公式、サーバーレス特化
+- **Excalidraw**: 手書き風、軽量
+
+---
+
+## 8. 残作業と更新ポリシー
+
+### 8.1 残作業
+
+| 項目 | 内容 | タイミング |
+|---|---|---|
+| Phase B 残 ADR | F. PAM/JIT 管理者（ADR-039 候補）/ K. Workload Identity（ADR-040 候補）| 顧客回答後 |
+| drawio 詳細図 | 本資料の Mermaid を元に作成 | 要件定義 → 設計フェーズ移行時 |
+| 各アカウントの IAM 詳細 | Cross-account Role 設計 | 設計フェーズ |
+| ネットワーク詳細図 | VPC CIDR / Subnet 設計 | 設計フェーズ |
+
+### 8.2 更新ポリシー
+
+- **新規 ADR 採択時**: §0.3 マッピング表に追加、影響する §3 サブセクションを更新、必要なら §2.2 全体図に要素追加
+- **構成変更時**: 本資料を**唯一のソース**として優先更新、その後 drawio へ転記
+- **PoC 関連の更新**: PoC 履歴は [architecture-poc-history.md](architecture-poc-history.md) に残し、本資料は本番想定構成のみ
+
+---
+
+## 9. 関連ドキュメント
+
+### 9.1 認証基盤
+
+- [common/02-platform.md](02-platform.md) — プラットフォーム選定詳細
+- [common/keycloak-network-architecture.md](keycloak-network-architecture.md) — ネットワーク設計
+- [common/identity-broker-multi-idp.md](identity-broker-multi-idp.md) — Identity Broker パターン
+- [common/jit-scim-coexistence-keycloak.md](jit-scim-coexistence-keycloak.md) — JIT/SCIM 実装詳細
+- [common/hrd-implementation-keycloak.md](hrd-implementation-keycloak.md) — HRD 実装詳細
+- [common/scim-operations.md](scim-operations.md) — SCIM 運用ガイド
+- [common/branding-strategy-evidence.md](branding-strategy-evidence.md) — ブランディング詳細
+- [common/platform-architecture-patterns.md](platform-architecture-patterns.md) — アーキパターン
+
+### 9.2 ADR
+
+- [doc/adr/00-index.md](../adr/00-index.md) — ADR 全 38 本のインデックス
+
+### 9.3 PoC 履歴
+
+- [architecture-poc-history.md](architecture-poc-history.md) — PoC 実構成（2026-03-30 時点、参考）

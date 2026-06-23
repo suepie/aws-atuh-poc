@@ -2,7 +2,9 @@
 
 - **ステータス**: Proposed（要件定義フェーズで Accepted に昇格予定）
 - **日付**: 2026-06-12
+- **⚠ 2026-06-23 更新**: **[ADR-039](039-centralized-network-account-edge-layer.md)** で **CloudFront を Network 専用アカウントに集約**することが確定。本 ADR のパターン ii（CloudFront + Lambda@Edge）の **CloudFront / Lambda@Edge は Network Acct に配置**。Lambda@Edge は CloudFront と同一アカウント必須（AWS 仕様）のため、Sorry SPA への redirect 先（`launchpad.example.com/sorry`）も Network Acct CloudFront 経由。本 ADR の Sorry 制御パターン選定（ii Lambda@Edge 推奨）自体は不変、**所有アカウントが変更**。
 - **関連**:
+  - [ADR-039 中央集約 Network 専用アカウント設計](039-centralized-network-account-edge-layer.md)（**本 ADR の上位方針**）
   - [§FR-4.3.2 Sorry ページ](../requirements/proposal/fr/04-sso.md#fr-432-sorry-ページ権限なしアクセス時--fr-sso-008-2)
   - [ADR-021 Post-login Landing UX](021-post-login-landing-ux.md)
   - [ADR-011 認証基盤前段ネットワーク設計](011-auth-frontend-network-design.md)（CloudFront / WAF 構成）
