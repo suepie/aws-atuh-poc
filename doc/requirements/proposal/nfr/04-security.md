@@ -306,6 +306,59 @@ flowchart LR
 
 ---
 
+## §NFR-4.7 PAM / JIT 管理者権限管理（APPI / PCI DSS 準拠）
+
+> **詳細は [ADR-040 PAM / JIT 管理者権限管理](../../../adr/040-pam-jit-admin-privilege-management.md) を参照**
+
+> **このサブセクションで定めること**: 特権アカウントのライフサイクル管理（保管 / 払い出し / セッション記録 / 監査）。**§FR-8.6** で機能側を、本節でセキュリティ要件側を定める。
+> **主な判断軸**: PCI DSS v4.0 §7 / §8 / §10 + APPI 第 23 条 安全管理措置の同時充足
+> **§NFR-4 全体との関係**: §NFR-4.5 クロスアカウント IAM の**運用側統制**
+
+### 結論サマリ
+
+- 特権**常時付与禁止**、JIT 昇格モデル（`<role>-eligible` / `<role>-active`）
+- **AWS IAM Identity Center + Session Manager + Keycloak Composite Role** で構成、CyberArk 不要
+- セッション記録は **Audit Acct S3 Object Lock（WORM）**で 7 年保管（PCI DSS 10.3）
+- **Break-Glass** は物理金庫 + FIDO2 + 2 名同時 + 役員承認 + 24h 期限
+
+### 規制対応マトリクス
+
+| 規制 | 条項 | 充足方法 |
+|---|---|---|
+| PCI DSS 7.2.4 / 7.2.5 | 特権アカウント定期レビュー | 半年ごと Access Certification |
+| PCI DSS 8.2.2 | 共有アカウント禁止 | 個人 ID + JIT 昇格 |
+| PCI DSS 10.2.1 | 全特権操作の監査ログ | Session Manager / Keycloak Admin Events |
+| PCI DSS 10.3 | 監査ログの改ざん不能保管 | S3 Object Lock + Audit Acct 分離 |
+| APPI 第 23 条 | 安全管理措置（組織 / 人的 / 技術的）| アクセス権限ライフサイクル + 監査 + 教育 + 訓練 |
+
+---
+
+## §NFR-4.8 Workload Identity（サービス間認証）
+
+> **詳細は [ADR-041 Workload Identity 設計](../../../adr/041-workload-identity-spiffe.md) を参照**
+
+> **このサブセクションで定めること**: マイクロサービス間 M2M 認証、AWS リソースアクセス、Cross-Acct 通信の認証方式。
+> **主な判断軸**: PCI DSS §8.6.1 / §8.6.2（hardcode 禁止）、Secret 管理ゼロ化
+> **§NFR-4 全体との関係**: §NFR-4.5 クロスアカウント IAM の**Workload 側 Zero Trust 補完**、§NFR-4.7 PAM のヒト側と対をなすマシン側
+
+### 結論サマリ
+
+- **Pod Identity**（EKS、2024 GA、IRSA 後継）採用、agentless
+- **Keycloak Federated Identity Credentials** 採用、client_secret 廃止
+- K8s SA Token（1h 自動更新）→ Keycloak Token Exchange で Secret ゼロ
+- **SPIFFE/SPIRE は Phase 2 候補**（マイクロサービス 50+ / マルチクラウド時に再評価）
+
+### 規制対応マトリクス
+
+| 規制 | 条項 | 充足方法 |
+|---|---|---|
+| PCI DSS 8.6.1 | システム / アプリアカウントの対話的利用不可 | Pod Identity / FedID は対話的ログイン不可 |
+| PCI DSS 8.6.2 | 認証情報の hardcode 禁止 | client_secret 廃止、K8s SA Token 自動配布 |
+| PCI DSS 8.6.3 | 認証情報の定期ローテーション | 自動ローテーション（1h）|
+| NIST SP 800-207 | Zero Trust Architecture | サービス間も短命 Token + 監査 |
+
+---
+
 ## §NFR-4.5 クロスアカウント IAM 設計（共通基盤 ↔ アプリ）
 
 > **このサブセクションで定めること**: 共通基盤専用 AWS アカウントとアプリ AWS アカウント間の **IAM 信頼関係 / アクセス権限分離 / Service Credentials の保管方針**。   

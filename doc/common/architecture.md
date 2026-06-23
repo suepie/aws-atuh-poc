@@ -47,6 +47,8 @@
 | [ADR-037](../adr/037-shared-responsibility-and-lightweight-iga.md) Shared Responsibility | 軽量 IGA 機能 |
 | [ADR-038](../adr/038-tenant-admin-portal.md) Tenant Admin Portal | Admin SPA + Lambda |
 | **[ADR-039](../adr/039-centralized-network-account-edge-layer.md) 中央集約 Network アカウント** | **CloudFront + WAF + Lambda@Edge + Route 53 + ACM を Network 専用 Acct に集約** |
+| **[ADR-040](../adr/040-pam-jit-admin-privilege-management.md) PAM / JIT 管理者** | **IAM Identity Center + Session Manager + Keycloak Composite Role + Break-Glass** |
+| **[ADR-041](../adr/041-workload-identity-spiffe.md) Workload Identity** | **EKS Pod Identity + Keycloak Federated Identity Credentials**（client_secret 廃止）|
 
 ---
 
@@ -73,6 +75,8 @@
 | 検知 | **ITDR**（6 検知領域 × 4 対応レベル）| ADR-035 |
 | 責務分担 | **Shared Responsibility Model**（顧客所有・弊社ホスト）| ADR-037 |
 | 顧客 UI | **自作 Tenant Admin Portal SPA** | ADR-038 |
+| 特権アクセス | **JIT 昇格 + Session Manager + Break-Glass**（APPI / PCI DSS 準拠）| ADR-040 |
+| Workload 認証 | **EKS Pod Identity + Keycloak FedID**（Secret ゼロ化、PCI DSS §8.6）| ADR-041 |
 
 ---
 
@@ -497,18 +501,45 @@ flowchart TB
 
 ### 3.3 Network 層（外部 → 内部の流れ）
 
+> **2026-06-23 更新**: [ADR-039](../adr/039-centralized-network-account-edge-layer.md) により Edge 層（CloudFront / WAF / Lambda@Edge / Route 53 / ACM）は **Network Acct に集約**。Auth Platform Acct / App Acct には **ALB 層のみ**残る。Cross-account 接続は VPC Origins / OAC / Public ALB + secret header を使い分け。
+
+#### 3.3.1 Network Acct（🟣）配置リソース
+
 | # | コンポーネント | 役割 | 設定詳細 | 根拠 |
 |:---:|---|---|---|---|
-| 1 | Route 53 | DNS | 公開ドメイン 5 種 + Private Hosted Zone | ADR-011 |
-| 2 | ACM | TLS 証明書 | カスタムドメイン × 5 | ADR-011 |
-| 3 | CloudFront | CDN | 複数 distribution（Auth / Admin / Launchpad / Trust Center / App 前段）| ADR-011, 013, 022 |
-| 4 | Lambda@Edge | Edge Function | origin-response trigger、403 検出 → 302 Sorry リダイレクト | ADR-022 |
-| 5 | AWS WAF | Web ACL | IP 制限 / Bot Control / Rate Limit | ADR-013 |
-| 6 | External ALB | 公開 LB | Broker KC 受信 | ADR-011 |
-| 7 | Internal ALB | 内部 LB | JWKS / Admin API / IdP-KC 連携 | ADR-012 |
-| 8 | VPC | ネットワーク | Multi-AZ、Private Subnet + Public Subnet | ADR-010 |
-| 9 | VPC Endpoint | 内外通信 VPC 完結 | S3 / KMS / Secrets / Logs / SES 等 | ADR-010 |
-| 10 | カスタムドメイン | 役割別 | `auth.example.com` / `admin.basis.example.com` / `launchpad.example.com` / `compliance.example.com` / `api.basis.example.com` | ADR-011, 038, 021, 036 |
+| 1 | Route 53 | DNS（全社集約）| 全 Hosted Zone（`example.com` / `basis.example.com` 等）| ADR-039 |
+| 2 | ACM（us-east-1）| TLS 証明書（CloudFront 用）| カスタムドメイン × 5+ | ADR-039 |
+| 3 | CloudFront Distributions（全集約）| CDN | Auth / Admin / Launchpad / Trust Center / Apps の **5+ distribution** | ADR-011, 013, 039 |
+| 4 | AWS WAF | Web ACL | 一元管理（Network チーム）、OWASP Core Rule Set / Known Bad Inputs / Bot Control / Rate Limit / Geo | ADR-013, 039 |
+| 5 | AWS Shield Advanced | DDoS 防御 | 全社購入（$3K/月 × 1）| ADR-039 |
+| 6 | Lambda@Edge | Edge Function | origin-response trigger、403 検出 → 302 Sorry リダイレクト（CF と同一 Acct 必須）| ADR-022, 039 |
+
+#### 3.3.2 Auth Platform Acct（🟠）配置リソース
+
+| # | コンポーネント | 役割 | 設定詳細 | 根拠 |
+|:---:|---|---|---|---|
+| 7 | External ALB | LB（Broker KC 受信）| Network Acct CF からのみ受信、**secret header 検証** | ADR-011, 039 |
+| 8 | Internal ALB | 内部 LB | JWKS / Admin API / IdP-KC 連携 | ADR-012 |
+| 9 | VPC | ネットワーク | Multi-AZ、Private Subnet + Public Subnet（ALB 用）| ADR-010 |
+| 10 | VPC Endpoint | 内外通信 VPC 完結 | S3 / KMS / Secrets / Logs / SES 等 | ADR-010 |
+
+#### 3.3.3 App Acct（🟢）配置リソース
+
+| # | コンポーネント | 役割 | 設定詳細 | 根拠 |
+|:---:|---|---|---|---|
+| 11 | **Internal ALB**（**公開不要**）| LB（App 受信）| **VPC Origins** で Network Acct CF から PrivateLink 経由接続 | ADR-039 |
+| 12 | VPC | ネットワーク | App アカウント独自 VPC | — |
+
+#### 3.3.4 カスタムドメイン一覧
+
+| ドメイン | 用途 | CloudFront | Origin |
+|---|---|---|---|
+| `auth.example.com` | Broker KC 認証エンドポイント | Network Acct CF | Auth Acct External ALB（Public ALB + secret header）|
+| `admin.basis.example.com` | Tenant Admin Portal SPA | Network Acct CF | Auth Acct S3（OAC）|
+| `launchpad.example.com` | Launchpad SPA + Sorry | Network Acct CF | Auth Acct S3（OAC）|
+| `compliance.example.com` | Trust Center 公開部 + Customer Portal | Network Acct CF | Auth Acct S3（OAC）|
+| `apps.example.com/*`（パス別ルーティング）| 全業務アプリ前段 | Network Acct CF | 各 App Acct Internal ALB（VPC Origins）|
+| `api.basis.example.com` | Tenant Admin Portal API | Auth Acct API GW（直接）| Lambda |
 
 ### 3.4 認証コア Tier 1：Broker Keycloak
 
@@ -665,13 +696,27 @@ flowchart TB
 | 31-70 Medium | ステップアップ MFA |
 | 71-100 High | Block + 管理者通知 |
 
-### 3.11 AWS edge Sorry 制御（ADR-022）
+### 3.11 AWS edge Sorry 制御（ADR-022 + ADR-039 更新）
+
+> **2026-06-23 更新**: [ADR-039](../adr/039-centralized-network-account-edge-layer.md) により CloudFront + Lambda@Edge を **Network Acct に集約**。Lambda@Edge は CloudFront と同一アカウント必須（AWS 仕様）。
 
 | コンポーネント | 役割 | 配置 |
 |---|---|---|
-| CloudFront Distribution（業務アプリ前段）| メインの edge | App Account 内 |
-| Lambda@Edge（origin-response trigger）| 403 検出 → 302 Sorry リダイレクト | グローバル |
-| Sorry SPA | `/sorry?app=x&reason=Y` で表示 | Auth Platform Account（Launchpad SPA 統合）|
+| CloudFront Distribution（業務アプリ前段 `apps.example.com/*`）| メインの edge | **🟣 Network Acct**（旧: App Account → 移動）|
+| Lambda@Edge（origin-response trigger）| 403 検出 → 302 Sorry リダイレクト | **🟣 Network Acct**（旧: Auth Acct → 移動）|
+| Sorry SPA（`launchpad.example.com/sorry`）| `/sorry?app=x&reason=Y` で表示 | 🟠 Auth Platform Acct S3（OAC で Network Acct CF から配信）|
+
+#### フロー
+
+```
+App が 403 + X-Sorry-Reason ヘッダ返却
+  → Network Acct CloudFront Distribution の origin-response
+  → Lambda@Edge（Network Acct）で 403 検出
+  → 302 redirect to launchpad.example.com/sorry?app=X&reason=Y
+  → Network Acct CloudFront 経由で Auth Acct S3 の Sorry SPA 表示
+```
+
+→ **アプリ側は「403 + ヘッダ返却」のみ**、Sorry のリダイレクトは Network Acct で集約処理。
 
 ### 3.12 監査・コンプライアンス層（ADR-036, NFR-7）
 
@@ -704,6 +749,67 @@ flowchart TB
 | 旧 IAM（並走対象）| 既存認証システム | アプリ単位順次廃止 |
 | ServiceNow REST API（`/api/now/auth`）| 既存 SN ユーザー PW 検証 | 並走期終了で廃止 |
 | 識別子マッピング DB | 旧 user_id ↔ Layer A `sub` | 並走期終了で外す or Layer B `external_id` として永続化 |
+
+### 3.15 特権アクセス管理 PAM（ADR-040）
+
+> APPI 第 23 条 / PCI DSS v4.0 §7 / §8 / §10 を 1 つの設計で同時充足。常時特権付与を禁止し、JIT 昇格 + Session 記録 + Break-Glass の 4 層モデル。
+
+#### 3.15.1 4 層 PAM コンポーネント
+
+| 層 | 対象操作 | コンポーネント | 配置 | 規制対応 |
+|---|---|---|---|---|
+| **L1 Break-Glass** | 全システム障害時の最高権限 | 物理金庫 + FIDO2（YubiKey）+ 各 AWS Acct の `break-glass@` | 各 AWS Acct | PCI DSS 8.2.2 / APPI 安全管理 |
+| **L2 インフラ層** | AWS Console / kubectl / DB | **IAM Identity Center**（SSO + Permission Set）+ **Systems Manager Session Manager**（全セッション録画）| 🔵 Audit Acct（IIC）/ 全 Acct（SSM）| PCI DSS 10.2.1 |
+| **L3 アプリ層** | Keycloak Realm / IdP 設定 | Composite Role `<role>-eligible` / `-active` + **EventBridge Lambda**（期限到来で自動 unassign）| 🟠 Auth Platform Acct | PCI DSS 10.2.1 |
+| **L4 テナント特権** | 全ユーザー削除 / 全 MFA リセット | Tenant Admin Portal 内 **JIT 承認ワークフロー**（SoD：申請者 ≠ 承認者）| 🟠 Auth Platform Acct（ADR-038）| APPI 第 23 条 |
+
+#### 3.15.2 セッション記録 + ログ保管
+
+| ログソース | 保管先 | 期間 | 改ざん防止 |
+|---|---|---|---|
+| IAM Identity Center | CloudTrail Organization | 7 年 | S3 Object Lock |
+| Session Manager（コマンド + 標準入出力）| CloudWatch Logs → 🔵 Audit Acct S3 | 1 年 + Glacier 6 年 | S3 Object Lock |
+| Keycloak Admin Events | 🔵 Audit Acct OpenSearch | 1 年 + S3 6 年 | S3 Object Lock |
+| Tenant Admin Portal Audit | 🔵 Audit Acct OpenSearch | 1 年 + S3 6 年 | テナント別 CMK |
+| Break-Glass 利用 | 上記 + PagerDuty 自動通知 | 7 年 + 役員レビュー記録 | 同上 |
+
+#### 3.15.3 承認 SLA + 訓練
+
+- 承認 SLA：通常 4h、緊急 15min（Pager 起動）
+- 半年ごとの **Break-Glass 訓練**（Tabletop Exercise）→ SOC 2 Type II / PCI DSS 監査エビデンス
+- 特権アカウント定期レビュー：半年ごと（PCI DSS 7.2.4）、Tenant Admin Portal で証跡生成
+
+### 3.16 Workload Identity（ADR-041）
+
+> マイクロサービス前提（顧客打ち合わせ確認済み）。PCI DSS §8.6.1 / §8.6.2 を Pod Identity + Federated Identity Credentials で同時充足、Client Secret ゼロ化。
+
+#### 3.16.1 4 認証境界とコンポーネント
+
+| 境界 | 方式 | コンポーネント | 配置 | Token |
+|---|---|---|---|---|
+| **Pod → AWS リソース** | **EKS Pod Identity**（2024 GA、IRSA 後継）| pod-identity-agent DaemonSet + IAM Role | 🟢 App Acct（Pod 単位）| STS Session Token（1h）|
+| **ECS → AWS リソース** | Task Role（既存）| ECS Task Definition + IAM Role | 🟢 App Acct | 同上 |
+| **Lambda → AWS リソース** | Execution Role（既存）| Lambda 関数 + IAM Role | 🟢 App Acct | 同上 |
+| **アプリ → Keycloak（M2M）** | **Federated Identity Credentials**（K8s SA JWT → Keycloak Token Exchange、`grant_type=jwt-bearer`）| K8s ServiceAccount + Keycloak Client（`use.jwks.url=true`、`jwks.url=https://kubernetes.default.svc/openid/v1/jwks`）| 🟢 App Acct（SA）+ 🟠 Auth Acct（Client）| Keycloak Access Token（1h）|
+| **Cross-Acct 通信** | mTLS + ALB or VPC Endpoint + IAM | 2 段階 STS AssumeRole | 🟢 App Acct A → 🟢 App Acct B | STS Session Token |
+
+#### 3.16.2 Phase 1 採用構成 + Phase 2 候補
+
+| Phase | コンポーネント | 採用判断 |
+|---|---|---|
+| **Phase 1（採用）** | EKS Pod Identity + Keycloak FedID + 既存 Task / Execution Role | AWS 標準、追加製品ゼロ |
+| **Phase 2 候補** | SPIFFE / SPIRE Server + SDS Agent + Service Mesh（Istio）| マイクロサービス 50+ / マルチクラウド / 完全 Zero Trust 要件発生時 |
+
+#### 3.16.3 監査ログ統合
+
+| ログ | 内容 | 保管先 |
+|---|---|---|
+| EKS Audit Log | K8s API 全リクエスト（SA Token 発行含む）| 🟢 App Acct CloudWatch → 🔵 Audit Acct S3 |
+| CloudTrail | Pod Identity → STS AssumeRole | CloudTrail Organization Trail |
+| Keycloak Admin Events | client_credentials / FedID 発行 | 🔵 Audit Acct OpenSearch |
+| App Access Log | Pod 間 HTTP 呼び出し | 🟢 App Acct CloudWatch → 🔵 Audit Acct S3 |
+
+→ ITDR（§3.10）と統合し、**Service Account の異常使用**（通常 Pod 以外からの Token 利用 / Cross-Acct 異常 AssumeRole）を検知。
 
 ---
 

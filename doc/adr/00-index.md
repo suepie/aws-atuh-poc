@@ -42,3 +42,6 @@
 | [036](036-customer-audit-support.md) | Customer Audit Support（顧客監査支援）の設計 | Proposed | 2026-06-18 |
 | [037](037-shared-responsibility-and-lightweight-iga.md) | IdP Keycloak の Shared Responsibility Model と軽量 IGA 設計 | Proposed | 2026-06-18 |
 | [038](038-tenant-admin-portal.md) | Tenant Admin Portal（顧客テナント管理者向け Admin UI） | Proposed | 2026-06-18 |
+| [039](039-centralized-network-account-edge-layer.md) | 中央集約 Network 専用アカウント設計（CloudFront + WAF + Lambda@Edge） | Proposed | 2026-06-23 |
+| [040](040-pam-jit-admin-privilege-management.md) | PAM / JIT 管理者権限管理（APPI / PCI DSS 準拠） | Proposed | 2026-06-23 |
+| [041](041-workload-identity-spiffe.md) | Workload Identity 設計（SPIFFE/SPIRE + AWS IAM Roles for Service Accounts） | Proposed | 2026-06-23 |

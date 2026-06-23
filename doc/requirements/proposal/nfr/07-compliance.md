@@ -74,24 +74,45 @@ flowchart LR
 
 ### 業界の現在地
 
-- **個人情報保護法**: 2022 年改正で罰則強化、データ主体権利強化
+- **個人情報保護法（APPI）**: 2022 年改正で罰則強化、データ主体権利強化、第 23 条 安全管理措置の技術的実装責務
+- **PCI DSS v4.0**: 2024/4 強制適用、§8.6（システム / アプリアカウントの認証情報 hardcode 禁止）が 2025/3 から厳格運用
 - **GDPR Right to Erasure**: 30 日以内応答義務、EDPB 2026 enforcement framework が backup systems も対象化
 - **データ所在地**: 業界・規制次第（金融 / 医療 / 政府は厳格）
 
+### 顧客打ち合わせでの確認事項（2026-06-18）
+
+- B2C は含まず B2B SaaS のみ
+- **APPI と PCI DSS に対応する必要がある**（規制業種顧客はヒアリング中だが対応必須）
+
 ### ベースライン
 
-| 項目 | 推奨デフォルト |
-|---|---|
-| 個人情報保護法 | **Must**（標準準拠） |
-| GDPR / CCPA | 海外展開時 |
-| データ所在地 | 顧客要件次第（国内 / 特定リージョン） |
+| 項目 | 推奨デフォルト | 関連 ADR / 節 |
+|---|---|---|
+| **個人情報保護法（APPI）第 23 条 安全管理措置** | **Must**（標準準拠）| [ADR-040](../../../adr/040-pam-jit-admin-privilege-management.md) PAM / [ADR-041](../../../adr/041-workload-identity-spiffe.md) Workload Identity / [§NFR-4.7 / §NFR-4.8](04-security.md) |
+| **PCI DSS v4.0**（§7 / §8 / §10 中心）| **Must**（規制業種顧客対応）| [ADR-040](../../../adr/040-pam-jit-admin-privilege-management.md) / [ADR-041](../../../adr/041-workload-identity-spiffe.md) / [§NFR-4.7 / §NFR-4.8](04-security.md) |
+| GDPR / CCPA | 海外展開時 | — |
+| データ所在地 | 顧客要件次第（国内 / 特定リージョン）| — |
+
+### APPI 第 23 条 / PCI DSS v4.0 主要条項マッピング
+
+| 規制条項 | 要求事項 | 充足先 |
+|---|---|---|
+| **APPI 第 23 条 組織的安全管理** | アクセス権限付与・剥奪手順策定、定期見直し | [§FR-8.6](../fr/08-admin.md) PAM JIT モデル + 半年定期レビュー |
+| **APPI 第 23 条 人的安全管理** | 従業者監督、教育 | [§NFR-6](06-operations.md) 運用体制 + Break-Glass 訓練 |
+| **APPI 第 23 条 技術的安全管理** | アクセス記録、不正アクセス防止 | [§NFR-4.6](04-security.md) ITDR + [§NFR-4.7](04-security.md) PAM セッション記録 |
+| **PCI DSS 7.2.4 / 7.2.5** | 特権アカウント半年レビュー | [§FR-8.6](../fr/08-admin.md) Access Certification |
+| **PCI DSS 8.2.2** | 共有アカウント禁止 | [ADR-040](../../../adr/040-pam-jit-admin-privilege-management.md) 個人 ID + JIT |
+| **PCI DSS 8.6.1 / 8.6.2** | 認証情報 hardcode 禁止 | [ADR-041](../../../adr/041-workload-identity-spiffe.md) Workload Identity（Pod Identity + Keycloak FedID）|
+| **PCI DSS 10.2.1 / 10.3** | 全特権操作の改ざん不能監査 | [§NFR-4.7](04-security.md) Session Manager + Admin Events + S3 Object Lock |
 
 ### TBD / 要確認
 
 | 確認項目 | 回答例 |
 |---|---|
-| 適用地域 | 日本のみ / グローバル |
+| 適用地域 | **日本のみ**（確認済み 2026-06-18）/ グローバル |
 | データ所在地制約 | 国内 / 特定リージョン / なし |
+| **PCI DSS 対象範囲** | カード会員データを扱う顧客の特定 / 範囲限定（SAQ A）/ 全 LOC（SAQ D）|
+| **規制業種顧客の特定** | 金融 / 医療 / 自治体 / その他 |
 
 ---
 
