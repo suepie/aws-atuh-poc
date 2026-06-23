@@ -2832,8 +2832,8 @@ flowchart TB
 | Producer | Glue 層 | 任意 | AWS Glue Schema Registry | スキーマ管理 | 0 | — | — | 0 | https://aws.amazon.com/jp/glue/pricing/ | 完全無料 |
 | Producer | オーケスト層 | 必須 | AWS Step Functions Standard | 状態遷移 | 0.000025 | per state transition | 30 日 × 50 遷移 = 1,500 | 0.04 | https://aws.amazon.com/jp/step-functions/pricing/ | 無料枠 4K/月、Tokyo 単価は Virginia 換算 |
 | Producer | オーケスト層 | 必須 | Amazon EventBridge Scheduler | 起動 | 1.00 | per 1M invocations | 月 30 起動（日次）| 0 | https://aws.amazon.com/jp/eventbridge/pricing/ | 無料枠 14M/月内 |
-| Producer | オーケスト層 | 必須 | Amazon CloudWatch Logs | Ingestion | 0.50 | per GB | 5 GB（ETL ログ + アプリログ）| 2.5 | https://aws.amazon.com/jp/cloudwatch/pricing/ | 無料枠 5 GB/月 → 実質 $0 想定可 |
-| Producer | オーケスト層 | 必須 | Amazon CloudWatch Logs | Storage（アーカイブ）| 0.03 | per GB/month | 累積 30 GB（13 ヶ月）| 0.9 | https://aws.amazon.com/jp/cloudwatch/pricing/ | Logs Group 保持期間に依存 |
+| Producer | オーケスト層 | 必須 | Amazon CloudWatch Logs | Ingestion | 0.50 | per GB | 17 GB（内訳: Glue ETL Spark 10GB + Lambda/Crawler 2GB + DMS 2GB + その他 3GB）- 無料枠 5GB = 12 GB 課金対象 | 6.0 | https://aws.amazon.com/jp/cloudwatch/pricing/ | 主要発生源: ①Glue ETL Spark ログ（Continuous Logging が最大要因、デフォルト ON で 数 GB/ジョブ）②DMS Replication Task ログ ③Lambda stdout/stderr ④Crawler / Step Functions ログ。最適化: Continuous Logging 無効化（`--enable-continuous-cloudwatch-log: false`）で 80% 削減 / ログレベル INFO→WARN で 50% 削減 / 不要 Container Insights 除外 |
+| Producer | オーケスト層 | 必須 | Amazon CloudWatch Logs | Storage（アーカイブ）| 0.03 | per GB/month | 累積 51 GB（90 日 Retention 想定、17 GB × 3 ヶ月）| 1.5 | https://aws.amazon.com/jp/cloudwatch/pricing/ | デフォルト「Never expire」だと累積拡大。最適化: Retention 90 日設定で 80% 削減（無設定の 13 ヶ月分に対し） |
 | Producer | オーケスト層 | 必須 | Amazon CloudWatch Alarms | Standard | 0.10 | per alarm/month | 20 アラーム | 2 | https://aws.amazon.com/jp/cloudwatch/pricing/ | 無料枠 10 アラーム |
 | Producer | オーケスト層 | 任意 | Amazon CloudWatch | カスタムメトリクス | 0.30 | per metric/month | 30 メトリクス | 6 | https://aws.amazon.com/jp/cloudwatch/pricing/ | 無料枠 10 メトリクス |
 | Producer | オーケスト層 | 必須 | Amazon CloudWatch | API Requests | 0.01 | per 1,000 requests | 数千リクエスト | 0.05 | https://aws.amazon.com/jp/cloudwatch/pricing/ | 無料枠 100 万/月 |
@@ -2868,6 +2868,7 @@ flowchart TB
 | 横断 | 監査ログ | 任意 | AWS CloudTrail Insights（Management）| 分析イベント | 0.35 | per 100K events analyzed | 中央のみ、月 5M analyzed | 17.5 | https://aws.amazon.com/jp/cloudtrail/pricing/ | 異常検知（PutBucketPolicy 急増等）|
 | 横断 | 監査ログ | 任意 | AWS CloudTrail Lake | データ取込（1 年保持）| 0.75 | per GB | 月 5 GB | 3.75 | https://aws.amazon.com/jp/cloudtrail/pricing/ | 一元検索基盤。残課題: 監査ログ保持年数（1/3/7 年） |
 | 横断 | 監査ログ | 任意 | AWS CloudTrail Lake | クエリ（スキャン量）| 0.005 | per GB scanned | 月 100 GB スキャン | 0.5 | https://aws.amazon.com/jp/cloudtrail/pricing/ | 監査調査時のみ |
+| 横断 | 監査ログ | 任意 | Amazon VPC Flow Logs | CloudWatch Logs 送信 | 0.50 | per GB | 10 GB（中規模 VPC、CloudWatch 送信設定時のみ）| 5.0 | https://aws.amazon.com/jp/cloudwatch/pricing/ | デフォルト CloudWatch 送信は割高。**推奨: S3 直送に変更**で $0.05/GB → 月 $0.5（10 倍削減）。VPC のトラフィック量に比例。要Tokyo単価検証。最適化: S3 送信 + Lifecycle で月 $4.5 削減 |
 | 横断 | ネットワーク | 必須 | AWS PrivateLink VPC Interface Endpoint | 時間料金 | 0.01 | per hour per AZ | 8 endpoints × 3 AZ × 720h = 17,280 | 172.8 | https://aws.amazon.com/jp/privatelink/pricing/ | Glue / Athena / LF / KMS / STS / CloudWatch / CloudTrail / Firehose（Producer の Lambda/ECS から PutRecord する場合に Firehose 用 EP 追加）。S3/DynamoDB は Gateway Endpoint（無料）を使用。要Tokyo単価検証。最適化: 不要 EP の棚卸し、AZ 数の最小化（Multi-AZ 必須でないなら 2 AZ で月 $58 削減）|
 | 横断 | ネットワーク | 必須 | AWS PrivateLink VPC Interface Endpoint | データ処理 | 0.01 | per GB processed | 100 GB | 1 | https://aws.amazon.com/jp/privatelink/pricing/ | 段階単価、1 PB 超で $0.006 |
 | 横断 | ネットワーク | 必須 | AWS PrivateLink VPC Gateway Endpoint | S3 / DynamoDB | 0 | — | — | 0 | https://aws.amazon.com/jp/privatelink/pricing/ | 完全無料、優先的に使用 |
@@ -2885,9 +2886,9 @@ flowchart TB
 | Producer（1 アプリ）| 取込層（Transfer Family 採用時 = +216）| 263 |
 | Producer（1 アプリ）| ストレージ層 | 9 |
 | Producer（1 アプリ）| Glue 層 | 13 |
-| Producer（1 アプリ）| オーケスト層 | 12 |
-| **Producer 合計**（ベースライン、1 アプリ）| | **81** |
-| **Producer 合計**（Transfer Family 採用、1 アプリ）| | **297** |
+| Producer（1 アプリ）| オーケスト層 | 16 |
+| **Producer 合計**（ベースライン、1 アプリ）| | **85** |
+| **Producer 合計**（Transfer Family 採用、1 アプリ）| | **301** |
 | **中央**（Phase 1）| カタログ層 | 8 |
 | 中央（Phase 1）| Athena 層 | 0.5 |
 | 中央（Phase 1）| QuickSight 層 | 386 |
@@ -2895,18 +2896,18 @@ flowchart TB
 | 中央（Phase 2）| ML 層（+SageMaker）| 104 |
 | **中央 合計**（Phase 1）| | **398** |
 | **中央 合計**（Phase 2）| | **502** |
-| **横断**| リソース共有 + 監査ログ + ネットワーク + 構成監視 + データ転送 | **337** |
+| **横断**| リソース共有 + 監査ログ + ネットワーク + 構成監視 + データ転送（VPC Flow Logs は CloudWatch 送信時 +$5）| **342** |
 
 #### 4.5.2.B 必須/任意の行数集計（参考）
 
 | 必須/任意 | Producer | 中央 | 横断 | 合計 |
 |---|---:|---:|---:|---:|
 | **必須** | 19 | 13 | 9 | **41** |
-| **任意** | 14 | 11 | 5 | **30** |
+| **任意** | 14 | 11 | 6 | **31** |
 | **削除** | 2 | 0 | 0 | **2** |
-| **合計** | **35** | **24** | **14** | **73** |
+| **合計** | **35** | **24** | **15** | **74** |
 
-→ **必須 41 項目**を採用すれば標準アーキテクチャは動作。**任意 30 項目**は要件・データソース・Phase に応じてオン/オフを判断する。
+→ **必須 41 項目**を採用すれば標準アーキテクチャは動作。**任意 31 項目**は要件・データソース・Phase に応じてオン/オフを判断する。
 
 ---
 
@@ -2916,13 +2917,13 @@ flowchart TB
 
 | カテゴリ | 内訳 | 月額 |
 |---|---|---|
-| **Producer アカウント** | $81/アプリ × N | $81 × N |
+| **Producer アカウント** | $85/アプリ × N | $85 × N |
 | **中央 BI / Catalog アカウント** | 単一 | $398 |
-| **横断インフラ** | 全アカウント分散負担 | $337 |
-| **合計（1 アプリ時）** | $81 + $398 + $337 | **~$816/月** |
-| **合計（5 アプリ時）** | $81 × 5 + $398 + $337 | **~$1,140/月** |
-| **合計（10 アプリ時）** | $81 × 10 + $398 + $337 | **~$1,545/月** |
-| **合計（20 アプリ時）** | $81 × 20 + $398 + $337 | **~$2,355/月** |
+| **横断インフラ** | 全アカウント分散負担（VPC Flow Logs 込み）| $342 |
+| **合計（1 アプリ時）** | $85 + $398 + $342 | **~$825/月** |
+| **合計（5 アプリ時）** | $85 × 5 + $398 + $342 | **~$1,165/月** |
+| **合計（10 アプリ時）** | $85 × 10 + $398 + $342 | **~$1,590/月** |
+| **合計（20 アプリ時）** | $85 × 20 + $398 + $342 | **~$2,440/月** |
 
 **Transfer Family 採用時の加算**（オプション、SFTP 連携必要なアプリ数 × $216）:
 
@@ -2933,7 +2934,7 @@ flowchart TB
 | **中央 1 個に集約**（推奨）| **+$216/月固定** | アプリ数によらず 1 個、ディレクトリ単位で振分け |
 | 不採用（API のみ） | $0 | レガシー連携なし |
 
-→ **典型ケース（10 アプリ + 中央集約 SFTP 1 個）= $1,545 + $216 = ~$1,761/月**
+→ **典型ケース（10 アプリ + 中央集約 SFTP 1 個）= $1,590 + $216 = ~$1,806/月**
 
 **Phase 2 追加（SageMaker + リソース増分）**:
 
@@ -2945,7 +2946,7 @@ flowchart TB
 | SPICE 容量増（92 GB → 200 GB）| +$28 |
 | **Phase 2 増分小計** | **+$434/月** |
 
-→ Phase 2 全体（ベースライン + Transfer Family 中央集約）: 10 アプリで **~$2,195/月**、20 アプリで **~$3,005/月**
+→ Phase 2 全体（ベースライン + Transfer Family 中央集約）: 10 アプリで **~$2,240/月**、20 アプリで **~$3,090/月**
 
 > **比較参考**: 既存の SaaS BI（Tableau Cloud 等）を採用した場合、Author 単価 $70/月、Viewer 単価 $15/月で、同規模で月 $1,500-3,000 のライセンス費のみで上記試算と同等以上。AWS ネイティブの方がトータルで安価かつ統合度が高い。
 
