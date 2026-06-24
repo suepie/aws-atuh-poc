@@ -21,7 +21,7 @@ doc/
 
 | ドキュメント | 内容 |
 |------------|------|
-| [architecture.md](common/architecture.md) | 全体アーキテクチャ（Cognito + Keycloak構成図） |
+| [architecture.md](common/architecture.md) | ⚠ **§C-7 へ移管済**（→ [proposal/common/07-implementation-architecture.md](requirements/proposal/common/07-implementation-architecture.md)、本ファイルはリダイレクトのみ）|
 | [poc-scope.md](common/poc-scope.md) | PoC範囲・制約・技術スタック |
 | [poc-results.md](common/poc-results.md) | 検証結果サマリー（Phase 1-7）・Cognito vs Keycloak比較 |
 | [destroy-guide.md](common/destroy-guide.md) | 環境削除・残存リソース確認手順 |

@@ -550,7 +550,8 @@ sequenceDiagram
 | **4 レイヤーログアウト**（L1〜L4）| [§FR-5.1](../fr/05-logout-session.md) | ローカル / IdP セッション破棄 / フェデ連動 / Back-Channel |
 | **Refresh Token Rotation（自動更新）** | [§FR-5.2](../fr/05-logout-session.md) + [bff-implementation-notes.md §6.3](../../../common/bff-implementation-notes.md) | Refresh 検出 → 新 Token 発行 → 旧 Refresh 破棄 |
 | **継続的アクセス評価（CAEP、将来発展形）** | [§FR-5.4](../fr/05-logout-session.md) | リアルタイム deprovision / イベント駆動セッション無効化 |
-| **PoC 実装の実構成図（参考）** | [doc/common/architecture.md](../../../common/architecture.md) | Phase 1-9 で実装した検証構成（Cognito / Keycloak 並列）|
+| **本番想定の実装アーキ（SSOT）**| [§C-7 実装アーキテクチャ](07-implementation-architecture.md) | ADR-001〜053 統合の本番構成、28 構成要素 + 6 シーケンス + 4 データフロー |
+| **PoC 実装の実構成図（参考）** | [doc/common/architecture-poc-history.md](../../../common/architecture-poc-history.md) | Phase 1-9 で実装した検証構成（Cognito / Keycloak 並列、2026-03-30 時点）|
 | **Identity Broker パターンの詳細図群** | [doc/common/identity-broker-multi-idp.md](../../../common/identity-broker-multi-idp.md) | 抽象設計 / マルチ IdP 認証 / 属性変換 / スケール / セキュリティ |
 | **8 つのシステム設計パターン**（IdP × SPA/SSR × DR）| [doc/common/system-design-patterns.md](../../../common/system-design-patterns.md) | 構成図 + 通信フロー + プロトコル詳細 |
 | **プラットフォーム別本番想定構成**（Cognito / Keycloak OSS / RHBK）| [doc/common/platform-architecture-patterns.md](../../../common/platform-architecture-patterns.md) | **3 プラットフォームそれぞれの本番アーキテクチャ図** + Multi-AZ / Auto Scaling / DR / 月額コスト + 選定フロー |

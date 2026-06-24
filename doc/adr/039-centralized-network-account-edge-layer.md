@@ -7,7 +7,7 @@
   - [ADR-013 CloudFront + WAF による IP 制限の置き換え戦略](013-cloudfront-waf-ip-restriction.md)（更新あり）
   - [ADR-022 AWS edge での Sorry 制御パターン](022-aws-edge-sorry-control.md)（更新あり）
   - [ADR-036 Customer Audit Support](036-customer-audit-support.md)（Audit Account との関係）
-  - [common/architecture.md](../common/architecture.md)（§2.2 全体図 / §2.3 アカウント境界 / §3.3 Network 層 / §3.11 Sorry 制御）
+  - [§C-7 実装アーキテクチャ](../requirements/proposal/common/07-implementation-architecture.md)（§C-7.2.2 全体図 / §C-7.2.3 アカウント境界 / §C-7.3.3 Network 層 / §C-7.3.11 Sorry 制御）
 
 ---
 

@@ -201,6 +201,7 @@ flowchart LR
 | §C-4 | [common/04-schedule.md](common/04-schedule.md) | 想定スケジュール |
 | §C-5 | [common/05-poc-note.md](common/05-poc-note.md) | 弊社内の事前検証について（PoC 控えめ） |
 | **§C-6** | **[common/06-architecture-decision-hybrid.md](common/06-architecture-decision-hybrid.md)** | **🔥 アーキテクチャ判断: ハイブリッド統合（コア統合 + エッジ自律）の根拠と詳細設計**（2026-05-26 新規、D-6 ヒアリング前提資料）|
+| **§C-7** | **[common/07-implementation-architecture.md](common/07-implementation-architecture.md)** | **🆕 実装アーキテクチャ — 全体構成図 + 28 構成要素詳細 + シーケンス 6 + データフロー 4**（ADR-001〜053 統合、本番想定の SSOT、2026-06-23 新規）|
 
 ---
 
