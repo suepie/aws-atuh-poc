@@ -551,6 +551,55 @@ flowchart LR
 
 ---
 
+## §FR-7.5 データポータビリティ + データ主体権利対応
+
+> **詳細は [ADR-048 データポータビリティ + データ主体権利対応](../../../adr/048-data-portability-subject-rights.md) を参照**
+
+> **このサブセクションで定めること**: GDPR Art.15-21 + APPI 第 33-36 条への技術的対応。**§FR-7.0.B Shared Responsibility Model** で「顧客所有・弊社ホスト」のスタンスを確定した IdP-KC 移行ユーザーに対し、データ主体権利行使のフレームワークを提供。
+> **主な判断軸**: GDPR 30 日 SLA + APPI「遅滞なく」+ 機械可読形式（Portability 真の実現）+ Cryptographic Erasure
+> **§FR-7 全体との関係**: §FR-7.1 CRUD / §FR-7.0.B Shared Responsibility の**規制対応層**
+
+### 結論サマリ — 4 経路 × 6 権利
+
+| 経路 | 用途 |
+|---|---|
+| **メイン: Tenant Admin Portal 経由**（[ADR-038](../../../adr/038-tenant-admin-portal.md)）| 顧客 DPO が主導、Shared Responsibility 整合 |
+| Subject Rights Portal（Phase 2）| `account.basis.example.com/rights`、エンドユーザー直接 |
+| 法定書面（紙）| Tenant Admin Portal で手動登録 |
+| DPO 直接連絡 | テナント DPO 経由 |
+
+| 権利 | GDPR | APPI | 実装 |
+|---|---|---|---|
+| Right of Access | Art.15 | 第 33 条 | 全データ JSON エクスポート |
+| Right to Rectification | Art.16 | 第 34 条 | プロフィール編集 + 訂正履歴 |
+| Right to Erasure | Art.17 | 第 35 条 | 論理削除 30 日 → 物理削除 + Cryptographic Erasure |
+| Right to Restriction | Art.18 | 第 35 条 | アカウント Suspend |
+| **Right to Portability** | **Art.20** | 第 33 条（電磁的記録）| **機械可読 5 形式**（JSON / SCIM / CSV / XLSX / OIDC UserInfo） |
+| Right to Object | Art.21 | 第 36 条 | 処理拒否 + Opt-Out |
+
+### 採用方針の核
+
+- **応答 SLA**：GDPR 30 日（最大 +60 日延長可）、APPI「遅滞なく」（実運用 14 日目標）
+- **削除モデル**：論理削除 30 日 Pending → 物理削除 + 監査ログのみ匿名化保持（13 年）
+- **大規模顧客（L3 CMK 採用）**：**テナント全削除 = L3 CMK 削除で Cryptographic Erasure 即時実行**（[ADR-045 §A.4](../../../adr/045-cryptographic-key-management-strategy.md)）
+- **エクスポート形式**：JSON プライマリ + SCIM 2.0（IdP 移転用）+ CSV / XLSX / OIDC UserInfo
+- **証跡保管**：全 DSAR ログを Audit Acct OpenSearch 7 年
+- **DSAR Backend**：Step Functions State Machine で自動化、SLA 監視 + 通知
+- **コスト**：年 〜$4.5K（商用 DSAR プラットフォーム年 $40-50K 比 10 倍削減）
+
+### TBD / 要確認
+
+| 確認項目 | ヒアリング ID | 回答例 |
+|---|---|---|
+| Subject Rights Portal の必要性 | **B-DSAR-1** | Phase 1 から / Phase 2 / 不要 |
+| エクスポート形式の優先 | **B-DSAR-2** | JSON 必須 / SCIM 2.0 必須 / XLSX 必須 |
+| 削除の Pending Window | **B-DSAR-3** | 30 日（推奨）/ 90 日 / 即時 |
+| 多言語対応 | **B-DSAR-4** | 日本語のみ / 日英 / 中国語 / 韓国語追加 |
+| Litigation Hold プロセス | **B-DSAR-5** | 法務承認必須 / Tenant 管理者承認 |
+| Cryptographic Erasure 利用条件 | **B-DSAR-6** | L3 CMK 採用顧客のみ / 全顧客 / 不要 |
+
+---
+
 ### 参考資料（§FR-7 全体）
 
 #### スタンス・データ最小化

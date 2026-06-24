@@ -55,6 +55,12 @@
 | **[ADR-045](../adr/045-cryptographic-key-management-strategy.md) 鍵管理戦略集約** | **3 階層 KMS CMK**（L1 基盤共通 / L2 アカウント別 / L3 テナント別）+ JWT 署名 **ES256** + 機能別 Multi-Region Key |
 | **[ADR-046](../adr/046-supply-chain-security.md) Supply Chain Security** | **6 層 Defense**（コード署名 / SBOM / コンテナ署名 / SLSA L3 / Cosign 検証 / Runtime 継続スキャン）|
 | **[ADR-047](../adr/047-post-quantum-cryptography-migration-plan.md) PQC マイグレーション** | **3 フェーズ移行**（Discover 2026-27 / Hybrid 2028-30 / Full PQC 2031-35）+ ML-KEM-768 / ML-DSA-65 / SLH-DSA-128 |
+| **[ADR-048](../adr/048-data-portability-subject-rights.md) Data Portability** | **4 経路 × 6 権利**（GDPR Art.15-21 + APPI 33-36 条）+ 機械可読 5 形式 + Cryptographic Erasure |
+| **[ADR-049](../adr/049-vendor-risk-management-tprm.md) Vendor Risk Management** | **5 階層 Tiering + DDQ + Continuous Monitoring**（SOC 2 CC9.2 / ISO 27001 A.5.19-23 / PCI DSS §12.8 / DORA）|
+| **[ADR-050](../adr/050-mobile-sdk-native-auth.md) Mobile SDK** | **AppAuth + PKCE + System Browser + WebAuthn Platform + Push MFA（Phase 2）**（OAuth 2.1 / RFC 8252 準拠）|
+| **[ADR-051](../adr/051-multi-region-dr-failover.md) Multi-Region DR** | **Active-Passive Warm Standby + Aurora Global + DynamoDB Global Tables + S3 CRR + KMS MRK**（Tier 2 RTO 1h / RPO 1min、Tier 1 規制業種 30min オプション）|
+| **[ADR-052](../adr/052-multi-tenant-isolation-rate-limiting.md) Multi-tenant Isolation** | **Pool + Hybrid Silo + 3 軸 Rate Limit（Per-tenant / Per-client / Per-IP）+ Tier 別 Quota** |
+| **[ADR-053](../adr/053-observability-strategy.md) Observability** | **OpenTelemetry + AMP + AMG + X-Ray + SLO Burn Rate**（Datadog 等比 5-8 倍コスト削減）|
 
 ---
 
@@ -89,6 +95,12 @@
 | 鍵管理戦略 | **3 階層 KMS CMK + JWT 署名 ES256 + Crypto-Agility**（PCI DSS §3/§4 充足）| ADR-045 |
 | Supply Chain | **6 層 Defense + SLSA L3 + SBOM CycloneDX + Cosign 署名検証**（PCI DSS §6.4.3 / EU CRA）| ADR-046 |
 | PQC 対応 | **3 フェーズ移行 2026-2035**（HNDL 対策、ML-KEM-768 / ML-DSA-65 / SLH-DSA-128）| ADR-047 |
+| Data Portability | **4 経路 × 6 権利 + 機械可読 5 形式**（GDPR Art.15-21 + APPI 33-36 条 + Cryptographic Erasure）| ADR-048 |
+| Vendor Risk (TPRM) | **5 階層 Tiering + DDQ + Continuous Monitoring**（SOC 2 CC9.2 / DORA）| ADR-049 |
+| モバイル認証 | **AppAuth PKCE + WebAuthn Platform + DPoP**（OAuth 2.1 / RFC 8252 準拠、Phase 1-3）| ADR-050 |
+| Multi-Region DR | **Active-Passive Warm Standby + Aurora Global + KMS MRK**（Tier 2 RTO 1h / RPO 1min）| ADR-051 |
+| マルチテナント Isolation | **Pool + Hybrid Silo + 3 軸 Rate Limit + Tier 別 Quota**（Noisy Neighbor 防止）| ADR-052 |
+| Observability | **OpenTelemetry + AMP + AMG + X-Ray + SLO Burn Rate**（年 $32K）| ADR-053 |
 
 ---
 
@@ -1067,6 +1079,306 @@ Cloudflare Turnstile の以下機能を必ず有効化:
 | 採用アルゴリズム一覧 | 公開部 | — |
 | 達成率（Phase 1: X%、Phase 2: Y% 等）| 公開部 | 四半期 |
 | 詳細暗号インベントリ | Customer Portal（NDA）| 四半期 |
+
+### 3.23 データポータビリティ + DSAR Backend（ADR-048）
+
+> Shared Responsibility Model（ADR-037）の IdP-KC 移行ユーザーに対し、データ主体権利行使（GDPR Art.15-21 + APPI 33-36 条）を技術的に提供。
+
+#### 3.23.1 DSAR Backend コンポーネント
+
+| コンポーネント | 役割 | 配置 |
+|---|---|---|
+| API Gateway（`api.basis.example.com/admin/dsar/*`）| DSAR API エンドポイント | 🟠 Auth Acct |
+| DSAR Workflow Lambda | リクエスト受領 + ルーティング | 🟠 Auth Acct |
+| Step Functions State Machine | 自動化フロー（受領→本人確認→処理→通知）| 🟠 Auth Acct |
+| Validate Lambda | 本人確認（MFA / Email / DPO 確認）| 🟠 Auth Acct |
+| Export Lambda | データエクスポート（JSON / CSV / XLSX / SCIM 2.0 / OIDC UserInfo）| 🟠 Auth Acct |
+| Delete Lambda | 論理削除（30 日 Pending）→ 物理削除 + 匿名化 | 🟠 Auth Acct |
+| Notify Lambda | SES + Slack 通知 | 🟠 Auth Acct |
+| DynamoDB（`dsar-requests`）| リクエスト履歴 | 🟠 Auth Acct |
+| S3（presigned URL 7 日）| エクスポートファイル一時保管 | 🟠 Auth Acct |
+| OpenSearch | DSAR 監査ログ 7 年 | 🔵 Audit Acct |
+
+#### 3.23.2 4 経路 × 6 権利
+
+| 経路 | 権利 |
+|---|---|
+| Tenant Admin Portal（ADR-038）/ Subject Rights Portal Phase 2（`account.basis.example.com/rights`）/ 法定書面 / DPO 直接連絡 | Access / Rectification / **Portability** / Erasure / Restriction / Object |
+
+#### 3.23.3 削除戦略（3 段階）
+
+```
+削除請求 → 本人確認 → 論理削除（30 日 Pending、Tenant + DPO 通知）→ 物理削除 + Cryptographic Erasure（L3 CMK 削除）→ 監査ログのみ匿名化 13 年保管
+```
+
+#### 3.23.4 SLA 監視
+
+| 規制 | SLA | アラート |
+|---|---|---|
+| GDPR Art.12 | 30 日（最大 +60 日延長可、理由通知）| 25 日経過で Tenant + DPO 通知 |
+| APPI 第 33 条 | 「遅滞なく」（実運用 14 日目標）| 10 日経過で Tenant 通知 |
+| 削除実行（30 日後）| 25 日経過で削除予定通知 | Email |
+
+### 3.24 Vendor Risk Management / TPRM（ADR-049）
+
+> SOC 2 CC9.2 / ISO 27001 A.5.19-23 / PCI DSS §12.8 / EU DORA を 1 つのフレームワークで充足、CrowdStrike / Salesloft 級ベンダーインシデント対策。
+
+#### 3.24.1 5 階層 Vendor Tiering
+
+| Tier | 例 | 管理レベル |
+|---|---|---|
+| **Tier 0 Foundation** | AWS | 業界公開情報受領、AWS DPA |
+| **Tier 1 Critical** | Cloudflare / Keycloak（OSS） | SIG Full + CAIQ、半期再評価、Right to Audit、SecurityScorecard A 評価維持、代替候補 2 つ |
+| **Tier 2 Important** | Phase Two / GitHub / PagerDuty / NRI セキュア | SIG Lite、年次再評価、インシデント通知 48h |
+| **Tier 3 Standard** | Slack / Datadog | 簡易 DDQ、年次再評価 |
+| **Tier 4 Low Risk** | インフォアクシア等 | 隔年、簡易 NDA |
+
+#### 3.24.2 vendor-registry.yaml（Git 管理）
+
+```yaml
+vendors:
+  - name: Cloudflare
+    tier: 1
+    purposes: [Bot Detection (Turnstile), Future DNS / WAF Edge]
+    data_processed: [Device Fingerprint, IP Address (transient)]
+    region: US (SCC + DPA)
+    certifications: [SOC2-Type2, ISO27001, CSA-STAR-L2]
+    ddq_score: 4.3 / 5.0
+    next_review: 2026-07-15
+    alternative_candidates: [hCaptcha, AWS WAF Captcha Native]
+```
+
+#### 3.24.3 新規ベンダー追加プロセス
+
+```
+追加ニーズ → 初期評価（SIG Lite）→ GitHub PR + 3 人レビュー（CISO + 法務 + チーム Lead）→ 契約交渉（必須条項チェックリスト）→ Onboard（Trust Center 更新）→ Continuous Monitoring 開始
+```
+
+#### 3.24.4 Continuous Monitoring（Phase 2）
+
+- **SecurityScorecard**（Tier 1 全社、Grade A 維持、B 降格で要レビュー / C で即対応）
+- **NVD / RSS / Vendor Status Page** 毎週月曜自動チェック（GitHub Actions）
+- **ベンダーインシデント記録**：CrowdStrike / Salesloft 級は Customer Portal で 24h 内顧客通知
+
+#### 3.24.5 Sub-processor 透明性（Trust Center 公開）
+
+- 全ベンダー一覧 + 用途 + データ種別 + 認証 + Tier を Trust Center 公開部で随時公開
+- 新規追加時 30 日前通知 + 顧客拒否権
+
+### 3.25 モバイルアプリ認証（ADR-050）
+
+> 顧客アプリのモバイル対応に向けた標準推奨。OAuth 2.1 / RFC 8252 / WebAuthn Platform / DPoP 業界標準準拠、Auth0 / Okta Mobile SDK 比 5-10 倍コスト削減。
+
+#### 3.25.1 認証フロー
+
+```
+モバイルアプリ
+  → AppAuth SDK（OpenID Foundation 公式）
+  → System Browser（iOS ASWebAuthenticationSession / Android Chrome Custom Tabs）
+  → CloudFront（🟣 Network Acct）
+  → Broker Keycloak（PKCE + WebAuthn Platform Auth）
+  → Universal Links / App Links で App 再起動
+  → Token Exchange（PKCE 検証 + DPoP Token Binding）
+  → Keychain（iOS Secure Enclave）/ Android Keystore（Hardware-backed）保存
+  → Biometric ロック（再アクセス時必須）
+```
+
+#### 3.25.2 推奨 SDK
+
+| Platform | SDK |
+|---|---|
+| iOS | **AppAuth-iOS**（OpenID Foundation 公式）+ 弊社薄ラッパー |
+| Android | **AppAuth-Android**（同公式）+ 弊社薄ラッパー |
+| React Native | **react-native-app-auth** |
+| Flutter | **flutter_appauth** |
+
+#### 3.25.3 WebAuthn Platform Authenticator
+
+iOS Face ID / Touch ID / Android Biometric Prompt を Passkey 同等として活用。Conditional UI Passkey（iOS 17 / Android 14+）で UX 最大化。
+
+Keycloak Realm Setting:
+- `webAuthnPolicyAuthenticatorAttachment: "platform"`
+- `webAuthnPolicyUserVerificationRequirement: "required"`
+- `webAuthnPolicyRequireResidentKey: "Yes"`
+
+#### 3.25.4 Push 通知 MFA（Phase 2）
+
+| コンポーネント | 役割 |
+|---|---|
+| AWS SNS Mobile Push | APNs / FCM 配信 |
+| Keycloak Custom Authenticator SPI | Push 送信要求 + 承認結果受領 |
+| モバイルアプリ Push Handler | 通知表示（Number Matching + Context）+ Biometric 承認 |
+
+**MFA Fatigue Attack 対策（2022 Uber 教訓）**:
+- Number Matching（画面表示 2 桁数字をモバイル入力）
+- Context 表示（ログイン元 IP / 地域 / アプリ / 時刻）
+- Push 試行回数制限（5 分間に 3 回まで）
+- Adaptive Auth 連動（高 Risk Score 時は Push 送信せず Step-up）
+
+#### 3.25.5 デバイス検証（Phase 2）
+
+| OS | API |
+|---|---|
+| iOS | **App Attest**（アプリ + デバイス真正性、ジェイルブレイク検知）|
+| Android | **Play Integrity API**（同上 + デバッガアタッチ検知）|
+
+→ 検証失敗時は Adaptive Auth Score +30 で Step-up MFA / Block。
+
+#### 3.25.6 Refresh Token Binding（DPoP RFC 9449）
+
+Refresh Token を発行先 App + Device に Bind、漏洩しても秘密鍵を持たない攻撃者は使用不可。Keycloak v22+ で DPoP 標準対応。
+
+### 3.26 Multi-Region DR / Failover（ADR-051）
+
+> Active-Passive Warm Standby + Aurora Global + KMS MRK で SOC 2 A1.2 / PCI DSS §12.10 / ISO 22301 / DORA を 1 つの設計で同時充足。
+
+#### 3.26.1 Region 配置
+
+| Region | 役割 | Aurora | EKS | DR Replica |
+|---|---|---|---|---|
+| **ap-northeast-1（東京）** | Primary | Writer + 2 Reader | 6 Replicas | — |
+| **ap-northeast-3（大阪）** | DR | Secondary（Read-Only、Warm）| 1 Replica（Warm Standby）| ✅ |
+
+#### 3.26.2 Tier 別 RTO / RPO
+
+| Tier | RTO | RPO | 適用 |
+|---|---|---|---|
+| Tier 1 Premium（規制業種）| **30 分** | **1 分** | 金融 / 医療 / 公的機関 / DORA |
+| Tier 2 Standard | **1 時間** | **1 分** | デフォルト |
+| Tier 3 Best Effort | 4 時間 | 15 分 | PoC |
+
+#### 3.26.3 データ層 DR コンポーネント
+
+| データ | Replication |
+|---|---|
+| Aurora（Broker DB / IdP-KC DB）| **Aurora Global Database**（Storage-level、< 1 sec lag、Managed Failover）|
+| DynamoDB（ITDR / Adaptive Auth / Tenant Audit / DSAR Requests）| **Global Tables**（Active-Active、Last-Writer-Wins）|
+| S3（監査ログ / SPA bundle / Sorry SPA / Export）| **Cross-Region Replication**（CRR、Object Lock 含む）|
+| KMS | **Multi-Region Keys (MRK)**（[ADR-045](../adr/045-cryptographic-key-management-strategy.md)）|
+| Keycloak Realm 設定 | **GitOps（Terraform）+ Realm Export 日次自動 → S3 → DR Import** |
+
+#### 3.26.4 Network 層 Failover
+
+- CloudFront Multi-Origin Failover（自動）
+- Route 53 Health Check + Failover Routing（TTL 30 秒）
+- WAF / Shield / Turnstile / Lambda@Edge はグローバル分散（Failover 不要）
+
+#### 3.26.5 Failover 自動化 vs 手動承認
+
+| 障害 | 自動 / 手動 |
+|---|---|
+| 単一 AZ / Multi-AZ / EKS Cluster | **自動** |
+| Aurora Primary Failover（同 Region 内）| **自動**（RDS Managed） |
+| **Aurora Global Promote（Cross-Region）** | **手動承認**（Split-Brain 防止）|
+| **DR Region 全体 Failover** | **手動承認** |
+| **Failback** | **手動承認**（データ整合性確認後）|
+
+#### 3.26.6 DR 訓練（[ADR-044](../adr/044-tabletop-exercise-incident-drill.md) S-07 連動）
+
+- 半期 Game Day（Tokyo 完全停止 → Osaka Failover シミュレーション）
+- Runbook RB-DR-01〜05 を演習で検証
+- RTO/RPO 達成率 90%+ / 100% を KPI
+
+### 3.27 マルチテナント Isolation + Per-tenant Rate Limit（ADR-052）
+
+> Pool Model + 3 軸 Rate Limit（Per-tenant / Per-client / Per-IP）+ Tier 別 Quota で Noisy Neighbor 完全防止。Enterprise 顧客向けには Hybrid Silo オプション。
+
+#### 3.27.1 マルチテナント モデル
+
+| モデル | 採用 |
+|---|---|
+| Pool（標準）| ✅ Phase 1 全顧客 |
+| Hybrid Silo（IdP-KC 専用化）| Enterprise オプション |
+| Full Silo（全リソース専用）| 規制業種要求時のみ |
+
+#### 3.27.2 Per-tenant Rate Limit 実装
+
+| Layer | 対策 |
+|---|---|
+| L1 CloudFront | 全体 100K RPS 上限 |
+| L2 AWS WAF | Per-IP 2000 req/5min（[ADR-042](../adr/042-bot-detection-captcha.md)）|
+| L3 API Gateway Usage Plan | Per-API Key Throttle |
+| L4 **Lambda Authorizer** | **Per-tenant Token Bucket on DynamoDB Atomic Counter**（本 ADR 中核） |
+| L5 EKS HPA | CPU 70% で Pod 自動拡張 |
+| L6 Aurora Auto-Scaling | Read Replica 自動追加 |
+
+#### 3.27.3 Tier 別 SLA / Quota
+
+| Tier | 認証 RPS | Admin RPS | Token RPS | 月間 MAU | 月間 API |
+|---|---|---|---|---|---|
+| Enterprise | 1000 | 100 | 500 | 無制限 | 1 億 |
+| Standard | 100 | 20 | 50 | 10 万 | 1,000 万 |
+| Best Effort | 10 | 5 | 10 | 1,000 | 10 万 |
+
+#### 3.27.4 Tenant Tagging（コスト按分 + 性能監視）
+
+全 AWS リソース + ログ + メトリクスに `tenant_id` / `tier` / `environment` / `cost_center` Tag 必須。Cost Explorer で Per-tenant 月次コスト一覧 + CloudWatch で Per-tenant メトリクス。
+
+#### 3.27.5 API Versioning
+
+- 日付ベース URL（`/v2026-06-23/...`）
+- 12 ヶ月並走
+- Sunset Header（RFC 8594）+ Deprecation 通知 6/3/1 ヶ月前
+
+### 3.28 Observability（ADR-053）
+
+> OpenTelemetry + AWS Managed Services（AMP / AMG / X-Ray）+ SLO with Error Budget で SOC 2 CC7.1-7.2 / PCI DSS §10 / DORA Continuous Monitoring を 1 つの設計で同時充足。商用 APM 比 5-8 倍コスト削減。
+
+#### 3.28.1 計装 + Backend
+
+| 3 Pillars | 計装 | Backend |
+|---|---|---|
+| **Metrics** | OpenTelemetry SDK（自動 + 手動）| **Amazon Managed Prometheus (AMP)** |
+| **Logs** | アプリ JSON 構造化 + Keycloak Events | **CloudWatch Logs**（3 ヶ月）→ **OpenSearch**（1 年）→ **S3 Glacier**（6 年）|
+| **Traces** | OpenTelemetry SDK + AWS X-Ray SDK 互換 | **AWS X-Ray**（OTLP 経由）|
+
+#### 3.28.2 OTel Collector 配置
+
+| 場所 | 役割 |
+|---|---|
+| **EKS DaemonSet** | Pod メトリクス + Trace 受信 |
+| **Lambda Layer**（ADOT）| Lambda 自動計装 |
+| **Cross-Acct Collector**（🔵 Audit Acct ECS Fargate）| 全 Acct 集約 + Backend 送信 |
+
+#### 3.28.3 SLO 標準値
+
+| サービス | 可用性 SLO | レイテンシ p99 | Error Budget |
+|---|---|---|---|
+| **Auth API**（/realms/.../auth）| **99.9%**（年 43.2 分）| < 500ms | 月 43.2 分 |
+| **Token API**（/token）| **99.95%**（年 21.6 分）| < 200ms | 月 21.6 分 |
+| **Admin API**（/admin/...）| **99.5%**（年 3.6h）| < 1s | 月 3.6h |
+| **JWKS Endpoint** | **99.99%**（年 4.3 分）| < 100ms | 月 4.3 分 |
+
+#### 3.28.4 Error Budget Burn Rate Alert
+
+| Burn Rate | 期間 | アラート |
+|---|---|---|
+| 14.4× | 1h | **Critical PagerDuty** |
+| 6× | 6h | **High Slack #incident** |
+| 3× | 24h | Medium Slack #ops |
+| 1× | 通常 | Dashboard のみ |
+
+#### 3.28.5 Dashboards 体系（Amazon Managed Grafana）
+
+| ダッシュボード | 対象 |
+|---|---|
+| CISO Executive | CISO + 経営 |
+| SRE On-Call | SRE / IR（全 SLO + Error Budget + Active Alert）|
+| Service Owner | 各 Lead（RED + ビジネス指標）|
+| Tenant Admin Portal | 顧客（自テナント利用状況 + Quota）|
+| Cost Optimization | FinOps（Per-tenant コスト）|
+| Security Operations | SOC（ITDR Alert + Adaptive Auth Score）|
+| DR / Resilience | SRE Lead（Multi-Region Lag + 訓練結果）|
+
+#### 3.28.6 Trace Sampling
+
+| 種別 | サンプリング率 |
+|---|---|
+| 正常リクエスト | **1%** |
+| Error（5xx）| **100%** |
+| Slow（p99 超過）| **100%** |
+| 顧客サポート時（特定テナント）| **100%**（一時的）|
+| Security Event（ITDR）| **100%** |
 
 ---
 

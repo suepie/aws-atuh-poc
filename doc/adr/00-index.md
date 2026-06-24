@@ -51,3 +51,9 @@
 | [045](045-cryptographic-key-management-strategy.md) | 鍵管理戦略集約（KMS CMK 使い分け + 暗号化境界の統一） | Proposed | 2026-06-23 |
 | [046](046-supply-chain-security.md) | ソフトウェアサプライチェーンセキュリティ（SBOM + SLSA + 依存スキャン + PCI DSS §6.4.3） | Proposed | 2026-06-23 |
 | [047](047-post-quantum-cryptography-migration-plan.md) | Post-Quantum Cryptography（PQC）マイグレーション計画 | Proposed | 2026-06-23 |
+| [048](048-data-portability-subject-rights.md) | データポータビリティ + データ主体権利対応（GDPR Art.15-20 / APPI 第 28-34 条） | Proposed | 2026-06-23 |
+| [049](049-vendor-risk-management-tprm.md) | Vendor Risk Management / TPRM（Third-Party Risk Management） | Proposed | 2026-06-23 |
+| [050](050-mobile-sdk-native-auth.md) | モバイルアプリ認証設計（AppAuth PKCE + WebAuthn Platform + Push 通知 MFA） | Proposed | 2026-06-23 |
+| [051](051-multi-region-dr-failover.md) | Multi-Region DR / Failover 詳細設計（Aurora Global + KMS MRK + Keycloak Realm Replication） | Proposed | 2026-06-23 |
+| [052](052-multi-tenant-isolation-rate-limiting.md) | マルチテナント Isolation + API Gateway Rate Limiting / Per-tenant Quota | Proposed | 2026-06-23 |
+| [053](053-observability-strategy.md) | Observability Strategy（OpenTelemetry + SLO + Distributed Tracing + Dashboards） | Proposed | 2026-06-23 |

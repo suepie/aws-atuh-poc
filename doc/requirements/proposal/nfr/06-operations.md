@@ -91,19 +91,45 @@ flowchart LR
 
 ### ベースライン
 
-| 項目 | 推奨デフォルト |
-|---|---|
-| 監視ツール | CloudWatch Metrics + Dashboard |
-| アラート通知 | CloudWatch Alarm + SNS |
-| ログ保存期間 | 法定要件次第（1 年〜10 年）|
-| ログ検索 | CloudWatch Insights / S3 + Athena |
+> **詳細は [ADR-053 Observability Strategy](../../../adr/053-observability-strategy.md) を参照**
+
+| 項目 | 推奨デフォルト | 詳細 |
+|---|---|---|
+| 計装フレームワーク | **OpenTelemetry（OTLP）**（業界標準、Vendor Lock-in 回避）| [ADR-053](../../../adr/053-observability-strategy.md) §A |
+| メトリクス Backend | **Amazon Managed Prometheus (AMP)** | 同 §C.1 |
+| トレース Backend | **AWS X-Ray**（OTLP 経由）| 同 §C.3 |
+| ログ階層 | **Hot 3 ヶ月（CloudWatch / OpenSearch）→ Warm 1 年（OpenSearch UltraWarm）→ Cold 6 年（S3 Glacier Deep Archive）** | 同 §F |
+| ダッシュボード | **Amazon Managed Grafana (AMG)** | 同 §D |
+| SLO 管理 | **Prometheus Recording Rules + Burn Rate Alert**（Google SRE 流）| 同 §B |
+| APM | **不採用**（OpenTelemetry + X-Ray で代替、Datadog 等 $40K+/年は過剰） | 同 §J |
+| アラート 4 段階 | Critical（PagerDuty 15 分）/ High（Slack 1h）/ Medium（4h）/ Low（営業日中）| 同 §E |
+| Trace Sampling | **正常 1%、Error / Slow 100%** | 同 §C.4 |
+| メトリクス Cardinality | Per-tenant_id + Per-endpoint + Per-status_code（user_id / ip は不採用）| 同 §G |
+| Per-tenant 監視 | **必須**（[ADR-052](../../../adr/052-multi-tenant-isolation-rate-limiting.md) Tenant Tagging 連動）| 同 §D |
+
+### SLO 標準値（Auth / Token / Admin API）
+
+| サービス | 可用性 SLO | レイテンシ p99 |
+|---|---|---|
+| Authentication API | 99.9%（月 43.2 分）| < 500ms |
+| Token API | 99.95%（月 21.6 分）| < 200ms |
+| Admin API | 99.5%（月 3.6 時間）| < 1s |
+| JWKS Endpoint | 99.99%（月 4.3 分）| < 100ms |
+
+### コスト
+
+- 年 $32K（AMP + AMG + X-Ray + OpenSearch + S3 Glacier + OTel Collector）
+- 商用 APM（Datadog / New Relic / Dynatrace）比 **5-8 倍コスト削減**
 
 ### TBD / 要確認
 
-| 確認項目 | 回答例 |
-|---|---|
-| ログ保存期間 | 1 年 / 3 年 / 6 年 / 10 年 |
-| 監視ダッシュボード共有 | 弊社内 / 顧客管理者 / 監査人 |
+| 確認項目 | ヒアリング ID | 回答例 |
+|---|---|---|
+| ログ保存期間 | **B-OBS-1** | 1 年 / 3 年 / 6 年 / **7 年**（規制業種推奨）|
+| 監視ダッシュボード共有 | **B-OBS-2** | 弊社内 / 顧客管理者（Tenant Admin Portal）/ 監査人（Trust Center 経由）|
+| APM 製品 | **B-OBS-3** | **OpenTelemetry + AWS Managed（推奨）** / Datadog / New Relic / Dynatrace |
+| SLO 公開 | **B-OBS-4** | Trust Center 公開部 / Customer Portal（NDA）/ 非公開 |
+| 顧客向け SLA 連動 | **B-OBS-5** | あり（契約 SLA 連動）/ なし |
 
 ---
 

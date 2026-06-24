@@ -831,6 +831,66 @@ email 非保有 + 顧客独自 ID 対応では **Keycloak が運用摩擦小**:
 - 24/7 商用サポート必須 → **Cognito 全ティア**、または **Keycloak RHBK**
 - 上記なし、最安希望 → **Cognito Lite**
 
+---
+
+## §FR-1.3 モバイルアプリ認証（Native Mobile）
+
+> **詳細は [ADR-050 モバイルアプリ認証設計](../../../adr/050-mobile-sdk-native-auth.md) を参照**
+
+> **このサブセクションで定めること**: 顧客アプリ（業務アプリ）がモバイル対応する場合の標準的なネイティブ認証フローと推奨 SDK / 認証パターン。
+> **主な判断軸**: OAuth 2.1 / RFC 8252 / WebAuthn Platform / DPoP / MFA Fatigue Attack 対策 / 商用 Mobile SDK（Auth0 / Okta）のコスト
+> **§FR-1 全体との関係**: §FR-1.1 ブラウザベース認証の**ネイティブモバイル版**、§FR-3 MFA と統合
+
+### 結論サマリ
+
+| 項目 | 採用方針 |
+|---|---|
+| **OAuth フロー** | **OAuth 2.1 (PKCE 必須)** + Authorization Code + System Browser |
+| **推奨 SDK** | **AppAuth iOS / Android**（OpenID Foundation 公式）+ 弊社薄ラッパー |
+| **ブラウザ** | **iOS: ASWebAuthenticationSession** / **Android: Chrome Custom Tabs** |
+| **WebView** | **全面禁止**（RFC 8252、Phishing 対策）|
+| **MFA** | **WebAuthn Platform**（Face ID / Touch ID / Android Biometric）+ Phase 2 で Push 通知 MFA（Number Matching + Context）|
+| **Refresh Token** | **App-bound + Device Binding（DPoP RFC 9449）** |
+| **Deep Link** | **Universal Links（iOS）+ App Links（Android）**、Custom Scheme 非推奨 |
+| **Token 保管** | iOS Keychain（Secure Enclave）/ Android Keystore（Hardware-backed）+ Biometric ロック |
+| **デバイス検証**（Phase 2）| App Attest（iOS）+ Play Integrity（Android）|
+| **MDM / MAM / MTD 統合**（Phase 3）| 顧客側ツールと連携、Conditional Access パターン |
+
+### Phase 別ロードマップ
+
+| Phase | 内容 | 期間 |
+|---|---|---|
+| Phase 1 | AppAuth SDK + 弊社ラッパー + Keycloak 設定 + リファレンス実装 | 3 ヶ月 |
+| Phase 2 | Push 通知 MFA + App Attest / Play Integrity + DPoP | 4 ヶ月 |
+| Phase 3 | MDM / MAM / MTD 統合 + Conditional Access + FAPI 2.0 | 顧客要件次第 |
+
+### MFA Fatigue Attack 対策（重要）
+
+- **Number Matching**：画面表示 2 桁数字をモバイル入力
+- **Context 表示**：ログイン元 IP / 地域 / アプリ / 時刻を承認画面に明示
+- **Push 試行回数制限**：5 分間に 3 回まで
+- **Adaptive Auth 連動**：高 Risk Score 時は Push 送信せず Step-up
+
+### コスト
+
+- Phase 1 初期 1,500 万円 + 月次運用 50 万円
+- Phase 2 追加 1,000 万円 + SNS Push $750/月（10M MAU）
+- 商用 Auth0 / Okta Mobile SDK 年 $40-50K 比 5-10 倍削減
+
+### TBD / 要確認
+
+| 確認項目 | ヒアリング ID | 回答例 |
+|---|---|---|
+| **モバイルアプリ採用予定** | **B-MOB-1** | あり（Phase 1）/ Phase 2 / なし |
+| 対応プラットフォーム | **B-MOB-2** | iOS のみ / Android のみ / 両方 / React Native / Flutter |
+| 想定 MAU 規模 | **B-MOB-3** | 〜10K / 100K / 1M / 10M |
+| WebAuthn Biometric 採用 | **B-MOB-4** | 必須（推奨）/ オプション / 不要 |
+| Push 通知 MFA 採用 | **B-MOB-5** | Phase 1 から / Phase 2 / 不要 |
+| FAPI 2.0 適用顧客（金融）| **B-MOB-6** | あり / なし |
+| MDM / MAM 統合 | **B-MOB-7** | Intune / Workspace ONE / Jamf / 不要 |
+
+---
+
 ### 参考資料（業界動向の裏どり）
 
 - [NIST SP 800-63B Rev 4 公式](https://pages.nist.gov/800-63-4/sp800-63b.html)

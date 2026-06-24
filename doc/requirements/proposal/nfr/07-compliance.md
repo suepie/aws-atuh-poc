@@ -359,6 +359,59 @@ Salesforce / Microsoft / AWS / Okta / Auth0 / Atlassian / GitHub / Slack 等、*
 
 ---
 
+## §NFR-7.7 Vendor Risk Management / TPRM
+
+> **詳細は [ADR-049 Vendor Risk Management / TPRM](../../../adr/049-vendor-risk-management-tprm.md) を参照**
+
+> **このサブセクションで定めること**: 第三者ベンダー（Sub-processor / SaaS / OSS Maintainer / クラウド）の Tiering + DDQ + Continuous Monitoring + 契約条項。
+> **主な判断軸**: SOC 2 CC9.2 + ISO 27001 A.5.19-23 + PCI DSS §12.8 + DORA + Salesloft Drift / CrowdStrike 級事案防御
+> **§NFR-7 全体との関係**: §NFR-7.5 Customer Audit Support の前提、§NFR-4.10 Supply Chain Security と対をなす
+
+### 結論サマリ — 5 階層 Tiering
+
+| Tier | 定義 | 例 |
+|---|---|---|
+| **Tier 0 Foundation** | ハイパースケーラー、停止 = 全面停止 | AWS |
+| **Tier 1 Critical** | 認証 / データクリティカル | Keycloak（OSS）/ Cloudflare |
+| **Tier 2 Important** | 高機密データ取扱 | Phase Two / GitHub / PagerDuty / NRI セキュア |
+| **Tier 3 Standard** | 業務効率化 | Slack / Datadog |
+| **Tier 4 Low Risk** | 公開情報のみ | インフォアクシア等 |
+
+### 採用方針の核
+
+- **DDQ**：SIG Full（Tier 1）+ SIG Lite（Tier 2）+ CAIQ v4（クラウド）
+- **再評価**：Tier 1 半年、Tier 2-3 年次、Tier 4 隔年
+- **Continuous Monitoring**：SecurityScorecard（Phase 2、Tier 1 全社）+ NVD / RSS / Status Page
+- **必須契約条項**：Right to Audit / インシデント通知 24h（Tier 1）/ GDPR DPA / APPI 委託契約 / Sub-processor 30 日前通知 / 契約終了 90 日内データ削除 + 証跡
+- **Sub-processor 透明性**：Trust Center 公開部（[ADR-036](../../../adr/036-customer-audit-support.md)）に随時更新 + 30 日前通知 + 顧客拒否権
+- **新規ベンダー追加**：GitHub PR + 3 人レビュー（CISO + 法務 + 該当チーム Lead）+ `vendor-registry.yaml`
+- **Concentration Risk 管理**：Tier 1 は代替候補 2 つ維持、Vendor Lock-in 緩和（Open Standards / Data Portability / OSS Fork 戦略）
+- **国家リスク**（DOJ Bulk Data Rule 2025/4）：中国 / ロシア / イラン / 北朝鮮 / キューバ / ベネズエラベンダー除外
+- **コスト**：年 $105K（商用 TPRM 年 $60-80K 比やや高いが内製ノウハウ蓄積）
+
+### 規制対応マッピング
+
+| 規制 | 条項 | 充足方法 |
+|---|---|---|
+| SOC 2 Type II | CC9.2 Vendor Risk Management | 5 階層 + DDQ + Monitoring |
+| ISO 27001 | A.5.19-A.5.23 供給者関係管理 | 同上 |
+| PCI DSS v4.0 | §12.8 第三者プロバイダー管理 | 同上 + Right to Audit |
+| NIST SP 800-161 Rev 1 / NIST CSF 2.0 GV.SC | C-SCRM | 同上 + Sub-processor 透明性 |
+| EU DORA | 金融業 ICT 第三者要件（2025/1）| 同上 + 規制業種顧客向け強化 |
+| APPI 第 25 条 | 委託先監督 | 契約条項 + Tabletop 演習（[ADR-044](../../../adr/044-tabletop-exercise-incident-drill.md) S-09）|
+
+### TBD / 要確認
+
+| 確認項目 | ヒアリング ID | 回答例 |
+|---|---|---|
+| TPRM 専任配置 | **B-TPRM-1** | 0.3 FTE（推奨）/ 兼任 / 外部委託 |
+| SecurityScorecard 等 Continuous Monitoring ツール導入 | **B-TPRM-2** | Phase 1 から / Phase 2 / 不要 |
+| 商用 TPRM プラットフォーム検討 | **B-TPRM-3** | OneTrust / ProcessUnity / 自社運用（推奨）|
+| 規制業種顧客の Right to Audit 要求 | **B-TPRM-4** | あり / なし / 顧客次第 |
+| DORA 適用顧客（EU 金融）| **B-TPRM-5** | あり / なし |
+
+---
+
 ## 参考資料
 
 ### プロジェクト内 関連ドキュメント
