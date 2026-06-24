@@ -138,12 +138,28 @@ flowchart TB
 | `internal-api-iam-auth-required` | 社内 / 社内限定 Profile タグの付いた API Gateway / ALB が **IAM auth または JWT Authorizer を設定済**か |
 | `sg-only-network-not-allowed` | 社内限定 Profile タグの API が **SG だけで認証 Authorizer なし** で構成されていないか（例外台帳照合）|
 
+#### D. Origin Protection 系（CloudFront 経由必須化）⭐ 新規
+
+[ADR-039 §C-4 Origin Protection](../../../adr/039-centralized-network-account-edge-layer.md) を担保する Config Rules。Network Acct の CloudFront を経由しない直接アクセスを遮断するための継続監査：
+
+| Config Rule | 検査内容 |
+|---|---|
+| `api-gw-resource-policy-cloudfront-only` | パブリック API GW REST が **Resource Policy で CloudFront 管理 Prefix List + Custom Header 検証を強制**しているか |
+| `alb-public-listener-cloudfront-header-required` | パブリック ALB Listener Rule が **`X-Origin-Verify` ヘッダ検証 + 不一致時 403** を設定しているか |
+| `alb-public-sg-cloudfront-prefix-list-only` | パブリック ALB の Security Group が **`com.amazonaws.global.cloudfront.origin-facing` Prefix List のみ許可**しているか |
+| `origin-secret-rotation-enabled` | Origin Protection 用 Secret に **自動ローテーション（30 日）が設定済**か |
+| `origin-secret-overlap-period-configured` | Rotation 時の **Overlap Period 24-72h** が確保されているか（Lambda Rotation の AWSPENDING フェーズ確認）|
+
+→ **ADR-039 で「DNS は public、実質的に CloudFront 経由のみ」**を技術的に強制。Service Catalog 製品テンプレ（[§C-API-5 §C-5.1.1](../common/05-self-service-catalog.md)）と組み合わせて Pre-Deploy + Post-Deploy の二段防御。
+
 ### §7.2.3 TBD / 要確認
 
 - Q: SCP / Config Rules の **既定セット**は Landing Zone Accelerator (LZA) を採用するか自前か → `API-D-721`
 - Q: Config Rule の **自動修復**（Systems Manager Automation）採用範囲 → `API-D-722`
 - Q: Authorizer 必須化 Config Rule の **自動修復**（API method を deny に変更）を採用するか → `API-D-723` ⭐
 - Q: 認証なし API 例外台帳と Config Rule の **照合自動化**（ServiceNow / DynamoDB 等のデータソース）→ `API-D-724` ⭐
+- Q: Origin Protection Secret Rotation の **周期**（30 / 60 / 90 日）と Overlap Period（24 / 48 / 72h）→ `API-B-725` ⭐
+- Q: Origin Protection Config Rule 違反時の **自動修復**（Resource Policy 強制復元）を採用するか → `API-D-726` ⭐
 
 ---
 

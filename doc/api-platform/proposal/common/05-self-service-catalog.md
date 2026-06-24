@@ -80,6 +80,18 @@ flowchart LR
   - ALB ベースの製品テンプレで **認証統合 or アプリ middleware 認証タグ必須**
   - Lambda Function URL 採用製品は `AuthType=AWS_IAM` 必須
   - IaC validation hook（cfn-guard / CDK Aspect 等）で deploy 前に強制
+- ⭐ **Origin Protection 必須化**（[ADR-039 §C-4](../../../adr/039-centralized-network-account-edge-layer.md)）：
+  - パブリック公開する全 API Gateway REST / Public ALB 製品テンプレで **Resource Policy / Listener Rule 自動注入**
+    - Resource Policy: CloudFront 管理 Prefix List `com.amazonaws.global.cloudfront.origin-facing` 制限 + `X-Origin-Verify` Custom Header 検証 + 不一致時 Deny
+    - ALB Listener Rule: `X-Origin-Verify` ヘッダ検証 + 不一致時 fixed-response 403
+    - Security Group: `pl-58a04531`（CloudFront origin-facing prefix list）のみ 443 許可
+  - **Secret Rotation 機構**を製品の初期構成として組み込み：
+    - Network Acct の Secrets Manager に紐付け（Cross-account Resource Policy）
+    - Network Acct の Rotation Lambda が App Acct の Resource Policy / Listener Rule を自動更新（Cross-account AssumeRole）
+    - 30 日周期 + Overlap 24-72h
+  - **Synthetics canary**を製品テンプレに同梱（API GW / ALB 直接 curl で 403 期待の probe）
+
+→ **アプリ開発者は「Network Acct CloudFront 経由必須」を意識せずに製品起動で自動準拠**。製品テンプレは ADR-039 § C-4 の Pattern A（Custom Header + IP Allowlist）を実装、Internal ALB 用は Pattern B（VPC Origins）を実装。
 
 → **アプリ開発者が「認証なし API」を Service Catalog 経由で作れない構造**を製品テンプレレベルで担保。例外は別途申請制（[§FR-API-2 §2.8.3](../fr/02-authn-authz.md)）。
 

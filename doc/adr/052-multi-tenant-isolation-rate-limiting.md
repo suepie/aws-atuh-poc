@@ -4,7 +4,7 @@
 - **日付**: 2026-06-23
 - **関連**:
   - [ADR-017 マルチテナント L2 採用根拠](017-multitenant-l2-single-realm.md)
-  - [ADR-038 Tenant Admin Portal](038-tenant-admin-portal.md)
+  - [ADR-038 ユーザ管理画面](038-tenant-admin-portal.md)
   - [ADR-039 中央集約 Network 専用アカウント](039-centralized-network-account-edge-layer.md)
   - [ADR-042 Bot Detection / CAPTCHA](042-bot-detection-captcha.md)
   - [ADR-049 Vendor Risk Management（Concentration Risk）](049-vendor-risk-management-tprm.md)
@@ -86,7 +86,7 @@
 | **マルチテナント モデル** | **Pool**（標準）+ **Hybrid Silo**（Enterprise オプション）|
 | **Rate Limit 単位** | **Per-tenant + Per-client_id + Per-IP** の 3 軸 |
 | **Rate Limit 実装** | **API Gateway Usage Plan + API Key + Lambda Authorizer**（Token Bucket）|
-| **Quota 実装** | **DynamoDB + Lambda（月初リセット）+ Tenant Admin Portal 表示** |
+| **Quota 実装** | **DynamoDB + Lambda（月初リセット）+ ユーザ管理画面 表示** |
 | **Tier 別 SLA** | Enterprise / Standard / Best Effort の 3 ティア |
 | **API Versioning** | **日付ベース**（`/v2026-06-23/...`）、12 ヶ月並走 |
 | **Tenant Tagging** | 全 AWS リソース + ログに `tenant_id` Tag 必須 |
@@ -304,7 +304,7 @@ exports.handler = async () => {
 | 月間 MAU | 無制限 | 10 万 | 1,000 |
 | 月間 API 呼出 | 1 億 | 1,000 万 | 10 万 |
 | Storage（ユーザーデータ）| 100 GB | 10 GB | 100 MB |
-| Tenant Admin Portal 管理者数 | 無制限 | 10 名 | 2 名 |
+| ユーザ管理画面 管理者数 | 無制限 | 10 名 | 2 名 |
 | カスタム IdP 接続数 | 無制限 | 5 個 | 1 個 |
 | Webhook 数 | 無制限 | 20 個 | 5 個 |
 | 監査ログ保持期間 | 7 年 | 1 年 | 90 日 |
@@ -314,12 +314,12 @@ exports.handler = async () => {
 | 種別 | 超過時 |
 |---|---|
 | MAU | **Soft Block**：超過分は Tenant Admin に警告通知、月末 95% で Slack / Email 通知、100% でアラート（強制 Block しない、Enterprise アップグレード勧奨）|
-| API 呼出 | **Hard Block**：429 + Quota Exceeded、Tenant Admin Portal で増量申請可能 |
+| API 呼出 | **Hard Block**：429 + Quota Exceeded、ユーザ管理画面 で増量申請可能 |
 | Storage | **Read-Only**：書込不可、削除のみ可能 |
 | Admin Portal 管理者数 | **新規追加不可**（既存はそのまま）|
 | IdP 接続数 | **新規追加不可** |
 
-### C.3 Quota 表示（Tenant Admin Portal）
+### C.3 Quota 表示（ユーザ管理画面）
 
 ```
 Dashboard / 利用状況
@@ -372,7 +372,7 @@ Attributes:
 | **Major Version の頻度** | 半年に 1 回 |
 | **古いバージョンの並走期間** | **12 ヶ月**（業界標準 6-12 ヶ月の上限）|
 | **非互換変更** | Major Version のみ、Minor / Patch は後方互換維持 |
-| **Deprecation 通知** | 6 ヶ月前 + 3 ヶ月前 + 1 ヶ月前 + 1 週間前（Email + Tenant Admin Portal + Trust Center）|
+| **Deprecation 通知** | 6 ヶ月前 + 3 ヶ月前 + 1 ヶ月前 + 1 週間前（Email + ユーザ管理画面 + Trust Center）|
 | **強制移行** | 12 ヶ月後、HTTP 410 Gone |
 
 ### D.3 Sunset Header（RFC 8594）
@@ -449,7 +449,7 @@ resource "aws_cloudfront_cache_policy" "tenant_aware" {
 
 ### F.3 SPA / 静的コンテンツ
 
-- Tenant Admin Portal SPA / Account Console / Launchpad / Sorry は**テナント間共通**（コードは同じ）
+- ユーザ管理画面 SPA / アカウント設定画面 / サービス選択画面 / Sorry は**テナント間共通**（コードは同じ）
 - ブランディング（[ADR-024](024-login-screen-architecture-branding.md)）はクライアント側 Runtime 切替（テナント別 Cache 不要）
 
 ---
@@ -477,14 +477,14 @@ Layer 6: Aurora Auto-Scaling（Read Replica 自動追加）
 | Load Level | 挙動 |
 |---|---|
 | 〜70% 容量 | 通常 |
-| 70-85% | Rate Limit 警告、Tenant Admin Portal で表示 |
+| 70-85% | Rate Limit 警告、ユーザ管理画面 で表示 |
 | 85-95% | Burst 許可停止、厳格 Limit 適用 |
 | 95-100% | 非クリティカル API（管理画面）優先 Throttle、認証 API 優先 |
 | 100%+ | 429 全面 + キュー（SQS）|
 
 ---
 
-## H. Tenant Admin Portal 統合（ADR-038 拡張）
+## H. ユーザ管理画面 統合（ADR-038 拡張）
 
 | メニュー | 機能 |
 |---|---|

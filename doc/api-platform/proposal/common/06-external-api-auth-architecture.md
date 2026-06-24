@@ -1255,6 +1255,53 @@ async function tenantIsolationProbe() {
 }
 ```
 
+**Direct Origin Attack probe サンプル**（[ADR-039 §C-4](../../../adr/039-centralized-network-account-edge-layer.md) Origin Protection 検証）：
+
+```javascript
+// CloudFront を経由しない直接 Origin アクセスが遮断されているかを定期検証
+async function directOriginAttackProbe() {
+  // CloudFront を経由しない直接 Origin DNS（API GW / Public ALB）
+  const directOriginEndpoints = [
+    'https://abc123.execute-api.ap-northeast-1.amazonaws.com/prod/api/users',  // API GW direct
+    'https://app-b-alb-xxx.ap-northeast-1.elb.amazonaws.com/api/orders',       // Public ALB direct
+  ];
+
+  for (const endpoint of directOriginEndpoints) {
+    // Probe 1: CloudFront を経由せず直接 curl → 403 期待
+    const res = await makeRequest(endpoint, {});
+    if (res.statusCode !== 403) {
+      log.error(`ORIGIN PROTECTION FAILURE: ${endpoint} returned ${res.statusCode} on direct access`);
+      throw new Error(`Direct origin access allowed - critical security violation (ADR-039 violation)`);
+    }
+  }
+
+  // Probe 2: 古い Secret で X-Origin-Verify 偽装 → 403 期待
+  const oldSecret = await synthetics.getSecret('test-old-origin-verify-secret');
+  for (const endpoint of directOriginEndpoints) {
+    const res = await makeRequest(endpoint, {
+      'X-Origin-Verify': oldSecret
+    });
+    if (res.statusCode !== 403) {
+      log.error(`SECRET ROTATION FAILURE: ${endpoint} accepted stale secret`);
+      throw new Error(`Stale Origin Protection secret accepted - rotation may have failed`);
+    }
+  }
+
+  log.info('All Origin Protection probes passed');
+}
+```
+
+**Probe シナリオまとめ**：
+
+| Probe | 期待 status | 検知パターン |
+|---|:---:|---|
+| `directOriginAttackProbe` 1: 直接 curl | 403 | Origin Protection 失効 / Resource Policy 削除 |
+| `directOriginAttackProbe` 2: 古い Secret | 403 | Secret rotation 失敗 / Overlap 過剰 |
+| `authCheckCanary` 1: no-auth | 401/403 | P1 Authorizer 不在 |
+| `authCheckCanary` 2: invalid-token | 401 | P2 Authorizer 無効化 |
+| `authCheckCanary` 3: alg=none | 401 | P5 JWT 検証バグ |
+| `tenantIsolationProbe`: cross-tenant | 403 | P3 tenant 越境 |
+
 **OWASP ZAP 自動化サンプル**：
 
 ```yaml

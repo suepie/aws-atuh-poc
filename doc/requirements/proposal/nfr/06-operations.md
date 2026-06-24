@@ -126,7 +126,7 @@ flowchart LR
 | 確認項目 | ヒアリング ID | 回答例 |
 |---|---|---|
 | ログ保存期間 | **B-OBS-1** | 1 年 / 3 年 / 6 年 / **7 年**（規制業種推奨）|
-| 監視ダッシュボード共有 | **B-OBS-2** | 弊社内 / 顧客管理者（Tenant Admin Portal）/ 監査人（Trust Center 経由）|
+| 監視ダッシュボード共有 | **B-OBS-2** | 弊社内 / 顧客管理者（ユーザ管理画面）/ 監査人（Trust Center 経由）|
 | APM 製品 | **B-OBS-3** | **OpenTelemetry + AWS Managed（推奨）** / Datadog / New Relic / Dynatrace |
 | SLO 公開 | **B-OBS-4** | Trust Center 公開部 / Customer Portal（NDA）/ 非公開 |
 | 顧客向け SLA 連動 | **B-OBS-5** | あり（契約 SLA 連動）/ なし |
@@ -484,7 +484,7 @@ resource "aws_cognito_managed_login_branding" "payment" {
 | # | ユースケース | 頻度（最大）| 主体 | クロスアカウント | 標準作業 | 自動化レベル | リードタイム目標 |
 |:---:|---|:---:|---|:---:|---|---|---|
 | C-1 | **個別ユーザー CRUD**<br/>（追加 / 更新 / 削除）| 日次 | **アプリ運用 委譲管理者** or **SCIM 自動** | ❌ **不要**（[Layer 2/3](../fr/01-auth.md)） | (Layer 2) HR 変更 → SCIM 自動同期<br/>(Layer 3) アプリ運用が Admin REST API で実行 | **高**（SCIM）or 中（Admin API） | **即時**（Layer 2）/ **< 15 分**（Layer 3）|
-| C-2 | **パスワードリセット** | 日次 | **エンドユーザー本人**（Layer 1）or アプリ運用（Layer 3）| ❌ **不要** | (Layer 1) ユーザーが Hosted UI / Account Console でセルフリセット<br/>(Layer 3) アプリ運用が Admin REST API で強制リセット | **高**（セルフ）| **即時**（セルフ）/ **< 15 分**（管理者）|
+| C-2 | **パスワードリセット** | 日次 | **エンドユーザー本人**（Layer 1）or アプリ運用（Layer 3）| ❌ **不要** | (Layer 1) ユーザーが Hosted UI / アカウント設定画面 でセルフリセット<br/>(Layer 3) アプリ運用が Admin REST API で強制リセット | **高**（セルフ）| **即時**（セルフ）/ **< 15 分**（管理者）|
 | C-3 | **MFA リセット**<br/>（端末紛失等）| 週次 | アプリ運用（委譲管理者）or サポート窓口 | ❌ **不要** | 1. ユーザー本人確認（業務手順）<br/>2. Admin REST API で MFA リセット<br/>3. ユーザーに再登録手順通知 | 中 | **< 1 営業日** |
 | C-4 | **アカウントロック解除** | 週次 | アプリ運用（委譲管理者）| ❌ **不要** | 1. ロック原因確認（侵害でないか）<br/>2. Admin REST API でロック解除 | 中 | **< 15 分**（侵害でなければ）|
 

@@ -4,7 +4,7 @@
 - **日付**: 2026-06-23
 - **関連**:
   - [ADR-024 ログイン画面アーキテクチャとブランディング 4 パターン](024-login-screen-architecture-branding.md)
-  - [ADR-038 Tenant Admin Portal](038-tenant-admin-portal.md)
+  - [ADR-038 ユーザ管理画面](038-tenant-admin-portal.md)
   - [ADR-021 Post-login Landing UX](021-post-login-landing-ux.md)
   - [ADR-042 Bot Detection / CAPTCHA](042-bot-detection-captcha.md)
   - [§NFR-7 コンプライアンス](../requirements/proposal/nfr/07-compliance.md)
@@ -15,7 +15,7 @@
 
 ### 背景
 
-本基盤の **UI 接点**（ログイン画面 / Account Console / Launchpad / Sorry / Tenant Admin Portal）は、**規制業種顧客**（自治体 / 公的機関 / 大企業）にとって**アクセシビリティ準拠**が必須要件となる。今まで個別 UI ごとに暗黙的に「Keycloak Theme は標準で AA 相当」と仮定していたが、**統一的な準拠基準と検証プロセス**が未定義だった。
+本基盤の **UI 接点**（ログイン画面 / アカウント設定画面 / サービス選択画面 / Sorry / ユーザ管理画面）は、**規制業種顧客**（自治体 / 公的機関 / 大企業）にとって**アクセシビリティ準拠**が必須要件となる。今まで個別 UI ごとに暗黙的に「Keycloak Theme は標準で AA 相当」と仮定していたが、**統一的な準拠基準と検証プロセス**が未定義だった。
 
 ### 国内法 / ガイドラインの現在地
 
@@ -48,7 +48,7 @@
 | **JIS X 8341-3:2016** | 国内 JIS、WCAG 2.0 と等価、最新化は審議中 |
 | **VPAT**（Voluntary Product Accessibility Template）| ベンダー側の適合性報告書、Section 508 / EN 301 549 用 |
 | **ACR**（Accessibility Conformance Report）| VPAT の具体的アウトプット文書 |
-| **ATAG**（Authoring Tool Accessibility Guidelines）| オーサリングツール向け、Tenant Admin Portal が該当 |
+| **ATAG**（Authoring Tool Accessibility Guidelines）| オーサリングツール向け、ユーザ管理画面 が該当 |
 | **WAI-ARIA** | リッチ Web アプリのアクセシビリティ強化属性 |
 | **スクリーンリーダー** | NVDA / JAWS / VoiceOver / TalkBack |
 
@@ -58,15 +58,15 @@
 
 ### 採用方針
 
-**WCAG 2.2 Level AA + JIS X 8341-3:2016 AA 準拠**を全 UI 接点で必須。Tenant Admin Portal は ATAG 2.0 も追加準拠。VPAT 2.5 形式の ACR を Trust Center で公開（[ADR-036](036-customer-audit-support.md) 連動）。
+**WCAG 2.2 Level AA + JIS X 8341-3:2016 AA 準拠**を全 UI 接点で必須。ユーザ管理画面 は ATAG 2.0 も追加準拠。VPAT 2.5 形式の ACR を Trust Center で公開（[ADR-036](036-customer-audit-support.md) 連動）。
 
 | UI | 準拠目標 | 検証方式 | ACR 公開 |
 |---|---|---|---|
 | **Keycloak ログイン画面**（Theme カスタム）| WCAG 2.2 AA + JIS X 8341-3:2016 AA | axe-core + 手動 + 当事者テスト | ✅ |
-| **Account Console** | 同上 | 同上 | ✅ |
-| **Launchpad SPA**（ADR-021）| 同上 | 同上 | ✅ |
-| **Sorry SPA** | 同上 | 同上 | ✅ |
-| **Tenant Admin Portal**（ADR-038）| WCAG 2.2 AA + **ATAG 2.0 AA** | 同上 + ATAG 専用テスト | ✅ |
+| **アカウント設定画面** | 同上 | 同上 | ✅ |
+| **サービス選択画面 SPA**（ADR-021）| 同上 | 同上 | ✅ |
+| **エラー / 案内画面 SPA** | 同上 | 同上 | ✅ |
+| **ユーザ管理画面**（ADR-038）| WCAG 2.2 AA + **ATAG 2.0 AA** | 同上 + ATAG 専用テスト | ✅ |
 | **Trust Center / Customer Portal**（ADR-036）| WCAG 2.2 AA | axe-core + 手動 | ✅ |
 | **エラーページ / Maintenance** | WCAG 2.2 AA | axe-core | △ |
 
@@ -160,7 +160,7 @@ themes/custom-accessible/
 │       ├── messages_ja.properties
 │       └── messages_en.properties
 └── account/
-    └── ...（Account Console、PatternFly 4 ベース）
+    └── ...（アカウント設定画面、PatternFly 4 ベース）
 ```
 
 ### B.2 ログイン画面 FTL 例（抜粋）
@@ -338,7 +338,7 @@ jobs:
 | 項目 | 内容 |
 |---|---|
 | **委託先** | アクセシビリティ専門会社（インフォアクシア / ミツエーリンクス等）|
-| **対象 UI** | ログイン / Account Console / Launchpad / Sorry / Tenant Admin Portal |
+| **対象 UI** | ログイン / アカウント設定画面 / サービス選択画面 / Sorry / ユーザ管理画面 |
 | **当事者** | 視覚障害（スクリーンリーダー利用 / ロービジョン）/ 上肢障害（キーボードのみ）/ 認知障害 |
 | **タスク** | 各 UI の代表的なユースケース 5-10 個 |
 | **アウトプット** | レポート + 動画記録 + 改善提案 |

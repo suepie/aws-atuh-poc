@@ -68,9 +68,9 @@
 | 観点 | 判断 |
 |---|---|
 | **本方針の核心** | 「**認証情報を保持する側がセルフサービスを提供する責務**」（[ADR-009](../adr/009-mfa-responsibility-by-idp.md) の MFA 帰属原則の一般化）|
-| **連携ユーザー（顧客 IdP 経由）に対する broker 側セルフサービス** | **原則ゼロ**（Account Console 無効化が正解） |
+| **連携ユーザー（顧客 IdP 経由）に対する broker 側セルフサービス** | **原則ゼロ**（アカウント設定画面 無効化が正解） |
 | **Broker 側に残る例外** | 3 つだけ：①ローカルユーザー向け / ②broker セッション管理 / ③GDPR 対応 |
-| **設計判断のキーポイント** | Account Console は Realm 単位で制御可能。連携ユーザーには Account Portal をリダイレクト or 隠蔽する |
+| **設計判断のキーポイント** | アカウント設定画面 は Realm 単位で制御可能。連携ユーザーには Account Portal をリダイレクト or 隠蔽する |
 
 → 「**浅いブローカー = broker 側は薄く保つ**」設計の自然な帰結。本来 IdP 側の責務を broker 側に再実装するのは**アンチパターン**。
 
@@ -123,7 +123,7 @@
 | Tenant Admin（IdP を持たない顧客の管理者）| Broker (ローカル) | 同上 |
 | End User（ローカル）— SMB 顧客が IdP 持たない場合 | Broker (ローカル) | 同上 |
 
-→ これらは federated ではないので **通常の Keycloak Account Console をそのまま使う**。
+→ これらは federated ではないので **通常の Keycloak アカウント設定画面 をそのまま使う**。
 
 ### ② Broker 側セッション管理
 
@@ -140,9 +140,9 @@
 提供する価値:
 - IdP 側ログアウトしても broker セッションが残ると SSO が誤動作する場合がある
 - ユーザー視点で「どこにログインしているか」を可視化する価値あり
-- Keycloak Account Console の **"Devices" タブ**で対応可能
+- Keycloak アカウント設定画面 の **"Devices" タブ**で対応可能
 
-→ **Account Console は Devices タブだけ ON、他は OFF** が現実解。
+→ **アカウント設定画面 は Devices タブだけ ON、他は OFF** が現実解。
 
 ### ③ GDPR データ開示・アカウント削除
 
@@ -169,7 +169,7 @@ GDPR Article 15 (Right of Access) / Article 17 (Right to Erasure) 対応:
 
 [user-types-and-auth.md](user-types-and-auth.md) の 5 ユーザー種別に当てはめると:
 
-| ユーザー種別 | 認証主体 | パスワード/MFA セルフサービス | プロフィール編集 | Broker セッション管理 | Account Console アクセス |
+| ユーザー種別 | 認証主体 | パスワード/MFA セルフサービス | プロフィール編集 | Broker セッション管理 | アカウント設定画面 アクセス |
 |---|---|:---:|:---:|:---:|---|
 | **Platform Admin**（基盤運用者） | Broker (ローカル) | ✅ Broker | ✅ Broker | ✅ Broker | 全機能 ON |
 | **Tenant Admin (IdP 無)** | Broker (ローカル) | ✅ Broker | ✅ Broker | ✅ Broker | 全機能 ON |
@@ -180,9 +180,9 @@ GDPR Article 15 (Right of Access) / Article 17 (Right to Erasure) 対応:
 判断ロジック:
 ```
 if user.is_federated:
-    Account Console = 隠蔽 or Devices のみ
+    アカウント設定画面 = 隠蔽 or Devices のみ
 else:  # ローカルユーザー
-    Account Console = 標準提供
+    アカウント設定画面 = 標準提供
 ```
 
 ---
@@ -194,7 +194,7 @@ else:  # ローカルユーザー
 | 連携ユーザーに broker 側のパスワード変更画面を出す | broker が password を保管していないので「変更」がそもそも成立しない | ユーザーが「パスワード変えたのにログインできない」とサポート問い合わせ |
 | 連携ユーザーに broker 側 MFA 登録を求める | 二重 MFA（IdP 側 + broker 側）。[ADR-009](../adr/009-mfa-responsibility-by-idp.md) と矛盾 | ログインに数十秒余分にかかり UX 悪化、運用問い合わせ増 |
 | 連携ユーザーが broker 側プロフィールを編集できる | 次回ログインで IdP の値で上書きされる | 「編集したのに戻った」「どこが正なのか分からない」混乱 |
-| Account Console を realm 横断で一律 ON | 連携 / ローカルが混在し UX 一貫性なし | 連携ユーザーが「変更ボタンがあるのに動かない」を経験 |
+| アカウント設定画面 を realm 横断で一律 ON | 連携 / ローカルが混在し UX 一貫性なし | 連携ユーザーが「変更ボタンがあるのに動かない」を経験 |
 | 連携ユーザーに broker 側パスワードリセットメールが届く | broker が SMTP 経由で送信できてしまうが、リセットしてもログインに使われず無意味 | ユーザー混乱、フィッシング誤認の可能性 |
 | GDPR 削除依頼を broker 側だけで処理 | 顧客 IdP 側のデータは残る | 法的責任の一部しか果たせない（顧客 IdP 管理者への依頼フロー必須） |
 
@@ -202,7 +202,7 @@ else:  # ローカルユーザー
 
 ## 7. Keycloak での実装上の打ち手
 
-### 7.1 Account Console 全体無効化（最も単純）
+### 7.1 アカウント設定画面 全体無効化（最も単純）
 
 連携ユーザーのみが想定される Realm の場合:
 ```bash
@@ -210,9 +210,9 @@ else:  # ローカルユーザー
 kcadm.sh update clients/{account-client-uuid} -r auth-poc -s enabled=false
 ```
 
-→ 全ユーザーが Account Console 利用不可。ローカルユーザーがいる場合は使えない方法。
+→ 全ユーザーが アカウント設定画面 利用不可。ローカルユーザーがいる場合は使えない方法。
 
-### 7.2 Account Console 機能の選択的 ON/OFF（推奨）
+### 7.2 アカウント設定画面 機能の選択的 ON/OFF（推奨）
 
 Keycloak Realm Settings → "User Profile" + "Themes" で:
 - "Edit username" → OFF
@@ -221,15 +221,15 @@ Keycloak Realm Settings → "User Profile" + "Themes" で:
 
 Account Theme をカスタマイズして連携ユーザーには「プロフィール編集は社内 IdP の管理画面で行ってください」リンクを表示（顧客 IdP の Account Portal URL）。
 
-### 7.3 連携ユーザーを Account Console から除外
+### 7.3 連携ユーザーを アカウント設定画面 から除外
 
-Authentication Flow で `Identity Provider` 経由ログインの場合、Account Console アクセスを拒否する Custom Authenticator を挟む方法（要 SPI 実装）。
+Authentication Flow で `Identity Provider` 経由ログインの場合、アカウント設定画面 アクセスを拒否する Custom Authenticator を挟む方法（要 SPI 実装）。
 
 簡易版: Theme template (`account.ftl`) で `federatedIdentities` が存在するユーザーには警告メッセージ + リダイレクトボタンのみ表示。
 
 ### 7.4 Devices タブのみ ON
 
-Keycloak v26 では Account Console の各セクション（Personal info / Account security / Applications / Linked accounts）は theme でカスタマイズ可能。連携ユーザーには Sessions セクション（= Devices タブ）のみ表示する theme を作成。
+Keycloak v26 では アカウント設定画面 の各セクション（Personal info / Account security / Applications / Linked accounts）は theme でカスタマイズ可能。連携ユーザーには Sessions セクション（= Devices タブ）のみ表示する theme を作成。
 
 ### 7.5 GDPR 対応の運用フロー
 
@@ -291,10 +291,10 @@ SLA: 依頼受領から 30 日以内（GDPR 要件）。
 | 連携ユーザーに broker 側 PW 変更画面を出す | 「変えたのに動かない」サポート問い合わせ |
 | 連携ユーザーに broker 側 MFA 登録 | 二重 MFA で UX 悪化 |
 | broker 側プロフィール編集を許可 | IdP 同期で上書きされ混乱 |
-| Account Console を一律 ON | 連携 / ローカル混在で UX 不一致 |
+| アカウント設定画面 を一律 ON | 連携 / ローカル混在で UX 不一致 |
 
 打ち手:
-- Account Console を Realm 設定で機能別 ON/OFF
+- アカウント設定画面 を Realm 設定で機能別 ON/OFF
 - 連携ユーザーには顧客 IdP の Account Portal へリダイレクト
 
 ### スライド 5（任意）: 「GDPR 対応の運用」

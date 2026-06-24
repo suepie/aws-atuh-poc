@@ -4,7 +4,7 @@
 - **日付**: 2026-06-23
 - **関連**:
   - [ADR-037 Shared Responsibility Model + 軽量 IGA](037-shared-responsibility-and-lightweight-iga.md)
-  - [ADR-038 Tenant Admin Portal](038-tenant-admin-portal.md)
+  - [ADR-038 ユーザ管理画面](038-tenant-admin-portal.md)
   - [ADR-045 鍵管理戦略集約](045-cryptographic-key-management-strategy.md)
   - [§FR-7 ユーザー管理](../requirements/proposal/fr/07-user.md)
   - [§FR-8 管理機能](../requirements/proposal/fr/08-admin.md)
@@ -61,7 +61,7 @@
 | **Soft Delete** | 論理削除、復元可能期間あり |
 | **Hard Delete** | 物理削除 |
 | **DPO**（Data Protection Officer）| データ保護責任者 |
-| **Subject Rights Portal** | データ主体権利行使用 UI |
+| **データ主体権利申請画面** | データ主体権利行使用 UI |
 | **Audit Trail（DSAR）** | 請求受領 / 処理 / 応答の全プロセス記録 |
 
 ---
@@ -71,8 +71,8 @@
 ### 採用方針
 
 **「DSAR 4 経路 × 6 権利 × 機械可読 5 形式」のフレームワーク**を採用。
-- 顧客テナント管理者経由（[ADR-038 Tenant Admin Portal](038-tenant-admin-portal.md)）が**主導線**
-- 直接ユーザー向け **Subject Rights Portal**（Phase 2 オプション）も用意
+- 顧客テナント管理者経由（[ADR-038 ユーザ管理画面](038-tenant-admin-portal.md)）が**主導線**
+- 直接ユーザー向け **データ主体権利申請画面**（Phase 2 オプション）も用意
 - 全 DSAR は**証跡保管 7 年 + SLA 内応答**を保証
 
 | 項目 | 採用方針 |
@@ -82,11 +82,11 @@
 | **エクスポート形式** | **JSON**（プライマリ、機械可読標準）+ CSV / XLSX / SCIM 2.0 / OIDC UserInfo |
 | **削除方式** | **論理削除（30 日 Pending）→ 物理削除**（30 日後、Cryptographic Erasure 併用）|
 | **大規模顧客** | **テナント別 L3 CMK 削除で Cryptographic Erasure** 可（[ADR-045 §A.4](045-cryptographic-key-management-strategy.md)）|
-| **メイン UI** | Tenant Admin Portal（[ADR-038](038-tenant-admin-portal.md)）内に DSAR 管理画面追加 |
+| **メイン UI** | ユーザ管理画面（[ADR-038](038-tenant-admin-portal.md)）内に DSAR 管理画面追加 |
 | **直接 UI**（Phase 2）| `account.basis.example.com/rights` で Subject 直接アクセス |
 | **API** | Admin REST API（テナント管理者経由）+ Subject API（Phase 2）|
 | **証跡保管** | 全 DSAR ログを Audit Acct OpenSearch（7 年）|
-| **DPO 連絡** | テナントごとに DPO 連絡先を Tenant Admin Portal で設定可能 |
+| **DPO 連絡** | テナントごとに DPO 連絡先を ユーザ管理画面 で設定可能 |
 
 ---
 
@@ -102,11 +102,11 @@ flowchart LR
 
     subgraph Tenant["顧客テナント側"]
         TADMIN[テナント管理者<br/>DPO 兼任が多い]
-        TAPortal[Tenant Admin Portal<br/>ADR-038]
+        TAPortal[ユーザ管理画面<br/>ADR-038]
     end
 
     subgraph Basis["共通基盤側"]
-        SubPortal[Subject Rights Portal<br/>account.basis.example.com/rights<br/>Phase 2]
+        SubPortal[データ主体権利申請画面<br/>account.basis.example.com/rights<br/>Phase 2]
         AdminAPI[Admin REST API]
         SubjectAPI[Subject API<br/>Phase 2]
         Backend[DSAR Backend Lambda<br/>+ Workflow Engine]
@@ -322,7 +322,7 @@ flowchart LR
 ```mermaid
 flowchart TB
     subgraph In["Inbound"]
-        TAdmin[Tenant Admin Portal<br/>POST /admin/dsar/requests]
+        TAdmin[ユーザ管理画面<br/>POST /admin/dsar/requests]
         SubPortal[Subject Portal Phase 2<br/>POST /rights/requests]
         DPOmail[DPO メール窓口]
     end
@@ -438,11 +438,11 @@ States:
 | APPI 応答（14 日目標）| 10 日経過で Tenant Admin 通知 | Slack |
 | 削除実行（30 日後）| 25 日経過で削除予定通知 | Email |
 | エクスポート失敗 | 即時 | PagerDuty |
-| 本人確認失敗 | 即時 | Tenant Admin Portal Notification |
+| 本人確認失敗 | 即時 | ユーザ管理画面 Notification |
 
 ---
 
-## E. Tenant Admin Portal 統合（ADR-038 拡張）
+## E. ユーザ管理画面 統合（ADR-038 拡張）
 
 ### E.1 DSAR 管理画面
 
@@ -481,7 +481,7 @@ tenant_dpo_config:
 
 ---
 
-## F. Subject Rights Portal（Phase 2 オプション）
+## F. データ主体権利申請画面（Phase 2 オプション）
 
 ### F.1 配置 + URL
 
@@ -597,7 +597,7 @@ Phase 2 で中国語 / 韓国語等を顧客要件に応じて追加。
 |---|---|---|
 | **A. DSAR 対応せず** | GDPR / APPI 違反、罰金 + 信用失墜 | ❌ |
 | **B. 手動 Excel + メール対応** | スケール不可、SLA 違反、人的ミス多発 | ❌ |
-| **C. Tenant Admin Portal 統合 + Subject Portal Phase 2**（本 ADR）| 業界標準（Auth0 / Okta 同パターン）| ✅ 採用 |
+| **C. ユーザ管理画面 統合 + Subject Portal Phase 2**（本 ADR）| 業界標準（Auth0 / Okta 同パターン）| ✅ 採用 |
 | **D. 商用 DSAR プラットフォーム（OneTrust / TrustArc）** | 年 $40-50K、機能リッチだが認証基盤との統合不足 | △ Phase 3 規模拡大時 |
 | **E. Subject Portal のみ（Tenant 経由なし）** | 顧客 DPO の関与が不可能、Shared Responsibility 違反 | ❌ |
 | **F. 削除は全て手動** | スケール不可、Cryptographic Erasure 利点なし | ❌ |
@@ -612,7 +612,7 @@ Phase 2 で中国語 / 韓国語等を顧客要件に応じて追加。
 - **CCPA / CPRA / EU Data Act** 等も同じ仕組みで対応可能
 - **Cryptographic Erasure** で大規模顧客の完全削除を高速実行（テナント全削除 = L3 CMK 削除）
 - 商用 DSAR プラットフォーム不要、**年 $4.5K で済む**
-- Tenant Admin Portal 統合で**顧客テナント管理者の負担最小化**
+- ユーザ管理画面 統合で**顧客テナント管理者の負担最小化**
 - 全 DSAR 監査ログ 7 年保管で**監査エビデンス即提示**
 - 機械可読 5 形式で**IdP 移転を顧客が自由に**実施可能（Portability の真の実現）
 
@@ -634,7 +634,7 @@ Phase 2 で中国語 / 韓国語等を顧客要件に応じて追加。
 |---|---|
 | **絶対安全** | 本人確認厳格、削除証跡 7 年、Cryptographic Erasure 併用 |
 | **どんなアプリでも** | 機械可読 5 形式（JSON / SCIM / CSV / XLSX / OIDC UserInfo）|
-| **効率よく認証** | Tenant Admin Portal 統合、Step Functions で自動化 |
+| **効率よく認証** | ユーザ管理画面 統合、Step Functions で自動化 |
 | **運用負荷・コスト最小** | 商用 DSAR 不要（年 $50K 節約）、AWS 標準サービスで構築 |
 
 ---
@@ -651,4 +651,4 @@ Phase 2 で中国語 / 韓国語等を顧客要件に応じて追加。
 - [SCIM 2.0 RFC 7643/7644](https://www.rfc-editor.org/rfc/rfc7643)
 - [NIST Privacy Framework](https://www.nist.gov/privacy-framework)
 - [ISO/IEC 27701 Privacy Information Management](https://www.iso.org/standard/71670.html)
-- [Keycloak Account Console — Personal Info](https://www.keycloak.org/docs/latest/server_admin/#_account-service)
+- [Keycloak アカウント設定画面 — Personal Info](https://www.keycloak.org/docs/latest/server_admin/#_account-service)

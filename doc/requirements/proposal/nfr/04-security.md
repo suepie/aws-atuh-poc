@@ -541,7 +541,7 @@ flowchart LR
 | **アプリ運用チーム（OAuth）** | 共通基盤発行の OAuth Client（Layer 3 委譲管理者）| 自テナント内 Admin REST API のみ | [§NFR-6.5](06-operations.md) C-1〜C-4 |
 | **アプリ CI/CD（機械）** | 共通基盤発行の OAuth Client（Layer 4 Service Credentials）| Admin REST API 限定スコープ | SCIM / 自動 provisioning |
 | **アプリのバックエンド（機械）** | JWKS 検証のみ（認証不要、公開鍵で検証）| JWT 検証 | JWT 受取・検証 |
-| **エンドユーザー（人）** | 共通基盤の Hosted UI / Account Console | セルフサービス範囲 | パスワードリセット / MFA 設定 |
+| **エンドユーザー（人）** | 共通基盤の Hosted UI / アカウント設定画面 | セルフサービス範囲 | パスワードリセット / MFA 設定 |
 | **監査人 / 外部監査** | AWS IAM Identity Center → Read-Only Role | 監査ログのみ | コンプライアンス監査 |
 
 ### アプリアカウント側の Service Credential 管理
@@ -566,7 +566,7 @@ flowchart LR
     end
 
     subgraph Auth["共通基盤アカウント"]
-        AuthHosted[Hosted UI /<br/>Account Console]
+        AuthHosted[Hosted UI /<br/>アカウント設定画面]
         AuthAdmin[Admin REST API<br/>OAuth で保護]
         AuthJWKS[JWKS Endpoint<br/>VPC PrivateLink]
     end

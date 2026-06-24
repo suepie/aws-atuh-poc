@@ -24,7 +24,7 @@
 2. **Keycloak Realm Replication** 戦略（Active-Active vs Active-Passive、Realm Export / Import 自動化）
 3. **Network Acct（[ADR-039](039-centralized-network-account-edge-layer.md)）の Failover**（CloudFront / Route 53 / WAF）
 4. **DynamoDB Global Tables**（ITDR / Adaptive Auth / Tenant Audit）
-5. **S3 Cross-Region Replication**（監査ログ / SPA bundle / Sorry SPA）
+5. **S3 Cross-Region Replication**（監査ログ / SPA bundle / エラー / 案内画面 SPA）
 6. **EKS Multi-Region**（Broker KC + IdP-KC 配置）
 7. **Lambda + Step Functions** の Cross-Region 配置
 8. **RTO / RPO 目標値**（Tier 別、規制業種顧客対応含む）
@@ -80,7 +80,7 @@
 | **MTPD** | 4 時間（業界標準）|
 | **Aurora** | **Aurora Global Database 必須**（Broker DB / IdP-KC DB 両方）|
 | **DynamoDB** | **Global Tables**（ITDR / Adaptive Auth / Tenant Admin Audit / DSAR Requests）|
-| **S3** | **Cross-Region Replication**（監査ログ / SPA bundle / Sorry SPA / Export 一時保管）|
+| **S3** | **Cross-Region Replication**（監査ログ / SPA bundle / エラー / 案内画面 SPA / Export 一時保管）|
 | **KMS** | **Multi-Region Keys (MRK)**（[ADR-045](045-cryptographic-key-management-strategy.md)）|
 | **Keycloak** | **EKS 両 Region 配置、DR Region は Warm Standby（Scale 1 → Failover 時 Scale Up）** |
 | **Realm 設定** | **GitOps + Realm Export 日次自動 → S3 → DR Region Import**（変更頻度低、十分）|
@@ -262,7 +262,7 @@ resource "aws_s3_bucket_replication_configuration" "audit_logs" {
 | バケット | RPO 目標 |
 |---|---|
 | 監査ログ（[ADR-040 / 045](045-cryptographic-key-management-strategy.md)）| 15 分（CRR デフォルト 99%）|
-| SPA bundle（Account Console / Launchpad / Tenant Admin Portal / Sorry）| 即時（デプロイ時両 Region）|
+| SPA bundle（アカウント設定画面 / サービス選択画面 / ユーザ管理画面 / Sorry）| 即時（デプロイ時両 Region）|
 | DSAR Export 一時保管 | 15 分 |
 | Glacier 長期保管 | 24 時間（コスト最適化）|
 

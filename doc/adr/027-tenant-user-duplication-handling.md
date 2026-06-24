@@ -177,8 +177,8 @@ sequenceDiagram
 | 既存ユーザー検出時の確認フロー | ⚠ Pre Sign-up Lambda 自前 | ✅ `Confirm Link Existing Account` / `Verify Existing Account By Email` / `Verify Existing Account By Re-authentication` 3 認証器 | Keycloak Identity Brokering Docs |
 | Detect Existing Broker User | ❌ 自前 | ✅ `Detect Existing Broker User` 認証器 | Keycloak Docs |
 | **既ログイン済 IdP の再リンク** | ⚠ **既存プロファイル削除が必要**（監査ログ分断）| ✅ `Detect Existing Broker User` で上書き確認 | AWS 公式: "you must first delete their existing profile" |
-| 管理 UI からのリンク操作 | ❌ **API のみ**（Console 不可）| ✅ Admin Console + Account Console | AWS 公式 |
-| ユーザー自身による自己リンク | ❌ | ✅ Account Console 経由 | 同上 |
+| 管理 UI からのリンク操作 | ❌ **API のみ**（Console 不可）| ✅ Admin Console + アカウント設定画面 | AWS 公式 |
+| ユーザー自身による自己リンク | ❌ | ✅ アカウント設定画面 経由 | 同上 |
 | Trust Email の IdP 単位制御 | ⚠ 暗黙的 | ✅ IdP 設定で明示 | Keycloak Identity Brokering |
 | `identities` クレーム出力 | ✅ ID Token | ✅ Federated Identities API | 両方標準 |
 | 自動リンク（信頼 IdP 前提）| ⚠ Pre Sign-up Lambda で自前 | ✅ `Automatically Set Existing User` 認証器 | 業界標準は**自動リンク非推奨** |

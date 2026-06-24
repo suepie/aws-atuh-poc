@@ -208,7 +208,7 @@ flowchart TB
 | Admin API | レイテンシ p99 | **< 1s** | — |
 | **JWKS Endpoint**（/.well-known/jwks）| 可用性 | **99.99%**（年 4.3 分）| 4.3 分 / 月 |
 | JWKS Endpoint | レイテンシ p99 | **< 100ms** | — |
-| **Tenant Admin Portal** | 可用性 | **99.5%** | 3.6 時間 / 月 |
+| **ユーザ管理画面** | 可用性 | **99.5%** | 3.6 時間 / 月 |
 | **Trust Center** | 可用性 | **99.5%** | 3.6 時間 / 月 |
 | **DSAR Backend** | 完了率（SLA 内）| **99%** | — |
 
@@ -312,7 +312,7 @@ groups:
 | **CISO Executive** | CISO + 経営 | 月次 SLO 達成率 / セキュリティインシデント数 / コスト |
 | **SRE On-Call** | SRE / IR | 全 SLO 現状 / Error Budget 残 / Active Alert |
 | **Service Owner**（Auth / Admin / DSAR 等）| 各 Lead | サービス別 RED + ビジネス指標 |
-| **Tenant Admin Portal**（顧客向け）| Tenant Admin | テナント自身の利用状況 / Quota（[ADR-052](052-multi-tenant-isolation-rate-limiting.md)）|
+| **ユーザ管理画面**（顧客向け）| Tenant Admin | テナント自身の利用状況 / Quota（[ADR-052](052-multi-tenant-isolation-rate-limiting.md)）|
 | **Cost Optimization** | FinOps | Per-tenant コスト / Wasted Resources |
 | **Security Operations** | SOC | ITDR Alert / Adaptive Auth Score 分布 / WAF Block |
 | **DR / Resilience** | SRE Lead | Multi-Region Lag / Backup 成功率 / DR 訓練結果 |

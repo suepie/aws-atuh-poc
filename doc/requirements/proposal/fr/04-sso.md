@@ -112,7 +112,7 @@ flowchart LR
 |---|---|---|
 | §FR-4.1 同一 IdP 内 SSO | 同じ Pool/Realm 内のアプリ間 SSO（粒度 [1]） | FR-SSO-001 |
 | §FR-4.2 クロス IdP SSO | フェデレーション IdP 経由の SSO 伝播（粒度 [2] + [3]） | FR-SSO-002 |
-| §FR-4.3 ログイン後のランディング UX | Launchpad（entitled apps 一覧）/ Sorry ページ / Deep-Link return_to 制御 | FR-SSO-008 |
+| §FR-4.3 ログイン後のランディング UX | サービス選択画面（entitled apps 一覧）/ Sorry ページ / Deep-Link return_to 制御 | FR-SSO-008 |
 
 ---
 
@@ -461,19 +461,19 @@ flowchart TB
 
 ---
 
-## §FR-4.3 ログイン後のランディング UX（Launchpad / Sorry / Deep-Link）（→ FR-SSO-008）
+## §FR-4.3 ログイン後のランディング UX（サービス選択画面 / Sorry / Deep-Link）（→ FR-SSO-008）
 
 > **詳細は以下の ADR を参照**:
-> - [ADR-021 Post-login Landing UX](../../../adr/021-post-login-landing-ux.md)（Pre vs Post 設計判断 + Launchpad + Sorry の業界比較）
+> - [ADR-021 Post-login Landing UX](../../../adr/021-post-login-landing-ux.md)（Pre vs Post 設計判断 + サービス選択画面 + Sorry の業界比較）
 > - [ADR-022 AWS edge Sorry 制御パターン](../../../adr/022-aws-edge-sorry-control.md)（ALB / CloudFront 統合）
 
-> **このセクションで定めること**: 認証完了後にユーザーが**どのアプリ・どの画面に着地するか**の UX 設計。具体的には (1) 直リンク（deep-link）後の自動遷移、(2) Post-login Launchpad（entitled apps 一覧 SPA）、(3) 権限なしアクセス時の Sorry ページ、の 3 つの責務分担。
+> **このセクションで定めること**: 認証完了後にユーザーが**どのアプリ・どの画面に着地するか**の UX 設計。具体的には (1) 直リンク（deep-link）後の自動遷移、(2) Post-login サービス選択画面（entitled apps 一覧 SPA）、(3) 権限なしアクセス時の Sorry ページ、の 3 つの責務分担。
 > **主な判断軸**: アプリ数と入口の多様性、ユーザーが「自分が何にアクセス権限を持つか」を知る必要性、ブランディング要件、運用工数
 > **§FR-4 全体との関係**: §FR-4.1 同一 IdP 内 SSO・§FR-4.2 クロス IdP SSO がセッション共有の仕組みを扱うのに対し、本サブセクションは**認証完了後の着地点 UX**を扱う独立論点
 
 ### §FR-4.3.A 重要な前提：Pre / Post は「二択」ではなく「役割の違う 2 軸」
 
-| パターン | Pre-login | Post-login Launchpad | 業界実例 |
+| パターン | Pre-login | Post-login サービス選択画面 | 業界実例 |
 |---|:---:|:---:|---|
 | ① Pre のみ | ✅ | ❌ | 社内イントラ単体 |
 | ② Post のみ | ❌ | ✅ | Okta End-User Dashboard |
@@ -482,25 +482,25 @@ flowchart TB
 
 - **Pre = マーケティング / 発見 / サインアップ**（匿名訪問者向け）
 - **Post = 生産性 / 権限ベース / 個人化**（認証済ユーザー向け）
-- Sorry は**完全に別軸**（Pre/Post の組合せに関わらず必要、ただし Post Launchpad ありだと遷移先が自然）
+- Sorry は**完全に別軸**（Pre/Post の組合せに関わらず必要、ただし Post サービス選択画面 ありだと遷移先が自然）
 
 ### §FR-4.3.B 本基盤のデフォルトスタンス
 
 | 観点 | デフォルト |
 |---|---|
 | Pre-login | **B-626 ヒアリングで判定**（マーケサイト要否次第）|
-| Post-login Launchpad | **採用**（業界標準、別 SPA 構築）|
+| Post-login サービス選択画面 | **採用**（業界標準、別 SPA 構築）|
 | Sorry | **採用**（**AWS edge で集約 → ADR-022**、推奨パターン ii Lambda@Edge）|
 | デフォルト構成 | **② Post + Sorry** または **③ Pre + Post + Sorry** |
 
 ### §FR-4.3.C 主要な裏どり（詳細は ADR-021 / ADR-022）
 
-#### Launchpad は別 SPA 構築が業界標準
+#### サービス選択画面 は別 SPA 構築が業界標準
 - Microsoft 365 portal / Okta End-User Dashboard / Atlassian Cloud start / Salesforce App Launcher すべて独立 SPA
-- Keycloak Account Console は補助的、本格運用は別 SPA 推奨
+- Keycloak アカウント設定画面 は補助的、本格運用は別 SPA 推奨
 
 #### Sorry の業界標準実装パターン
-- **C. 共通 Sorry SPA**（推奨、LinkedIn / Microsoft 365 採用）
+- **C. 共通 エラー / 案内画面 SPA**（推奨、LinkedIn / Microsoft 365 採用）
 - アプリは「403 + `X-Sorry-Reason` ヘッダ返却」だけで OK、Sorry リダイレクトを edge で集約
 
 #### AWS edge での Sorry 制御（5 パターン）
@@ -518,12 +518,12 @@ flowchart TB
 
 | 確認項目 | ヒアリング ID | 回答例 |
 |---|---|---|
-| Launchpad SPA 構築方針 | **B-622** 🔴 | A 別 SPA 構築（推奨）/ B Account Console 流用 / C 不要 |
-| Sorry ページ実装パターン | **B-623** 🔴 | A アプリ側 / B 認証基盤テーマ / **C 共通 Sorry SPA（推奨）** |
-| Launchpad テナント別ブランディング | **B-624** | あり / なし |
-| 認証後のデフォルト着地点 | **B-625** | redirect_uri 優先（推奨）/ Launchpad 強制 |
+| サービス選択画面 SPA 構築方針 | **B-622** 🔴 | A 別 SPA 構築（推奨）/ B アカウント設定画面 流用 / C 不要 |
+| Sorry ページ実装パターン | **B-623** 🔴 | A アプリ側 / B 認証基盤テーマ / **C 共通 エラー / 案内画面 SPA（推奨）** |
+| サービス選択画面 テナント別ブランディング | **B-624** | あり / なし |
+| 認証後のデフォルト着地点 | **B-625** | redirect_uri 優先（推奨）/ サービス選択画面 強制 |
 | Pre-login システム選択 UI 採否 | **B-626** | 不採用（業界標準）/ 採用 |
-| Launchpad 表示アプリ判定根拠 | **B-627** | JWT roles / Keycloak Client ロール / マッピング表 |
+| サービス選択画面 表示アプリ判定根拠 | **B-627** | JWT roles / Keycloak Client ロール / マッピング表 |
 | **AWS edge での Sorry 制御パターン** | **B-628** 🔴 | i / **ii Lambda@Edge（推奨）** / iii / iv / v ALB JWT |
 | edge 集約 vs アプリ個別 Sorry | **B-629** | 集約 / 個別 |
 | CloudFront / ALB の構成 | **B-630** | CloudFront 前段 + ALB 配下（標準）/ 他 |

@@ -1,4 +1,4 @@
-# ADR-038: Tenant Admin Portal（顧客テナント管理者向け Admin UI）
+# ADR-038: ユーザ管理画面（顧客テナント管理者向け Admin UI）
 
 - **ステータス**: Proposed（要件定義フェーズで Accepted に昇格予定）
 - **日付**: 2026-06-18
@@ -35,7 +35,7 @@
 | **配置 URL** | **`admin.basis.example.com`**（独立サブドメイン、CloudFront + S3 配信）|
 | **テナント識別** | JWT `tenant_id` クレーム（URL パスでなく）|
 | **テナントスコープ** | 3 層検証（API GW + Lambda + Keycloak Organizations）|
-| **アクセス導線** | [Launchpad（ADR-021）](021-post-login-landing-ux.md) に「管理画面」タイルを配置、admin ロール保有時のみ表示 |
+| **アクセス導線** | [サービス選択画面（ADR-021）](021-post-login-landing-ux.md) に「管理画面」タイルを配置、admin ロール保有時のみ表示 |
 
 ---
 
@@ -239,7 +239,7 @@ async function listUsers(event) {
 ### A 自作を推奨する理由（10M MAU 規模）
 
 - **コスト**: 商用は MAU 課金、10M MAU で年額数 M USD → 自作年額 $150-300K（人件費）が圧倒的有利
-- **カスタマイズ性**: Shared Responsibility Model / 軽量 IGA / IdP-KC 統合 / Launchpad 統合 等の独自要件が多い
+- **カスタマイズ性**: Shared Responsibility Model / 軽量 IGA / IdP-KC 統合 / サービス選択画面 統合 等の独自要件が多い
 - **ベンダーロックイン回避**: 認証基盤の核心 UI を商用に依存しない
 - **業界主流**: Auth0 / Okta / Microsoft 全社自作（買収/取得で得たケースも、結果的に自社管理）
 
@@ -252,7 +252,7 @@ async function listUsers(event) {
 | **SPA URL** | **`admin.basis.example.com`** | 独立サブドメイン、CloudFront + S3 配信 |
 | **API URL** | **`api.basis.example.com/admin/*`** | API Gateway 配下 |
 | **テナント識別** | **JWT `tenant_id` クレームから取得**（URL パスではなく）| シンプル、Keycloak Organizations と整合 |
-| **アクセス導線** | [Launchpad](021-post-login-landing-ux.md) に「管理画面」タイル配置、admin ロール保有時のみ表示 | UX 一貫性 |
+| **アクセス導線** | [サービス選択画面](021-post-login-landing-ux.md) に「管理画面」タイル配置、admin ロール保有時のみ表示 | UX 一貫性 |
 
 ### テナント別サブドメイン（`acme-admin.basis.example.com`）の代替案
 
@@ -284,7 +284,7 @@ async function listUsers(event) {
 
 ## I. 我々のスタンス
 
-| 基本方針の柱 | Tenant Admin Portal での実現 |
+| 基本方針の柱 | ユーザ管理画面 での実現 |
 |---|---|
 | **絶対安全** | 3 層テナントスコープ検証 + 全管理操作の監査ログ |
 | **どんなアプリでも** | テナント別ブランディング / マルチテナント対応 |
@@ -299,7 +299,7 @@ async function listUsers(event) {
 |---|---|
 | **ADR-033 2-tier**| Admin SPA は **IdP-KC + Broker KC 両方の Admin API** を叩く |
 | **ADR-037 Shared Responsibility + 軽量 IGA**| **本 SPA が軽量 IGA 機能の UI 実装場所**（Access Certification / Access Request UI 等）|
-| **ADR-021 Post-login Landing UX**| Launchpad に「管理画面」タイル配置、UX 一貫性 |
+| **ADR-021 Post-login Landing UX**| サービス選択画面 に「管理画面」タイル配置、UX 一貫性 |
 | **§FR-1.2.0.B Layer 1-4**| **Layer 3 委譲管理者**が本 SPA を実際に使う |
 | **§FR-8 管理**| §FR-8.3 権限委譲の UI 実装、本 ADR で §FR-8.5 として新規追加 |
 
@@ -311,7 +311,7 @@ async function listUsers(event) {
 
 - **業界標準（Auth0 / Okta / Microsoft）パターン**で顧客に違和感なし
 - 10M MAU 規模でも商用 SaaS 比 100 倍コスト削減
-- カスタマイズ性で軽量 IGA / Shared Responsibility / Launchpad 統合等の独自要件に対応
+- カスタマイズ性で軽量 IGA / Shared Responsibility / サービス選択画面 統合等の独自要件に対応
 - Phase 1-5 段階的構築で初期投資抑制
 
 ### Negative
@@ -343,11 +343,11 @@ async function listUsers(event) {
 
 | 確認項目 | ヒアリング ID | 回答例 |
 |---|---|---|
-| Tenant Admin Portal の必要性 | **B-TAP-1** | 必須 / 不要（弊社運用代行）|
+| ユーザ管理画面 の必要性 | **B-TAP-1** | 必須 / 不要（弊社運用代行）|
 | Build vs Buy | **B-TAP-2** | **自作（推奨）** / Phase Two OSS / WorkOS / Frontegg / Retool |
 | MVP 機能セットの範囲 | **B-TAP-3** | Phase 1 のみ / Phase 1-2 / Phase 1-3 / Phase 1-5 全部 |
 | 配置 URL | **B-TAP-4** | **単一サブドメイン（推奨）** / テナント別サブドメイン |
-| Launchpad 統合 | **B-TAP-5** | 統合（タイル配置）/ 独立 URL のみ |
+| サービス選択画面 統合 | **B-TAP-5** | 統合（タイル配置）/ 独立 URL のみ |
 | テナント管理者数（顧客あたり）| **B-TAP-6** | 1 名 / 2-3 名 / 大規模 5+ 名 |
 | Bulk Import の必要性 | **B-TAP-7** | 初期移行で必須 / 不要 |
 | API キー / Webhook 管理 UI | **B-TAP-8** | Phase 1 から必要 / Phase 4+ / 不要 |

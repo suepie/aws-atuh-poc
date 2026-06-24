@@ -192,7 +192,7 @@ flowchart LR
 | **共通基盤運用** | 共通基盤全ログ | 共通基盤アカウントの CloudWatch Logs / CloudTrail / Security Lake |
 | **共通基盤セキュリティ / SOC** | 共通基盤 + アプリのセキュリティ関連ログ | Security Lake 経由（[OCSF 形式](../fr/09-integration.md)）|
 | **アプリ運用** | **自テナント分のみ** | Admin REST API の audit endpoint（テナント Scope）|
-| **顧客（テナント管理者）** | **自テナント分のみ** | Account Console / Admin API（テナント Scope）|
+| **顧客（テナント管理者）** | **自テナント分のみ** | アカウント設定画面 / Admin API（テナント Scope）|
 | **監査人 / 外部監査** | 監査対象範囲のみ Read-Only | 専用 IAM Role（IAM Identity Center 経由）|
 
 ### GDPR / 個人情報保護法 削除応答時の協調
@@ -310,7 +310,7 @@ Salesforce / Microsoft / AWS / Okta / Auth0 / Atlassian / GitHub / Slack 等、*
 
 > **詳細は [ADR-043 アクセシビリティ設計](../../../adr/043-accessibility-wcag-2-2-aa.md) を参照**
 
-> **このサブセクションで定めること**: 認証基盤の全 UI 接点（ログイン / Account Console / Launchpad / Sorry / Tenant Admin Portal / Trust Center）のアクセシビリティ準拠基準と検証プロセス。
+> **このサブセクションで定めること**: 認証基盤の全 UI 接点（ログイン / アカウント設定画面 / サービス選択画面 / Sorry / ユーザ管理画面 / Trust Center）のアクセシビリティ準拠基準と検証プロセス。
 > **主な判断軸**: 障害者差別解消法（2024/4 民間義務化）、JIS X 8341-3:2016、WCAG 2.2 AA、規制業種顧客（自治体 / 公的機関）要件
 > **§NFR-7 全体との関係**: 規制対応の一環、§NFR-7.5 Customer Audit Support の Trust Center で ACR 公開
 
@@ -319,8 +319,8 @@ Salesforce / Microsoft / AWS / Okta / Auth0 / Atlassian / GitHub / Slack 等、*
 | 項目 | 採用方針 |
 |---|---|
 | **適合レベル** | **WCAG 2.2 AA + JIS X 8341-3:2016 AA**（AAA は推奨のみ）|
-| **対象 UI** | ログイン / Account Console / Launchpad / Sorry / Tenant Admin Portal / Trust Center 全 UI |
-| **Tenant Admin Portal 追加準拠** | **ATAG 2.0 AA**（オーサリングツール基準）|
+| **対象 UI** | ログイン / アカウント設定画面 / サービス選択画面 / Sorry / ユーザ管理画面 / Trust Center 全 UI |
+| **ユーザ管理画面 追加準拠** | **ATAG 2.0 AA**（オーサリングツール基準）|
 | **検証プロセス** | axe-core（CI）+ NVDA / VoiceOver / TalkBack（月次手動）+ 当事者テスト（年 1）|
 | **CI 統合** | PR 時 axe-core 自動チェック、AA 違反は merge ブロック |
 | **ACR 公開** | VPAT 2.5 形式で半年ごと、Trust Center 公開（§NFR-7.5 連動）|

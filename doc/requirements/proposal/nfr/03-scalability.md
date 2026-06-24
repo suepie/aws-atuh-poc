@@ -54,7 +54,7 @@ MAU の絶対数は変わらないが、**ローカルユーザー数の規模**
 | シナリオ | ローカルユーザー数規模 | MAU 課金への影響 | Plus ティアの侵害検出対象 |
 |---|---|---|---|
 | **α 全カテゴリ受け入れ** | 顧客従業員総数（数千〜数十万）| **大**（最大）| 大 |
-| **β 管理者 + IdP なし顧客** | 中（IdP なし顧客従業員 + 管理者層）| 中 | 中 |
+| **β 管理者 + IdP なし顧客** | 中（現行で IdP がなかった従業員 + 管理者層）| 中 | 中 |
 | **γ 管理者層のみ（推奨）** | 顧客数 × 数名 + 弊社 Break Glass（数十〜数百名）| **小**（フェデユーザーは MAU 課金されるが、本基盤側で MFA / 侵害検出する対象が圧縮）| 小 |
 | **δ Break Glass のみ** | 数名 | 最小 | 最小 |
 
@@ -265,8 +265,8 @@ MAU の絶対数は変わらないが、**ローカルユーザー数の規模**
 | **実装** | API Gateway Usage Plan + Lambda Authorizer（Token Bucket on DynamoDB Atomic Counter）|
 | **Tier 別 SLA** | Enterprise / Standard / Best Effort の 3 段階 |
 | **Burst 許容** | 通常 RPS × 2 を 1 分間まで |
-| **Quota 実装** | DynamoDB + Lambda（月初リセット）+ Tenant Admin Portal 表示 |
-| **超過時挙動** | 429 + Retry-After Header + X-RateLimit-* ヘッダ + Tenant Admin Portal 警告 |
+| **Quota 実装** | DynamoDB + Lambda（月初リセット）+ ユーザ管理画面 表示 |
+| **超過時挙動** | 429 + Retry-After Header + X-RateLimit-* ヘッダ + ユーザ管理画面 警告 |
 | **Spike Arrest** | 6 層多層（CloudFront → WAF → API Gateway → Lambda Authorizer → EKS HPA → Aurora Auto-Scaling）|
 | **Tenant Tagging** | 全 AWS リソース + ログに `tenant_id` Tag 必須（コスト按分 + 性能監視）|
 | **API Versioning** | 日付ベース URL（`/v2026-06-23/...`）、12 ヶ月並走 |

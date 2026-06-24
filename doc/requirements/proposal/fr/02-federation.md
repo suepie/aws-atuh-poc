@@ -134,7 +134,7 @@ flowchart LR
 | **SAML 2.0 SP** | 認証 | **受信** (顧客 IdP) | SAML 顧客 IdP（HENNGE 等）からの受信 | ✅ | ✅ | §FR-2.1 |
 | **SAML 2.0 IdP** | 認証 | **発行** (アプリ向け) | 既存 SAML SP アプリへの発行 | ❌ **K-11** | ✅ | B-202 |
 | **OAuth 2.0 Broker** ★NEW | 認可フロー | **受信** (OIDC 非対応 OAuth 2.0 IdP) | 純粋 OAuth 2.0 IdP からの受信（Keycloak 26.x で追加）| ❌ | ✅ | §FR-2.1 |
-| **Social Login**（Google / Microsoft / Apple / Facebook / GitHub 等）★NEW | OIDC ベース | **受信** | B2C ユーザー（P-6）/ ゲスト（P-5）対応 | ✅ | ✅ | §FR-1.2 |
+| **Social Login**（Google / Microsoft / Apple 等）★NEW | OIDC ベース | **受信** | （※本基盤は B2B 専用のため Phase 1 では非採用、ゲスト用途等で要件発生時に追加検討）| ✅ | ✅ | §FR-1.2 |
 | **LDAP / LDAPS** | ディレクトリ認証 | **受信** (顧客 AD) | 顧客 AD への直接バインド | ❌ **K-12** | ✅ | §FR-2.1 |
 | **Kerberos / SPNEGO** | チケット認証 | **受信** (顧客 AD) | Windows 統合認証（社内 PC SSO）| ❌ **K-13** | ✅ | §FR-2.1 |
 | **WS-Federation** ★NEW | レガシー認証 | **受信** (古い ADFS) | 古い ADFS 環境（Microsoft も Entra ID 移行推奨）| ❌ | ⚠ extension | §FR-2.0.D |
@@ -344,7 +344,7 @@ flowchart LR
 
 | 分類 | 接続元 IdP | 認証する利用者 | 採用判断 |
 |---|---|---|---|
-| **(i) 顧客 IdP** | 顧客企業の IdP（Entra ID / Okta / HENNGE 等） | P-2 テナント管理者 / P-3 IdP あり顧客従業員 | **本章の主対象** |
+| **(i) 顧客 IdP** | 顧客企業の IdP（Entra ID / Okta / HENNGE 等） | P-2 テナント管理者 / P-3 現行で IdP があった従業員 | **本章の主対象** |
 | **(ii) 弊社内 IdP** | 弊社運用組織の社内 IdP（Entra ID 等） | P-1 基盤運用管理者 | **[§FR-1.2.0.0](01-auth.md#fr-1200-ローカルユーザーとは何か--利用者カテゴリ別の分析) γ シナリオ採用時に Must** |
 
 → (ii) 弊社内 IdP の接続は、γ シナリオ（管理者層のみローカル）採用時に「P-1 を弊社内 IdP 経由で認証 + Break Glass を最小ローカル管理」とするための前提。**Cognito / Keycloak 両方とも (i) と同じ仕組み（OIDC IdP 接続）で実現可能** で、構成上は単に「もう 1 つの IdP オブジェクト」を追加するだけ。

@@ -1,5 +1,5 @@
 §	サブ§	Phase	優先度	ヒアリング回	ID	タイトル	1行サマリー（何を確認するか）	詳細参照	回答	状態
-1	1.1	A	🔥	M1	A-5-2	受け入れる利用者カテゴリ	P-1〜P-6 のうち本基盤が認証を引き受ける範囲	hearing-script/00-common.md		⏳
+1	1.1	A	🔥	M1	A-5-2	受け入れる利用者カテゴリ	P-1〜P-4 のうち本基盤が認証を引き受ける範囲	hearing-script/00-common.md		⏳
 1	1.2	A	🔥	M1	A-5-3	採用シナリオ α/β/γ/δ	ローカルユーザー受入範囲（4 シナリオ、業界推奨は γ）	hearing-script/00-common.md		⏳
 1	1.3	A	🔥	M1	A-5-4	インフラ運用者カテゴリ I-1〜I-5	本基盤を operate する人と人数（AWS IAM 認証経路）	hearing-script/00-common.md		⏳
 1	1.4	D	🔥	M1	D-6	Identity Broker パターン採用前提合意	Hub-and-Spoke 型アーキテクチャの合意	hearing-script/11-operations.md		⏳

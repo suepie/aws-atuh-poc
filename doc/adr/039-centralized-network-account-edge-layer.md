@@ -69,10 +69,10 @@
 |---|---|---|
 | Broker Keycloak 前段 | Auth Acct | **Network Acct** |
 | Admin SPA (`admin.basis.example.com`) | Auth Acct | **Network Acct** |
-| Launchpad SPA (`launchpad.example.com`) | Auth Acct | **Network Acct** |
+| サービス選択画面 SPA (`launchpad.example.com`) | Auth Acct | **Network Acct** |
 | Trust Center (`compliance.example.com`) | Auth Acct | **Network Acct** |
 | App A/B/C 前段（業務アプリ）| App Acct A/B/C | **Network Acct** |
-| Sorry SPA | Auth Acct | **Network Acct**（Launchpad と同一 distribution）|
+| エラー / 案内画面 SPA | Auth Acct | **Network Acct**（サービス選択画面 と同一 distribution）|
 | **Lambda@Edge**（origin-response Sorry 制御）| Auth Acct | **Network Acct**（CloudFront に紐付くため）|
 
 ### Cross-account 接続パターン
@@ -112,7 +112,7 @@ flowchart LR
     subgraph AuthAcct["🟠 Auth Platform Acct"]
         ExtALB["External ALB<br/>(Broker KC)"]
         Keycloak["Keycloak<br/>(Broker + IdP-KC)"]
-        S3SPA["S3: Admin/Launchpad/<br/>Trust Center SPA"]
+        S3SPA["S3: Admin/サービス選択画面/<br/>Trust Center SPA"]
     end
 
     subgraph AppAcct["🟢 App Acct A/B/C"]
@@ -178,7 +178,7 @@ flowchart LR
 | CloudFront との紐付け | 同一アカウント内 |
 | 実行ログ | **CloudWatch Logs（Network Acct）**、各エッジリージョンに自動分散 |
 | デプロイ | Network チームの Terraform / CI/CD |
-| Sorry SPA への redirect | `https://launchpad.example.com/sorry?app=...` （Network Acct 内 CloudFront）|
+| エラー / 案内画面 SPA への redirect | `https://launchpad.example.com/sorry?app=...` （Network Acct 内 CloudFront）|
 
 → Lambda@Edge は CloudFront と**同一アカウントに配置必須**（AWS 仕様）、Network Acct に集約。
 
@@ -251,6 +251,214 @@ VPC Origins（2024-12 GA）により、**Cross-account 内部 ALB に CloudFront
 | 共有方式 | AWS RAM で VPC Origin を Network Acct と共有 |
 | TLS | Internal ALB の ACM 証明書（regional）|
 | メリット | App ALB を **公開不要**、セキュリティ向上 |
+
+### C-4. Origin Protection（Public API GW / Public ALB の直接アクセス防御）
+
+VPC Origins（Pattern B）が採れない場合（**Public API GW** や **既存 Public ALB**）の Origin 保護パターン。**Custom Header + CloudFront IP Allowlist** の 2 層検証で「DNS は public、実質的に CloudFront 経由のみ受容」を実現。
+
+#### C-4.1 設計原則
+
+- **Pattern A: Custom Header + IP Allowlist**（CloudFront 公式パターン）を標準採用
+- IP Allowlist 単独は不可（CloudFront を持つ他組織からも IP 範囲が同じため）
+- Custom Header 単独も不可（漏洩リスク）
+- **2 層検証併用必須**
+
+#### C-4.2 Public API GW Resource Policy テンプレ（App Acct 側）
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AllowOnlyFromCloudFrontWithSecret",
+      "Effect": "Allow",
+      "Principal": "*",
+      "Action": "execute-api:Invoke",
+      "Resource": "arn:aws:execute-api:ap-northeast-1:${APP_ACCT}:${API_ID}/*",
+      "Condition": {
+        "IpAddress": {
+          "aws:SourceIp": [
+            "AWS_PREFIX_LIST:com.amazonaws.global.cloudfront.origin-facing"
+          ]
+        },
+        "StringEquals": {
+          "aws:RequestHeader/X-Origin-Verify": "${SECRET_VALUE}"
+        }
+      }
+    },
+    {
+      "Sid": "DenyAllOthers",
+      "Effect": "Deny",
+      "Principal": "*",
+      "Action": "execute-api:Invoke",
+      "Resource": "arn:aws:execute-api:ap-northeast-1:${APP_ACCT}:${API_ID}/*",
+      "Condition": {
+        "StringNotEquals": {
+          "aws:RequestHeader/X-Origin-Verify": "${SECRET_VALUE}"
+        }
+      }
+    }
+  ]
+}
+```
+
+#### C-4.3 Public ALB Security Group + Listener Rule（App Acct 側）
+
+**Security Group**：
+```hcl
+resource "aws_security_group" "alb_origin_protection" {
+  ingress {
+    from_port       = 443
+    to_port         = 443
+    protocol        = "tcp"
+    prefix_list_ids = ["pl-58a04531"]  # com.amazonaws.global.cloudfront.origin-facing (ap-northeast-1)
+  }
+}
+```
+
+**ALB Listener Rule**：
+```yaml
+Listener Rules:
+  - Priority: 1
+    Conditions:
+      - Field: http-header
+        HttpHeaderConfig:
+          HttpHeaderName: X-Origin-Verify
+          Values: ["${SECRET_VALUE}"]
+    Actions:
+      - Type: forward
+        TargetGroupArn: ${TARGET_GROUP_ARN}
+  - Priority: 999
+    Conditions: []
+    Actions:
+      - Type: fixed-response
+        FixedResponseConfig:
+          StatusCode: 403
+          ContentType: "text/plain"
+          MessageBody: "Forbidden"
+```
+
+#### C-4.4 Secret Rotation Cross-account 運用 SOP
+
+最大の運用課題は **Network Acct と App Acct の Secret 値同期更新**。AWS 公式ソリューション [How to enhance Amazon CloudFront origin security with AWS WAF and AWS Secrets Manager](https://aws.amazon.com/blogs/security/how-to-enhance-amazon-cloudfront-origin-security-with-aws-waf-and-aws-secrets-manager/) ベースで実装。
+
+##### C-4.4.1 Rotation シーケンス（30 日周期）
+
+```mermaid
+sequenceDiagram
+    participant EB as EventBridge<br/>(30 日 schedule)
+    participant Rot as Network Acct<br/>Rotation Lambda
+    participant SM_Net as Secrets Manager<br/>(Network Acct)
+    participant CF as CloudFront Distribution
+    participant AssumeRole as App Acct<br/>CrossAcct Role
+    participant RP as API GW Resource Policy<br/>or ALB Listener Rule
+    participant Canary as Synthetics Canary
+
+    EB->>Rot: ① Rotation 開始
+    Rot->>SM_Net: ② 新 Secret 生成（AWSPENDING）
+    Rot->>CF: ③ Distribution の OriginCustomHeaders 更新<br/>（旧 + 新 両方注入、Overlap）
+    Rot->>AssumeRole: ④ Cross-account AssumeRole
+    AssumeRole-->>Rot: 一時 credential
+    Rot->>RP: ⑤ Resource Policy / Listener Rule 更新<br/>（旧 + 新 両方受容）
+
+    Note over Rot,Canary: CloudFront propagation 待ち（15-30 min）
+    Rot->>Canary: ⑥ canary で疎通確認<br/>（新 Secret 経由で 200 OK か）
+    Canary-->>Rot: 成功
+
+    Rot->>SM_Net: ⑦ AWSPENDING → AWSCURRENT 昇格
+    Rot->>CF: ⑧ Distribution から旧 Secret 削除
+    Rot->>RP: ⑨ Resource Policy / Listener Rule から旧 削除
+    Rot->>SM_Net: ⑩ 旧 Secret を AWSPREVIOUS で保持（30 日）
+```
+
+##### C-4.4.2 Cross-account IAM Role 設計
+
+| Role 名 | 信頼関係 | 権限 |
+|---|---|---|
+| `OriginSecretRotationRole`（App Acct 側） | Network Acct Rotation Lambda | API GW UpdateRestApiPolicy / ELB ModifyRule / Secrets Manager Put |
+| `SecretsRotatorRole`（Network Acct 側） | Lambda Execution | sts:AssumeRole（App Acct）+ CloudFront UpdateDistribution + Secrets Manager 全操作 |
+
+##### C-4.4.3 Rollback 機構
+
+| 失敗シナリオ | 復旧手順 |
+|---|---|
+| CloudFront 更新失敗 | AWSCURRENT 維持、AWSPENDING 削除 |
+| Resource Policy 更新失敗 | CloudFront に旧 Secret 再追加 → Resource Policy ロールバック |
+| Synthetics 疎通失敗 | 旧 Secret を CloudFront / Resource Policy 両方に強制復元、Slack/PagerDuty 通知 |
+| Lambda タイムアウト | EventBridge 再実行 + 部分実行検知ロジック（Step Functions 推奨）|
+
+##### C-4.4.4 Overlap Period 設計
+
+| Phase | 期間 | CloudFront 側 | Origin 側 |
+|---|---|---|---|
+| Pre-rotation | – | 旧 Secret のみ | 旧 Secret のみ |
+| **Overlap（旧 + 新 両方）** | **24-72h**（CloudFront propagation 余裕含む）| 旧 + 新 両方注入 | 旧 + 新 両方受容 |
+| Post-rotation | – | 新 Secret のみ | 新 Secret のみ |
+
+#### C-4.5 DDoS 対策の多層構造
+
+```mermaid
+flowchart TB
+    DDoS[DDoS Attack] --> CF
+    Direct[Direct Origin Attack] -.X.- APIGW
+
+    subgraph L1["第 1 層: CloudFront Edge"]
+        CF[CloudFront<br/>+ Shield Standard 自動]
+        Cache[Edge Cache<br/>Read 大部分吸収]
+    end
+
+    subgraph L2["第 2 層: WAF"]
+        WAF[WAF Managed Rules<br/>+ Rate-based<br/>+ Bot Control]
+    end
+
+    subgraph L3["第 3 層: Origin Protection ⭐"]
+        IPC[CloudFront IP allowlist<br/>+ Custom Header 検証]
+    end
+
+    subgraph L4["第 4 層: Origin"]
+        APIGW[API GW]
+        ALB[Public ALB]
+    end
+
+    CF --> WAF --> IPC
+    IPC --> APIGW
+    IPC --> ALB
+
+    style Direct fill:#ffcdd2
+    style L3 fill:#fff3e0
+    style L4 fill:#c8e6c9
+```
+
+| 層 | 効果 |
+|---|---|
+| L1 CloudFront + Shield | 99%+ の L3/L4 攻撃を Edge で吸収 |
+| L2 WAF | L7 攻撃、SQLi/XSS、量的攻撃遮断 |
+| **L3 Origin Protection** | **CloudFront 経由しない直接攻撃を完全遮断** |
+| L4 Origin | API GW Throttling + Backend Auto Scaling |
+
+#### C-4.6 Pattern A / B / C 採用判断
+
+| 観点 | Pattern A: Custom Header | Pattern B: VPC Origins | Pattern C: OAC |
+|---|:---:|:---:|:---:|
+| API GW REST REGIONAL | ✅ 推奨 | ⚠ Private API GW のみ | ❌ 非対応 |
+| API GW HTTP | ✅ | ⚠ Private のみ | ❌ |
+| Public ALB | ✅ 推奨 | – | ❌ |
+| Internal ALB | – | ✅ 推奨（C-3）| ❌ |
+| S3 Origin | – | – | ✅ 推奨 |
+| Lambda Function URL | ⚠ | – | ✅ 推奨 |
+
+→ **API GW + Public ALB なら Pattern A 確定**、Internal ALB なら Pattern B、S3/Lambda URL なら Pattern C の使い分け。
+
+#### C-4.7 残るリスクと対策
+
+| リスク | 対策 |
+|---|---|
+| Secret 漏洩 | 30 日ローテ + Overlap + 漏洩検知（[L4 Athena cross-IP クエリ](../api-platform/proposal/common/06-external-api-auth-architecture.md)）|
+| CloudFront 設定ミスで Distribution 廃止 → Origin が裸 | Resource Policy で **明示的 Deny**（CloudFront 経由以外）|
+| Rotation 中の障害 | Overlap 確保 + Step Functions ベースのロールバック + Synthetics 監視 |
+| Shield Advanced の必要性 | 通常 Shield Standard で十分、Tier 1 アプリのみ Shield Advanced（$3K/月）検討 |
+| AWS IP Prefix 更新による瞬断 | Managed Prefix List 利用なら自動追従 |
+| App 側で Resource Policy 手動変更による穴 | Config Rule `api-gw-resource-policy-cloudfront-only` で検知 |
 
 ---
 

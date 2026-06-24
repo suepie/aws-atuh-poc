@@ -292,7 +292,7 @@ flowchart TD
 | Token Revocation（Refresh Token）| ✅ | ✅ | 両方 |
 | jti / session ID ベース blacklist | ⚠ Lambda + DynamoDB 自前 | ✅ Token Revocation 経由 | Keycloak が楽 |
 | 強制全セッション破棄（管理者操作） | ✅ AdminUserGlobalSignOut | ✅ Admin Console | 両方標準 |
-| ユーザー自身でのセッション一覧・破棄 | ⚠ アプリ側実装 | ✅ Account Console | Keycloak が楽 |
+| ユーザー自身でのセッション一覧・破棄 | ⚠ アプリ側実装 | ✅ アカウント設定画面 | Keycloak が楽 |
 
 ### ベースライン
 
@@ -348,7 +348,7 @@ flowchart LR
 | 確認項目 | 何を聞いているか | 回答例 |
 |---|---|---|
 | **管理者強制ログアウトの粒度** | どの粒度で強制ログアウト操作を提供するか。委譲管理者の権限スコープ設計に影響 | 個別ユーザー（Must）/ + テナント単位（顧客 offboarding 用）/ + 全体（緊急時 platform-wide）|
-| **ユーザー自身のセッション管理 UI** | 「他端末ログアウト」「セッション一覧」「全セッション無効化」を提供するか | 必要 → **Keycloak Account Console** が圧倒的に楽 / 不要 → アプリ側実装で Cognito でも OK |
+| **ユーザー自身のセッション管理 UI** | 「他端末ログアウト」「セッション一覧」「全セッション無効化」を提供するか | 必要 → **Keycloak アカウント設定画面** が圧倒的に楽 / 不要 → アプリ側実装で Cognito でも OK |
 | **パスワード変更時の全セッション無効化** | パスワード変更後に他デバイスのセッションも切るか（業界標準動作） | 自動切断（推奨）/ 切らない（UX 優先）/ ユーザー選択 |
 
 **D. 緊急対応との連携**

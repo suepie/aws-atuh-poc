@@ -87,7 +87,7 @@
 | **依存自動更新ツール** | **Renovate**（Dependabot より柔軟）| グループ更新、Lock ファイル対応充実 |
 | **CI/CD プラットフォーム** | **GitHub Actions + OIDC Federation**（IRSA）| Long-lived AWS Key 廃止、PCI DSS §8.6.2 |
 | **脆弱性スキャナ** | **Trivy**（プライマリ）+ AWS Inspector（補完）| Trivy は OSS かつカバレッジ広い |
-| **第三者スクリプト管理**（PCI DSS §6.4.3）| **インベントリ + SRI + CSP Strict**（Account Console / Trust Center / Tenant Admin Portal）| 必須要件 |
+| **第三者スクリプト管理**（PCI DSS §6.4.3）| **インベントリ + SRI + CSP Strict**（アカウント設定画面 / Trust Center / ユーザ管理画面）| 必須要件 |
 | **SBOM 公開** | **顧客向け Trust Center 公開**（[ADR-036](036-customer-audit-support.md)）+ CRA 対応 | EU 顧客必須 |
 
 ---
@@ -494,9 +494,9 @@ PCI DSS v4.0 §6.4.3 は**カード会員データ環境（CDE）のパブリッ
 | 画面 | 第三者スクリプト | 対応 |
 |---|---|---|
 | Keycloak ログイン画面 | Cloudflare Turnstile | SRI ハッシュ + CSP |
-| Account Console | （なし）| CSP Strict |
-| Launchpad SPA | （なし）| CSP Strict |
-| Tenant Admin Portal | （業務上必要なものは検討） | SRI + CSP |
+| アカウント設定画面 | （なし）| CSP Strict |
+| サービス選択画面 SPA | （なし）| CSP Strict |
+| ユーザ管理画面 | （業務上必要なものは検討） | SRI + CSP |
 | Trust Center | （Webフォント等）| SRI + CSP |
 
 ### G.3 CSP Strict 例

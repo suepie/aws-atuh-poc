@@ -4,7 +4,7 @@
 - **日付**: 2026-06-23
 - **関連**:
   - [ADR-037 Shared Responsibility Model + 軽量 IGA](037-shared-responsibility-and-lightweight-iga.md)
-  - [ADR-038 Tenant Admin Portal](038-tenant-admin-portal.md)
+  - [ADR-038 ユーザ管理画面](038-tenant-admin-portal.md)
   - [ADR-035 ITDR 設計](035-identity-threat-detection-response.md)
   - [ADR-036 Customer Audit Support](036-customer-audit-support.md)
   - [§FR-8 管理機能](../requirements/proposal/fr/08-admin.md)
@@ -17,12 +17,12 @@
 
 ### 背景
 
-[ADR-037](037-shared-responsibility-and-lightweight-iga.md) で「軽量 IGA 内包」が確定し、[ADR-038](038-tenant-admin-portal.md) で Tenant Admin Portal を導入した。これにより**顧客テナント管理者**の権限管理は整理されたが、**特権アクセス（Privileged Access）**の扱いは未定義のまま残されていた。
+[ADR-037](037-shared-responsibility-and-lightweight-iga.md) で「軽量 IGA 内包」が確定し、[ADR-038](038-tenant-admin-portal.md) で ユーザ管理画面 を導入した。これにより**顧客テナント管理者**の権限管理は整理されたが、**特権アクセス（Privileged Access）**の扱いは未定義のまま残されていた。
 
 具体的な未解決ポイント:
 
 1. **弊社運用者（基盤管理者）の特権操作** — Keycloak Realm 設定変更 / DB 直接アクセス / 顧客テナント越境操作などの**最高権限**をどう管理するか
-2. **顧客テナント管理者の特権操作** — Tenant Admin Portal 経由でも「全ユーザー削除」「全 MFA リセット」等の**破壊的操作**は通常操作と扱いを分けるべきか
+2. **顧客テナント管理者の特権操作** — ユーザ管理画面 経由でも「全ユーザー削除」「全 MFA リセット」等の**破壊的操作**は通常操作と扱いを分けるべきか
 3. **PCI DSS / APPI 監査要件** — 規制業種顧客の打ち合わせで「APPI と PCI DSS に対応する必要がある」と確認済み。両規格とも**特権アカウントの常時保有禁止** / **承認ワークフロー** / **完全なセッション記録**が要求される
 4. **インシデント時のブレークグラス（Break-Glass）口** — 全システム障害時の緊急アクセス手段を「平時の特権を常時保有」で代替するアンチパターンを避ける
 
@@ -67,10 +67,10 @@
 |---|---|
 | **特権ロール定義** | **常時付与禁止**、`<role>-eligible`（候補）/ `<role>-active`（昇格中）の 2 状態モデル |
 | **昇格メカニズム**（基盤管理者）| **AWS IAM Identity Center + Session Manager** の Permission Set + Approval（承認）|
-| **昇格メカニズム**（テナント管理者の破壊的操作）| **Tenant Admin Portal 内 JIT 承認ワークフロー**（自社内 SoD 担保）|
+| **昇格メカニズム**（テナント管理者の破壊的操作）| **ユーザ管理画面 内 JIT 承認ワークフロー**（自社内 SoD 担保）|
 | **セッション記録** | AWS Session Manager → CloudWatch Logs（インフラ側）、Keycloak Admin Events → Audit Acct（アプリ側）|
 | **Break-Glass**（最終手段）| 物理金庫保管の MFA デバイス + 2 名同時操作 + 自動アラート + 24h 期限 |
-| **特権アカウントの定期レビュー** | 半年ごと（PCI DSS 7.2.4）、Tenant Admin Portal で証跡生成 |
+| **特権アカウントの定期レビュー** | 半年ごと（PCI DSS 7.2.4）、ユーザ管理画面 で証跡生成 |
 | **承認 SLA** | 通常 4h、緊急 15min（Pager 起動）|
 
 ---
@@ -99,8 +99,8 @@ flowchart TB
         KCROLE --> KCAPI --> AUDIT
     end
 
-    subgraph L4["L4: テナント特権（Tenant Admin Portal）"]
-        TAP["Tenant Admin Portal"]
+    subgraph L4["L4: テナント特権（ユーザ管理画面）"]
+        TAP["ユーザ管理画面"]
         TAPWF["JIT 承認ワークフロー<br/>(SoD: 申請者 != 承認者)"]
         TAPDESTRUCTIVE["破壊的操作<br/>(全ユーザー削除 / 全 MFA リセット)"]
         TAP --> TAPWF --> TAPDESTRUCTIVE
@@ -167,7 +167,7 @@ roles:
     composites:
       - realm-admin        # Keycloak ネイティブの全権限
 
-# 昇格 API（Tenant Admin Portal 経由 or 内部承認ツール）
+# 昇格 API（ユーザ管理画面 経由 or 内部承認ツール）
 POST /pam/elevate
 {
   "user_id": "ops-suzuki",
@@ -184,7 +184,7 @@ POST /pam/elevate
 
 ### B.3 テナント管理者の破壊的操作（L4）
 
-Tenant Admin Portal で以下の操作は **JIT 承認必須**:
+ユーザ管理画面 で以下の操作は **JIT 承認必須**:
 
 | 操作 | 影響範囲 | SoD 要件 |
 |---|---|---|
@@ -236,7 +236,7 @@ Tenant Admin Portal で以下の操作は **JIT 承認必須**:
 | **IAM Identity Center** | 昇格申請 / 承認 / 失効 | CloudTrail Organization | 7 年 | S3 Object Lock |
 | **Session Manager** | 全コマンド / 標準入出力 | CloudWatch Logs → S3 | 1 年 + Glacier 6 年 | S3 Object Lock |
 | **Keycloak Admin Events** | Realm / Client / User CRUD | Audit Acct OpenSearch | 1 年 + S3 6 年 | S3 Object Lock |
-| **Tenant Admin Portal Audit** | テナント管理者操作全件 | Audit Acct OpenSearch | 1 年 + S3 6 年 | S3 Object Lock + 顧客ごと暗号化 |
+| **ユーザ管理画面 Audit** | テナント管理者操作全件 | Audit Acct OpenSearch | 1 年 + S3 6 年 | S3 Object Lock + 顧客ごと暗号化 |
 | **Break-Glass 利用** | 上記すべて + PagerDuty | 上記 + 役員レビュー記録 | 7 年 | 同上 |
 
 ### D.2 PCI DSS 10.3 / APPI 安全管理対応
@@ -298,7 +298,7 @@ Tenant Admin Portal で以下の操作は **JIT 承認必須**:
 
 ### Neutral
 
-- Tenant Admin Portal 側 JIT は ADR-038 設計の拡張、追加工数小
+- ユーザ管理画面 側 JIT は ADR-038 設計の拡張、追加工数小
 - EKS / Aurora の bastion / SSH 等の OS レベル PEDM は別 ADR
 
 ### 我々のスタンス
@@ -306,7 +306,7 @@ Tenant Admin Portal で以下の操作は **JIT 承認必須**:
 | 基本方針の柱 | PAM 設計での実現 |
 |---|---|
 | **絶対安全** | 特権常時保有禁止 + SoD + 完全セッション記録 |
-| **どんなアプリでも** | テナント管理者向け JIT は Tenant Admin Portal 統合 |
+| **どんなアプリでも** | テナント管理者向け JIT は ユーザ管理画面 統合 |
 | **効率よく認証** | AWS 標準機能で構築、追加製品なし |
 | **運用負荷・コスト最小** | CyberArk 不要、年 $200K 節約、AWS IIC 月数十ドル |
 

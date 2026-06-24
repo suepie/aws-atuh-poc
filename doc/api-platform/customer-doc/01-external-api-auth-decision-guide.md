@@ -88,6 +88,72 @@
 - **業務適合性**：Partner / SaaS との運用関係は業務に深く紐づく、アプリチームが詳しい
 - **ガバナンス担保**：自律化しても認証実装漏れが発生しないか確認したい
 
+### 1.6 Origin Protection と DDoS 対策（前提共有）
+
+本標準では **CloudFront + WAF を中央 Network Account に集約、API Gateway / ALB は各アプリ Account に配置** する 4 アカウント体制（[ADR-039](../../adr/039-centralized-network-account-edge-layer.md)）を採用する。「Partner / Private API の認証配置」議論の前提として、**「API GW を public 化しつつ、CloudFront 経由以外の直接アクセスを遮断する仕組み」**を確認しておく。
+
+#### 1.6.1 構成図
+
+```mermaid
+flowchart LR
+    Internet[Internet] -->|HTTPS| CF
+
+    subgraph NetAcc["🟣 Network Account（中央集約）"]
+        CF[CloudFront Distribution]
+        WAF[AWS WAF<br/>Managed Rules + Rate]
+        SM_Net[Secrets Manager<br/>X-Origin-Verify secret]
+        L@E[Lambda@Edge<br/>Custom Header 注入]
+        CF --> WAF --> L@E
+        L@E -.fetch.-> SM_Net
+    end
+
+    subgraph AppA["🟢 App A Account"]
+        APIGW[API GW REST<br/>REGIONAL]
+        RP[Resource Policy<br/>① IP allowlist<br/>② Header 検証]
+        Lambda
+        APIGW --> RP --> Lambda
+    end
+
+    subgraph AppB["🟢 App B Account"]
+        ALB[Public ALB]
+        SG[Security Group + Listener Rule<br/>① CloudFront PL<br/>② Header 検証]
+        ECS[ECS Fargate]
+        ALB --> SG --> ECS
+    end
+
+    Direct[Direct Origin Attack] -.X.- APIGW
+    Direct -.X.- ALB
+
+    L@E -->|X-Origin-Verify: secret| APIGW
+    L@E -->|X-Origin-Verify: secret| ALB
+
+    style NetAcc fill:#e3f2fd
+    style AppA fill:#e8f5e9
+    style AppB fill:#e8f5e9
+    style Direct fill:#ffcdd2
+```
+
+#### 1.6.2 ポイント
+
+| 観点 | 内容 |
+|---|---|
+| **API GW の DNS は public** | `xxxxx.execute-api.ap-northeast-1.amazonaws.com` で公開、ただし **Resource Policy で実質非公開** |
+| **Resource Policy で 2 層検証** | ① CloudFront 管理 IP プレフィックスリスト ② Custom Header `X-Origin-Verify` の Secret 一致 |
+| **直接 curl での攻撃** | すべて 403、CloudFront 経由しない限り Origin に届かない |
+| **Secret Rotation** | 30 日周期で自動ローテ、Overlap Period 24-72h（旧新両方受容） |
+| **クロスアカウント運用** | Network Acct の Rotation Lambda が App Acct の Resource Policy / Listener Rule を Cross-account AssumeRole で更新 |
+
+#### 1.6.3 DDoS 4 層防御
+
+| 層 | 防御策 | 効果 |
+|---|---|---|
+| L1 | CloudFront Edge + Shield Standard 自動 | 99%+ の L3/L4 攻撃を Edge で吸収 |
+| L2 | WAF Managed Rules + Rate-based + Bot Control | L7 攻撃、SQLi/XSS、量的攻撃遮断 |
+| **L3 ⭐ Origin Protection** | **CloudFront IP allowlist + Custom Header** | **CloudFront 経由しない直接攻撃を完全遮断** |
+| L4 | API GW Throttling + Backend Auto Scaling | 万一通過した負荷も Backend で吸収 |
+
+→ 「Partner / Private の認証方式」と「Origin Protection」は **直交した関心事**。本資料 §2 / §3 で議論する認証方式は、上記 Origin Protection の **上に重ねる** 形で実装される。
+
 ---
 
 ## 2. Partner について

@@ -55,7 +55,7 @@
 - Identity Proofing / KYC（B2C 規制業界向け、本基盤対象外）
 - Access Reviews / Recertification（IGA レイヤー、本基盤外）
 
-### 1.2 認証基盤で認証するユーザ（P-1〜P-6 / α-δ シナリオ）
+### 1.2 認証基盤で認証するユーザ（P-1〜P-4 / α-δ シナリオ）
 
 **概要**: 利用者カテゴリ 6 分類 + 採用シナリオ α/β/γ/δ + インフラ運用者 I-1〜I-5。
 
@@ -548,7 +548,7 @@ JWT クレーム（tenant_id, roles, sub 等、最小クレーム原則）
 | **hearing-script** | [04-user-management.md B-402](hearing-script/04-user-management.md) |
 | **hearing-checklist** | §2.4 (B-402) |
 | **proposal** | [§FR-7.3 セルフサービス](proposal/fr/07-user.md) |
-| **外部** | [Auth0 Self-Service B2B Guide](https://auth0.com/blog/how-to-enable-self-service-identity-management-b2b-saas/) / [Keycloak Account Console](https://www.keycloak.org/docs/latest/server_admin/#con-account-console_server_administration_guide) / [Cognito Hosted UI Account Recovery](https://docs.aws.amazon.com/cognito/latest/developerguide/managed-login.html) |
+| **外部** | [Auth0 Self-Service B2B Guide](https://auth0.com/blog/how-to-enable-self-service-identity-management-b2b-saas/) / [Keycloak アカウント設定画面](https://www.keycloak.org/docs/latest/server_admin/#con-account-console_server_administration_guide) / [Cognito Hosted UI Account Recovery](https://docs.aws.amazon.com/cognito/latest/developerguide/managed-login.html) |
 
 ### 5.7 委譲管理（Delegated Administration）★NEW
 
@@ -819,7 +819,7 @@ JWT クレーム（tenant_id, roles, sub 等、最小クレーム原則）
 | 11 | 製品選定 | **1.5 製品選定** | ✅ そのまま（+ ティア・規模軸明示） |
 | 12 | 接続するサービスの情報 | **2.2 顧客 IdP 一覧 + 2.3 接続アプリ・システム一覧** | ⚠ 2 つに分離（IdP vs アプリ）|
 | 13 | 認可設定（JWTクレーム）| **4.1 に統合** | ⚠ #8 と統合 |
-| 14 | 認証基盤で認証するユーザ | **1.2 認証基盤で認証するユーザ** | ✅ そのまま（P-1〜P-6 + α-δ 拡充） |
+| 14 | 認証基盤で認証するユーザ | **1.2 認証基盤で認証するユーザ** | ✅ そのまま（P-1〜P-4 + α-δ 拡充） |
 | 15 | 非機能_運用 | **7.5 運用 + IaC + CI/CD** | ✅ 拡張（IaC 明示）|
 | 16 | 非機能_可溶性・SLA・DR | **7.1 可用性・SLA・DR 設計（RTO/RPO/HA 構成）** | ✅ 同範囲、命名明確化 |
 | 17 | フェデレーションユーザの権限 | **6.2 フェデユーザ権限（デフォルト権限）** | ✅ そのまま |

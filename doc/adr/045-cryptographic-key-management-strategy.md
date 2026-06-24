@@ -50,7 +50,7 @@
 | ADR-033 Keycloak 2-tier | Aurora（IdP-KC）暗号化 | テナント別 vs 共通 CMK の判断未定義 |
 | ADR-035 ITDR | DynamoDB（履歴）暗号化 | デフォルト KMS or CMK 未定義 |
 | ADR-036 Customer Audit | Trust Center / 監査ログ S3 暗号化 | 顧客テナント別 CMK の必要性 |
-| ADR-038 Tenant Admin Portal | Tenant Audit Log 暗号化 | テナント別 CMK 推奨と書いたが詳細未定義 |
+| ADR-038 ユーザ管理画面 | Tenant Audit Log 暗号化 | テナント別 CMK 推奨と書いたが詳細未定義 |
 | ADR-039 Network Acct | CloudFront / WAF / Lambda@Edge | 配置 Acct での KMS 鍵共有 |
 | ADR-040 PAM | Session Manager セッション記録 | S3 Object Lock + KMS、CMK 種別未定義 |
 | ADR-041 Workload Identity | K8s Secret 暗号化、JWT 署名鍵 | Keycloak JWT 署名鍵 RS256/ES256 選定未定義 |
@@ -86,7 +86,7 @@
 |---|---|---|---|
 | **L1 基盤共通 CMK** | 全テナント共通 | 〜10 個 | Network 層 / Audit Acct 集約ログ / WAF Logs |
 | **L2 アカウント別 CMK** | AWS アカウント単位 | 各 Acct 5-10 個 | Aurora（共通）/ DynamoDB（共通）/ S3（共通）/ Lambda 環境変数 |
-| **L3 テナント別 CMK** | 顧客テナント単位 | テナント数分（〜数百〜数千）| Tenant Admin Portal Audit / 個人データ S3 / IdP-KC 顧客領域 |
+| **L3 テナント別 CMK** | 顧客テナント単位 | テナント数分（〜数百〜数千）| ユーザ管理画面 Audit / 個人データ S3 / IdP-KC 顧客領域 |
 
 ### 主要判断
 
@@ -133,7 +133,7 @@ flowchart TB
     subgraph Use["使用先(Envelope Encryption)"]
         Aurora["Aurora<br/>(IdP-KC + Tenant Admin DB)"]
         DDB["DynamoDB<br/>(ITDR / Tenant Audit)"]
-        S3["S3<br/>(監査ログ / Sorry SPA / Tenant 個人データ)"]
+        S3["S3<br/>(監査ログ / エラー / 案内画面 SPA / Tenant 個人データ)"]
         Lambda["Lambda 環境変数"]
         CW["CloudWatch Logs"]
         Secrets["Secrets Manager"]
@@ -242,7 +242,7 @@ flowchart TB
 | **Session Manager 録画**（ADR-040）| 最高 | S3 Object Lock | KMS | `audit-logs` |
 | **Break-Glass パスワード** | 最高 | Secrets Manager + 物理金庫 | KMS + 物理 | `break-glass-vault` |
 | **CloudFront / WAF ログ** | 中 | S3 | KMS | `network-shared` or `waf-logs` |
-| **Tenant Admin Portal Audit** | 高 | DynamoDB | KMS | `tenant-X` or `auth-dynamodb` |
+| **ユーザ管理画面 Audit** | 高 | DynamoDB | KMS | `tenant-X` or `auth-dynamodb` |
 
 ### B.2 アプリケーション層暗号化（追加レイヤ）
 
@@ -331,7 +331,7 @@ flowchart LR
 | KMS Asymmetric CMK（JWT 署名鍵）| **手動年次**+ 鍵ロールオーバー | Keycloak の Rotation 機能で旧鍵を 30 日並走 |
 | アプリケーション層 DEK | 90 日 | Envelope Encryption、KMS で DEK 暗号化 |
 | TLS 証明書（ACM）| 自動 | Public 証明書は自動更新 |
-| API キー / Bearer Token | 90 日（強制）| Tenant Admin Portal で警告 |
+| API キー / Bearer Token | 90 日（強制）| ユーザ管理画面 で警告 |
 
 ### D.4 削除プロセス
 
