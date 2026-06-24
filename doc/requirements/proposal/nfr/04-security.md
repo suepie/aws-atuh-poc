@@ -111,13 +111,28 @@ flowchart LR
 
 ### ベースライン
 
-| 項目 | 推奨デフォルト |
-|---|---|
-| 通信暗号化 | **TLS 1.2+** |
-| データ at-rest | **AES-256（KMS）** |
-| JWT 署名 | **RS256** |
-| パスワードハッシュ | PBKDF2 / bcrypt / Argon2 |
-| 暗号鍵ローテーション | 年 1 回以上（KMS 自動）|
+| 項目 | 推奨デフォルト | 詳細 |
+|---|---|---|
+| 通信暗号化 | **TLS 1.3 必須 + TLS 1.2 強力スイートのみ** | [ADR-045](../../../adr/045-cryptographic-key-management-strategy.md) §C |
+| データ at-rest | **AES-256-GCM（KMS）** | [ADR-045](../../../adr/045-cryptographic-key-management-strategy.md) §B |
+| **JWT 署名** | **ES256（ECC_NIST_P256）**（業界トレンド、サイズ小・性能高）| [ADR-045](../../../adr/045-cryptographic-key-management-strategy.md) §C.1 |
+| パスワードハッシュ | **Argon2id（推奨）or bcrypt（cost 12+）** | OWASP 推奨 |
+| 暗号鍵ローテーション | **年 1 回自動（KMS 標準）** + 個別手動ローテーション体制 | [ADR-045](../../../adr/045-cryptographic-key-management-strategy.md) §D |
+| **KMS CMK 階層** | **3 階層モデル**（L1 基盤共通 / L2 アカウント別 / L3 テナント別）| [ADR-045](../../../adr/045-cryptographic-key-management-strategy.md) §A |
+| **鍵管理者 SoD** | **Key Administrator（CISO）vs Key User（Service Role）分離** | [ADR-045](../../../adr/045-cryptographic-key-management-strategy.md) §E |
+| **CloudHSM 採用** | Phase 1 不採用、Phase 2 規制業種顧客要求時 | [ADR-045](../../../adr/045-cryptographic-key-management-strategy.md) §H |
+| **PQC 対応** | **Crypto-Agility 設計 + 3 フェーズ移行（2026-2035）** | [ADR-047](../../../adr/047-post-quantum-cryptography-migration-plan.md) |
+
+### 規制対応マッピング（暗号関連）
+
+| 規制 | 条項 | 充足方法 |
+|---|---|---|
+| PCI DSS v4.0 §3.6 / §3.7 | 鍵管理手順 + ライフサイクル + SoD | [ADR-045](../../../adr/045-cryptographic-key-management-strategy.md) |
+| PCI DSS v4.0 §4.2.1.1 | TLS 1.2+ + 強力スイート | TLS 1.3 デフォルト |
+| NIST SP 800-57 Part 1 Rev 5 | 鍵管理ライフサイクル | [ADR-045](../../../adr/045-cryptographic-key-management-strategy.md) §D |
+| NIST SP 800-131A Rev 2 | アルゴリズム遷移 | [ADR-047](../../../adr/047-post-quantum-cryptography-migration-plan.md) |
+| CRYPTREC 暗号リスト 2024 | 国内推奨暗号 | 採用アルゴリズム全準拠 |
+| NIST FIPS 203/204/205 | PQC 標準 | [ADR-047](../../../adr/047-post-quantum-cryptography-migration-plan.md) |
 
 ---
 
@@ -240,6 +255,111 @@ flowchart LR
 | PCI DSS v4.0 §8.3.6 | パスワード試行制限 | Keycloak `bruteForceProtected` |
 | NIST SP 800-63B Rev 4 §5.2.2 | Rate-limit + Throttling | WAF Rate Limit + Keycloak `failureFactor` |
 | OWASP ASVS L2 V2.2.1 | Anti-automation | Bot Control + Turnstile |
+
+---
+
+## §NFR-4.10 ソフトウェアサプライチェーンセキュリティ
+
+> **詳細は [ADR-046 ソフトウェアサプライチェーンセキュリティ](../../../adr/046-supply-chain-security.md) を参照**
+
+> **このサブセクションで定めること**: ソースコード / 依存ライブラリ / コンテナ / ビルドパイプライン / 配布 / ランタイムの 6 層 Supply Chain Defense。
+> **主な判断軸**: PCI DSS v4.0 §6.4.3（2025/3 強制、第三者スクリプト管理）+ §6.3.2、EU CRA（2027/12）+ EO 14028 SBOM 要件、log4shell / xz-utils 類似事案防御
+> **§NFR-4 全体との関係**: §NFR-4.3 攻撃対策（既知脆弱性）の補完、サプライチェーン段階での予防
+
+### 結論サマリ — 6 層 Supply Chain Defense
+
+| 層 | 対策 | ツール |
+|---|---|---|
+| L1 ソースコード | コミット署名 + ブランチ保護 + Secret スキャン | Sigstore Gitsign / GitHub Advanced Security / GitGuardian |
+| L2 依存ライブラリ | SBOM 自動生成 + 脆弱性スキャン + 自動更新 | CycloneDX / Trivy / Renovate |
+| L3 コンテナ | distroless Base + ECR Image Scan + 署名 | Amazon ECR + Trivy + Cosign |
+| L4 ビルドパイプライン | OIDC Federation + SLSA Provenance | GitHub OIDC + SLSA Generator |
+| L5 配布 | Image 署名検証 + Provenance 検証 | Kyverno + OPA |
+| L6 ランタイム | 継続スキャン + 新 CVE 24h トリアージ | Trivy Operator + AWS Inspector v2 |
+
+### 採用方針の核
+
+- **SLSA Level 3 を 12 ヶ月以内に達成**（Phase 1 は L2、Phase 2 で L3）
+- **SBOM は CycloneDX**（プライマリ）+ SPDX（互換時）、月次更新で Trust Center 公開
+- **Sigstore Cosign**（Keyless Signing）+ Rekor Transparency Log
+- **Renovate**（Dependabot より柔軟）で自動更新、Critical 24h / High 7d SLA
+- **OIDC Federation（IRSA for GitHub Actions）**で long-lived AWS Key 廃止（PCI DSS §8.6.2 連動）
+- **PCI DSS §6.4.3 第三者スクリプト管理**：CSP Strict + SRI + インベントリ
+- **OSS 中心**で年 $6K、商用（Snyk / Aqua）比 6-8 倍コスト削減
+
+### 規制対応
+
+| 規制 | 条項 | 充足方法 |
+|---|---|---|
+| PCI DSS v4.0 §6.4.3 | 第三者スクリプト管理（2025/3 強制）| CSP + SRI + インベントリ |
+| PCI DSS v4.0 §6.3.2 | 自社開発脆弱性管理 | Trivy CI + SLA |
+| EO 14028 / NIST SSDF | SBOM 提出義務 | CycloneDX 月次更新 |
+| EU CRA（2027/12 完全施行）| SBOM + 脆弱性開示義務 | Trust Center 公開 |
+| NIST SP 800-218 SSDF | 安全な開発フレームワーク | 6 層 Defense |
+| NIST SP 800-204D | Microservices Supply Chain | EKS + Pod Identity + Trivy Operator |
+
+---
+
+## §NFR-4.11 Post-Quantum Cryptography（PQC）対応
+
+> **詳細は [ADR-047 PQC マイグレーション計画](../../../adr/047-post-quantum-cryptography-migration-plan.md) を参照**
+
+> **このサブセクションで定めること**: 量子計算機実用化に向けた暗号アルゴリズム移行計画。**HNDL（Harvest Now, Decrypt Later）攻撃**対策として、長期保管データの将来安全性を確保。
+> **主な判断軸**: NIST FIPS 203/204/205（2024/8 公開）+ NSA CNSA 2.0（2033）+ OMB M-23-02（2035）+ 規制業種顧客要件
+> **§NFR-4 全体との関係**: §NFR-4.1 暗号化・鍵管理の長期戦略
+
+### 結論サマリ — 3 フェーズ移行
+
+| Phase | 期間 | 内容 | KPI |
+|---|---|---|---|
+| **Phase 1 Discover & Prepare** | 2026-2027 | 暗号インベントリ + Crypto-Agility 設計 + ベンダー追跡 | インベントリ 100% / Agility 設計完了 |
+| **Phase 2 Hybrid Deployment** | 2028-2030 | Hybrid TLS（X25519+ML-KEM-768）/ Hybrid JWT 署名 | 全 inbound TLS Hybrid 100% |
+| **Phase 3 Full PQC** | 2031-2035 | 古典暗号廃止 | 純 PQC 100% |
+
+### 採用アルゴリズム
+
+| 用途 | アルゴリズム | 根拠 |
+|---|---|---|
+| 鍵交換 | **ML-KEM-768**（NIST L3）| FIPS 203、業界標準パラメータ |
+| 短命署名（JWT）| **ML-DSA-65**（NIST L3）| FIPS 204、性能重視 |
+| 長期署名（監査ログ 13 年）| **SLH-DSA-128** | FIPS 205、ハッシュベース保守選択（Lattice 突破の保険）|
+
+### HNDL 攻撃影響データ（本基盤）
+
+| データ | 寿命 | リスク |
+|---|---|---|
+| 監査ログ（7+6=13 年保管）| 〜2039 | **高** |
+| 顧客個人情報 | 5-10 年 | **高** |
+| Session Manager 録画（7 年） | 〜2033 | **高** |
+| 短命 JWT（1h-12h）| 即時 | 低 |
+| TLS 通信 | 即時 | 中（HNDL 標的）|
+
+→ **長期保管データと TLS HNDL リスクが PQC 優先対象**。
+
+### 規制対応
+
+| 規制 | 期限 | 充足計画 |
+|---|---|---|
+| NIST FIPS 203/204/205 | 2024/8 公開 | Phase 1 で採用準備 |
+| NSA CNSA 2.0 | 2033 完全移行（米国国防系）| Phase 3 で達成 |
+| OMB M-23-02 | 2035 完全移行（米連邦）| Phase 3 で達成 |
+| ENISA / ANSSI / BSI | 2030 までに重要インフラ | Phase 2 末で達成 |
+| EU CRA | 2027/12 | 影響範囲評価 + Trust Center 公開 |
+
+### コスト
+
+- 10 年総額：〜6,000 万円（初期 3,500 万円 + 年次 2,400 万円累計）
+- 業界先行による Trust / Brand 価値向上
+
+### TBD / 要確認
+
+| 確認項目 | ヒアリング ID | 回答例 |
+|---|---|---|
+| **規制業種顧客の PQC 要件** | **B-PQC-1** | 即時要求 / 2030 までに / 不要 |
+| **Hybrid 期の開始タイミング** | **B-PQC-2** | AWS 対応次第（推奨）/ 2028 一律 / 顧客判断 |
+| **JWT サイズ増（〜3KB）受容可否** | **B-PQC-3** | Headers OK / Cookie 制限あり / 別途検討 |
+| **SLH-DSA 採用範囲** | **B-PQC-4** | 監査ログのみ（推奨）/ 全署名 / 不採用 |
+| **顧客への PQC ロードマップ公開** | **B-PQC-5** | Trust Center 公開（推奨）/ 個別開示 / 非公開 |
 
 ---
 

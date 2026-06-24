@@ -52,6 +52,9 @@
 | **[ADR-042](../adr/042-bot-detection-captcha.md) Bot Detection / CAPTCHA** | **AWS WAF Bot Control + ATP + Cloudflare Turnstile（Invisible）の 3 層防御** |
 | **[ADR-043](../adr/043-accessibility-wcag-2-2-aa.md) Accessibility WCAG 2.2 AA** | **Keycloak Theme カスタム + axe-core CI + ACR Trust Center 公開** |
 | **[ADR-044](../adr/044-tabletop-exercise-incident-drill.md) Tabletop Exercise** | **3 種 × 4 頻度マトリクス**（経営 Tabletop / 技術 Tabletop / Functional / Game Day / Red Team / 顧客通知シミュ）|
+| **[ADR-045](../adr/045-cryptographic-key-management-strategy.md) 鍵管理戦略集約** | **3 階層 KMS CMK**（L1 基盤共通 / L2 アカウント別 / L3 テナント別）+ JWT 署名 **ES256** + 機能別 Multi-Region Key |
+| **[ADR-046](../adr/046-supply-chain-security.md) Supply Chain Security** | **6 層 Defense**（コード署名 / SBOM / コンテナ署名 / SLSA L3 / Cosign 検証 / Runtime 継続スキャン）|
+| **[ADR-047](../adr/047-post-quantum-cryptography-migration-plan.md) PQC マイグレーション** | **3 フェーズ移行**（Discover 2026-27 / Hybrid 2028-30 / Full PQC 2031-35）+ ML-KEM-768 / ML-DSA-65 / SLH-DSA-128 |
 
 ---
 
@@ -83,6 +86,9 @@
 | Bot 防御 | **3 層**（WAF Bot Control + ATP / Turnstile Invisible / ITDR Anomaly）| ADR-042 |
 | Accessibility | **WCAG 2.2 AA + JIS X 8341-3**（障害者差別解消法 / EAA 対応、ACR 公開）| ADR-043 |
 | インシデント訓練 | **3 種 × 4 頻度マトリクス**（SOC 2 / PCI DSS / APPI 演習要件充足）| ADR-044 |
+| 鍵管理戦略 | **3 階層 KMS CMK + JWT 署名 ES256 + Crypto-Agility**（PCI DSS §3/§4 充足）| ADR-045 |
+| Supply Chain | **6 層 Defense + SLSA L3 + SBOM CycloneDX + Cosign 署名検証**（PCI DSS §6.4.3 / EU CRA）| ADR-046 |
+| PQC 対応 | **3 フェーズ移行 2026-2035**（HNDL 対策、ML-KEM-768 / ML-DSA-65 / SLH-DSA-128）| ADR-047 |
 
 ---
 
@@ -929,6 +935,138 @@ Cloudflare Turnstile の以下機能を必ず有効化:
 | 詳細 AAR | Customer Portal（NDA）| 演習ごと |
 | Break-Glass 訓練記録 | Customer Portal | 半期 |
 | Red Team レポートサマリ | Customer Portal（NDA）| 年次 |
+
+### 3.20 鍵管理アーキテクチャ（ADR-045）
+
+> 3 階層 KMS CMK モデルで PCI DSS §3 / §4 + APPI 第 23 条を充足。JWT 署名は ES256（業界トレンド）、Phase 2 で PQC 対応へ Crypto-Agility 基盤を構築。
+
+#### 3.20.1 3 階層 CMK モデル
+
+| 階層 | スコープ | 数 | 主要 Key Alias | 配置 |
+|---|---|---|---|---|
+| **L1 基盤共通**（MRK）| 全テナント共通 | 〜10 個 | `alias/network-shared` / `alias/audit-logs` / `alias/cloudtrail-org` / `alias/dr-replication` | 🟣 Network / 🔵 Audit |
+| **L2 アカウント別** | AWS Acct 単位 | 各 5-10 個 | `alias/auth-aurora` / `alias/broker-aurora` / `alias/auth-dynamodb` / **`alias/keycloak-jwt-signing`**（ECC_NIST_P256）/ `alias/auth-s3` / `alias/auth-secrets` | 各 Acct |
+| **L3 テナント別**（大規模顧客のみ）| 顧客テナント単位 | テナント数分 | `alias/tenant-acme` 等 | 🟠 Auth Acct |
+
+#### 3.20.2 暗号化境界マトリクス
+
+| データ | 鍵 | アルゴリズム |
+|---|---|---|
+| **JWT 署名鍵**（private、取出不可）| `keycloak-jwt-signing`（L2）| **ES256（ECDSA P-256）** |
+| ユーザー PW ハッシュ / MFA Secret / WebAuthn | `auth-aurora`（L2）+ アプリ層 AES-256-GCM 追加 | TDE + Application Layer |
+| ITDR 履歴 / Adaptive Auth Score | `auth-dynamodb`（L2）| AES-256-GCM |
+| 監査ログ / Session Manager 録画 | `audit-logs`（L1）| AES-256-GCM |
+| Tenant Audit Log（大規模顧客）| `tenant-X`（L3）| AES-256-GCM |
+| Break-Glass パスワード | `break-glass-vault`（L1）+ 物理金庫 | AES-256-GCM + 物理 |
+
+#### 3.20.3 鍵管理者 SoD（PCI DSS §3.6.1.4 / §3.7）
+
+- **Key Administrator**（CISO 部門のみ）：CreateKey / ScheduleKeyDeletion / PutKeyPolicy（鍵使用権限は持たない）
+- **Key User**（Service Role）：Encrypt / Decrypt / GenerateDataKey（鍵管理権限は持たない）
+- **Auditor**（Read-Only）：ListKeys / DescribeKey / CloudTrail 閲覧
+- **削除プロセス**：Pending Window 30 日 + 顧客通知 + Audit 記録
+
+#### 3.20.4 CloudHSM 採用判断
+
+- **Phase 1 不採用**：KMS FIPS 140-2 Level 2 で APPI / SOC 2 / PCI DSS §3 充足、CloudHSM は HSM/月 $1,600+ で過剰
+- **Phase 2 候補**：金融顧客 FIPS Level 3 要求 / 政府系 CC EAL4+ 要求 / 顧客 HSM 持込（XKS）
+
+### 3.21 ソフトウェアサプライチェーンセキュリティ（ADR-046）
+
+> 6 層 Defense（コード / 依存 / コンテナ / ビルド / 配布 / ランタイム）で log4shell / xz-utils 類似事案を予防。SLSA L3 を 12 ヶ月以内達成目標。
+
+#### 3.21.1 6 層 Defense コンポーネント
+
+| 層 | コンポーネント | 配置 |
+|---|---|---|
+| **L1 ソースコード** | GitHub Branch Protection + **Sigstore Gitsign**（コミット署名）+ GitHub Advanced Security + GitGuardian | GitHub |
+| **L2 依存ライブラリ** | **CycloneDX SBOM 自動生成** + **Trivy 脆弱性スキャン** + **Renovate 自動更新** | GitHub Actions |
+| **L3 コンテナ** | **distroless Base Image** + ECR `image_tag_mutability=IMMUTABLE` + Image Scan on Push + **Cosign 署名 + Rekor TL** | 🟠 Auth Acct ECR / 🟢 App Acct ECR |
+| **L4 ビルドパイプライン** | GitHub Actions + **OIDC Federation（IRSA）** + **SLSA Provenance 生成**（slsa-framework/slsa-github-generator）| GitHub |
+| **L5 配布** | **Kyverno Cluster Policy**（Cosign Verify、未署名 Image deploy ブロック）| 🟠 Auth Acct EKS / 🟢 App Acct EKS |
+| **L6 ランタイム** | **Trivy Operator** + **AWS Inspector v2**（ECR / Lambda / EC2 継続スキャン）| 全 Acct |
+
+#### 3.21.2 脆弱性 SLA
+
+| Severity | 修正 SLA | 例外承認 |
+|---|---|---|
+| Critical（CVSS 9.0+）| **24 時間** | CISO のみ |
+| High（CVSS 7.0-8.9）| **7 日** | CISO + SRE Lead |
+| Medium（CVSS 4.0-6.9）| 30 日 | SRE Lead |
+| Low | 90 日 / 次期メジャー | SRE |
+
+#### 3.21.3 PCI DSS §6.4.3 第三者スクリプト管理（2025/3 強制）
+
+| 画面 | 第三者スクリプト | 対応 |
+|---|---|---|
+| Keycloak ログイン画面 | Cloudflare Turnstile | SRI ハッシュ + CSP Strict |
+| Account Console / Launchpad SPA / Sorry SPA / Tenant Admin Portal | なし or 業務上必要なもののみ | CSP Strict |
+| Trust Center | Webフォント等 | SRI + CSP |
+
+→ **`third-party-scripts.yaml`**（Git 管理）でインベントリ、四半期レビュー + 新規追加時 CISO 承認。
+
+#### 3.21.4 SBOM 公開（ADR-036 Trust Center 連動）
+
+| 項目 | 公開範囲 | 更新頻度 |
+|---|---|---|
+| SBOM（CycloneDX）| Trust Center 公開部 | 月次 |
+| SLSA Level | 公開部 | 半期 |
+| 採用 Base Image / 主要依存 | 公開部 | 半期 |
+| 第三者スクリプトインベントリ | 公開部 | 四半期 |
+| ベンダー / Sub-processor 一覧 | 公開部 | 半期 |
+| 詳細脆弱性レポート | Customer Portal（NDA）| 月次 |
+
+### 3.22 Post-Quantum Cryptography 対応（ADR-047）
+
+> NIST FIPS 203/204/205（2024/8 公開）に基づく PQC マイグレーション計画。HNDL（Harvest Now, Decrypt Later）攻撃対策として長期保管データの将来安全性を確保。
+
+#### 3.22.1 3 フェーズ移行ロードマップ
+
+| Phase | 期間 | 主要アクション | KPI |
+|---|---|---|---|
+| **Phase 1 Discover & Prepare** | 2026-2027 | 暗号インベントリ作成 + Crypto-Agility 設計 + ベンダー追跡開始 | インベントリ 100% / Agility 設計完了 |
+| **Phase 2 Hybrid Deployment** | 2028-2030 | Hybrid TLS（X25519+ML-KEM-768）+ Hybrid JWT 署名（ES256+ML-DSA-65）+ Hybrid SAML | 全 inbound TLS Hybrid 100% |
+| **Phase 3 Full PQC** | 2031-2035 | 古典暗号廃止、純 PQC へ完全移行 | 純 PQC 100% |
+
+#### 3.22.2 採用アルゴリズム
+
+| 用途 | アルゴリズム | NIST 標準 | 根拠 |
+|---|---|---|---|
+| 鍵交換 | **ML-KEM-768** | FIPS 203 | NIST L3、業界標準パラメータ（Chrome / Cloudflare 採用）|
+| 短命署名（JWT）| **ML-DSA-65** | FIPS 204 | NIST L3、性能重視 |
+| **長期署名**（監査ログ 13 年 / Session 録画 7 年）| **SLH-DSA-128** | FIPS 205 | ハッシュベース、Lattice 突破の保険 |
+
+#### 3.22.3 HNDL 攻撃影響データ + 優先度
+
+| データ | 寿命 | HNDL リスク | 優先 |
+|---|---|---|---|
+| 監査ログ（S3 Object Lock 7+6=13 年）| 〜2039 | **高** | ★★★ |
+| 顧客個人情報（在籍 5-10 年）| 〜2036 | **高** | ★★★ |
+| Session Manager 録画（7 年）| 〜2033 | **高** | ★★★ |
+| TLS 通信（HNDL 標的）| 即時 | 中 | ★★ |
+| 短命 JWT（1h-12h）| 即時 | 低 | ★ |
+
+#### 3.22.4 Crypto-Agility 設計
+
+```
+アプリ → Crypto Abstraction Layer → [古典暗号 / Hybrid / Pure PQC]
+                                  ↑ 設定で切替可能（KMS Key Spec / Keycloak Realm Settings）
+```
+
+- アルゴリズム ID を設定可能化（環境変数 / KMS Key Spec）
+- JWT/SAML に algorithm header（`alg`）でランタイム識別
+- ハイブリッド署名対応（1 トークンに古典 + PQC 両署名）
+- 鍵ロールオーバー機能で旧鍵 90 日並走（無停止切替）
+
+#### 3.22.5 Trust Center 公開（ADR-036 連動）
+
+| 項目 | 公開範囲 | 更新頻度 |
+|---|---|---|
+| PQC ロードマップ概要 | Trust Center 公開部 | 半期 |
+| Phase 別目標 | 公開部 | 半期 |
+| 採用アルゴリズム一覧 | 公開部 | — |
+| 達成率（Phase 1: X%、Phase 2: Y% 等）| 公開部 | 四半期 |
+| 詳細暗号インベントリ | Customer Portal（NDA）| 四半期 |
 
 ---
 

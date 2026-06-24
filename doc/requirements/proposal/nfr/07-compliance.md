@@ -100,10 +100,16 @@ flowchart LR
 | **APPI 第 23 条 組織的安全管理** | アクセス権限付与・剥奪手順策定、定期見直し | [§FR-8.6](../fr/08-admin.md) PAM JIT モデル + 半年定期レビュー |
 | **APPI 第 23 条 人的安全管理** | 従業者監督、教育 | [§NFR-6](06-operations.md) 運用体制 + Break-Glass 訓練 |
 | **APPI 第 23 条 技術的安全管理** | アクセス記録、不正アクセス防止 | [§NFR-4.6](04-security.md) ITDR + [§NFR-4.7](04-security.md) PAM セッション記録 |
+| **PCI DSS 3.6 / 3.7** | 鍵管理手順 + ライフサイクル + SoD | [ADR-045](../../../adr/045-cryptographic-key-management-strategy.md) 3 階層 CMK |
+| **PCI DSS 4.2.1.1** | TLS 1.2+ + 強力スイート | TLS 1.3 デフォルト |
+| **PCI DSS 6.3.2** | 自社開発脆弱性管理 | [ADR-046](../../../adr/046-supply-chain-security.md) Trivy CI + SLA |
+| **PCI DSS 6.4.3**（2025/3 強制）| 第三者スクリプト管理 | [ADR-046](../../../adr/046-supply-chain-security.md) CSP + SRI + インベントリ |
 | **PCI DSS 7.2.4 / 7.2.5** | 特権アカウント半年レビュー | [§FR-8.6](../fr/08-admin.md) Access Certification |
 | **PCI DSS 8.2.2** | 共有アカウント禁止 | [ADR-040](../../../adr/040-pam-jit-admin-privilege-management.md) 個人 ID + JIT |
 | **PCI DSS 8.6.1 / 8.6.2** | 認証情報 hardcode 禁止 | [ADR-041](../../../adr/041-workload-identity-spiffe.md) Workload Identity（Pod Identity + Keycloak FedID）|
 | **PCI DSS 10.2.1 / 10.3** | 全特権操作の改ざん不能監査 | [§NFR-4.7](04-security.md) Session Manager + Admin Events + S3 Object Lock |
+| **EU CRA**（2027/12）| SBOM + 脆弱性開示義務 | [ADR-046](../../../adr/046-supply-chain-security.md) Trust Center 公開 |
+| **NIST FIPS 203/204/205 / NSA CNSA 2.0 / OMB M-23-02** | PQC 移行 | [ADR-047](../../../adr/047-post-quantum-cryptography-migration-plan.md) 3 フェーズ移行 |
 
 ### TBD / 要確認
 

@@ -48,3 +48,6 @@
 | [042](042-bot-detection-captcha.md) | Bot Detection / CAPTCHA 設計（Credential Stuffing 対策の多層防御） | Proposed | 2026-06-23 |
 | [043](043-accessibility-wcag-2-2-aa.md) | アクセシビリティ設計（WCAG 2.2 AA + JIS X 8341-3 準拠） | Proposed | 2026-06-23 |
 | [044](044-tabletop-exercise-incident-drill.md) | Tabletop Exercise / セキュリティインシデント訓練設計 | Proposed | 2026-06-23 |
+| [045](045-cryptographic-key-management-strategy.md) | 鍵管理戦略集約（KMS CMK 使い分け + 暗号化境界の統一） | Proposed | 2026-06-23 |
+| [046](046-supply-chain-security.md) | ソフトウェアサプライチェーンセキュリティ（SBOM + SLSA + 依存スキャン + PCI DSS §6.4.3） | Proposed | 2026-06-23 |
+| [047](047-post-quantum-cryptography-migration-plan.md) | Post-Quantum Cryptography（PQC）マイグレーション計画 | Proposed | 2026-06-23 |
