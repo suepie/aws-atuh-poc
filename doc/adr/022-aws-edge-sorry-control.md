@@ -2,7 +2,8 @@
 
 - **ステータス**: Proposed（要件定義フェーズで Accepted に昇格予定）
 - **日付**: 2026-06-12
-- **⚠ 2026-06-23 更新**: **[ADR-039](039-centralized-network-account-edge-layer.md)** で **CloudFront を Network 専用アカウントに集約**することが確定。本 ADR のパターン ii（CloudFront + Lambda@Edge）の **CloudFront / Lambda@Edge は Network Acct に配置**。Lambda@Edge は CloudFront と同一アカウント必須（AWS 仕様）のため、エラー / 案内画面 SPA への redirect 先（`launchpad.example.com/sorry`）も Network Acct CloudFront 経由。本 ADR の Sorry 制御パターン選定（ii Lambda@Edge 推奨）自体は不変、**所有アカウントが変更**。
+- **⚠ 2026-06-24 更新（v2）**: **[ADR-039 v2](039-centralized-network-account-edge-layer.md)** で **5 アカウント体系 + アプリごと独立 CloudFront/WAF** に大幅変更。本 ADR のパターン ii（CloudFront + Lambda@Edge）は **ネットワーク監査 Acct のアプリごとの CloudFront** に配置（CloudFront-AppA + Lambda@Edge-A、CloudFront-AppB + Lambda@Edge-B など独立）。Lambda@Edge は CloudFront と同一アカウント必須（AWS 仕様）のため、ネットワーク監査 Acct 内でアプリごとに別 Lambda@Edge を持つ。エラー / 案内画面 SPA への redirect 先（`launchpad.example.com/sorry`）は Auth Acct S3 で配信、OAC で各 CloudFront から参照。本 ADR の Sorry 制御パターン選定（ii Lambda@Edge 推奨）自体は不変、**配置方式が「アプリごと独立 Lambda@Edge」に変更**。
+- **⚠ 旧 2026-06-23 注記**: v1 では「Network Acct 集約 CloudFront + 共通 Lambda@Edge」モデルだったが、v2 で「ネットワーク監査 Acct + アプリごと独立 Lambda@Edge」に変更。
 - **関連**:
   - [ADR-039 中央集約 Network 専用アカウント設計](039-centralized-network-account-edge-layer.md)（**本 ADR の上位方針**）
   - [§FR-4.3.2 Sorry ページ](../requirements/proposal/fr/04-sso.md#fr-432-sorry-ページ権限なしアクセス時--fr-sso-008-2)

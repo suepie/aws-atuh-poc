@@ -19,7 +19,16 @@
 > | ハイブリッド統合の根拠 | [§C-6](06-architecture-decision-hybrid.md) |
 > | **本番実装の構成要素一覧 / 配置 / シーケンス** | **本章 §C-7** |
 
-**最終更新**: 2026-06-23 / **対象**: 要件定義フェーズ確定済の構成（ADR-001〜053 反映）
+**最終更新**: 2026-06-24 / **対象**: 要件定義フェーズ確定済の構成（ADR-001〜053 反映）
+
+> **⚠ 2026-06-24 設計レビュー Phase 1-3 反映**:
+>
+> - **利用者カテゴリ P-1〜P-4 に再整理**（旧 P-5 ゲスト/外部協力者 → P-4 統合、旧 P-6 B2C → 対象外、B2B 専用）
+> - **UI 名称日本語化**（Launchpad → サービス選択画面 / Tenant Admin Portal → ユーザ管理画面 / Account Console → アカウント設定画面 / Sorry SPA → エラー / 案内画面）
+> - **ADR-040 PAM Out of Scope** / **ADR-036 Customer Audit Scope Reduced**（都度メール対応）/ **ADR-042 Turnstile を Phase 2 オプション化** / **ADR-050 Mobile 範囲明確化** / **ADR-052 認証 API への Rate Limit のみに縮小**
+> - **ADR-039 v2 全面書き直し**：**5 アカウント体系（Network / ネットワーク監査 / 監査 / Auth / App）+ アプリごと独立 CloudFront/WAF + /admin パス保護方針**
+>
+> **本章の §C-7.2.2 全体図 / §C-7.2.3 アカウント境界 / §C-7.3.3 Network 層 / §C-7.3.11 Sorry 制御 / §C-7.3.15 PAM / §C-7.3.17 Bot Detection / §C-7.3.23 DSAR / §C-7.3.25 Mobile / §C-7.3.27 マルチテナント Isolation 等は、Phase 5 で v2 方針に基づき全面反映予定**（現状は ADR-039/036/040/042/050/052 へのリンクで参照）。
 
 ---
 
@@ -66,7 +75,7 @@
 | [ADR-036](../../../adr/036-customer-audit-support.md) Customer Audit | Trust Center + Customer Portal |
 | [ADR-037](../../../adr/037-shared-responsibility-and-lightweight-iga.md) Shared Responsibility | 軽量 IGA 機能 |
 | [ADR-038](../../../adr/038-tenant-admin-portal.md) ユーザ管理画面 | Admin SPA + Lambda |
-| **[ADR-039](../../../adr/039-centralized-network-account-edge-layer.md) 中央集約 Network アカウント** | **CloudFront + WAF + Lambda@Edge + Route 53 + ACM を Network 専用 Acct に集約** |
+| **[ADR-039 v2](../../../adr/039-centralized-network-account-edge-layer.md) ネットワーク監査アカウント設計** | **5 アカウント体系**（Network / **ネットワーク監査** / 監査 / Auth / App）+ **アプリごと独立 CloudFront/WAF** + /admin パス保護方針（2026-06-24 全面書き直し）|
 | **[ADR-040](../../../adr/040-pam-jit-admin-privilege-management.md) PAM / JIT 管理者** | **IAM Identity Center + Session Manager + Keycloak Composite Role + Break-Glass** |
 | **[ADR-041](../../../adr/041-workload-identity-spiffe.md) Workload Identity** | **EKS Pod Identity + Keycloak Federated Identity Credentials**（client_secret 廃止）|
 | **[ADR-042](../../../adr/042-bot-detection-captcha.md) Bot Detection / CAPTCHA** | **AWS WAF Bot Control + ATP + Cloudflare Turnstile（Invisible）の 3 層防御** |

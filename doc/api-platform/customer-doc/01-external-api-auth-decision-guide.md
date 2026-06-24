@@ -154,6 +154,138 @@ flowchart LR
 
 → 「Partner / Private の認証方式」と「Origin Protection」は **直交した関心事**。本資料 §2 / §3 で議論する認証方式は、上記 Origin Protection の **上に重ねる** 形で実装される。
 
+### 1.7 認証実装漏れの自動検知（アプリチーム作り込みゼロ）
+
+「アプリチームに認証を実装させる」決定の **継続検証**として、本標準では Synthetics canary が **5 分周期で全 API endpoint に対して未認証リクエストを送信、401/403 が返らなければアラート** という仕組みを Service Catalog 製品に同梱する。
+
+#### 1.7.1 アプリチームと Platform チームの責務分担
+
+| 主体 | やること | 工数 |
+|---|---|---|
+| **アプリチーム** | API 開発の通常業務として **OpenAPI を書く** + public endpoint に `x-synthetics-skip-auth-check: true` アノテーション + S3 アップ + Service Catalog 起動 | 数分 |
+| **Platform チーム（初回のみ）** | 共通 canary Lambda 実装 + Service Catalog 製品テンプレ作成 + OpenAPI Registry 配備 | 1-2 週間 |
+| **Platform チーム（運用）** | canary バージョン更新時の S3 zip 差し替え（既存 canary 自動追従）| 必要時のみ |
+
+→ **canary の作り込み・Alarm 設定・OpenAPI Registry 運用はすべて Platform 集約**。アプリ数 N に対して 1 つの実装で済む。
+
+#### 1.7.2 仕組み（OpenAPI ドリブン）
+
+```mermaid
+flowchart LR
+    subgraph App["アプリチーム（作業最小）"]
+        OAS[openapi.yaml]
+        OAS_S3[S3 アップ]
+        SC_Launch[Service Catalog 起動]
+        OAS --> OAS_S3 --> SC_Launch
+    end
+
+    subgraph Platform["Platform チーム（初回のみ整備）"]
+        Canary_Code[共通 canary Lambda<br/>auth-check-v1.zip]
+        SC_Product[Service Catalog 製品テンプレ]
+        Registry[OpenAPI Registry<br/>Shared S3]
+        Export_Lambda[OpenAPI Export<br/>Custom Resource Lambda]
+    end
+
+    subgraph Auto["自動構築・実行"]
+        APIGW[API Gateway]
+        Canary[Synthetics canary]
+        Probe[5 分周期 probe]
+        Alarm[Slack 通知]
+    end
+
+    SC_Launch --> SC_Product
+    SC_Product --> APIGW
+    SC_Product --> Canary
+    SC_Product --> Export_Lambda
+    Canary_Code -.読込.-> Canary
+    Export_Lambda -.deploy 後 export.-> Registry
+    Registry -.読込.-> Canary
+    Canary --> Probe
+    Probe -.fail.-> Alarm
+
+    style App fill:#c8e6c9
+    style Platform fill:#e3f2fd
+    style Auto fill:#fff9c4
+```
+
+#### 1.7.3 顧客説明用ポイント
+
+| 観点 | メッセージ |
+|---|---|
+| **アプリチームの負担** | OpenAPI は API 開発の通常業務、追加負担は数分（S3 アップ + Service Catalog 起動）|
+| **新規 endpoint の自動追従** | OpenAPI 更新 → 次回 deploy で canary が自動的に新 endpoint を probe 対象化 |
+| **public endpoint の制御** | OpenAPI に `x-synthetics-skip-auth-check: true` を 1 行付けるだけ |
+| **canary コード保守** | Platform チームが集約、全アプリで共通の 1 本のみ |
+| **検証頻度** | 5 分周期（運用コスト次第で 15min も可能）|
+| **コスト感** | アプリ 10 個 × endpoint 10 で月 $100 程度、95-99% の検知率達成 |
+| **OpenAPI を持たないレガシー API** | 別製品 `api-gateway-legacy-public`（自動発見方式）で対応可 |
+
+#### 1.7.4 検知できるパターン
+
+| 漏れパターン | 検知 |
+|---|:---:|
+| Authorizer 設定忘れ（AuthorizationType=NONE）| ✅ |
+| Authorizer が常に Allow を返すバグ | ✅（無効 token probe で）|
+| JWT 検証バグ（`alg=none` 受容等）| ✅（alg=none probe で）|
+| 特定 path の bypass | ✅（全 endpoint enum で）|
+| ALB アプリコード内認証の素通り | ✅ |
+| tenant 越境 | ✅（追加 probe で）|
+
+#### 1.7.5 Negative + Positive 両方の検証（重要）
+
+「認証なしリクエストで 401 が返るか」（Negative test）だけでは、**「認証が無いから 401」と「テスト構成ミスで失敗」を区別できない**。本標準では **valid token を使った正常系（Positive test）も併用**し、両方の組合せで判定する。
+
+##### なぜ両方必要か
+
+| Negative の結果 | Positive の結果 | 解釈 | 通知先 |
+|:---:|:---:|---|---|
+| **401 / 403** | **200** | ✅ 認証が機能 + API 稼働 | 通知なし |
+| **200** | **200** | ❌❌ **認証が完全 missing**（最重大）| 🔥 Security オンコール（P1）|
+| 401 / 403 | 401 / 403 | ⚠ テスト token が無効 | Platform チーム（P2）|
+| 401 / 403 | 404 | ⚠ endpoint 不在 / テスト構成ミス | Platform チーム（P2）|
+| 401 / 403 | 500 | ⚠ Backend バグ（認証は OK）| アプリチーム（P3）|
+
+→ Negative だけでは「Negative=401/403 で OK」と判定してしまい、**実は endpoint そのものが存在せず 404 が 401 に偽装される**等のエッジケースを見落とす。Positive を併用することで「**認証が正しく機能 + API が稼働している**」を初めて断言できる。
+
+##### Production と Pre-prod での運用差
+
+| 環境 | Negative（全 endpoint）| Positive (GET)（read-only）| Positive (POST/PUT/DELETE)（副作用あり）|
+|---|:---:|:---:|:---:|
+| **Production** | ✅ 実施 | ✅ 実施（安全）| ❌ skip（副作用回避）|
+| **Staging / Dev** | ✅ 実施 | ✅ 実施 | ✅ 実施（cleanup 付き）|
+
+→ production で POST 等の副作用を起こさないため、OpenAPI に `x-canary-positive-test: pre-prod-only` を付けることで自動制御。アプリチームの追加負担はアノテーション 1 行のみ。
+
+##### Failure 分類でアラートを正しく振り分け
+
+```mermaid
+flowchart LR
+    Fail[canary 失敗]
+    Sec[🔥 Security オンコール<br/>認証実装漏れ]
+    Plat[🟡 Platform チーム<br/>テスト基盤 / 構成]
+    App[🟢 アプリチーム<br/>Backend バグ]
+    Fail --> Sec
+    Fail --> Plat
+    Fail --> App
+
+    style Sec fill:#ffcdd2
+    style Plat fill:#fff9c4
+    style App fill:#c8e6c9
+```
+
+→ 「**全部 Security オンコールに飛ばす**」のではなく、**4×4 真偽値表に基づく自動分類**で適切な担当に振り分け、運用負担を最小化。
+
+##### テスト用 token の運用（Platform 集約）
+
+Positive test には **valid token** が必要だが、これも Platform 集約で運用：
+
+- 共有認証基盤に `canary-readonly-client` / `canary-write-client` を最小権限で作成
+- Secrets Manager に保管 + 30 日自動ローテ
+- multi-tenant の場合は `canary-probe-tenant` を分離（production テナント影響ゼロ）
+- アプリチームは OpenAPI に `x-canary-test-token-secret: canary-readonly-token` と書くだけ
+
+→ 詳細は標準側 [§C-API-6 §C-6.6.8](../proposal/common/06-external-api-auth-architecture.md) 参照。
+
 ---
 
 ## 2. Partner について

@@ -93,6 +93,85 @@ flowchart LR
 
 → **アプリ開発者は「Network Acct CloudFront 経由必須」を意識せずに製品起動で自動準拠**。製品テンプレは ADR-039 § C-4 の Pattern A（Custom Header + IP Allowlist）を実装、Internal ALB 用は Pattern B（VPC Origins）を実装。
 
+- ⭐ **OpenAPI ドリブン Auth Synthetics canary 自動構成**（[§C-API-6 §C-6.6.8](06-external-api-auth-architecture.md) L5 Behavioral 実装手段）：
+
+  製品テンプレが OpenAPI を入力として受け取り、API GW 構築 + 認証 probe canary 自動デプロイを一連で実行する。アプリチームは canary コードを一切書かない。
+
+  - **構成要素 4 つ**（製品テンプレが連動）：
+    1. **(a) アプリの OpenAPI 仕様**（アプリチーム維持）→ パラメータ `OpenAPIS3Url` で受け取る
+    2. **(b) Service Catalog 製品テンプレ**（Platform チーム保守）→ CFN 内で OpenAPI を `AWS::ApiGateway::RestApi.Body` に展開し API GW 構築
+    3. **(c) 共通 canary Lambda コード**（Platform チーム配布、Shared S3）→ canary は全アプリ共通の 1 本、API 仕様を Registry から動的取得して probe
+    4. **(d) OpenAPI Registry**（Shared S3、Platform-managed）→ deploy 後の正本を `{accountId}/{apiId}/openapi.yaml` に export
+
+  - **製品テンプレに同梱されるリソース**：
+    ```yaml
+    Resources:
+      ApiGateway:                # OpenAPI から API GW 構築
+        Type: AWS::ApiGateway::RestApi
+        Properties:
+          Body: { Fn::Transform: { Name: AWS::Include, Parameters: { Location: !Ref OpenAPIS3Url } } }
+      OpenApiExporter:           # deploy 後 OpenAPI を Registry に export
+        Type: Custom::OpenApiExport
+        Properties:
+          ServiceToken: !ImportValue SharedOpenApiExportFunction
+          RestApiId: !Ref ApiGateway
+          TargetS3Bucket: !ImportValue SharedOpenApiRegistryBucket
+      AuthCheckCanary:           # 共通 canary を 5 分周期で起動
+        Type: AWS::Synthetics::Canary
+        Properties:
+          Code: { S3Bucket: !ImportValue SharedCanaryBucket, S3Key: "canary-code/auth-check-v1.zip" }
+          RunConfig: { EnvironmentVariables: { OPENAPI_S3_URL: ... } }
+      AuthCheckAlarm:            # 違反時 Slack 通知
+        Type: AWS::CloudWatch::Alarm
+    ```
+
+  - **Hybrid 検証（Negative + Positive 併用）**：「認証が正しく実装されている」を担保するには **negative test だけでは不十分**（テスト構成ミスと認証漏れが区別できない）。Service Catalog 製品テンプレは以下の 2 種を組み合わせて実装：
+    - **Negative test**：未認証リクエスト → 401/403 期待（認証実装漏れ検知）
+    - **Positive test**：valid token + valid body → 200/201/204 期待（API 稼働 + テスト健全性検証）
+    - **Smoke test**：canary 冒頭で既知 endpoint に対する正常 / 異常呼出を行い、テスト用 token 自体の健全性確認
+    - 詳細な Hybrid canary 実装と 4×4 真偽値表は [§C-API-6 §C-6.6.8](06-external-api-auth-architecture.md) 参照
+
+  - **OpenAPI アノテーションで認証 probe 対象を制御**：
+    ```yaml
+    paths:
+      /api/users:
+        get:
+          x-canary-positive-test: true                       # ⭐ positive test 有効（GET なので production 含む全環境）
+          x-canary-test-token-secret: "canary-readonly-token"  # ⭐ 使用 token（Secrets Manager 名）
+          responses: { ... }                                 # 認証必須として probe 対象（negative はデフォルト ON）
+      /api/users/{userId}:
+        get:
+          x-canary-positive-test: true
+          x-canary-path-params:                              # ⭐ path parameter dummy
+            userId: "canary-probe-user-001"
+          responses: { ... }
+      /api/orders:
+        post:
+          x-canary-positive-test: pre-prod-only              # ⭐ 副作用あり、production は negative のみ
+          x-canary-test-token-secret: "canary-write-token"
+          x-canary-cleanup:                                  # ⭐ probe 後の後処理
+            action: DELETE
+            path: "/api/orders/{orderId}"
+            idFrom: response.body.orderId
+          requestBody:
+            content:
+              application/json:
+                example: { productId: "canary-probe-product", quantity: 1 }  # ⭐ dummy body
+          responses: { ... }
+      /_/health:
+        get:
+          x-synthetics-skip-auth-check: true                 # ⭐ public endpoint、negative 対象外
+          x-canary-positive-test: true                       # positive のみ実施（health 確認）
+    ```
+
+  - **環境別 probe 動作**：
+    - **Production**：全 endpoint negative + GET endpoint positive（read-only）+ smoke test
+    - **Staging / Dev**：全 endpoint negative + 全 endpoint positive（POST 等は cleanup 付き）+ smoke test
+  - **テスト用 token の運用**：Service Catalog 製品が `canary-readonly-token` / `canary-write-token` などの Secrets Manager Secret を初期構築時に作成、Rotation Lambda が共有認証基盤の M2M Client を 30 日周期で更新。アプリチーム作業ゼロ。
+  - **アプリチームの作業量はゼロ近い**：OpenAPI を S3 にアップ + Service Catalog 起動するだけ。canary コード / Alarm 設定 / Registry 仕組み / token 管理はすべて Platform 提供。
+  - **新規 endpoint 追加時も自動追従**：次回 deploy で OpenAPI が更新されれば canary が自動的に新 endpoint を probe 対象にする。
+  - **OpenAPI を持たないレガシー API**は別製品 `api-gateway-legacy-public`（Pattern D: Resource Explorer 自動発見）で対応、ただし positive test は別途 endpoint メタ情報必須。
+
 → **アプリ開発者が「認証なし API」を Service Catalog 経由で作れない構造**を製品テンプレレベルで担保。例外は別途申請制（[§FR-API-2 §2.8.3](../fr/02-authn-authz.md)）。
 
 ### §C-5.1.2 TBD / 要確認

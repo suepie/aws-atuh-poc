@@ -42,7 +42,7 @@
 | [036](036-customer-audit-support.md) | Customer Audit Support（縮小：監査ログ保管 + 都度メール対応のみ。Trust Center / Customer Portal はスコープアウト、2026-06-24）| **Scope Reduced** | 2026-06-18 |
 | [037](037-shared-responsibility-and-lightweight-iga.md) | IdP Keycloak の Shared Responsibility Model と軽量 IGA 設計 | Proposed | 2026-06-18 |
 | [038](038-tenant-admin-portal.md) | ユーザ管理画面（顧客テナント管理者向け Admin UI） | Proposed | 2026-06-18 |
-| [039](039-centralized-network-account-edge-layer.md) | 中央集約 Network 専用アカウント設計（CloudFront + WAF + Lambda@Edge） | Proposed | 2026-06-23 |
+| [039](039-centralized-network-account-edge-layer.md) | **ネットワーク監査アカウント設計（v2、アプリごと独立 CloudFront/WAF + 5 アカウント体系、2026-06-24 全面書き直し）** | Proposed | 2026-06-23 |
 | [040](040-pam-jit-admin-privilege-management.md) | PAM / JIT 管理者権限管理 | **Out of Scope**（2026-06-24 — 本基盤対象外、運用体制側で別途検討。代わりに /admin パス保護方針を ADR-039/013 に追記）| 2026-06-23 |
 | [041](041-workload-identity-spiffe.md) | Workload Identity 設計（SPIFFE/SPIRE + AWS IAM Roles for Service Accounts） | Proposed | 2026-06-23 |
 | [042](042-bot-detection-captcha.md) | Bot Detection / CAPTCHA 設計（Credential Stuffing 対策の多層防御） | Proposed | 2026-06-23 |
@@ -57,3 +57,4 @@
 | [051](051-multi-region-dr-failover.md) | Multi-Region DR / Failover 詳細設計（Aurora Global + KMS MRK + Keycloak Realm Replication） | Proposed | 2026-06-23 |
 | [052](052-multi-tenant-isolation-rate-limiting.md) | 認証 API への Rate Limit（旧マルチテナント Isolation、2026-06-24 スコープ縮小：認証 API のみ、その他は API プラットフォーム側）| **Scope Reduced** | 2026-06-23 |
 | [053](053-observability-strategy.md) | Observability Strategy（OpenTelemetry + SLO + Distributed Tracing + Dashboards） | Proposed | 2026-06-23 |
+| [054](054-id-integration-strategy.md) | **ID 統合戦略（現状調査 + 人事 DB を SoT + マッピング DB + 3 段階移行プロセス + メアド不可対応）** | Proposed | 2026-06-24 |

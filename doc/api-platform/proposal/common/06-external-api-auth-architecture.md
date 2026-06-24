@@ -1302,6 +1302,402 @@ async function directOriginAttackProbe() {
 | `authCheckCanary` 3: alg=none | 401 | P5 JWT 検証バグ |
 | `tenantIsolationProbe`: cross-tenant | 403 | P3 tenant 越境 |
 
+#### canary 自動化 Pattern A〜D（API 数増加への対応）
+
+API 数が増えた場合の自動化レベル別 4 Pattern：
+
+| Pattern | アプリチーム作業量 | 新規 API 自動追従 | OpenAPI 要 | 採用シーン |
+|---|---|:---:|:---:|---|
+| **A. 手書き canary 個別作成** | 大（API ごとに canary）| ❌ 手動更新 | – | 数本の API のみ |
+| **B. 設定駆動 canary**（JSON / SSM 設定）| 中（設定ファイル更新）| ❌ 手動更新 | – | 10-50 API |
+| **C. OpenAPI ドリブン canary** ⭐ 推奨 | **ほぼゼロ** | ✅ 自動追従 | ✅ 必要 | 全 API、本標準推奨 |
+| **D. Resource Explorer 自動発見** | **ゼロ** | ✅ 自動追従 | – | OpenAPI なしレガシー / Org 横断 |
+
+→ **本標準推奨は Pattern C（OpenAPI ドリブン）**。Service Catalog 製品テンプレに同梱し、アプリチームの作り込みゼロを実現（詳細は [§C-API-5 §C-5.1.1](05-self-service-catalog.md) ）。
+
+#### Pattern C: OpenAPI ドリブン canary 詳細
+
+**設計原則**：
+- API GW を OpenAPI から構築（Service Catalog 製品テンプレが `AWS::ApiGateway::RestApi.Body` に OpenAPI を展開）
+- deploy 後の正本 OpenAPI を Custom Resource Lambda が Shared S3 Registry に export
+- 共通 canary Lambda コード（Platform チーム配布）が Registry から OpenAPI を取得して全 endpoint を probe
+- アプリチームの作業：OpenAPI を書く + `x-synthetics-skip-auth-check: true` アノテーションのみ
+
+**OpenAPI アノテーション**：
+
+```yaml
+paths:
+  /api/users:
+    get:
+      security: [{ bearerAuth: [] }]
+      responses: { ... }                  # 認証必須として probe 対象
+  /api/orders/{orderId}:
+    get:
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema: { type: string }
+      responses: { ... }
+  /_/health:
+    get:
+      x-synthetics-skip-auth-check: true  # ⭐ public endpoint、probe 対象外
+      responses: { '200': { ... } }
+  /api/discovery:
+    get:
+      x-synthetics-skip-auth-check: true
+      responses: { '200': { ... } }
+```
+
+**Service Catalog 製品テンプレ抜粋（CloudFormation）**：
+
+```yaml
+Parameters:
+  OpenAPIS3Url: { Type: String, Description: "s3://bucket/path/openapi.yaml" }
+  AppName: { Type: String }
+  Environment: { Type: String, AllowedValues: [dev, stg, prod] }
+
+Resources:
+  # (1) API Gateway を OpenAPI から構築
+  ApiGateway:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: !Sub "${AppName}-${Environment}"
+      Body:
+        Fn::Transform:
+          Name: AWS::Include
+          Parameters: { Location: !Ref OpenAPIS3Url }
+
+  # (2) deploy 後 OpenAPI を Shared Registry に export
+  OpenApiExporter:
+    Type: Custom::OpenApiExport
+    Properties:
+      ServiceToken: !ImportValue SharedOpenApiExportFunction
+      RestApiId: !Ref ApiGateway
+      StageName: !Ref Environment
+      TargetS3Bucket: !ImportValue SharedOpenApiRegistryBucket
+      TargetS3Key: !Sub "${AWS::AccountId}/${ApiGateway}/openapi.yaml"
+
+  # (3) Synthetics canary（共通 Lambda コード参照、5min 周期）
+  AuthCheckCanary:
+    Type: AWS::Synthetics::Canary
+    DependsOn: OpenApiExporter
+    Properties:
+      Name: !Sub "${AppName}-auth-check"
+      ExecutionRoleArn: !GetAtt CanaryRole.Arn
+      RuntimeVersion: syn-nodejs-puppeteer-7.0
+      Schedule: { Expression: rate(5 minutes) }
+      Code:
+        Handler: index.handler
+        S3Bucket: !ImportValue SharedCanaryBucket
+        S3Key: "canary-code/auth-check-v1.zip"  # ⭐ 共通実装
+      RunConfig:
+        EnvironmentVariables:
+          API_BASE_URL: !Sub "https://${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com/${Environment}"
+          OPENAPI_S3_URL: !Sub
+            - "s3://${Bucket}/${Key}"
+            - Bucket: !ImportValue SharedOpenApiRegistryBucket
+              Key: !Sub "${AWS::AccountId}/${ApiGateway}/openapi.yaml"
+
+  # (4) Alarm（違反時 Slack 通知）
+  AuthCheckAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      Namespace: CloudWatchSynthetics
+      MetricName: SuccessPercent
+      Dimensions: [{ Name: CanaryName, Value: !Ref AuthCheckCanary }]
+      Statistic: Average
+      Period: 300
+      Threshold: 100
+      ComparisonOperator: LessThanThreshold
+      AlarmActions: [!ImportValue SharedSecuritySlackTopicArn]
+```
+
+**共通 canary Lambda 実装（Platform 配布）**：
+
+```javascript
+// canary-code/auth-check-v1.zip 内 index.js
+const synthetics = require('Synthetics');
+const log = require('SyntheticsLogger');
+const yaml = require('js-yaml');
+const AWS = require('aws-sdk');
+const s3 = new AWS.S3();
+
+const authCheckCanary = async () => {
+  const apiBaseUrl = process.env.API_BASE_URL;
+  const openapiUrl = process.env.OPENAPI_S3_URL;
+
+  // OpenAPI Registry から取得
+  const [_, bucket, ...keyParts] = openapiUrl.replace('s3://', '').split('/');
+  const key = keyParts.join('/');
+  const obj = await s3.getObject({ Bucket: bucket, Key: key }).promise();
+  const spec = yaml.load(obj.Body.toString());
+
+  const failures = [];
+  let totalProbes = 0;
+
+  for (const [path, methods] of Object.entries(spec.paths)) {
+    for (const [method, operation] of Object.entries(methods)) {
+      if (operation['x-synthetics-skip-auth-check']) continue;
+      if (['options', 'parameters'].includes(method)) continue;
+
+      // path parameter を dummy 値で置換
+      const probeUrl = apiBaseUrl + path.replace(/{[^}]+}/g, 'probe-test-id');
+      totalProbes++;
+
+      const res = await synthetics.executeHttpStep(`${method}-${path}`, {
+        url: probeUrl,
+        method: method.toUpperCase(),
+        headers: { 'Content-Type': 'application/json' },
+        body: method === 'get' ? null : '{}'
+      });
+
+      if (![401, 403].includes(res.statusCode)) {
+        failures.push({ path, method, expected: '401 or 403', actual: res.statusCode });
+      }
+    }
+  }
+
+  if (failures.length > 0) {
+    log.error(`AUTH CHECK FAILURES (${failures.length}/${totalProbes}):`,
+              JSON.stringify(failures, null, 2));
+    throw new Error(`${failures.length} unauthenticated endpoints accept requests`);
+  }
+  log.info(`All ${totalProbes} endpoints properly require auth`);
+};
+
+exports.handler = async () => {
+  return await synthetics.executeStep('authCheck', authCheckCanary);
+};
+```
+
+**Pattern C 採用時の責務分担**：
+
+| 主体 | やること | 工数 |
+|---|---|:---:|
+| **アプリチーム** | OpenAPI を書く（API 開発の通常業務）+ public endpoint にアノテーション + S3 アップ + Service Catalog 起動 | 数分 |
+| **Platform チーム（初回のみ）** | 共通 canary Lambda 実装 + Shared S3 配布 + Service Catalog 製品テンプレ作成 + OpenAPI Export Custom Resource 実装 | 1-2 週間 |
+| **Platform チーム（運用）** | canary バージョン更新時 → Shared S3 の zip 差し替え（既存 canary 自動追従）| 必要時 |
+
+→ **canary コード保守は完全に Platform チーム集約**、アプリ数 N に対して 1 つの実装で済む。アプリ追加時のスケーラビリティ確保。
+
+**OpenAPI を持たないレガシー API への対応（Pattern D 補完）**：
+
+別製品 `api-gateway-legacy-public` で Resource Explorer / API GW `getResources` API を使った自動発見を実装。OpenAPI なしでも Account 単位で全 endpoint を probe 対象化可能。
+
+**Probe 対象の制御性比較**：
+
+| 観点 | Pattern A 手書き | Pattern B 設定駆動 | Pattern C OpenAPI | Pattern D 自動発見 |
+|---|:---:|:---:|:---:|:---:|
+| 新規 endpoint の追加忘れ | ⚠ 起きる | ⚠ 起きる | ✅ 起きない | ✅ 起きない |
+| public endpoint の除外 | 直接コード編集 | 設定編集 | ✅ アノテーション | ⚠ tag / 別 list |
+| 偽 probe（負荷大）の防止 | ✅ 完全制御 | ✅ 制御 | ⚠ アノテーション依存 | ⚠ 自動発見の精度依存 |
+| アプリ独立性 | ✅ | ✅ | ✅ | ⚠ 共有発見プロセスに依存 |
+
+#### Hybrid 検証（Negative + Positive 併用）⭐
+
+**問題提起**：Negative test だけだと「認証が無いから 401」と「テスト構成ミス（path 誤り等で 404 / token 失効で 401）」を区別できない。**Positive test を併用し、4×4 真偽値表で failure を分類する**ことで初めて検知の正確性が担保される。
+
+##### 4×4 真偽値表（Negative × Positive status 組合せ判定）
+
+| Negative status | Positive status | 解釈 | 緊急度 |
+|:---:|:---:|---|:---:|
+| **401/403** | **200/201/204** | ✅ **正常**：認証が機能、API も稼働 | – |
+| 401/403 | 401/403 | ⚠ **テスト token が無効 or 失効** | 中（テスト構成）|
+| 401/403 | 404 | ⚠ **endpoint 不在 or path 誤り** | 中（テスト構成）|
+| 401/403 | 500 | ⚠ **Backend バグ**、認証は OK | 中（別問題）|
+| **200** | **200** | ❌❌ **認証が完全 missing** | 🔥 P1 即時 |
+| **200** | 401/403 | ❌ **認証ロジックが逆 / 誤動作** | 🔥 P1 |
+| 404 | 404 | ⚠ **endpoint 不在** or canary 構成ミス | 中（見直し）|
+| 404 | 200 | ⚠ **path parameter 解決ミス** | 中（見直し）|
+| 500 | 500 | ⚠ **API or Authorizer 常時エラー** | 中 |
+| 401/403 | 403 | ⚠ **token scope 不足**（認証 OK 認可 NG）| 中（見直し）|
+
+→ **「Negative=401/403 + Positive=200」のペアが揃って初めて「認証が正しく実装されている」と断言できる**。
+
+##### Hybrid canary 実装（Failure 分類ロジック含む）
+
+```javascript
+// hybrid-auth-canary.zip 内 index.js
+const synthetics = require('Synthetics');
+const log = require('SyntheticsLogger');
+const yaml = require('js-yaml');
+const AWS = require('aws-sdk');
+const s3 = new AWS.S3();
+const sm = new AWS.SecretsManager();
+
+const hybridCanary = async () => {
+  const apiBaseUrl = process.env.API_BASE_URL;
+  const openapiUrl = process.env.OPENAPI_S3_URL;
+  const env = process.env.ENVIRONMENT;  // prod / stg / dev
+
+  // ── ① Smoke test：canary 基盤健全性確認 ──
+  await smokeTest();
+
+  const spec = await fetchOpenApi(openapiUrl);
+  const tokenCache = {};
+  const results = { passed: [], failed: [], skipped: [] };
+
+  for (const [path, methods] of Object.entries(spec.paths)) {
+    for (const [method, op] of Object.entries(methods)) {
+      if (['parameters', 'options'].includes(method)) continue;
+
+      const probeUrl = apiBaseUrl + resolvePath(path, op['x-canary-path-params']);
+
+      // ── ② Negative test ──
+      let negStatus = null;
+      if (!op['x-synthetics-skip-auth-check']) {
+        const negRes = await sendRequest(probeUrl, method, {}, null);
+        negStatus = negRes.statusCode;
+      }
+
+      // ── ③ Positive test ──
+      let posStatus = null;
+      const posMode = op['x-canary-positive-test'];
+      const runPositive = posMode === true ||
+                          (posMode === 'pre-prod-only' && env !== 'prod');
+
+      if (runPositive) {
+        const tokenSecret = op['x-canary-test-token-secret'] || 'canary-default-token';
+        if (!tokenCache[tokenSecret]) {
+          tokenCache[tokenSecret] = await fetchToken(tokenSecret);
+        }
+        const headers = { 'Authorization': `Bearer ${tokenCache[tokenSecret]}` };
+        const body = op.requestBody?.content?.['application/json']?.example;
+        const posRes = await sendRequest(probeUrl, method, headers,
+                                          body ? JSON.stringify(body) : null);
+        posStatus = posRes.statusCode;
+
+        // cleanup（副作用ある method）
+        if (op['x-canary-cleanup'] && posStatus < 300) {
+          await runCleanup(op['x-canary-cleanup'], posRes, headers);
+        }
+      }
+
+      // ── ④ 4×4 真偽値表に基づく判定 ──
+      const verdict = classifyResult(negStatus, posStatus, op);
+      if (verdict.severity === 'OK') {
+        results.passed.push({ path, method });
+      } else {
+        results.failed.push({
+          path, method, negStatus, posStatus,
+          ...verdict
+        });
+      }
+    }
+  }
+
+  if (results.failed.filter(f => f.severity === 'CRITICAL').length > 0) {
+    log.error('CRITICAL FAILURES:', JSON.stringify(results.failed));
+    throw new Error(`${results.failed.length} probe failures (CRITICAL present)`);
+  }
+  log.info(`Passed: ${results.passed.length}, Failed: ${results.failed.length}`);
+};
+
+// 4×4 真偽値表ロジック
+function classifyResult(neg, pos, op) {
+  // Negative=200 → 認証完全 missing（最重大）
+  if (neg === 200) {
+    return { severity: 'CRITICAL', reason: 'Auth missing or bypassed', alertTo: 'security-oncall' };
+  }
+  // Positive 未実行：negative のみ判定
+  if (pos === null) {
+    if ([401, 403].includes(neg)) return { severity: 'OK' };
+    return { severity: 'WARN', reason: `Unexpected negative status ${neg}`, alertTo: 'app-team' };
+  }
+  // 両方判定
+  if ([401, 403].includes(neg) && [200, 201, 204].includes(pos)) return { severity: 'OK' };
+  if ([401, 403].includes(neg) && [401, 403].includes(pos))
+    return { severity: 'WARN', reason: 'Test token invalid or expired', alertTo: 'platform-team' };
+  if ([401, 403].includes(neg) && pos === 404)
+    return { severity: 'WARN', reason: 'Endpoint not found, canary config issue', alertTo: 'platform-team' };
+  if ([401, 403].includes(neg) && pos >= 500)
+    return { severity: 'INFO', reason: 'Backend issue (auth OK)', alertTo: 'app-team' };
+  if (neg === pos && [404, 500].includes(neg))
+    return { severity: 'WARN', reason: 'Same error in both (config issue?)', alertTo: 'platform-team' };
+  return { severity: 'INVESTIGATE', reason: `Unusual ${neg}/${pos} combination`, alertTo: 'security-oncall' };
+}
+
+exports.handler = async () => {
+  return await synthetics.executeStep('hybridAuth', hybridCanary);
+};
+```
+
+##### Smoke test（canary 基盤健全性確認）
+
+canary の冒頭で **既知の挙動**を確認し、テスト基盤自体の健全性を担保：
+
+```javascript
+async function smokeTest() {
+  // 1. 既知の health endpoint に valid token で呼出 → 200 必須
+  const healthRes = await fetchWithDefaultToken('/health-with-auth');
+  if (healthRes.statusCode !== 200) {
+    throw new Error(`SMOKE FAIL: cannot reach health endpoint or token broken (status ${healthRes.statusCode})`);
+  }
+
+  // 2. 既知の admin-only endpoint に readonly token で呼出 → 403 必須
+  const deniedRes = await fetchWithDefaultToken('/admin/canary-test-denied');
+  if (deniedRes.statusCode !== 403) {
+    throw new Error(`SMOKE FAIL: token may have unexpected scope (status ${deniedRes.statusCode})`);
+  }
+
+  log.info('Smoke test passed - canary infrastructure healthy');
+}
+```
+
+→ Smoke test 失敗時は **「認証実装漏れ」ではなく「テスト基盤問題」と分離してアラート**、誤った P1 通知を防止。
+
+##### 副作用ある method（POST/PUT/DELETE）の戦略
+
+| 戦略 | 内容 | production で使えるか |
+|---|---|:---:|
+| **A. Read-only positive（GET のみ）**| production canary は GET のみ positive、POST 等は negative のみ | ✅ 安全 |
+| **B. 環境分離**：pre-prod で full positive | staging / dev で full coverage、production は read-only | ✅ |
+| **C. Probe + Cleanup**：POST 後すぐ DELETE | tag で identification、後処理で削除 | ⚠ 慎重に |
+| **D. Idempotency-key + dummy tenant** | `canary-probe` 専用テナント、全データ probe-only | ✅ おすすめ |
+
+**推奨：A + D の組合せ**。OpenAPI に `x-canary-positive-test: pre-prod-only` を付けることで production 環境では positive をスキップ、pre-prod でフル検証。
+
+##### テスト用 token 管理
+
+| 要素 | 内容 |
+|---|---|
+| **Test client 作成**（共有認証基盤）| `canary-readonly-client` / `canary-write-client` 等を最小権限で発行 |
+| **Test tenant 準備**（multi-tenant 時）| `canary-probe-tenant`、production テナントと完全分離 |
+| **Token Secrets Manager 保管** | CMK 暗号化、Lambda が取得 |
+| **Token 自動ローテ** | Secrets Manager Rotation Lambda、共有認証基盤の M2M Client を 30 日周期で更新 |
+| **Token scope 設計** | endpoint 別に必要 scope を最小化、smoke test で過剰 scope を検出 |
+| **Token 監査ログ** | canary 発の token 利用を別 client_id で識別、production リクエストと区別 |
+
+##### Failure 分類別 アラート振り分け
+
+```mermaid
+flowchart TD
+    Fail[canary failure]
+    Fail --> Class{4×4 真偽値表<br/>分類}
+
+    Class -->|CRITICAL<br/>Auth missing| Sec[Security オンコール<br/>+ アプリチーム<br/>P1 即時]
+    Class -->|CRITICAL<br/>Auth reversed| Sec
+    Class -->|WARN<br/>Token issue| Platform[Platform チーム<br/>P2 24h]
+    Class -->|WARN<br/>Endpoint config| Platform
+    Class -->|INFO<br/>Backend issue| App[アプリチーム<br/>P3 通常]
+    Class -->|INVESTIGATE| Sec
+
+    style Sec fill:#ffcdd2
+    style Platform fill:#fff9c4
+    style App fill:#c8e6c9
+```
+
+→ **「認証漏れ」「テスト構成ミス」「Backend バグ」を分離発火**することで、誤った P1 通知を防ぎ運用負担を軽減。
+
+##### 環境別 probe 動作まとめ
+
+| 環境 | Negative | Positive (GET) | Positive (POST/PUT/DELETE) | Smoke test |
+|---|:---:|:---:|:---:|:---:|
+| **Production** | ✅ 全 endpoint | ✅ 全 GET | ❌ skip | ✅ 冒頭 |
+| **Staging / Dev** | ✅ 全 endpoint | ✅ 全 GET | ✅ probe + cleanup | ✅ 冒頭 |
+
 **OWASP ZAP 自動化サンプル**：
 
 ```yaml

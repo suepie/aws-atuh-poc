@@ -2,7 +2,9 @@
 
 - **ステータス**: Proposed（要件定義フェーズで Accepted に昇格予定）
 - **日付**: 2026-04-24
-- **⚠ 2026-06-23 更新**: **[ADR-039](039-centralized-network-account-edge-layer.md)** で **CloudFront + WAF を Network 専用アカウントに集約**することが確定。本 ADR の CloudFront / WAF は **Network Acct での実装に変更**、WAF ルールは Network チームが一元管理（Terraform PR 経由）。IP 制限・Bot Control・Rate Limiting は Network Acct で全社統一適用。本 ADR の置き換え方針自体は不変だが、**配置アカウントが変更**。
+- **⚠ 2026-06-24 更新（v2）**: **[ADR-039 v2](039-centralized-network-account-edge-layer.md)** で **5 アカウント体系 + アプリごと独立 CloudFront/WAF** に大幅変更。本 ADR の CloudFront / WAF は **ネットワーク監査 Acct での実装**、ただし**アプリごとに独立した CloudFront + WAF セット**として配置（認証基盤用は CloudFront-Auth + WAF-Auth として 1 セット）。WAF ルールは Network 監査チームが一元統制（Terraform PR）するが、アプリ別カスタマイズ可能。IP 制限・Bot Control・Rate Limiting も**アプリ別ルール**で適用。
+- **🆕 2026-06-24 追記: /admin パス保護方針**: KC ネイティブ Admin Console（`auth.basis.example.com/admin`）は **WAF で全 IP Deny + Internal アクセスのみ（VPN/社内 NW → Transit GW → Auth Acct Internal ALB → Keycloak）**。詳細は ADR-039 §E 参照。
+- **⚠ 旧 2026-06-23 注記**: v1 では「Network Acct 集約 + 共通 WAF で全社統一適用」モデルだったが、v2 で「ネットワーク監査 Acct + アプリごと独立 WAF」に変更。アプリ別 WAF カスタマイズが可能に。
 - **関連**:
   - [ADR-039 中央集約 Network 専用アカウント設計](039-centralized-network-account-edge-layer.md)（**本 ADR の上位方針**）
   - [ADR-011](011-auth-frontend-network-design.md)（認証基盤前段の統合判断、Pattern C を本 ADR で詳細化）

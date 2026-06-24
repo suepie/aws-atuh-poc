@@ -2,7 +2,9 @@
 
 - **ステータス**: Proposed（要件定義フェーズで Accepted に昇格予定）
 - **日付**: 2026-06-12
+- **⚠ 2026-06-24 補足**: 本 ADR は識別子の **3 階層モデル**（Layer A `sub` / Layer B `external_id` / Layer C IdP `sub`）を定義。**現実の現行 ID 統合の実装プロセス**（現状調査 / SoT 決定 / マッピング DB 設計 / 段階的移行）は [**ADR-054 ID 統合戦略**](054-id-integration-strategy.md) で補完。
 - **関連**:
+  - [**ADR-054 ID 統合戦略**](054-id-integration-strategy.md)（**実装プロセス、2026-06-24 新規**）
   - [§FR-1.2.0.D ユーザー識別子戦略](../requirements/proposal/fr/01-auth.md#fr-120d-ユーザー識別子戦略--メール非保有顧客独自-id-への対応)
   - [§FR-2.2.1.A 同一テナント内ユーザー重複の扱い](../requirements/proposal/fr/02-federation.md#fr-2.2.1.a-同一テナント内ユーザー重複の扱い)
   - [ADR-019 既存システム移行戦略](019-existing-system-migration.md)

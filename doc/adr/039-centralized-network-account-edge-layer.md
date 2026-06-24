@@ -1,487 +1,459 @@
-# ADR-039: 中央集約 Network 専用アカウント設計（CloudFront + WAF + Lambda@Edge）
+# ADR-039: ネットワーク監査アカウント設計（アプリごと独立 CloudFront/WAF + 5 アカウント体系）
 
 - **ステータス**: Proposed（要件定義フェーズで Accepted に昇格予定）
-- **日付**: 2026-06-23
+- **日付**: 2026-06-23 作成、**2026-06-24 全面書き直し（v2、設計方針大幅変更）**
 - **関連**:
   - [ADR-011 認証基盤前段ネットワーク設計](011-auth-frontend-network-design.md)（更新あり）
   - [ADR-013 CloudFront + WAF による IP 制限の置き換え戦略](013-cloudfront-waf-ip-restriction.md)（更新あり）
   - [ADR-022 AWS edge での Sorry 制御パターン](022-aws-edge-sorry-control.md)（更新あり）
-  - [ADR-036 Customer Audit Support](036-customer-audit-support.md)（Audit Account との関係）
+  - [ADR-036 Customer Audit Support](036-customer-audit-support.md)（**Scope Reduced**、監査ログ集約 Acct との関係）
   - [§C-7 実装アーキテクチャ](../requirements/proposal/common/07-implementation-architecture.md)（§C-7.2.2 全体図 / §C-7.2.3 アカウント境界 / §C-7.3.3 Network 層 / §C-7.3.11 Sorry 制御）
+
+---
+
+## v2 書き直しの背景（2026-06-24）
+
+初版（2026-06-23、v1）では「Network 専用アカウント 1 つに CloudFront/WAF/Lambda@Edge を集約、アプリごとに Distribution を分散」というモデルだったが、ユーザー設計レビューで以下が確定:
+
+1. **アプリごとに 1 CloudFront + 1 WAF（独立セット）**：Distribution 単位の分散ではなく、CloudFront/WAF 自体を**アプリごとに独立**させる
+2. **5 アカウント体系**：「ネットワーク Acct」「ネットワーク監査 Acct」「監査 Acct」を明確に分離
+3. **/admin パス保護方針**を追記（外部 IP Deny + Internal のみ）
+
+v1 と v2 の差分:
+
+| 項目 | v1（2026-06-23）| **v2（2026-06-24、本版）** |
+|---|---|---|
+| アカウント数 | 4（Network / Auth / App / Audit）| **5**（Network / **ネットワーク監査** / 監査 / Auth / App）|
+| CloudFront / WAF 配置 | Network Acct 集約、アプリごと Distribution | **ネットワーク監査 Acct**、**アプリごと独立 CloudFront + 独立 WAF** |
+| Route 53 配置 | Network Acct 集約 | **各 App Acct 別管理** |
+| Network Firewall | 未定義 | **ネットワーク監査 Acct** |
+| /admin パス保護 | 未定義 | **外部 IP 全 Deny + Internal（VPN/社内）のみ** |
 
 ---
 
 ## Context
 
-弊社内の組織方針として、**Network 層（CloudFront + WAF + Edge Function）を中央集約した専用アカウント**で運用する体制が確定した。これは AWS Well-Architected Framework / AWS Multi-account strategy で推奨される「**Centralized Egress / Centralized Ingress**」パターンに準拠する。
+### 背景
 
-### Before（ADR-011/013/022 当時の前提）
+弊社内の組織方針として、**ネットワークレイヤとエッジ / 通信監査レイヤを明確に分離**する体制が確定。具体的には:
 
-各アカウントが個別に CloudFront + WAF を保有する構成:
+- **ネットワーク Acct**：Transit Gateway 等の純粋なネットワークインフラ
+- **ネットワーク監査 Acct**：CloudFront / WAF / Network Firewall 等のエッジ・通信監視レイヤ
+- **監査 Acct**：AWS Organizations / CloudTrail / 監査ログ集約
 
-```
-ユーザー → CloudFront (Auth Platform Acct) → ALB (Auth Platform Acct) → Keycloak
-ユーザー → CloudFront (App Acct A)         → ALB (App Acct A)         → App A
-ユーザー → CloudFront (App Acct B)         → ALB (App Acct B)         → App B
-```
+ネットワーク監査 Acct には**アプリごとに独立した CloudFront + WAF セット**を配置し、アプリ間の影響分離 + アプリ別 WAF ルールカスタマイズを可能にする。
 
-### After（本 ADR 確定後）
+### Why（5 アカウント体系の採用根拠）
 
-**Network 専用アカウント**に CloudFront + WAF + Lambda@Edge を集約、Cross-account origin で各アカウントの ALB に接続:
-
-```
-ユーザー → CloudFront + WAF (Network Acct) → ALB (Auth Platform Acct) → Keycloak
-ユーザー → CloudFront + WAF (Network Acct) → ALB (App Acct A)         → App A
-ユーザー → CloudFront + WAF (Network Acct) → ALB (App Acct B)         → App B
-```
-
-### なぜ Network 集約か（業界根拠）
-
-| 観点 | 集約による効果 |
+| 理由 | 詳細 |
 |---|---|
-| **セキュリティ統制** | WAF ルールを **Network チームが一元管理**、各アプリチームの実装ばらつきを排除 |
-| **コスト最適化** | CloudFront / WAF を**全社で 1 つの料金プラン**に統合（Distribution 単位の固定費削減）|
-| **監査容易性** | エッジトラフィックを **1 アカウントで完全把握**、SOC 2 / ISO 27001 監査時に有利 |
-| **DDoS 対策** | AWS Shield Advanced を **1 アカウントで集中購入・適用**（$3,000/月 × 1 で全社カバー）|
-| **DNS 一元管理** | Route 53 Hosted Zone を Network Acct に配置、ドメイン管理を一元化 |
-| **業界ベストプラクティス** | AWS [Centralized Ingress with AWS Global Accelerator / CloudFront](https://aws.amazon.com/blogs/networking-and-content-delivery/centralized-ingress-with-aws-global-accelerator-and-aws-network-firewall/)、[Organizing AWS environment using multiple accounts](https://docs.aws.amazon.com/whitepapers/latest/organizing-your-aws-environment/centralizing-network-services.html) で推奨 |
+| **責任分担明確化** | Network チーム / Network 監査チーム / Compliance チーム / 認証基盤チーム / アプリチーム の責任範囲が AWS Acct で完全分離 |
+| **アプリ間影響分離** | 1 アプリの WAF 設定変更や障害が他アプリに影響しない（独立 CloudFront + 独立 WAF）|
+| **アプリ別 WAF ルールカスタマイズ** | アプリの脅威モデルや要件に応じて WAF ルールをチューニング可能 |
+| **規制業種顧客への対応** | エッジ層も含めて監査対象を AWS Acct で明示分離 |
+| **AWS Well-Architected 準拠** | Multi-account strategy + Centralized Network Services の組合せ |
+
+### Why（アプリごと独立 CloudFront/WAF の採用根拠）
+
+| 理由 | 詳細 |
+|---|---|
+| **Blast Radius 最小化** | 1 アプリの CloudFront / WAF 障害が他アプリに波及しない |
+| **WAF ルールアプリ別カスタマイズ** | カード会員データ取扱アプリは厳格 WAF、社内ツールは緩い WAF など |
+| **デプロイ独立性** | アプリチームごとに CloudFront / WAF の設定変更を独立リリース可能 |
+| **顧客監査時のスコープ限定** | 「カード会員データ取扱アプリのみ」など監査範囲を CloudFront 単位で限定可 |
+
+### 業界用語の整理
+
+| 用語 | 意味 |
+|---|---|
+| **ネットワーク Acct** | AWS Multi-account 戦略における Transit / VPC / DX 等のインフラ集約 Acct |
+| **ネットワーク監査 Acct** | エッジ（CloudFront/WAF/Lambda@Edge）+ 通信監視（Network Firewall）の集約 Acct（弊社独自命名）|
+| **監査 Acct**（コンプラ監査）| AWS Organizations / CloudTrail / 監査ログ S3 の集約 Acct |
+| **Network Firewall** | AWS マネージドステートフルファイアウォール、VPC 内部 / Transit GW 経由通信検査 |
+| **Centralized Egress** | アウトバウンド通信を集約 Acct 経由に統一する設計パターン |
+| **VPC Origins**（2024-12 GA）| CloudFront から内部 ALB へ Cross-Account PrivateLink 接続 |
+| **OAC**（Origin Access Control）| S3 への CloudFront 限定アクセス制御 |
+| **Per-app CloudFront** | アプリごとに独立した CloudFront Distribution + 独立 WAF Web ACL |
 
 ---
 
 ## Decision
 
-### アカウント分離方針
+### 採用方針
 
-**Network 専用 Acct と Audit/Compliance 専用 Acct を分離**:
+**「5 アカウント体系 + アプリごと独立 CloudFront/WAF」**を採用。CloudFront / WAF / Lambda@Edge / Network Firewall / Shield Advanced を**ネットワーク監査 Acct**に集約し、アプリごとに独立した CloudFront + WAF セットを配置。Route 53 は各 App Acct で別管理。
 
-| アカウント | 役割 | 主要リソース | 責任チーム |
-|---|---|---|---|
-| 🟣 **Network Acct**（NEW）| **エッジ層集約**（CloudFront / WAF / Lambda@Edge / Route 53 / ACM）| 全 CloudFront Distribution + WAF + 全 ACM 証明書 + Route 53 Hosted Zone | Network / Security チーム |
-| 🔵 **Audit/Compliance Acct** | **監査ログ集約**（CloudTrail Org Trail / S3 集約 / SIEM 連携）| CloudTrail Aggregation + 監査 S3 + SIEM Lambda | Compliance チーム |
+### 主要判断
 
-→ 両者は責任分担とライフサイクルが異なるため**別アカウント**。
-
-### 適用範囲
-
-**全 inbound CloudFront/WAF を Network Acct に集約**:
-
-| CloudFront 用途 | 集約前 | 集約後 |
-|---|---|---|
-| Broker Keycloak 前段 | Auth Acct | **Network Acct** |
-| Admin SPA (`admin.basis.example.com`) | Auth Acct | **Network Acct** |
-| サービス選択画面 SPA (`launchpad.example.com`) | Auth Acct | **Network Acct** |
-| Trust Center (`compliance.example.com`) | Auth Acct | **Network Acct** |
-| App A/B/C 前段（業務アプリ）| App Acct A/B/C | **Network Acct** |
-| エラー / 案内画面 SPA | Auth Acct | **Network Acct**（サービス選択画面 と同一 distribution）|
-| **Lambda@Edge**（origin-response Sorry 制御）| Auth Acct | **Network Acct**（CloudFront に紐付くため）|
-
-### Cross-account 接続パターン
-
-| Origin タイプ | 接続方式 |
+| 判断ポイント | 採用 |
 |---|---|
-| ALB（公開 ALB）| **CloudFront → Public ALB**（HTTPS、Host header 検証）|
-| ALB（内部 ALB）| **CloudFront VPC Origins**（2024-12 GA）で **Cross-account 内部 ALB へ直接接続** |
-| S3（SPA 配信）| **OAC（Origin Access Control）**で Cross-account S3 を保護（バケットポリシー側で許可）|
+| **アカウント数** | **5（Network / ネットワーク監査 / 監査 / Auth Platform / App × N）** |
+| **CloudFront/WAF 配置** | **ネットワーク監査 Acct**、**アプリごと独立 CloudFront + 独立 WAF**（1 アプリ = 1 CloudFront + 1 WAF）|
+| **Route 53 配置** | **各 App Acct で別管理**（Hosted Zone はアプリチーム所有）|
+| **Network Firewall** | **ネットワーク監査 Acct**（Centralized Egress + 通信検査）|
+| **Transit Gateway** | **ネットワーク Acct**（純粋なネットワークインフラ）|
+| **Shield Advanced** | **ネットワーク監査 Acct**で全社購入（$3K/月 × 1）|
+| **CloudTrail Organization Trail** | **監査 Acct**（コンプラ統制）|
+| **/admin パス保護** | **外部 IP 全 Deny + Internal（VPN/社内 → Transit GW → Internal ALB）のみ** |
+| **Cross-Account 接続** | Public ALB + secret header / VPC Origins / OAC の 3 パターン |
 
 ---
 
-## A. アーキテクチャ詳細
+## A. 5 アカウント体系の詳細
 
-### A-1. 全体構成
+### A.1 アカウント別の役割
+
+```mermaid
+flowchart TB
+    subgraph N["🔷 ネットワーク Acct"]
+        TGW[Transit Gateway]
+        VPCPeer[VPC Peering]
+        DX[Direct Connect]
+        VPN[Site-to-Site VPN]
+    end
+
+    subgraph NA["🟣 ネットワーク監査 Acct (NEW)"]
+        CFA[CloudFront-A<br/>+ WAF-A<br/>auth.basis.example.com]
+        CFB[CloudFront-B<br/>+ WAF-B<br/>app-a.example.com]
+        CFC[CloudFront-C<br/>+ WAF-C<br/>app-b.example.com]
+        LEA[Lambda@Edge-A]
+        LEB[Lambda@Edge-B]
+        NFW[Network Firewall]
+        SA[Shield Advanced<br/>全社購入]
+        ACM[ACM Certs<br/>(CloudFront 用)]
+    end
+
+    subgraph A["🔵 監査 Acct"]
+        ORG[AWS Organizations]
+        OT[CloudTrail<br/>Organization Trail]
+        AUS3[監査ログ集約 S3<br/>Object Lock 7 年]
+        SIEM[SIEM 連携]
+    end
+
+    subgraph AP["🟠 Auth Platform Acct"]
+        BKC[Broker Keycloak<br/>+ Public ALB]
+        IKC[IdP Keycloak<br/>+ Internal ALB]
+        AURORA[Aurora]
+        SPA[S3 SPA bundles]
+        ADMIN[Admin Backend Lambda]
+    end
+
+    subgraph APP["🟢 App Acct A/B/C"]
+        R53A[Route 53<br/>Hosted Zone]
+        IALB[Internal ALB]
+        ECS[ECS / Lambda / DB]
+    end
+
+    R53A -.|DNS A レコード| CFB
+    R53A -.|DNS A レコード| CFC
+    CFB -.|VPC Origins| IALB
+    CFC -.|VPC Origins| IALB
+    CFA -.|secret header| BKC
+    CFA -.|OAC| SPA
+    LEA --> CFA
+    LEB --> CFB
+
+    N -.|Transit GW Attachment| AP
+    N -.|Transit GW Attachment| APP
+    NFW -.|通信検査| N
+
+    OT -.|集約| AUS3
+
+    style N fill:#cfe8ff
+    style NA fill:#fff3e0
+    style A fill:#e3f2fd
+    style AP fill:#fce4ec
+    style APP fill:#e8f5e9
+```
+
+### A.2 アカウント別責務マトリクス
+
+| アカウント | 担当チーム | 含むリソース | 責務 |
+|---|---|---|---|
+| 🔷 **ネットワーク Acct** | Network チーム | Transit Gateway / VPC ピアリング / Direct Connect / Site-to-Site VPN | 純粋なインフラネットワーク（L3 接続性）|
+| 🟣 **ネットワーク監査 Acct** | Network 監査チーム | **アプリごとの独立 CloudFront + WAF**（n セット）/ Lambda@Edge / Network Firewall / Shield Advanced / ACM（CloudFront 用） | エッジ層 + 通信監視（L4-L7）、WAF ルール一元統制 |
+| 🔵 **監査 Acct** | Compliance チーム | AWS Organizations / CloudTrail Organization Trail / 監査ログ集約 S3（Object Lock 7 年）/ Security Hub / GuardDuty 集約 | 組織統制 + コンプライアンス監査 |
+| 🟠 **Auth Platform Acct** | 認証基盤チーム | Broker KC + IdP-KC EKS / Aurora / SPA S3 / ITDR / Admin Backend / ユーザ管理画面 Backend | 認証コア機能 |
+| 🟢 **App Acct（複数）** | 各アプリチーム | Internal ALB / ECS / Lambda / DB / Route 53 Hosted Zone（アプリ別ドメイン） | 業務アプリ |
+
+### A.3 ネットワーク Acct vs ネットワーク監査 Acct の境界
+
+| 観点 | ネットワーク Acct | ネットワーク監査 Acct |
+|---|---|---|
+| **責任範囲** | L3 接続性（インフラネットワーク）| L4-L7 通信制御 + 監査 |
+| **代表リソース** | Transit Gateway / VPC ピアリング / DX / VPN | CloudFront / WAF / Lambda@Edge / Network Firewall / Shield |
+| **チーム** | Network エンジニア（インフラ寄り）| Network 監査 / Security エンジニア（セキュリティ寄り）|
+| **変更頻度** | 低（インフラ変更は稀）| 中（WAF ルールは継続更新）|
+| **監査頻度** | 年次 | 継続的（WAF Block ログレビュー等）|
+
+---
+
+## B. アプリごと独立 CloudFront/WAF 設計
+
+### B.1 配置パターン
 
 ```mermaid
 flowchart LR
-    User["👤 ユーザー"]
+    User[ユーザー]
+    R53[各 App Acct<br/>Route 53]
 
-    subgraph NetAcct["🟣 Network Acct（NEW）"]
-        direction TB
-        R53["Route 53<br/>全ドメインの Hosted Zone"]
-        ACM["ACM<br/>全 TLS 証明書"]
-        WAF["AWS WAF<br/>Web ACL + Bot Control"]
-        Shield["AWS Shield Advanced<br/>(全社購入)"]
-        subgraph CFDist["CloudFront Distributions（全集約）"]
-            CFAuth["auth.example.com"]
-            CFAdmin["admin.basis.example.com"]
-            CFLP["launchpad.example.com<br/>+ /sorry"]
-            CFTC["compliance.example.com"]
-            CFApp["apps.example.com/*<br/>(全業務アプリ前段)"]
-        end
-        LE["Lambda@Edge<br/>(origin-response Sorry)"]
+    subgraph NA["🟣 ネットワーク監査 Acct"]
+        CFA["CloudFront-Auth<br/>+ WAF-Auth<br/>(独立)"]
+        CFA1["CloudFront-AppA<br/>+ WAF-AppA<br/>(独立)"]
+        CFA2["CloudFront-AppB<br/>+ WAF-AppB<br/>(独立)"]
+        CFA3["CloudFront-AppC<br/>+ WAF-AppC<br/>(独立)"]
+        LEA[Lambda@Edge-Auth]
+        LE1[Lambda@Edge-A]
     end
 
-    subgraph AuthAcct["🟠 Auth Platform Acct"]
-        ExtALB["External ALB<br/>(Broker KC)"]
-        Keycloak["Keycloak<br/>(Broker + IdP-KC)"]
-        S3SPA["S3: Admin/サービス選択画面/<br/>Trust Center SPA"]
+    subgraph AP["🟠 Auth Platform Acct"]
+        BKC[Broker KC<br/>Public ALB]
+        SPA[S3 SPA]
     end
 
-    subgraph AppAcct["🟢 App Acct A/B/C"]
-        AppALB["ALB"]
-        AppCompute["ECS / Lambda"]
+    subgraph APPS["🟢 App Acct A/B/C"]
+        IALB1[App A Internal ALB]
+        IALB2[App B Internal ALB]
+        IALB3[App C Internal ALB]
     end
 
     User --> R53
-    User -.HTTPS.-> CFDist
-    CFDist -.WAF 検査.- WAF
-    Shield -.DDoS 防御.- CFDist
-    CFAuth -->|Public ALB origin| ExtALB
-    CFAdmin -->|OAC| S3SPA
-    CFLP -->|OAC| S3SPA
-    CFTC -->|OAC| S3SPA
-    CFApp -->|VPC Origins<br/>cross-account| AppALB
-    LE -.origin-response.- CFApp
-    LE -.302 to /sorry.-> CFLP
-    ExtALB --> Keycloak
-    AppALB --> AppCompute
+    R53 -->|auth.basis.example.com| CFA
+    R53 -->|app-a.example.com| CFA1
+    R53 -->|app-b.example.com| CFA2
+    R53 -->|app-c.example.com| CFA3
+    CFA --> BKC
+    CFA --> SPA
+    CFA --> LEA
+    CFA1 --> IALB1
+    CFA1 --> LE1
+    CFA2 --> IALB2
+    CFA3 --> IALB3
 
-    style NetAcct fill:#f3e5f5,stroke:#6a1b9a,stroke-width:3px
-    style AuthAcct fill:#fff3e0,stroke:#e65100,stroke-width:3px
-    style AppAcct fill:#e8f5e9,stroke:#388e3c,stroke-width:3px
-    style CFDist fill:#fffde7
+    style NA fill:#fff3e0
+    style AP fill:#fce4ec
+    style APPS fill:#e8f5e9
 ```
 
-### A-2. Cross-account 接続の 3 パターン
+### B.2 CloudFront / WAF セット定義
+
+| CloudFront 名 | ドメイン | 主 Origin | WAF ルール |
+|---|---|---|---|
+| **CloudFront-Auth**（認証基盤用）| `auth.basis.example.com` | Auth Acct Public ALB（Broker KC）+ S3（SPA）| Common + Targeted + ATP + 認証専用 Rate Limit |
+| **CloudFront-Admin**（ユーザ管理画面）| `admin.basis.example.com` | Auth Acct Public ALB（Admin Backend）+ S3（Admin SPA）| Common + Targeted + 厳格 Rate Limit |
+| **CloudFront-AppA**（業務アプリ A）| `app-a.example.com` | App Acct A Internal ALB（VPC Origins）| Common + アプリ A 独自ルール |
+| **CloudFront-AppB**（業務アプリ B）| `app-b.example.com` | App Acct B Internal ALB | Common + アプリ B 独自ルール |
+| ... | ... | ... | ... |
+
+各 CloudFront + WAF は **完全独立**。1 つの設定変更が他に影響しない。
+
+### B.3 アプリ別 WAF ルールカスタマイズ例
+
+| アプリ種別 | WAF Web ACL ルール例 |
+|---|---|
+| **カード会員データ取扱アプリ**（PCI DSS 適用）| Common + Targeted + ATP + Bot Control + Geo-Match（国内のみ）+ 厳格 Rate Limit + IP Allowlist |
+| **社内向けツール** | Common + IP Allowlist（社内 NW のみ）+ 緩い Rate Limit |
+| **公開 API**（取引先連携）| Common + 取引先 IP Allowlist + API Token 検証 |
+| **認証エンドポイント** | Common + Targeted + ATP（[ADR-042](042-bot-detection-captcha.md)）+ 認証専用 Rate Limit |
+
+### B.4 アプリごと独立のメリット / デメリット
+
+| 項目 | メリット | デメリット |
+|---|---|---|
+| Blast Radius | アプリ間影響完全分離 | 共通ルール変更は全 WAF に手動反映必要（IaC で緩和）|
+| WAF カスタマイズ | アプリ別最適化可能 | ルール重複保守 |
+| デプロイ独立性 | アプリチーム独立リリース | デプロイ調整は不要 |
+| コスト | — | WAF Web ACL × アプリ数（$5/月 × 10 = $50/月）+ ルール費用 |
+| 監査範囲限定 | 「カード扱いアプリのみ」等の限定監査が容易 | — |
+
+---
+
+## C. Cross-Account 接続パターン（3 種）
 
 | パターン | 用途 | 実装 |
 |---|---|---|
-| **公開 ALB Origin** | Broker KC（HTTPS 経由）| ALB に Public IP、CloudFront → ALB は HTTPS、ALB 側で `X-Forwarded-Host` + secret header 検証 |
-| **VPC Origins**（推奨）| App 内部 ALB（Cross-account）| CloudFront から **内部 ALB に直接 PrivateLink 経由で接続**（2024-12 GA）、ALB を公開不要 |
-| **OAC（S3）** | SPA 配信 | CloudFront から S3 への **OAC 経由アクセス**、S3 バケットポリシーで `aws:SourceArn` を CloudFront ARN に制限 |
+| **Public ALB + secret header** | Broker Keycloak（HTTPS、認証コア）| ALB 公開、CloudFront から `X-CloudFront-Secret` 付き転送、ALB Listener Rule で検証 |
+| **VPC Origins**（推奨、2024-12 GA）| App Acct の Internal ALB | CloudFront → PrivateLink → Internal ALB（ALB 公開不要、最も安全）|
+| **OAC**（Origin Access Control）| Auth Acct S3 SPA bundles | S3 バケットポリシーで `aws:SourceArn` を該当 CloudFront ARN に制限 |
 
-### A-3. ドメイン / ACM 集約
+### C.1 VPC Origins 採用判断
 
-| 項目 | 配置 | 備考 |
-|---|---|---|
-| Route 53 Hosted Zone | **Network Acct** | 全 SLD（`example.com` / `basis.example.com`）|
-| ACM 証明書 | **Network Acct**（us-east-1）| CloudFront は us-east-1 の証明書のみ受付 |
-| Internal ALB の ACM | 各アカウント | ALB は regional 証明書、各アカウントで管理 |
-| Sub-domain 委譲 | 任意 | 子サブドメインは委譲可能（`internal.acme.basis.example.com` 等）|
+アプリ Acct の Internal ALB は **VPC Origins 強く推奨**:
+- ALB を公開不要（最も安全）
+- CloudFront ↔ ALB の通信は AWS バックボーン経由
+- セキュリティグループは CloudFront プレフィックス許可不要
 
-### A-4. WAF 集約ルール
+### C.2 認証基盤の Public ALB 採用理由
 
-| ルールカテゴリ | 内容 | 適用範囲 |
-|---|---|---|
-| AWS Managed Rules - Core Rule Set | OWASP Top 10 | 全 Distribution |
-| AWS Managed Rules - Known Bad Inputs | 既知脅威 | 全 Distribution |
-| AWS Managed Rules - Bot Control | Bot 検知 | 全 Distribution |
-| Custom: Rate Limiting | IP 毎 1000 req/5min | 全 Distribution |
-| Custom: Geo Restriction | 国別アクセス制御 | 顧客テナント別 |
-| Custom: IP Allowlist | 管理画面用 | Admin SPA のみ |
-
-→ **Network チームが一元管理、変更は Terraform PR 経由**。
-
-### A-5. Lambda@Edge（Sorry 制御）の所有
-
-| 観点 | 配置 |
-|---|---|
-| Lambda 関数本体 | **Network Acct**（us-east-1）|
-| CloudFront との紐付け | 同一アカウント内 |
-| 実行ログ | **CloudWatch Logs（Network Acct）**、各エッジリージョンに自動分散 |
-| デプロイ | Network チームの Terraform / CI/CD |
-| エラー / 案内画面 SPA への redirect | `https://launchpad.example.com/sorry?app=...` （Network Acct 内 CloudFront）|
-
-→ Lambda@Edge は CloudFront と**同一アカウントに配置必須**（AWS 仕様）、Network Acct に集約。
+Broker KC は VPC Origins ではなく Public ALB + secret header:
+- 顧客 IdP からの SAML AuthnRequest 等で**Public IPv4 アクセスが必要**（VPC 内 PrivateLink 不可）
+- 代わりに**WAF + secret header + ALB SG 制限**の 3 層防御で保護
 
 ---
 
-## B. 各アカウントの責務分担（更新版）
+## D. Route 53 各 App Acct 別管理
 
-| アカウント | 主要責務 | 主要リソース | 主要 ADR |
-|---|---|---|---|
-| 🟣 **Network Acct**（NEW、本 ADR）| エッジ層 + DNS + 証明書 | CloudFront / WAF / Lambda@Edge / Route 53 / ACM / Shield Advanced | ADR-039 |
-| 🟠 **Auth Platform Acct** | 認証コア | EKS（Broker KC / IdP KC）/ Aurora × 2 / KMS × 2 / SPA S3 / ITDR Lambda / Admin Lambda / Trust Center 内部 | ADR-033, 035, 036, 038 |
-| 🟢 **App Acct A/B/C** | 業務アプリ | ALB（**内部**、VPC Origins 経由）/ ECS / Lambda / App DB | ADR-014 |
-| 🔵 **Audit/Compliance Acct** | 監査ログ集約 | CloudTrail Org Trail / S3 集約 / Athena / SIEM Lambda | ADR-036 |
+### D.1 配置パターン
 
-→ **最小構成 = Network + Auth + App + Audit の 4 アカウント**（旧 3 アカウント案から 1 増）。
+| ドメイン | Hosted Zone 配置 | 管理者 |
+|---|---|---|
+| `basis.example.com`（認証基盤ルート）| **Auth Platform Acct** | 認証基盤チーム |
+| `auth.basis.example.com`（CloudFront-Auth）| Auth Platform Acct | 認証基盤チーム |
+| `admin.basis.example.com`（CloudFront-Admin）| Auth Platform Acct | 認証基盤チーム |
+| `app-a.example.com`（App A 用）| **App Acct A** | アプリ A チーム |
+| `app-b.example.com`（App B 用）| **App Acct B** | アプリ B チーム |
+| ... | ... | ... |
 
----
+### D.2 Route 53 → CloudFront 連携
 
-## C. Cross-account 設定詳細
+各 App Acct の Route 53 から、ネットワーク監査 Acct の CloudFront へ A レコード（Alias）で接続:
 
-### C-1. IAM Role（Cross-account）
-
-| 用途 | Role 名 | 信頼関係 | 権限 |
-|---|---|---|---|
-| CloudFront → ALB ヘルスチェック | `NetworkToAuthAlbHealth` | Network Acct CF → Auth Acct ALB | ALB describe |
-| Lambda@Edge → CloudWatch Logs | `LambdaEdgeLogsRole` | Network Acct Lambda | Logs PutEvents |
-| OAC → S3 Cross-account | （SP に書く）| CloudFront Service Principal | S3 GetObject |
-| WAF Log → Audit Acct | `WAFLogsToAuditRole` | Network Acct WAF → Audit S3 | S3 PutObject |
-| Terraform | `NetworkTerraformRole` | Network チーム IAM Identity Center | Full Network Acct |
-
-### C-2. ログ集約フロー
-
-```mermaid
-flowchart LR
-    subgraph NetAcct["🟣 Network Acct"]
-        WAF["WAF Logs"]
-        CF["CloudFront Logs"]
-        LE["Lambda@Edge Logs"]
-        R53Q["Route 53 Query Logs"]
-    end
-
-    subgraph AuditAcct["🔵 Audit/Compliance Acct"]
-        S3Audit[("S3: 監査集約")]
-        Athena["Athena"]
-        SIEM["SIEM Lambda<br/>OCSF 変換"]
-    end
-
-    subgraph Ext["顧客 SIEM"]
-        CustSIEM["Splunk / Sentinel"]
-    end
-
-    WAF -.Kinesis Firehose.-> S3Audit
-    CF -.S3 Cross-account.-> S3Audit
-    LE -.CloudWatch Logs Subscription.-> S3Audit
-    R53Q -.CloudWatch Logs Subscription.-> S3Audit
-    S3Audit --> Athena
-    S3Audit --> SIEM
-    SIEM -.OCSF.-> CustSIEM
-```
-
-### C-3. VPC Origins 設定（App 内部 ALB 接続）
-
-VPC Origins（2024-12 GA）により、**Cross-account 内部 ALB に CloudFront から直接 PrivateLink 経由で接続**可能:
-
-| 設定項目 | 値 |
-|---|---|
-| Origin タイプ | VPC Origin |
-| Origin VPC | App Acct の VPC |
-| Origin Target | App Acct の Internal ALB（VPC 内）|
-| 共有方式 | AWS RAM で VPC Origin を Network Acct と共有 |
-| TLS | Internal ALB の ACM 証明書（regional）|
-| メリット | App ALB を **公開不要**、セキュリティ向上 |
-
-### C-4. Origin Protection（Public API GW / Public ALB の直接アクセス防御）
-
-VPC Origins（Pattern B）が採れない場合（**Public API GW** や **既存 Public ALB**）の Origin 保護パターン。**Custom Header + CloudFront IP Allowlist** の 2 層検証で「DNS は public、実質的に CloudFront 経由のみ受容」を実現。
-
-#### C-4.1 設計原則
-
-- **Pattern A: Custom Header + IP Allowlist**（CloudFront 公式パターン）を標準採用
-- IP Allowlist 単独は不可（CloudFront を持つ他組織からも IP 範囲が同じため）
-- Custom Header 単独も不可（漏洩リスク）
-- **2 層検証併用必須**
-
-#### C-4.2 Public API GW Resource Policy テンプレ（App Acct 側）
-
-```json
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Sid": "AllowOnlyFromCloudFrontWithSecret",
-      "Effect": "Allow",
-      "Principal": "*",
-      "Action": "execute-api:Invoke",
-      "Resource": "arn:aws:execute-api:ap-northeast-1:${APP_ACCT}:${API_ID}/*",
-      "Condition": {
-        "IpAddress": {
-          "aws:SourceIp": [
-            "AWS_PREFIX_LIST:com.amazonaws.global.cloudfront.origin-facing"
-          ]
-        },
-        "StringEquals": {
-          "aws:RequestHeader/X-Origin-Verify": "${SECRET_VALUE}"
-        }
-      }
-    },
-    {
-      "Sid": "DenyAllOthers",
-      "Effect": "Deny",
-      "Principal": "*",
-      "Action": "execute-api:Invoke",
-      "Resource": "arn:aws:execute-api:ap-northeast-1:${APP_ACCT}:${API_ID}/*",
-      "Condition": {
-        "StringNotEquals": {
-          "aws:RequestHeader/X-Origin-Verify": "${SECRET_VALUE}"
-        }
-      }
-    }
-  ]
-}
-```
-
-#### C-4.3 Public ALB Security Group + Listener Rule（App Acct 側）
-
-**Security Group**：
 ```hcl
-resource "aws_security_group" "alb_origin_protection" {
-  ingress {
-    from_port       = 443
-    to_port         = 443
-    protocol        = "tcp"
-    prefix_list_ids = ["pl-58a04531"]  # com.amazonaws.global.cloudfront.origin-facing (ap-northeast-1)
+# App Acct A の Route 53 設定例
+resource "aws_route53_zone" "app_a" {
+  name = "app-a.example.com"
+}
+
+resource "aws_route53_record" "app_a_alias" {
+  zone_id = aws_route53_zone.app_a.zone_id
+  name    = "app-a.example.com"
+  type    = "A"
+
+  alias {
+    name                   = "d1xxxxx.cloudfront.net"  # ネットワーク監査 Acct CloudFront
+    zone_id                = "Z2FDTNDATAQYW2"  # CloudFront 固定 Zone ID
+    evaluate_target_health = false
   }
 }
 ```
 
-**ALB Listener Rule**：
-```yaml
-Listener Rules:
-  - Priority: 1
-    Conditions:
-      - Field: http-header
-        HttpHeaderConfig:
-          HttpHeaderName: X-Origin-Verify
-          Values: ["${SECRET_VALUE}"]
-    Actions:
-      - Type: forward
-        TargetGroupArn: ${TARGET_GROUP_ARN}
-  - Priority: 999
-    Conditions: []
-    Actions:
-      - Type: fixed-response
-        FixedResponseConfig:
-          StatusCode: 403
-          ContentType: "text/plain"
-          MessageBody: "Forbidden"
-```
+→ DNS は各アプリチームが自律的に管理、エッジは Network 監査チームが統制。
 
-#### C-4.4 Secret Rotation Cross-account 運用 SOP
+---
 
-最大の運用課題は **Network Acct と App Acct の Secret 値同期更新**。AWS 公式ソリューション [How to enhance Amazon CloudFront origin security with AWS WAF and AWS Secrets Manager](https://aws.amazon.com/blogs/security/how-to-enhance-amazon-cloudfront-origin-security-with-aws-waf-and-aws-secrets-manager/) ベースで実装。
+## E. /admin パス保護方針（追記）
 
-##### C-4.4.1 Rotation シーケンス（30 日周期）
+### E.1 KC ネイティブ `/admin` パス（Keycloak Admin Console）の保護
+
+弊社運用者のみがアクセスする KC ネイティブ Admin Console は **外部からアクセス不可** とする:
+
+| 設定箇所 | 設定内容 |
+|---|---|
+| **CloudFront-Auth WAF（WAF-Auth）** | `/admin/*` パスに対して **全 IP Deny ルール**（最優先）|
+| **Auth Platform Acct ALB Listener Rule** | `/admin/*` パスは Internal ALB Listener のみ受付、Public ALB Listener では返却 403 |
+| **Internal アクセス経路** | VPN / 社内 Network → **Transit Gateway** → Auth Platform Acct Internal ALB → Keycloak `/admin` |
+
+### E.2 アクセスフロー
 
 ```mermaid
-sequenceDiagram
-    participant EB as EventBridge<br/>(30 日 schedule)
-    participant Rot as Network Acct<br/>Rotation Lambda
-    participant SM_Net as Secrets Manager<br/>(Network Acct)
-    participant CF as CloudFront Distribution
-    participant AssumeRole as App Acct<br/>CrossAcct Role
-    participant RP as API GW Resource Policy<br/>or ALB Listener Rule
-    participant Canary as Synthetics Canary
+flowchart LR
+    Op[弊社運用者<br/>社内 PC]
+    VPN[VPN / 社内 NW]
+    TGW[Transit Gateway<br/>(Network Acct)]
+    IALB[Auth Acct<br/>Internal ALB]
+    KC[Keycloak<br/>/admin]
 
-    EB->>Rot: ① Rotation 開始
-    Rot->>SM_Net: ② 新 Secret 生成（AWSPENDING）
-    Rot->>CF: ③ Distribution の OriginCustomHeaders 更新<br/>（旧 + 新 両方注入、Overlap）
-    Rot->>AssumeRole: ④ Cross-account AssumeRole
-    AssumeRole-->>Rot: 一時 credential
-    Rot->>RP: ⑤ Resource Policy / Listener Rule 更新<br/>（旧 + 新 両方受容）
+    Op --> VPN
+    VPN --> TGW
+    TGW --> IALB
+    IALB --> KC
 
-    Note over Rot,Canary: CloudFront propagation 待ち（15-30 min）
-    Rot->>Canary: ⑥ canary で疎通確認<br/>（新 Secret 経由で 200 OK か）
-    Canary-->>Rot: 成功
+    Attacker[外部攻撃者]
+    CF[CloudFront-Auth<br/>(ネットワーク監査 Acct)]
+    WAF[WAF-Auth<br/>/admin Deny]
 
-    Rot->>SM_Net: ⑦ AWSPENDING → AWSCURRENT 昇格
-    Rot->>CF: ⑧ Distribution から旧 Secret 削除
-    Rot->>RP: ⑨ Resource Policy / Listener Rule から旧 削除
-    Rot->>SM_Net: ⑩ 旧 Secret を AWSPREVIOUS で保持（30 日）
+    Attacker -.|/admin リクエスト| CF
+    CF --> WAF
+    WAF -.|403 Forbidden| Attacker
+
+    style Op fill:#e3f2fd
+    style Attacker fill:#ffcdd2
+    style WAF fill:#fff3e0
 ```
 
-##### C-4.4.2 Cross-account IAM Role 設計
+### E.3 ユーザ管理画面（`admin.basis.example.com`）との区別
 
-| Role 名 | 信頼関係 | 権限 |
-|---|---|---|
-| `OriginSecretRotationRole`（App Acct 側） | Network Acct Rotation Lambda | API GW UpdateRestApiPolicy / ELB ModifyRule / Secrets Manager Put |
-| `SecretsRotatorRole`（Network Acct 側） | Lambda Execution | sts:AssumeRole（App Acct）+ CloudFront UpdateDistribution + Secrets Manager 全操作 |
-
-##### C-4.4.3 Rollback 機構
-
-| 失敗シナリオ | 復旧手順 |
-|---|---|
-| CloudFront 更新失敗 | AWSCURRENT 維持、AWSPENDING 削除 |
-| Resource Policy 更新失敗 | CloudFront に旧 Secret 再追加 → Resource Policy ロールバック |
-| Synthetics 疎通失敗 | 旧 Secret を CloudFront / Resource Policy 両方に強制復元、Slack/PagerDuty 通知 |
-| Lambda タイムアウト | EventBridge 再実行 + 部分実行検知ロジック（Step Functions 推奨）|
-
-##### C-4.4.4 Overlap Period 設計
-
-| Phase | 期間 | CloudFront 側 | Origin 側 |
+| 種類 | URL | アクセス | 保護方針 |
 |---|---|---|---|
-| Pre-rotation | – | 旧 Secret のみ | 旧 Secret のみ |
-| **Overlap（旧 + 新 両方）** | **24-72h**（CloudFront propagation 余裕含む）| 旧 + 新 両方注入 | 旧 + 新 両方受容 |
-| Post-rotation | – | 新 Secret のみ | 新 Secret のみ |
+| **KC ネイティブ `/admin`**（Keycloak Admin Console）| `auth.basis.example.com/admin` | **弊社運用者のみ**（社内 NW 経由）| **外部 IP 全 Deny + Internal のみ** |
+| **ユーザ管理画面**（独自 SPA、[ADR-038](038-tenant-admin-portal.md)）| `admin.basis.example.com` | **顧客テナント管理者**（外部からアクセス可）| 通常の WAF + テナントスコープ強制 |
 
-#### C-4.5 DDoS 対策の多層構造
-
-```mermaid
-flowchart TB
-    DDoS[DDoS Attack] --> CF
-    Direct[Direct Origin Attack] -.X.- APIGW
-
-    subgraph L1["第 1 層: CloudFront Edge"]
-        CF[CloudFront<br/>+ Shield Standard 自動]
-        Cache[Edge Cache<br/>Read 大部分吸収]
-    end
-
-    subgraph L2["第 2 層: WAF"]
-        WAF[WAF Managed Rules<br/>+ Rate-based<br/>+ Bot Control]
-    end
-
-    subgraph L3["第 3 層: Origin Protection ⭐"]
-        IPC[CloudFront IP allowlist<br/>+ Custom Header 検証]
-    end
-
-    subgraph L4["第 4 層: Origin"]
-        APIGW[API GW]
-        ALB[Public ALB]
-    end
-
-    CF --> WAF --> IPC
-    IPC --> APIGW
-    IPC --> ALB
-
-    style Direct fill:#ffcdd2
-    style L3 fill:#fff3e0
-    style L4 fill:#c8e6c9
-```
-
-| 層 | 効果 |
-|---|---|
-| L1 CloudFront + Shield | 99%+ の L3/L4 攻撃を Edge で吸収 |
-| L2 WAF | L7 攻撃、SQLi/XSS、量的攻撃遮断 |
-| **L3 Origin Protection** | **CloudFront 経由しない直接攻撃を完全遮断** |
-| L4 Origin | API GW Throttling + Backend Auto Scaling |
-
-#### C-4.6 Pattern A / B / C 採用判断
-
-| 観点 | Pattern A: Custom Header | Pattern B: VPC Origins | Pattern C: OAC |
-|---|:---:|:---:|:---:|
-| API GW REST REGIONAL | ✅ 推奨 | ⚠ Private API GW のみ | ❌ 非対応 |
-| API GW HTTP | ✅ | ⚠ Private のみ | ❌ |
-| Public ALB | ✅ 推奨 | – | ❌ |
-| Internal ALB | – | ✅ 推奨（C-3）| ❌ |
-| S3 Origin | – | – | ✅ 推奨 |
-| Lambda Function URL | ⚠ | – | ✅ 推奨 |
-
-→ **API GW + Public ALB なら Pattern A 確定**、Internal ALB なら Pattern B、S3/Lambda URL なら Pattern C の使い分け。
-
-#### C-4.7 残るリスクと対策
-
-| リスク | 対策 |
-|---|---|
-| Secret 漏洩 | 30 日ローテ + Overlap + 漏洩検知（[L4 Athena cross-IP クエリ](../api-platform/proposal/common/06-external-api-auth-architecture.md)）|
-| CloudFront 設定ミスで Distribution 廃止 → Origin が裸 | Resource Policy で **明示的 Deny**（CloudFront 経由以外）|
-| Rotation 中の障害 | Overlap 確保 + Step Functions ベースのロールバック + Synthetics 監視 |
-| Shield Advanced の必要性 | 通常 Shield Standard で十分、Tier 1 アプリのみ Shield Advanced（$3K/月）検討 |
-| AWS IP Prefix 更新による瞬断 | Managed Prefix List 利用なら自動追従 |
-| App 側で Resource Policy 手動変更による穴 | Config Rule `api-gw-resource-policy-cloudfront-only` で検知 |
+→ 2 つは別ドメイン / 別 CloudFront / 別 WAF で**完全分離**。
 
 ---
 
-## D. 移行計画（既存からの段階移行）
+## F. Network Firewall + Shield Advanced
 
-| Phase | 内容 | リスク |
+### F.1 Network Firewall
+
+ネットワーク監査 Acct に Network Firewall を配置し、**Transit Gateway 経由の通信を検査**:
+
+| 対象 | 内容 |
+|---|---|
+| **Egress 集約検査** | VPC → インターネットへの通信を Network Firewall で検査（C&C 通信 / DLP）|
+| **East-West 検査** | Auth Acct ↔ App Acct ↔ Network Acct 間の通信を必要に応じて検査 |
+| **ステートフル ルール** | Suricata 互換ルール、AWS Managed Rules + 独自ルール |
+
+### F.2 Shield Advanced
+
+- **配置**：ネットワーク監査 Acct（全社購入、$3K/月 × 1）
+- **保護対象**：ネットワーク監査 Acct 内の全 CloudFront Distribution（アプリごと独立分すべて）
+- **メリット**：DDoS 検知 + DDoS Response Team サポート + 透過的に Multi-account 保護
+
+---
+
+## G. コスト試算
+
+### G.1 月額（10 アプリ想定、認証基盤 + 業務アプリ 9）
+
+| 項目 | 月額 |
+|---|---|
+| CloudFront 10 個（リクエスト課金）| $500（10 アプリ合計、リクエスト量次第）|
+| **WAF Web ACL 10 個**（$5 × 10）| $50 |
+| **WAF Managed Rules**（Common Bot Control × 10 = $310 × 10）| **$3,100** |
+| WAF ATP（認証エンドポイントのみ × 1）| $110 |
+| Lambda@Edge 10 個（リクエスト課金）| $200 |
+| Network Firewall（時間 $0.395 + GB $0.065）| 〜$600 |
+| Shield Advanced（全社購入 × 1）| $3,000 |
+| ACM（無料）| $0 |
+| **合計** | **〜$7,560/月（〜$91K/年）** |
+
+### G.2 v1（集約モデル）vs v2（アプリごと独立）コスト比較
+
+| 項目 | v1 | v2 | 差分 |
+|---|---|---|---|
+| WAF Web ACL | $5 × 1 = $5 | $5 × 10 = $50 | +$45 |
+| WAF Managed Rules | $310 × 1 = $310 | $310 × 10 = $3,100 | **+$2,790** |
+| その他（CloudFront / Lambda@Edge 等）| 集約で割引 | 個別配置で重複 | +$200 程度 |
+| **合計差分（月額）** | | | **+$3,000 / 月（+$36K/年）** |
+
+→ **v2 のアプリ間影響分離 + WAF ルールカスタマイズのメリット**と**$3K/月 のコスト増**のトレードオフを許容。
+
+---
+
+## H. 移行計画
+
+| Phase | 内容 | 期間 |
 |---|---|---|
-| Phase 1 | Network Acct を新規作成、Route 53 / ACM を移管準備 | DNS 切替リスク（事前検証）|
-| Phase 2 | Network Acct に CloudFront/WAF を新設、テスト用ドメインで疎通検証 | 低 |
-| Phase 3 | 1 アプリ単位で DNS 切替（Network Acct CloudFront へ）| アプリ単位ロールバック可能 |
-| Phase 4 | 全アプリ切替完了 → 旧 CloudFront 削除 | — |
-| Phase 5 | Lambda@Edge 移管（Auth Acct → Network Acct）| 短時間メンテ窓 |
+| **Phase 1** | ネットワーク監査 Acct 新規作成、ACM 証明書取得、ネットワーク Acct と分離 | 2-4 週 |
+| **Phase 2** | **認証基盤用 CloudFront-Auth + WAF-Auth** をネットワーク監査 Acct で新設、テストドメインで疎通検証 | 2 週 |
+| **Phase 3** | 認証基盤 DNS 切替（auth.basis.example.com → 新 CloudFront）| 1 週 |
+| **Phase 4** | **/admin パス保護方針実装**（WAF 全 IP Deny + Internal 経路確立）| 2 週 |
+| **Phase 5** | **ユーザ管理画面用 CloudFront-Admin + WAF-Admin** 新設 | 2 週 |
+| **Phase 6** | アプリごとに順次 CloudFront/WAF セット作成 + 切替（1 アプリあたり 1-2 週、並行可）| 半年〜1 年 |
+| **Phase 7** | 全アプリ切替完了 → 旧 CloudFront 削除 | 1 週 |
 
 ---
 
-## E. 我々のスタンス
+## I. 代替案検討
 
-| 基本方針の柱 | 実現方法 |
-|---|---|
-| **絶対安全** | WAF 一元管理、Shield Advanced 全社、DDoS 防御強化 |
-| **どんなアプリでも** | 全アプリが Network Acct CloudFront を経由 |
-| **効率よく** | 各アプリチームは Edge 層を意識不要、Network チームに委任 |
-| **運用負荷・コスト最小** | Distribution / WAF / Shield を 1 アカウントに集約、固定費削減 |
+| 案 | 評価 | 採否 |
+|---|---|---|
+| **A. v1 集約モデル**（1 CloudFront + 共通 WAF、Distribution でアプリ分離）| アプリ間影響あり、WAF ルール統一限定 | ❌ v2 で書き直し |
+| **B. v2 アプリごと独立 CloudFront/WAF**（本 ADR） | アプリ間影響分離 + アプリ別 WAF カスタマイズ | ✅ 採用 |
+| **C. 各 App Acct で CloudFront/WAF 配置** | 統制困難、Network 監査チームの一元管理不可 | ❌ |
+| **D. CloudFront/WAF を Auth Acct に配置**（旧 ADR-013 想定）| 認証基盤チームの責任過大、ネットワーク部門のガバナンス効かない | ❌ |
+| **E. 4 アカウント体系**（ネットワーク + 監査統合）| ネットワーク Acct と監査 Acct の責任混在 | ❌ v2 で 5 アカウントに |
 
 ---
 
@@ -489,47 +461,52 @@ flowchart TB
 
 ### Positive
 
-- **WAF ルール一元管理**：Network チームが全社統一ルール適用、実装ばらつき排除
-- **Shield Advanced 集中購入**：$3,000/月 × 1 で全社 DDoS 対策（複数アカウント分散時よりコスト効率良）
-- **監査容易性**：エッジトラフィックが 1 アカウントで完全把握、SOC 2 監査で有利
-- **DNS 一元化**：Route 53 を Network Acct に集約、ドメイン管理ガバナンス向上
-- **App ALB 非公開化**：VPC Origins で内部 ALB のまま CloudFront 接続可能（セキュリティ向上）
-- **AWS Well-Architected 準拠**：Centralized Ingress パターンの推奨に整合
+- **5 アカウント体系**で責任分担 + 監査範囲が AWS Acct で完全明確化
+- **アプリごと独立 CloudFront/WAF**で Blast Radius 最小化 + アプリ別 WAF カスタマイズ可能
+- **Network チーム / Network 監査チーム / Compliance チーム / 認証基盤チーム / アプリチーム** の 5 チームの責任が完全分離
+- **/admin パス保護**（外部 IP 全 Deny + Internal のみ）で KC Admin Console を堅牢化
+- **VPC Origins 採用**で App Acct Internal ALB を公開不要に
+- AWS Well-Architected Centralized Ingress / Multi-account 準拠
 
 ### Negative
 
-- **Cross-account 複雑性**：IAM Role 設計 / VPC Origins 設定 / OAC 設定が必要
-- **Network チームへの依存**：CloudFront 設定変更がチーム間調整となる（PR レビュー必須）
-- **ロールバック制約**：CloudFront 設定変更は伝播 5-15 分、緊急時のロールバック遅延
-- **DNS 切替リスク**：移行 Phase 3 で各アプリの DNS 切替が必要（事前検証必須）
-- **アカウント数増**：3 → 4 アカウントに増加
+- **WAF コスト +$3K/月**（v1 集約モデル比、アプリ 10 個想定）
+- **アプリごとの CloudFront/WAF 設定の重複保守**（IaC で緩和）
+- **アカウント数増**（4 → 5）で Cross-Account 設計の複雑性増
+- Route 53 各 App Acct 管理で**DNS 設定の権限管理**が複雑化
 
-### Constraints
+### Neutral
 
-- VPC Origins（2024-12 GA）が前提。古いリージョンや AWS パートナーで未対応の可能性あり
-- Lambda@Edge は CloudFront と同一アカウント必須（AWS 仕様）
-- ACM 証明書は us-east-1 でなければ CloudFront で使えない
-- AWS RAM でリソース共有設定が必要（VPC Origins / OAC）
+- ネットワーク Acct（Transit GW）とネットワーク監査 Acct（CloudFront/WAF）の境界線は組織のチーム編成に依存
+- Shield Advanced は全社購入で全 CloudFront を保護、追加コストなし
+
+### 我々のスタンス
+
+| 基本方針の柱 | 5 アカウント体系での実現 |
+|---|---|
+| **絶対安全** | Network Firewall + アプリごと独立 WAF + /admin 保護 + Shield Advanced |
+| **どんなアプリでも** | アプリ別 WAF ルールカスタマイズで多様な要件対応 |
+| **効率よく** | Network 監査チームによる WAF 一元統制 + IaC で重複保守緩和 |
+| **運用負荷・コスト最小** | アプリ別独立で Blast Radius 最小化、+$3K/月 のコストは許容範囲 |
 
 ---
 
-## F. ADR-011/013/022 との関係（更新点）
+## J. ADR-011 / 013 / 022 への影響
 
-| 元 ADR | 元の前提 | 本 ADR で更新 |
+| ADR | 影響 | 対応 |
 |---|---|---|
-| [ADR-011](011-auth-frontend-network-design.md) | CloudFront を Auth Acct に配置 | **Network Acct に配置**（Cross-account origin で Auth Acct ALB に接続）|
-| [ADR-013](013-cloudfront-waf-ip-restriction.md) | CloudFront + WAF を各アカウントで | **Network Acct に集約**、WAF ルールも一元 |
-| [ADR-022](022-aws-edge-sorry-control.md) | Lambda@Edge を Auth Acct に配置 | **Network Acct に配置**（CloudFront と同一アカウント必須）|
-
-→ 各 ADR には本 ADR への参照を追記済。
+| [ADR-011](011-auth-frontend-network-design.md) 認証基盤前段ネットワーク設計 | N5 カスタムドメイン / N10 WAF / Pattern C CloudFront は**ネットワーク監査 Acct での実装**に変更 | 冒頭注記を v2 方針に更新 |
+| [ADR-013](013-cloudfront-waf-ip-restriction.md) CloudFront + WAF IP 制限置き換え | CloudFront / WAF は**ネットワーク監査 Acct での実装**、**/admin パス保護方針も本 ADR に統合追記** | 冒頭注記を v2 方針に更新 + /admin 追記 |
+| [ADR-022](022-aws-edge-sorry-control.md) AWS edge Sorry 制御 | Lambda@Edge は CloudFront と同一 Acct 必須 = **ネットワーク監査 Acct での実装**（アプリごと独立）| 冒頭注記を v2 方針に更新 |
 
 ---
 
 ## 参考資料
 
-- [AWS: Centralized Ingress with AWS Global Accelerator and AWS Network Firewall](https://aws.amazon.com/blogs/networking-and-content-delivery/centralized-ingress-with-aws-global-accelerator-and-aws-network-firewall/)
-- [AWS: Organizing your AWS environment using multiple accounts - Centralizing Network Services](https://docs.aws.amazon.com/whitepapers/latest/organizing-your-aws-environment/centralizing-network-services.html)
-- [AWS: VPC Origins for CloudFront (2024-12 GA)](https://aws.amazon.com/blogs/networking-and-content-delivery/introducing-vpc-origins-for-amazon-cloudfront/)
-- [AWS: Cross-account access with CloudFront OAC](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/private-content-restricting-access-to-s3.html)
-- [AWS Well-Architected Framework - Security Pillar](https://docs.aws.amazon.com/wellarchitected/latest/security-pillar/welcome.html)
-- 関連 Claude 内部メモリ: `project_centralized_network_account_2026-06-23.md`
+- [AWS Multi-Account Strategy](https://docs.aws.amazon.com/whitepapers/latest/organizing-your-aws-environment/organizing-your-aws-environment.html)
+- [AWS Centralized Ingress with CloudFront](https://aws.amazon.com/blogs/networking-and-content-delivery/centralized-ingress-with-aws-global-accelerator-and-aws-network-firewall/)
+- [AWS Network Firewall Centralized Architecture](https://docs.aws.amazon.com/network-firewall/latest/developerguide/architectures.html)
+- [VPC Origins for CloudFront (2024-12 GA)](https://aws.amazon.com/blogs/networking-and-content-delivery/introducing-vpc-origins-for-amazon-cloudfront/)
+- [AWS Shield Advanced — Multi-account Protection](https://aws.amazon.com/shield/)
+- [AWS WAF Web ACL Pricing](https://aws.amazon.com/waf/pricing/)
+- [AWS Organizations + CloudTrail Organization Trail](https://docs.aws.amazon.com/awscloudtrail/latest/userguide/creating-trail-organization.html)
