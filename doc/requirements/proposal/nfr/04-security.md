@@ -206,7 +206,7 @@ flowchart LR
 |---|---|
 | ブルートフォース | 連続失敗で一時ロック（5 回 / 30 分）|
 | 侵害クレデンシャル検出 | **有効**（Cognito Plus or Keycloak+HIBP）|
-| **Bot Detection / CAPTCHA** | **3 層防御**（WAF Bot Control + ATP + Turnstile Invisible）→ 詳細 [ADR-042](../../../adr/042-bot-detection-captcha.md) |
+| **Bot Detection / CAPTCHA** | **Phase 1：WAF Bot Control + ATP のみ**（Turnstile はメンテ負担考慮で Phase 2 オプション化、2026-06-24 確定）→ 詳細 [ADR-042](../../../adr/042-bot-detection-captcha.md) |
 | DDoS 対策 | Shield Standard（AWS 標準）|
 | ペネトレーションテスト | 年 1 回（顧客要件次第）|
 | 脆弱性スキャン | ECR Image Scan + Inspector |
@@ -233,28 +233,27 @@ flowchart LR
 
 ### 結論サマリ
 
-| 層 | 採用方式 | 配置 |
-|---|---|---|
-| **L1 Network 層** | AWS WAF Bot Control（Common + Targeted）+ ATP | 🟣 Network Acct |
-| **L2 アプリ層** | Cloudflare Turnstile（Invisible）+ Keycloak Authenticator SPI | 🟠 Auth Acct |
-| **L3 アカウント層** | ITDR Anomaly Login + Adaptive Auth（既存 ADR-034 / 035）| 🟠 Auth Acct |
+| 層 | 採用方式 | 配置 | Phase |
+|---|---|---|---|
+| **L1 Network 層** | AWS WAF Bot Control（Common + Targeted）+ ATP | 🟣 Network Acct | **Phase 1**（必須）|
+| **L2 アプリ層** | Cloudflare Turnstile（Invisible）+ Keycloak Custom Authenticator SPI | 🟠 Auth Acct | **Phase 2 オプション**（メンテ負担考慮、必要時のみ）|
+| **L3 アカウント層** | ITDR Anomaly Login + Adaptive Auth（既存 ADR-034 / 035）| 🟠 Auth Acct | **Phase 1**（必須）|
 
-### 採用方針の核
+### 採用方針の核（2026-06-24 改定）
 
-- **3 層多層防御**で阻止率 99%+
-- **リスクベース動作**（Adaptive Auth Score 連動）で平時 UX 影響ゼロ
-- **Turnstile プライマリ + WAF Captcha フォールバック**（プライバシー配慮 + 障害耐性）
-- **商用 Bot Manager 不要**（Akamai 等比 8-12 倍コスト削減、年 $5K で実現）
+- **Phase 1：L1 WAF Bot Control + ATP + L3 ITDR の 2 層** で阻止率 90-95%、**PCI DSS §6.4.2 要件充足**
+- **L2 Turnstile は Phase 2 オプション**（実運用で WAF だけでは捌けない攻撃を観測した場合のみ追加）
 - **Account Enumeration 対策**：Keycloak 汎用エラー + Constant-time response
+- **商用 Bot Manager 不要**（Akamai 等比 8-12 倍コスト削減）
 
 ### 規制対応
 
 | 規制 | 条項 | 充足方法 |
 |---|---|---|
-| PCI DSS v4.0 §6.4.2 | パブリック向け Web アプリの自動攻撃防御 | WAF Bot Control + ATP |
+| PCI DSS v4.0 §6.4.2 | パブリック向け Web アプリの自動攻撃防御 | **WAF Bot Control + ATP のみで充足** |
 | PCI DSS v4.0 §8.3.6 | パスワード試行制限 | Keycloak `bruteForceProtected` |
 | NIST SP 800-63B Rev 4 §5.2.2 | Rate-limit + Throttling | WAF Rate Limit + Keycloak `failureFactor` |
-| OWASP ASVS L2 V2.2.1 | Anti-automation | Bot Control + Turnstile |
+| OWASP ASVS L2 V2.2.1 | Anti-automation | WAF Bot Control |
 
 ---
 

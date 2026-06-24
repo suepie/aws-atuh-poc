@@ -1,7 +1,26 @@
 # ADR-046: ソフトウェアサプライチェーンセキュリティ（SBOM + SLSA + 依存スキャン + PCI DSS §6.4.3）
 
-- **ステータス**: Proposed（要件定義フェーズで Accepted に昇格予定）
-- **日付**: 2026-06-23
+- **ステータス**: **Proposed（暫定維持、変更可能性あり）**
+- **日付**: 2026-06-23 作成、2026-06-24 暫定維持確認
+
+---
+
+> **⚠ 2026-06-24 スコープ注記**
+>
+> ユーザー確認：「**CI/CD は基盤検討範囲として一旦維持、変わるかもしれない**」。本 ADR の Supply Chain Security 設計（6 層 Defense + SBOM + SLSA + Cosign 等）は**現時点で本基盤対象として暫定維持**するが、以下の理由で**設計フェーズ以降で再評価**の可能性が高い:
+>
+> - 「CI/CD / 開発プラクティス」は**会社全体の開発組織ポリシー**で別途定義される性質のもので、認証基盤プロダクトの ADR スコープを超える可能性がある
+> - SBOM / SLSA / Cosign 等の本格採用は**開発組織全体での合意・運用体制構築**が前提
+> - PCI DSS v4.0 §6.4.3 第三者スクリプト管理など**認証基盤に直接該当する部分のみ**は最低限実装、それ以外は組織ポリシー次第
+>
+> **推奨アクション**：
+> - **Phase 1（最低限）**：認証基盤関連の依存スキャン（Trivy）+ コンテナ署名 + PCI DSS §6.4.3（CSP + SRI）のみ実装
+> - **Phase 2 以降**：開発組織全体の Supply Chain ポリシー策定後に SBOM / SLSA / Cosign 等を追加
+>
+> 関連：[ADR-044 Tabletop Exercise](044-tabletop-exercise-incident-drill.md) や [ADR-049 Vendor Risk](049-vendor-risk-management-tprm.md) も同様に「過剰検討では」とユーザー指摘あり。設計フェーズで再評価候補。
+
+---
+
 - **関連**:
   - [ADR-040 PAM / JIT 管理者権限管理](040-pam-jit-admin-privilege-management.md)
   - [ADR-041 Workload Identity](041-workload-identity-spiffe.md)

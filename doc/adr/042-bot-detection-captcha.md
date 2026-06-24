@@ -1,7 +1,36 @@
 # ADR-042: Bot Detection / CAPTCHA 設計（Credential Stuffing 対策の多層防御）
 
 - **ステータス**: Proposed（要件定義フェーズで Accepted に昇格予定）
-- **日付**: 2026-06-23
+- **日付**: 2026-06-23 作成、2026-06-24 Turnstile を Phase 2 オプション化
+
+---
+
+> **⚠ 2026-06-24 Phase 別採用方針変更**
+>
+> ユーザー確認結果：「**Cloudflare Turnstile はメンテ・バージョンアップ負担も考えるとオプションで良い**」
+>
+> **Phase 1 採用**（必須）：
+> - ✅ **L1 AWS WAF Bot Control**（Common + Targeted、$310/月）
+> - ✅ **L1 AWS WAF ATP**（Account Takeover Prevention、$110/月）
+> - ✅ **L3 ITDR Anomaly Login + Adaptive Auth**（既存 ADR-034/035）
+> - ✅ **Keycloak Brute Force Protection + Account Enumeration 対策**（Constant-time response + 汎用エラー）
+>
+> **Phase 2 オプション**（必要時のみ追加）：
+> - △ **L2 Cloudflare Turnstile** + Keycloak Custom Authenticator SPI
+>   - 採用条件：実運用で WAF Bot Control + ATP では捌けない攻撃（Low-and-Slow 分散等）を観測した場合
+>   - 工数：Keycloak SPI 開発 2 週間 + 継続メンテ（Turnstile API バージョン追従）
+>   - コスト：Turnstile 自体は $0 だが、開発・運用工数を要する
+>
+> **判断根拠**：
+> - **WAF Bot Control + ATP のみで PCI DSS §6.4.2 要件は充足**
+> - WAF だけで Bot 検知率 90-95%、Turnstile 追加で +3-5%（差は限定的）
+> - Keycloak Custom Authenticator の継続メンテ（バージョンアップ追従）コストを回避
+> - 攻撃実態を半年〜1 年運用後に評価、必要なら Phase 2 で追加
+>
+> **本 ADR の §B（L1 WAF）/ §D（Account Enumeration）/ §E（コスト試算）/ §F（監査ログ統合）/ §G（規制対応マッピング）はそのまま Phase 1 採用**。**§C（Cloudflare Turnstile + Keycloak SPI）は Phase 2 候補**として残置。
+
+---
+
 - **関連**:
   - [ADR-035 ITDR](035-identity-threat-detection-response.md)
   - [ADR-034 Adaptive Authentication](034-adaptive-authentication.md)

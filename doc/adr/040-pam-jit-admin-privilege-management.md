@@ -1,7 +1,26 @@
 # ADR-040: PAM / JIT 管理者権限管理（APPI / PCI DSS 準拠）
 
-- **ステータス**: Proposed（要件定義フェーズで Accepted に昇格予定）
-- **日付**: 2026-06-23
+- **ステータス**: **Out of Scope (Deferred)**（2026-06-24 — 本基盤対象外、弊社運用体制側で別途検討）
+- **日付**: 2026-06-23 作成、2026-06-24 スコープアウト確定
+
+---
+
+> **⚠ 2026-06-24 スコープ確認結果**
+>
+> 本 ADR は **「弊社運用者の AWS Console / Keycloak ネイティブ Admin Console（`/admin`）へのアクセス管理」** を扱うもので、これは**認証基盤の機能ではなく弊社運用体制側の話**である。ユーザー確認の結果、**本基盤の検討範囲外**として扱う。
+>
+> **代わりに本基盤として追加する方針**（[ADR-039](039-centralized-network-account-edge-layer.md) / [ADR-013](013-cloudfront-waf-ip-restriction.md) に追記予定）：
+> - **KC ネイティブ `/admin` パス**は CloudFront + WAF で**外部 IP 全 Deny + Internal（VPN/社内 Network）のみ許可**
+> - 弊社運用者の JIT 昇格 / Session 録画 / Break-Glass 等は**運用体制側で別途検討**（PAM 製品導入の要否含む）
+>
+> **混同しやすい論点との区別**：
+> - 本 ADR の「ユーザ管理画面 内 JIT 承認（L4）」も**ADR-038 ユーザ管理画面の機能**であって PAM ではない → ADR-038 で必要に応じて実装
+> - 「顧客テナント管理者の破壊的操作の承認フロー」は ADR-038 / §FR-8.5 / §FR-8.6 で扱う
+>
+> **本 ADR 以下の内容は参考情報（運用体制側の検討時に活用可能）**として残置するが、要件定義の Accepted 対象外。
+
+---
+
 - **関連**:
   - [ADR-037 Shared Responsibility Model + 軽量 IGA](037-shared-responsibility-and-lightweight-iga.md)
   - [ADR-038 ユーザ管理画面](038-tenant-admin-portal.md)

@@ -1,7 +1,38 @@
 # ADR-052: マルチテナント Isolation + API Gateway Rate Limiting / Per-tenant Quota
 
-- **ステータス**: Proposed（要件定義フェーズで Accepted に昇格予定）
-- **日付**: 2026-06-23
+- **ステータス**: **Scope Reduced**（2026-06-24 — 認証 API への Rate Limit のみ本基盤対象、それ以外は API プラットフォーム側で別途検討）
+- **日付**: 2026-06-23 作成、2026-06-24 スコープ縮小
+
+---
+
+> **⚠ 2026-06-24 スコープ縮小**
+>
+> ユーザー確認：「**マルチテナント Isolation は API の話で認証の話ではないのでは**」 → **本基盤対象は「認証 API への Rate Limit」のみに縮小**。
+>
+> ### 本基盤として残す部分（Phase 1 採用）
+>
+> | 内容 | 採否 |
+> |---|---|
+> | **認証エンドポイント（`/realms/.../auth`, `/token`, `/admin`）への Per-tenant / Per-client / Per-IP Rate Limit** | ✅ 採用（Noisy Neighbor 防止 + Bot 対策補完）|
+> | **WAF Rate Limit + API Gateway Usage Plan**（簡易実装）| ✅ 採用 |
+> | **429 + Retry-After + X-RateLimit-* ヘッダ**（標準準拠）| ✅ 採用 |
+>
+> ### 本基盤対象外（API プラットフォーム側で別途検討）
+>
+> | 内容 | 理由 |
+> |---|---|
+> | Pool / Silo / Hybrid モデル | 認証基盤の話ではなく**業務アプリ全体のテナント設計**で扱う |
+> | Per-tenant Quota（月間 MAU / API 呼出 / Storage / Admin 数）| 商品契約 / 課金体系の話、認証基盤の機能ではない |
+> | Tier 別 SLA（Enterprise / Standard / Best Effort）| 同上、SLA 契約は認証基盤外 |
+> | Tenant Tagging（コスト按分）| FinOps の話、認証基盤外 |
+> | API Versioning（日付ベース URL + 12 ヶ月並走）| API プラットフォーム標準、認証基盤外 |
+> | Lambda Authorizer + DynamoDB Atomic Counter による Token Bucket | 過剰実装、WAF Rate Limit + API GW Usage Plan で十分 |
+> | Spike Arrest 6 層 | 過剰、WAF Rate Limit + EKS HPA + Aurora Auto-Scaling で十分 |
+>
+> **本 ADR §A〜§J の大部分は API プラットフォーム側に移管**（[doc/api-platform/](../api-platform/) 配下に再構成、または同チーム判断に委譲）。本基盤としては「**認証 API への Per-tenant Rate Limit + 簡易 Quota**」のみ実装。
+
+---
+
 - **関連**:
   - [ADR-017 マルチテナント L2 採用根拠](017-multitenant-l2-single-realm.md)
   - [ADR-038 ユーザ管理画面](038-tenant-admin-portal.md)

@@ -1,7 +1,29 @@
 # ADR-050: モバイルアプリ認証設計（AppAuth PKCE + WebAuthn Platform + Push 通知 MFA）
 
 - **ステータス**: Proposed（要件定義フェーズで Accepted に昇格予定）
-- **日付**: 2026-06-23
+- **日付**: 2026-06-23 作成、2026-06-24 適用範囲明確化
+
+---
+
+> **⚠ 2026-06-24 適用範囲明確化**
+>
+> 本 ADR の対象は **「弊社が提供するモバイルアプリの**エンドユーザ認証**」** である。具体的には:
+>
+> - **対象**：弊社が顧客向けに提供するモバイルアプリ（業務アプリのモバイル版）に、顧客企業のエンドユーザ（P-3 / P-4）がログインする場面
+> - **非対象**：
+>   - ❌ ユーザ管理画面（[ADR-038](038-tenant-admin-portal.md)）のモバイル版（管理者向け、Phase 1 では Web のみ）
+>   - ❌ 顧客企業が自社で開発するモバイルアプリ（顧客側で SDK 採用方針を決定、本基盤は OIDC/PKCE 仕様準拠を保証するのみ）
+>   - ❌ 弊社運用者の管理操作モバイル（PAM スコープ、[ADR-040](040-pam-jit-admin-privilege-management.md) Out of Scope）
+>
+> **典型ユースケース**：
+> - 経費精算モバイルアプリ → 顧客 IdP（Entra/Okta）or IdP-KC で認証 → JWT 取得
+> - 勤怠管理モバイルアプリ → 同上
+> - 出張承認モバイルアプリ → 同上 + Push 通知 MFA で PC ログインを承認
+>
+> **認証方式自体は OIDC/OAuth で Web と共通**だが、モバイル特有の実装ガイドライン（System Browser / PKCE / Universal Links / Keychain 等）を提供する。
+
+---
+
 - **関連**:
   - [ADR-009 MFA 責任はパスワード管理側に帰属](009-mfa-responsibility-by-idp.md)
   - [ADR-014 共有認証基盤が対応する認証パターンの範囲](014-auth-patterns-scope.md)

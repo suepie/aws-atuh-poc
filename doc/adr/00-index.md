@@ -39,11 +39,11 @@
 | [033](033-keycloak-2tier-broker-idp-architecture.md) | Keycloak 2-tier アーキテクチャ（Broker Keycloak + IdP Keycloak） | Proposed | 2026-06-15 |
 | [034](034-adaptive-authentication.md) | Adaptive Authentication（Risk-based 認証）の設計 | Proposed | 2026-06-18 |
 | [035](035-identity-threat-detection-response.md) | Identity Threat Detection and Response (ITDR) 設計 | Proposed | 2026-06-18 |
-| [036](036-customer-audit-support.md) | Customer Audit Support（顧客監査支援）の設計 | Proposed | 2026-06-18 |
+| [036](036-customer-audit-support.md) | Customer Audit Support（縮小：監査ログ保管 + 都度メール対応のみ。Trust Center / Customer Portal はスコープアウト、2026-06-24）| **Scope Reduced** | 2026-06-18 |
 | [037](037-shared-responsibility-and-lightweight-iga.md) | IdP Keycloak の Shared Responsibility Model と軽量 IGA 設計 | Proposed | 2026-06-18 |
 | [038](038-tenant-admin-portal.md) | ユーザ管理画面（顧客テナント管理者向け Admin UI） | Proposed | 2026-06-18 |
 | [039](039-centralized-network-account-edge-layer.md) | 中央集約 Network 専用アカウント設計（CloudFront + WAF + Lambda@Edge） | Proposed | 2026-06-23 |
-| [040](040-pam-jit-admin-privilege-management.md) | PAM / JIT 管理者権限管理（APPI / PCI DSS 準拠） | Proposed | 2026-06-23 |
+| [040](040-pam-jit-admin-privilege-management.md) | PAM / JIT 管理者権限管理 | **Out of Scope**（2026-06-24 — 本基盤対象外、運用体制側で別途検討。代わりに /admin パス保護方針を ADR-039/013 に追記）| 2026-06-23 |
 | [041](041-workload-identity-spiffe.md) | Workload Identity 設計（SPIFFE/SPIRE + AWS IAM Roles for Service Accounts） | Proposed | 2026-06-23 |
 | [042](042-bot-detection-captcha.md) | Bot Detection / CAPTCHA 設計（Credential Stuffing 対策の多層防御） | Proposed | 2026-06-23 |
 | [043](043-accessibility-wcag-2-2-aa.md) | アクセシビリティ設計（WCAG 2.2 AA + JIS X 8341-3 準拠） | Proposed | 2026-06-23 |
@@ -55,5 +55,5 @@
 | [049](049-vendor-risk-management-tprm.md) | Vendor Risk Management / TPRM（Third-Party Risk Management） | Proposed | 2026-06-23 |
 | [050](050-mobile-sdk-native-auth.md) | モバイルアプリ認証設計（AppAuth PKCE + WebAuthn Platform + Push 通知 MFA） | Proposed | 2026-06-23 |
 | [051](051-multi-region-dr-failover.md) | Multi-Region DR / Failover 詳細設計（Aurora Global + KMS MRK + Keycloak Realm Replication） | Proposed | 2026-06-23 |
-| [052](052-multi-tenant-isolation-rate-limiting.md) | マルチテナント Isolation + API Gateway Rate Limiting / Per-tenant Quota | Proposed | 2026-06-23 |
+| [052](052-multi-tenant-isolation-rate-limiting.md) | 認証 API への Rate Limit（旧マルチテナント Isolation、2026-06-24 スコープ縮小：認証 API のみ、その他は API プラットフォーム側）| **Scope Reduced** | 2026-06-23 |
 | [053](053-observability-strategy.md) | Observability Strategy（OpenTelemetry + SLO + Distributed Tracing + Dashboards） | Proposed | 2026-06-23 |

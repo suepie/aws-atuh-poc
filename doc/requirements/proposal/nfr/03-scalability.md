@@ -248,47 +248,44 @@ MAU の絶対数は変わらないが、**ローカルユーザー数の規模**
 
 ---
 
-## §NFR-3.5 マルチテナント Isolation + Per-tenant Rate Limiting / Quota
+## §NFR-3.5 認証 API への Rate Limit（旧マルチテナント Isolation、2026-06-24 スコープ縮小）
 
-> **詳細は [ADR-052 マルチテナント Isolation + API Gateway Rate Limiting / Per-tenant Quota](../../../adr/052-multi-tenant-isolation-rate-limiting.md) を参照**
+> **詳細は [ADR-052 認証 API への Rate Limit](../../../adr/052-multi-tenant-isolation-rate-limiting.md) を参照**
 
-> **このサブセクションで定めること**: Noisy Neighbor 防止のための **Per-tenant Rate Limit + Per-tenant Quota + Tier 別 SLA**。[ADR-017](../../../adr/017-multitenant-l2-single-realm.md) で「マルチテナント L2」を採用したが、性能 / リクエスト量の隔離設計は未確定だった。
-> **主な判断軸**: Noisy Neighbor 防止、Tier 別 SLA 提供、商用 API Gateway（Kong / Apigee）の要否
-> **§NFR-3 全体との関係**: §NFR-3.1 MAU スケール / §NFR-3.3 自動スケーリングの**Per-tenant 隔離層**
+> **このサブセクションで定めること**: **認証エンドポイント（`/realms/.../auth`, `/token`, `/admin`）への Per-tenant Rate Limit** のみ。Noisy Neighbor 防止と Bot 対策補完を目的とする。
+> **主な判断軸**: WAF Rate Limit + API Gateway Usage Plan の組合せで十分か、簡易実装でカバー
+> **§NFR-3 全体との関係**: §NFR-3.1 MAU スケール / §NFR-3.3 自動スケーリングの**認証 API 層**
 
-### 結論サマリ
+> **⚠ 2026-06-24 スコープ縮小**: ユーザー指摘「これは API の話で認証の話ではない」を受けて、**認証 API への Rate Limit のみに縮小**。以下は **API プラットフォーム側で別途検討**となりスコープアウト：
+> - Pool / Silo / Hybrid モデル / Tier 別 SLA / Quota（MAU / API 呼出 / Storage / Admin 数）
+> - Tenant Tagging（コスト按分）/ API Versioning（日付ベース URL）
+> - Lambda Authorizer + DynamoDB Atomic Counter / Spike Arrest 6 層 等の過剰実装
+
+### 結論サマリ（縮小後）
 
 | 項目 | 採用方針 |
 |---|---|
-| **マルチテナント モデル** | **Pool**（標準）+ **Hybrid Silo**（Enterprise オプション）|
-| **Rate Limit 軸** | Per-tenant + Per-client_id + Per-IP の 3 軸 |
-| **実装** | API Gateway Usage Plan + Lambda Authorizer（Token Bucket on DynamoDB Atomic Counter）|
-| **Tier 別 SLA** | Enterprise / Standard / Best Effort の 3 段階 |
-| **Burst 許容** | 通常 RPS × 2 を 1 分間まで |
-| **Quota 実装** | DynamoDB + Lambda（月初リセット）+ ユーザ管理画面 表示 |
-| **超過時挙動** | 429 + Retry-After Header + X-RateLimit-* ヘッダ + ユーザ管理画面 警告 |
-| **Spike Arrest** | 6 層多層（CloudFront → WAF → API Gateway → Lambda Authorizer → EKS HPA → Aurora Auto-Scaling）|
-| **Tenant Tagging** | 全 AWS リソース + ログに `tenant_id` Tag 必須（コスト按分 + 性能監視）|
-| **API Versioning** | 日付ベース URL（`/v2026-06-23/...`）、12 ヶ月並走 |
-| **コスト** | 年 $9K（商用 Kong / Apigee 年 $40-50K 比 5-6 倍削減）|
+| **対象** | 認証エンドポイント（`/realms/.../auth`, `/token`, `/admin`）のみ |
+| **実装** | **AWS WAF Rate Limit + API Gateway Usage Plan**（簡易、追加実装最小）|
+| **Per-tenant 分離** | WAF Rule で `host header` or `X-Tenant-ID` ベースの分離 |
+| **超過時挙動** | 429 + Retry-After Header + X-RateLimit-* 標準ヘッダ |
+| **Spike Arrest** | WAF Rate Limit + EKS HPA + Aurora Auto-Scaling のみ（6 層は過剰）|
 
-### Tier 別 Rate Limit + Quota
+### Tier 別 Rate Limit（簡易、認証 API のみ）
 
-| Tier | 認証 API | Admin API | Token API | 月間 MAU | 月間 API |
-|---|---|---|---|---|---|
-| Enterprise | 1000 RPS | 100 RPS | 500 RPS | 無制限 | 1 億 |
-| Standard | 100 RPS | 20 RPS | 50 RPS | 10 万 | 1,000 万 |
-| Best Effort | 10 RPS | 5 RPS | 10 RPS | 1,000 | 10 万 |
+| Tier | 認証 API | Admin API | Token API |
+|---|---|---|---|
+| Default | 100 RPS / tenant | 20 RPS / tenant | 50 RPS / tenant |
+| Large | 1000 RPS / tenant | 100 RPS / tenant | 500 RPS / tenant |
+
+（MAU / API 呼出累計 Quota / SLA 等の Tier 区別は API プラットフォーム側で扱う）
 
 ### TBD / 要確認
 
 | 確認項目 | ヒアリング ID | 回答例 |
 |---|---|---|
-| Tier 別 SLA の必要性 | **B-MTI-1** | 3 ティア（推奨）/ 単一 / Custom |
-| Enterprise Hybrid Silo | **B-MTI-2** | あり（規制業種顧客）/ なし |
-| Per-tenant Rate Limit | **B-MTI-3** | 必須（推奨）/ Per-IP のみ |
-| Quota 超過時の自動 Block | **B-MTI-4** | Soft（警告のみ）/ Hard（強制 Block）/ Tenant 設定可 |
-| API Versioning 並走期間 | **B-MTI-5** | 12 ヶ月（推奨）/ 6 ヶ月 / 24 ヶ月 |
+| Per-tenant Rate Limit の必要性 | **B-MTI-1** | 必須（推奨）/ Per-IP のみで十分 |
+| 大口顧客向け Rate Limit 拡大 | **B-MTI-2** | あり / なし |
 
 ---
 

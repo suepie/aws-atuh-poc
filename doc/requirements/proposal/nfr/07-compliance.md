@@ -249,60 +249,53 @@ flowchart LR
 
 ---
 
-## §NFR-7.5 Customer Audit Support（顧客監査支援）
+## §NFR-7.5 Customer Audit Support（顧客監査支援）— 2026-06-24 大幅縮小
 
 > **詳細は [ADR-036 Customer Audit Support](../../../adr/036-customer-audit-support.md) を参照**
 
-> **このサブセクションで定めること**: B2B 顧客の SOC 2 / ISO 27001 / PCI DSS / HIPAA / FedRAMP 等の**監査要求に対する支援体制と提供物**。Trust Center 公開 / 個別 DDQ 対応 / オンサイト監査受入の 3 層構成。
-> **主な判断軸**: B2B エンタープライズ顧客の獲得意思、規制業種顧客の比率、Compliance Team 体制
-> **§NFR-7 全体との関係**: §NFR-7.1〜7.4 は本基盤自社の規制対応。§NFR-7.5 は**顧客の監査要求に応える体制**
+> **このサブセクションで定めること**: B2B 顧客の SOC 2 / ISO 27001 / PCI DSS 等の監査要求への対応。**Phase 1 はシンプル運用**（監査ログ保管 + 都度メール対応）、Trust Center / Customer Portal 等の自動化仕組みは**スコープアウト**。
+> **主な判断軸**: 監査要請頻度、Compliance 担当の運用負荷
+> **§NFR-7 全体との関係**: §NFR-7.1〜7.4 は本基盤自社の規制対応。§NFR-7.5 は**顧客監査要請への対応運用**
 
-### 結論サマリ
+> **⚠ 2026-06-24 スコープ縮小**: ユーザー確認「**顧客監査人は都度メール対応で良い**」を受けて、Trust Center / Customer Portal の自動化仕組みは削除、最小限の運用対応で構成。
+
+### 結論サマリ（縮小後）
 
 | 項目 | 採用方針 |
 |---|---|
-| **基本方針** | **3 層構成**（Trust Center 公開 / 顧客個別対応 / オンサイト監査受入）|
-| **Layer 1 Trust Center** | `compliance.example.com` で SOC 2 概要 / ISO 27001 / GDPR DPA / Subprocessor List 公開 |
-| **Layer 2 顧客個別** | DDQ / Compliance Matrix / NDA 下エビデンス提供、SLA 5 営業日 |
-| **Layer 3 オンサイト監査** | 大口顧客向け年 1-2 回、リモート可 |
-| **公開アーティファクト** | 標準 10 種（SOC 2 / ISO 27001 / PCI DSS AOC / GDPR DPA / SLA / Subprocessor List 等）|
+| **基本方針** | **シンプル都度対応**（手動運用、自動化システム不要）|
+| **監査ログ保管** | CloudTrail / Keycloak Events / Session Manager → Audit Acct S3、**7 年保管**（規制要件）|
+| **監査要請対応** | Compliance 担当が要請内容確認 → 必要なエビデンスを手動収集 → NDA 確認後メール返信 |
+| **応答 SLA** | **5 営業日以内**（要請内容次第）|
+| **NDA テンプレ準備** | 弊社標準 NDA 1 枚を事前準備 |
 
-### 段階的導入
+### 採用しない仕組み（スコープアウト）
+
+- ❌ Trust Center（`compliance.example.com` 公開ポータル）
+- ❌ Customer Portal（NDA 配下、認証要のセルフサービス DL）
+- ❌ 監査エビデンス 12 カテゴリの自動生成
+- ❌ 監査人向けセルフサービス DL
+- ❌ OCSF 形式 SIEM 自動連携（個別要請時のみ対応）
+
+### 段階的導入（簡素化）
 
 | Phase | 内容 | タイミング |
 |---|---|---|
-| Phase 1 | Subprocessor List + GDPR DPA + SLA 公開 | MVP |
-| Phase 2 | SOC 2 Type I 監査受審 | 6 ヶ月後 |
-| Phase 3 | **SOC 2 Type II**（年次運用エビデンス）| 1 年後 |
-| Phase 4 | **ISO 27001 認証**取得 | 1.5 年後 |
-| Phase 5 | PCI DSS 認証（必要時）| 顧客需要次第 |
-| Phase 6 | FedRAMP 等（必要時）| 顧客需要次第 |
-
-### 業界実例
-
-Salesforce / Microsoft / AWS / Okta / Auth0 / Atlassian / GitHub / Slack 等、**全業界主要 SaaS が Trust Center 運営**（エンタープライズ顧客の前提条件）。
-
-### コスト試算（年額）
-
-| 項目 | 試算 |
-|---|---|
-| SOC 2 Type II 監査 | $80K |
-| ISO 27001 認証維持 | $40K |
-| Compliance Team（1 名）| 〜$150K |
-| Trust Center インフラ | $3K |
-| **合計** | **〜$273K/年**（エンタープライズ顧客 10 社獲得で回収）|
+| Phase 1 | 監査ログ保管 + 都度メール対応 + NDA テンプレ | MVP |
+| Phase 2 | SOC 2 Type II 監査受審（顧客要請時）| 顧客需要次第 |
+| Phase 3 | ISO 27001 認証取得（顧客要請時）| 顧客需要次第 |
+| Phase 4 | PCI DSS 認証（カード処理顧客要請時）| 顧客需要次第 |
 
 ### TBD / 要確認
 
 | 確認項目 | ヒアリング ID | 回答例 |
 |---|---|---|
-| エンタープライズ顧客の獲得意思 | **B-CAS-1** | 必須 / 望ましい / 不要 |
-| 規制業種顧客の比率見込み | **B-CAS-2** | 金融 N 社 / 医療 N 社 / 公共 N 社 / なし |
-| SOC 2 Type II 取得タイミング | **B-CAS-3** | MVP 1 年後 / 2 年後 / 不要 |
-| ISO 27001 認証取得 | **B-CAS-4** | 1.5 年後 / 不要 |
-| PCI DSS 認証要否 | **B-CAS-5** | 必要（カード処理顧客あり）/ 不要 |
-| Compliance Team の体制 | **B-CAS-6** | 専任 1 名 / 兼任 / 外部委託 / なし |
-| Trust Center 公開範囲 | **B-CAS-7** | Layer 1+2+3 完全 / Layer 1+2 / Layer 1 のみ |
+| 監査要請の想定頻度 | **B-CAS-1** | 年 1-2 件 / 月 1 件 / 月数件 |
+| SOC 2 Type II 取得タイミング | **B-CAS-2** | 不要 / 顧客要請時 / 計画的取得 |
+| ISO 27001 認証取得 | **B-CAS-3** | 不要 / 顧客要請時 |
+| PCI DSS 認証要否 | **B-CAS-4** | 必要（カード処理顧客あり）/ 不要 |
+| Compliance Team の体制 | **B-CAS-5** | 兼任（推奨、0.2 FTE）/ 専任 1 名 / 外部委託 |
+| 大口顧客向けオンサイト監査受入 | **B-CAS-6** | 拒否 / 受入（年 1-2 回上限）|
 
 ---
 
