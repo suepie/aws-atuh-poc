@@ -1,7 +1,7 @@
 # ADR-055: HRD 実装方式選定（Custom Authenticator SPI / SPA 主導 kc_idp_hint / URL + Edge）
 
-- **ステータス**: **Phase 1 採用確定 = 方式 A（Custom Authenticator SPI、Java、社内開発）**（2026-06-25 ユーザー判断）/ Phase 2 候補：方式 C 併用
-- **日付**: 2026-06-25 作成、2026-06-25 採用方針確定
+- **ステータス**: **Phase 1 採用確定 = 方式 A 改訂版**（**ハイフン区切り識別子 `<tenant>-<userid>` + 薄い Custom Authenticator SPI + Keycloak Organizations 内部データ、外部 DB なし**）（2026-06-25 SPI 方針確定 / 2026-06-29 識別子形式 + Keycloak 内データ確定）/ Phase 2 候補：方式 C 併用
+- **日付**: 2026-06-25 作成、2026-06-25 SPI 方式確定、**2026-06-29 識別子設計 × HRD 実装方式 3-way 比較完了、薄い SPI + Organizations 内データ確定**
 - **関連**:
   - [ADR-056 ROSA 採用判断](056-rosa-adoption-decision.md)（**実行基盤次第で CI/CD ツールチェーン変化、§A.6 / §A.7 で併記**）
   - [ADR-020 HRD ヒントキー戦略 + フェデ/ローカル混在 Identifier-First](020-hrd-hint-keys-mixed-login.md)（**戦略レイヤ、本 ADR の上位**）
@@ -57,14 +57,62 @@
 | **全員 email 非保有 + 顧客別 URL 許容** | **方式 C: URL + CloudFront Function**（subdomain → `kc_idp_hint` 変換）|
 | 全員 email 保有 + 1 顧客 = 1 ドメイン | Keycloak Organizations 標準のみ（方式 A 不要）|
 
-### 本基盤 Phase 1 の採用確定（2026-06-25）
+### 本基盤 Phase 1 の採用確定（2026-06-25 SPI 方式 / 2026-06-29 識別子 + データ確定）
 
-- **採用確定**：**方式 A（Custom Authenticator SPI、Java、社内開発）**
-  - 理由：共通 URL シンプル運用、ID 統合戦略（ADR-054）の Keycloak User Attribute マッピング DB と直結、Keycloak 内完結
-  - **開発体制**：**社内 Java 開発者**で実装（外部委託・OSS Fork は不採用）
-  - **テスト方針**：別途検討（[Phase X TBD]）
-- **Phase 2 候補（フォールバック）**：方式 C（URL + Edge）併用
+- **採用確定**：**方式 A 改訂版** = 「**ハイフン区切り識別子 `<tenant>-<userid>` + 薄い Custom Authenticator SPI + Keycloak Organizations 内部データ**」
+  - **識別子形式**: `<tenant>-<userid>`（例: `acme-001234`、`<tenant>` は Organization alias と一致）
+  - **SPI 役割**: ハイフン前 parse → `OrganizationProvider.getByAlias()` 呼出 → リンク IdP の alias を `kc_idp_hint` に設定 → username を `<userid>` 部分に書換
+  - **マッピングデータ格納**: **Keycloak Organizations（ORG / ORG_DOMAIN / ORG_IDP_LINK / ORG_ATTRIBUTE テーブル）のみ**。外部 DB なし
+  - **理由**:
+    1. **Q5 メアドベース UX 要件可能性に対応**: ID とメアドが明確に分離（メアドは optional 属性として別管理）
+    2. **Q4 Phase 2 拡張余地（regex / IP / 時刻ベース等）に対応**: Phase 1 で SPI 基盤を持つことで Phase 2 要件発生時に Java で柔軟に対応可能
+    3. **外部 DB 不要**: 運用シンプル、認証パス短縮、ADR-038 Tenant Admin Portal は Organization 管理のみで完結
+    4. **Phase 1 SPI 実装は薄い**: ~50-100 行 Java（当初の multi-layer fallback 設計より大幅に簡素化）
+    5. **ADR-054 ID 統合戦略 / ADR-038 Tenant Admin Portal と整合**
+  - **開発体制**: **社内 Java 開発者**で実装（外部委託・OSS Fork は不採用）
+  - **開発工数**: **1-1.5 週間**（当初の 1-2 週間想定から短縮）
+  - **テスト方針**: 別途検討（[Phase X TBD]）
+- **Phase 2 候補（フォールバック）**: 方式 C（URL + Edge）併用
   - 大口顧客（規制業種 / カスタムブランディング要望）のみ顧客別 URL 提供
+- **Phase 2 拡張候補**: 方式 A SPI 内に regex / IP ベース / 時刻ベース ルーティング追加（顧客要件発生時）
+
+### 識別子設計 × HRD 実装方式 3-way 比較（2026-06-29 追加、Phase 1 採用判断の根拠）
+
+「**識別子をどう設計するか × HRD ロジックをどこで動かすか**」の組み合わせを比較。本基盤は **P3 採用**。
+
+| 観点 | **P1: 合成 Email** | **P2: ハイフン区切り + Custom Theme** | **P3: ハイフン区切り + SPI + Keycloak Organizations 内部データ ★採用** |
+|---|---|---|---|
+| **ID 表記** | `u001234@acme.basis.example.com` | `acme-001234` | `acme-001234` |
+| **コード言語** | なし | HTML/CSS/JavaScript（FreeMarker theme）| Java |
+| **マッピングデータ格納** | Keycloak Organizations | Keycloak Organizations | **Keycloak Organizations** |
+| **外部 DB** | 不要 | 不要 | **不要** |
+| **開発工数** | 0 日 | 2-3 日 | **1-1.5 週間** |
+| **バージョン追従コスト** | なし | Theme テンプレート確認 | Java API 追従（年 1-2 回）|
+| **CI/CD** | なし | Theme bundling のみ | Maven + JAR ビルド + デプロイ |
+| **セキュリティ（ID parse 場所）**| サーバ側ネイティブ | クライアント側 JS（迂回時 login 失敗 = 害は薄い）| **サーバ側 Java** |
+| **Q4 Phase 2 拡張（regex 等）**| ❌ 拡張困難（pure built-in）| △ Theme JS 拡張可能だが client-side | ✅ **Java で柔軟に拡張可能** |
+| **Q5 メアドベース UX 要件への耐性** | ❌ メアド誤認 UX 二重化リスク | ✅ ID とメアド明確に分離 | ✅ **ID とメアド明確に分離** |
+| **管理 UI** | Keycloak Admin Console (Organizations) | 同左 | 同左 |
+| **テナント 1000+ 対応** | ✅ | ✅ | ✅ |
+
+#### P3 採用理由（P1 / P2 を退ける理由）
+
+- **P1 不採用**: Q5 の「メアドベース UX 要件可能性」に対し UX 二重化リスク（合成 Email = `u001234@acme.basis.example.com` が email として誤認される）が高い。顧客から「これは普通の email じゃないですよね？」FAQ 多発予想
+- **P2 不採用**: Theme JS は client-side ロジック（JS 迂回時 login 失敗 = 害は薄いが UX 劣化）。Phase 2 regex 等の拡張時に再設計コスト発生
+- **P3 採用根拠**:
+  - サーバ側 Java logic で堅牢
+  - 外部 DB 不要（ユーザ希望）
+  - Phase 2 拡張余地を確保
+  - SPI 実装は薄く済む（~50-100 行）
+  - ADR-055 §A.6 / §A.7 で整理済の CI/CD パイプラインそのまま使える（投資が無駄にならない）
+
+#### ヒアリング項目（参考、最終確定後の補強用）
+
+| 項目 | 目的 |
+|---|---|
+| 顧客に「ハイフン区切り ID `<tenant>-<userid>` 形式」への抵抗有無 | 採用確認 |
+| メアドベース UX 要件の具体的有無（あれば optional 属性として別管理）| Q5 確定 |
+| Phase 2 で regex / IP ベース / 時刻ベース ルーティング要件発生する可能性 | Q4 確定 → 必要なら SPI 拡張 / 制限案内 |
 
 ---
 
@@ -77,14 +125,14 @@ flowchart LR
     User[ユーザー<br/>ブラウザ]
     KC[Keycloak<br/>Browser Flow]
     Custom["Custom Authenticator<br/>(自前 Java JAR)"]
-    Mapping[(マッピング DB<br/>Keycloak User Attribute<br/>or 外部 DB)]
+    Mapping[(Keycloak Organizations<br/>ORG / ORG_IDP_LINK<br/>内部テーブル<br/>★外部 DB なし)]
     IPR[Identity Provider Redirector<br/>Keycloak 標準]
     IdP[顧客 IdP<br/>Entra / Okta 等]
 
-    User -->|① username 入力<br/>EMP-001234| KC
+    User -->|① username 入力<br/>acme-001234| KC
     KC --> Custom
     Custom --> Mapping
-    Mapping -->|② IdP alias 解決| Custom
+    Mapping -->|② alias=acme<br/>から IdP alias 解決| Custom
     Custom -->|③ setAuthNote<br/>kc.idp.hint| IPR
     IPR -->|④ リダイレクト| IdP
     IdP -->|⑤ 認証成功| KC
@@ -101,19 +149,19 @@ sequenceDiagram
     participant Browser as ブラウザ
     participant KC as Keycloak<br/>Browser Flow
     participant Auth as Custom<br/>Authenticator
-    participant Map as マッピング DB
+    participant Map as Keycloak Organizations<br/>(内部テーブル)
     participant IPR as Identity Provider<br/>Redirector
     participant IdP as 顧客 IdP
 
     User->>Browser: ログイン画面へアクセス
     Browser->>KC: GET /realms/myrealm/...
     KC->>Browser: Identifier-First 画面表示
-    User->>Browser: "EMP-001234" 入力
+    User->>Browser: "acme-001234" 入力
     Browser->>KC: POST 識別子
     KC->>Auth: authenticate(context)
-    Auth->>Auth: パターン判定<br/>(接頭辞 / 形式)
-    Auth->>Map: lookup(identifier)
-    Map-->>Auth: idp_alias="acme-entra"
+    Auth->>Auth: ハイフン区切り parse<br/>tenant=acme / user=001234
+    Auth->>Map: getByAlias("acme")
+    Map-->>Auth: Organization{idp=acme-entra}
     Auth->>Auth: setAuthNote(KC_IDP_HINT, "acme-entra")
     Auth->>KC: context.attempted()
     KC->>IPR: 次の Authenticator
@@ -126,41 +174,70 @@ sequenceDiagram
     KC->>Browser: JWT 発行
 ```
 
-### A.3 実装スケッチ（既存 hrd-implementation-keycloak.md §2.3 ベース）
+### A.3 実装スケッチ（2026-06-29 改訂：薄い SPI + Keycloak Organizations 内部データ）
+
+> **設計変遷**: 当初版（2026-06-25）は multi-layer fallback (email domain / prefix / DB lookup) を想定していたが、2026-06-29 の識別子設計確定（`<tenant>-<userid>` 形式、外部 DB なし、Organizations 内データ）に伴い、**ハイフン前 parse → OrganizationProvider.getByAlias 呼出のみ**の薄い実装に簡素化。
 
 ```java
-public class IdentifierBasedHrdAuthenticator implements Authenticator {
+public class TenantPrefixHrdAuthenticator implements Authenticator {
     @Override
     public void authenticate(AuthenticationFlowContext context) {
         String identifier = context.getHttpRequest()
             .getDecodedFormParameters().getFirst("username");
 
-        String idpAlias = resolveIdp(identifier, context.getRealm());
-
-        if (idpAlias != null) {
-            context.getAuthenticationSession()
-                .setAuthNote(AdapterConstants.KC_IDP_HINT, idpAlias);
-            context.attempted();  // 次の Identity Provider Redirector に処理を渡す
-        } else {
-            // パターン非マッチ → 通常 PW フォームに降格（B 案フォールバック）
+        // ハイフン区切り parse（@ 含む or - 含まないなら通常フローに降格）
+        if (identifier == null || !identifier.contains("-") || identifier.contains("@")) {
             context.attempted();
+            return;
         }
+
+        int idx = identifier.indexOf('-');
+        String tenantAlias = identifier.substring(0, idx);     // 例: "acme"
+        String userId = identifier.substring(idx + 1);          // 例: "001234"
+
+        // Keycloak Organizations (v26 ビルトイン) から alias でルックアップ
+        OrganizationProvider orgProvider = context.getSession()
+            .getProvider(OrganizationProvider.class);
+        OrganizationModel org = orgProvider.getByAlias(tenantAlias);
+
+        if (org != null) {
+            // 最初のリンク済 IdP を取得（複数リンクの場合は別途優先度ロジック検討）
+            String idpAlias = org.getIdentityProviders()
+                .findFirst()
+                .map(IdentityProviderModel::getAlias)
+                .orElse(null);
+
+            if (idpAlias != null) {
+                // kc_idp_hint 注入で次の Identity Provider Redirector が IdP リダイレクトを実行
+                context.getAuthenticationSession()
+                    .setAuthNote(AdapterConstants.KC_IDP_HINT, idpAlias);
+                // username を ID 部分のみに書換（IdP 側で `<userid>` が認識される前提）
+                context.getAuthenticationSession()
+                    .setAuthNote("LOGIN_USERNAME", userId);
+                context.attempted();
+                return;
+            }
+        }
+
+        // フォールバック: Organization 見つからない or IdP リンクなし → PW form 降格
+        context.attempted();
     }
 
-    private String resolveIdp(String identifier, RealmModel realm) {
-        if (identifier.contains("@")) {
-            // メアド → ドメインベース（A 案）
-            return resolveByDomain(identifier.substring(identifier.indexOf("@") + 1));
-        } else if (identifier.startsWith("ACME-")) {
-            // 接頭辞パターン（D 案）
-            return "acme-entra";
-        } else {
-            // マッピング DB ルックアップ
-            return lookupFromDb(identifier);
-        }
-    }
+    @Override public boolean requiresUser() { return false; }
+    @Override public boolean configuredFor(KeycloakSession s, RealmModel r, UserModel u) { return true; }
+    @Override public void setRequiredActions(KeycloakSession s, RealmModel r, UserModel u) {}
+    @Override public void action(AuthenticationFlowContext c) {}
+    @Override public void close() {}
 }
 ```
+
+**コード規模**: ~50-100 行（テスト含めて 200-300 行）。当初の multi-layer fallback 版より大幅に薄い。
+
+**マッピングデータ管理**:
+- **Tenant Admin Portal**（ADR-038）→ Keycloak Admin API `POST /admin/realms/{realm}/organizations` で Organization 作成
+- `alias`（PK）= テナント prefix（例: `acme`）として登録
+- `identityProviders[]` にリンク IdP 追加
+- ハイフン区切り識別子の prefix と Organization alias が **1 対 1 対応**
 
 ファイル構成:
 ```
@@ -188,16 +265,17 @@ kc.sh build
 kc.sh start
 ```
 
-### A.4 メリット・デメリット
+### A.4 メリット・デメリット（2026-06-29 改訂：Keycloak Organizations 内データ前提）
 
 | メリット | デメリット |
 |---|---|
-| ✅ **Keycloak 内完結**（運用統一）| ❌ **Java/JVM 必須**（Kotlin / Scala / Groovy 可、他言語不可）|
-| ✅ **共通 URL**（全顧客 `auth.basis.example.com`）| ❌ **開発工数 1-2 週間**（Java + Maven + テスト）|
+| ✅ **Keycloak 内完結**（運用統一、**外部 DB なし**）| ❌ **Java/JVM 必須**（Kotlin / Scala / Groovy 可、他言語不可）|
+| ✅ **共通 URL**（全顧客 `auth.basis.example.com`）| ❌ **開発工数 1-1.5 週間**（薄い SPI、Java + Maven + テスト）|
 | ✅ **ユーザは識別子フィールドに入力するだけ**（UX シンプル）| ❌ Keycloak 内部 API 依存（バージョン追従コスト）|
-| ✅ **完全制御**（IP / User-Agent / 時刻 等の任意条件で判定可能）| ❌ レビュー / テスト / 運用ドキュメント全て自社負担 |
+| ✅ **完全制御**（IP / User-Agent / 時刻 等の任意条件で判定可能、Phase 2 拡張余地）| ❌ レビュー / テスト / 運用ドキュメント全て自社負担 |
 | ✅ ライセンス問題なし（自社所有 JAR）| ❌ Keycloak メジャーバージョンアップ時の動作確認必要 |
-| ✅ マッピング情報は Keycloak User Attribute 直接参照可（ADR-054 連動）| ❌ JAR デプロイ + Keycloak 再起動が必要（ホットリロード不可）|
+| ✅ **マッピングは Keycloak Organizations 内部テーブルに集約**（外部 DB 不要、Tenant Admin Portal から標準 Admin API で管理）| ❌ JAR デプロイ + Keycloak 再起動が必要（ホットリロード不可）|
+| ✅ **薄い実装**（~50-100 行 Java、ハイフン前 parse + OrganizationProvider 呼出のみ）| ❌ Organizations 機能の GA 状態（v26.2 時点）の確認必要（Spike 項目）|
 
 ### A.5 業界事例
 
@@ -297,6 +375,38 @@ sequenceDiagram
 → **HCP は OpenShift Control Plane アップグレードを Red Hat に委譲できるため、Keycloak/SPI の動作確認に集中可能**。Classic では Control Plane も顧客側でアップグレードする必要があり、運用負荷が高い。
 
 → **本基盤 Phase 1 では EKS Fargate + Upstream OSS Keycloak 想定**（ADR-056 で確定）、**ROSA + RHBK は FIPS / HIPAA / 10M MAU / Red Hat 統合サブスクの条件付きで再評価**。実行基盤が変わると CI/CD ツールチェーン（GitHub Actions → Tekton）と バージョン追従頻度（年 4-6 → 年 1-2）が変化することに注意。
+
+### A.8 マッピング格納場所の選択肢比較（2026-06-29 追加、採用検討の経緯）
+
+> **位置付け**: 本セクションは「マッピングデータをどこに置くか」の検討経緯を残すための appendix。本基盤は **Keycloak Organizations（候補 1）採用**で確定（§Decision Phase 1 採用確定参照）。他候補は将来の要件変化時の再評価材料として記録。
+
+「識別子 → IdP マッピング」を解決する**データ格納場所**は以下の 5 候補がある。Keycloak v26.2 環境での比較:
+
+| 候補 | 格納場所 | スキーマ | アクセス API | 適したケース |
+|---|---|---|---|---|
+| **1. Keycloak Organizations**（v26 built-in、★本基盤採用）| `KEYCLOAK_ORG` / `ORG_DOMAIN` / `ORG_IDP_LINK` / `ORG_ATTRIBUTE` テーブル | Organization 単位で alias + domains + linked IdPs + attributes | `OrganizationProvider.getByAlias()` / `getByDomainName()` | **email ドメインベース + テナント prefix ベース（本基盤）** |
+| **2. IdentityProvider Config Attribute** | `IDENTITY_PROVIDER_CONFIG` テーブル | 各 IdP に `matchDomains` / `matchPrefix` カスタム config | `realm.getIdentityProvidersStream()` でループ + config 読取 | **IdP 数が少ない（< 100）+ シンプル運用** |
+| **3. Keycloak User Attribute** | `USER_ATTRIBUTE` テーブル | ユーザに `default_idp` 属性付与 | `user.getAttribute("default_idp")` | **既存ユーザの 2 回目以降ログイン**（初回は鶏卵問題）|
+| **4. Realm Attribute（JSON map）** | `REALM_ATTRIBUTE` テーブル | `hrd_mapping = {"acme.co.jp": "acme-entra", ...}` | `realm.getAttribute("hrd_mapping")` + JSON パース | **超シンプル / 顧客数 < 10** |
+| **5. 外部 DB（Aurora 専用テーブル）** | Keycloak 外の Aurora（顧客 VPC 内）| `HRD_MAPPING(tenant_id, match_type, match_value, idp_alias, priority)` | JDBC / REST | **大規模 + 複雑ルール + 専用管理 UI 必要**（本基盤では不採用）|
+
+#### 本基盤での選定理由（候補 1 採用）
+
+- **Keycloak ビルトイン機能 → 外部依存ゼロ** (Tenant Admin Portal も標準 Admin API でアクセス)
+- **alias による高速ルックアップ** (`getByAlias()` は O(1) インデックス前提)
+- **Tenant Admin Portal（ADR-038）と整合**（Organization CRUD のみで運用可）
+- **ADR-054 ID 統合戦略**（Keycloak User Attribute 補助テーブルとの併用余地）
+
+#### 候補 5（外部 DB）を不採用とした理由
+
+- 認証パスごとに DB 往復が発生（レイテンシ +5-20ms）
+- 専用管理 UI 開発 / 障害切り分け箇所増加 / バックアップ設計増加
+- 「やや複雑」（ユーザー判断 2026-06-29）
+
+#### 将来の再評価条件
+
+- **複雑な regex ルール / 時刻ベース / IP ベース ルーティング要件**が顧客から発生 → Organization attribute 拡張 or 候補 5 を再検討
+- テナント数が 10,000 を超え、Organizations の管理が煩雑になった場合 → 候補 5（専用管理 UI）再評価
 
 ---
 

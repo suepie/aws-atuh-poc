@@ -1,12 +1,13 @@
 # ADR-038: ユーザ管理画面（顧客テナント管理者向け Admin UI）
 
 - **ステータス**: Proposed（要件定義フェーズで Accepted に昇格予定）
-- **日付**: 2026-06-18 作成、**2026-06-24 認可スコープ C 案ハイブリッド確定**
+- **日付**: 2026-06-18 作成、**2026-06-24 認可スコープ C 案ハイブリッド確定**、**2026-06-29 Organization 管理を Phase 1 必須機能に追加（ADR-055 連動）**
 - **関連**:
   - [ADR-037 Shared Responsibility Model + 軽量 IGA](037-shared-responsibility-and-lightweight-iga.md)
   - [ADR-033 Keycloak 2-tier アーキテクチャ](033-keycloak-2tier-broker-idp-architecture.md)
   - [ADR-021 Post-login Landing UX（サービス選択画面）](021-post-login-landing-ux.md)
   - [ADR-054 ID 統合戦略](054-id-integration-strategy.md)（マッピング DB との連動）
+  - **[ADR-055 HRD 実装方式選定](055-hrd-implementation-method-selection.md)（2026-06-29 連動：Tenant Admin Portal は Organization alias + リンク IdP の管理 UI を Phase 1 必須に含む）**
   - [§FR-8 管理](../requirements/proposal/fr/08-admin.md)
   - [§FR-1.2.0.B AWS アカウント境界による運用摩擦への対応](../requirements/proposal/fr/01-auth.md)（Layer 3 委譲管理者）
 
@@ -112,6 +113,9 @@
 
 | カテゴリ | 機能 | 説明 |
 |---|---|---|
+| **Organization 管理**（2026-06-29 追加、[ADR-055](055-hrd-implementation-method-selection.md) 連動）| alias 設定 / 表示名編集 | **alias = ログイン ID prefix（`<tenant>-<userid>` の `<tenant>` 部分）**、HRD ルーティングのキー |
+| | リンク IdP の追加 / 削除 | 顧客 IdP（Entra ID / Okta 等）を Organization に紐付け、ハイフン区切り識別子から自動ルーティング |
+| | domains 登録（optional）| email ドメインベース HRD 併用時用、メアドベース UX 採用顧客のみ |
 | **ユーザー管理** | CRUD（作成 / 検索 / 編集 / 削除）| `sys_user` 相当の基本操作 |
 | | 招待リンク発行 | 新規ユーザーをセルフサインアップへ |
 | | パスワードリセット（強制発行）| 管理者主導の PW リセット |

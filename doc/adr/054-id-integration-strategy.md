@@ -7,6 +7,7 @@
   - [ADR-019 既存システムからの移行戦略](019-existing-system-migration.md)（移行全般）
   - [ADR-029 利用者カテゴリ](029-local-user-categories-and-scope-scenarios.md)（P-1〜P-4）
   - [ADR-037 Shared Responsibility Model + 軽量 IGA](037-shared-responsibility-and-lightweight-iga.md)
+  - **[ADR-055 HRD 実装方式選定](055-hrd-implementation-method-selection.md)（2026-06-29 連動：ログイン ID は `<tenant>-<userid>` 形式、最初のハイフン前が Keycloak Organization alias）**
   - [§FR-1.2.0.D ユーザー識別子戦略](../requirements/proposal/fr/01-auth.md#fr-120d-ユーザー識別子戦略--メール非保有顧客独自-id-への対応)
   - [§FR-1.2.0.E 既存システムからの混在モデル移行戦略](../requirements/proposal/fr/01-auth.md#fr-120e-既存システムからの混在モデル移行戦略ローカル--フェデ併存からの集約)
 
@@ -362,12 +363,20 @@ gantt
 
 ### E.2 表示名 vs ログイン ID の分離
 
-| 用途 | 値 |
-|---|---|
-| **ログイン ID**（Username）| `EMP-001234`（社員番号）|
-| **表示名**（Display Name）| `山田 太郎`（人事 DB から取得）|
-| **メアド**（オプション）| `yamada@company.com`（通知 / パスワードリセット用、認証 ID ではない）|
-| **External ID**（[ADR-018](018-user-identifier-3layer-emailless.md) Layer B）| `EMP-001234`（社員番号と同一の場合多い）|
+**ログイン ID 形式（2026-06-29 確定、[ADR-055](055-hrd-implementation-method-selection.md) 連動）**:
+
+> **`<tenant>-<userid>`** 形式で採番。最初のハイフン前が **Keycloak Organization の alias**、ハイフン後が顧客内部のユーザ ID（顧客側採番ルール自由）。
+> - 例 1: `acme-001234` （tenant=`acme`, userid=`001234`）
+> - 例 2: `acme-EMP-001234` （tenant=`acme`, userid=`EMP-001234`、ハイフン区切りは最初の 1 つ）
+> - 例 3: `beta-yamada.t` （tenant=`beta`, userid=`yamada.t`）
+
+| 用途 | 値 | 備考 |
+|---|---|---|
+| **ログイン ID**（Username）| `acme-EMP-001234`（テナント prefix + 顧客内部 ID）| 最初の `-` 前を ADR-055 SPI が parse し Organization alias で IdP ルーティング |
+| **表示名**（Display Name）| `山田 太郎`（人事 DB から取得）| ログイン ID とは独立 |
+| **メアド**（**optional 属性**）| `yamada@company.com`（通知 / パスワードリセット用、**認証 ID ではない**）| メアド非保有顧客は空でも可 |
+| **External ID**（[ADR-018](018-user-identifier-3layer-emailless.md) Layer B）| `EMP-001234`（社員番号、ログイン ID の userid 部分）| 顧客内部 ID と一致 |
+| **Tenant 識別**（[ADR-055](055-hrd-implementation-method-selection.md) Organization）| `acme`（Organization alias）| ログイン ID prefix と Organization alias は 1 対 1 |
 
 ### E.3 部署メアド / 取引先共有メアドの扱い
 
