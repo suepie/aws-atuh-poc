@@ -53,6 +53,7 @@ ROSA の概要・アーキテクチャ・価格・SLA・本基盤での移行考
 | RHBK との統合（Operator / サブスク統合）| [§8](../reference/rosa-detailed-analysis.md) |
 | 移行工数 6-8 週間 | [§9](../reference/rosa-detailed-analysis.md) |
 | 採用判断フレーム | [§10](../reference/rosa-detailed-analysis.md) |
+| **コントロールプレーンに入る情報とコンプライアンス影響（PCI DSS / APPI）** | **[§11](../reference/rosa-detailed-analysis.md#11-コントロールプレーンに入る情報とコンプライアンス影響pci-dss--appi)** |
 
 ---
 
@@ -70,6 +71,18 @@ ROSA の概要・アーキテクチャ・価格・SLA・本基盤での移行考
 | **MAU 想定が 10M を超え、Keycloak HA + Multi-Region DR が大規模化** | [ADR-006 損益分岐](006-cognito-vs-keycloak-cost-breakeven.md) 再評価 |
 | **複数 Red Hat ミドルウェア（RHBK + JBoss EAP + OpenShift AI 等）を統合運用したい** | プロジェクト全体スコープに依存 |
 | **Red Hat と RHBK + ROSA 統合サブスク見積を取得し、TCO が許容範囲** | リセラ照会（[rhbk-vendor-inquiry.md Q7+Q8](../requirements/rhbk-vendor-inquiry.md)）|
+
+### 採用時のコンプライアンス追加要件（PCI DSS / APPI）
+
+HCP モデルではコントロールプレーンが **Red Hat 所有 AWS アカウント内**で動くため、採用時は以下を必須化する（詳細は [rosa-detailed-analysis.md §11](../reference/rosa-detailed-analysis.md#11-コントロールプレーンに入る情報とコンプライアンス影響pci-dss--appi)）:
+
+| 規制 | ROSA HCP 採用時の追加要件 |
+|---|---|
+| **PCI DSS v4.0.1** | Red Hat AOC 年次取得 + §12.8 / §12.9 文書化 + CHD 非流入設計維持 + BYOK 適用 |
+| **APPI** | Red Hat との DPA に法第 28 条「相当措置」相当の規定 + SRE 越境アクセスログ取得 + 個人データ非流入設計維持 + 委託先公表 |
+| **共通設計原則** | K8s Secret に個人データを直接保存しない（鍵のみ）/ 個人データはアプリ DB（顧客 VPC 内）/ Aurora KMS は CMK (BYOK) |
+
+**前提**: 「**個人データ・CHD 本体は etcd に入らない**」設計（K8s Secret には鍵類のみ、個人データはアプリ DB に閉じ込め）を維持できれば ROSA HCP は PCI DSS / APPI スコープ内クラスタとして許容される。
 
 ### 採用する場合の構成（参考）
 
@@ -112,6 +125,27 @@ ROSA を採用する場合の前提:
 - **RHBK 商用サポート対象外の懸念**: ECS Fargate でのサポート可否が公開情報からは未確定（[rhbk-support-and-pricing.md §4.5](../reference/rhbk-support-and-pricing.md)）→ リセラに照会必要
 - **規制業界顧客の取りこぼし**: FIPS 140-2 / HIPAA 厳格要件には Upstream OSS では応えにくい
 - **将来のスケール時の制約**: 10M MAU + Multi-Region 等の大規模化で ROSA Operator の HA 自動化が魅力的になる可能性
+
+### Compliance（PCI DSS / APPI 観点）
+
+ROSA HCP モデル特有のコンプライアンス影響を整理:
+
+- **PCI DSS v4.0.1**:
+  - HCP コントロールプレーン etcd は Red Hat 所有 AWS アカウント内。**CHD 本体は etcd に入らない**設計を維持できればスコープ内クラスタとして許容
+  - §12.8 (TPSP 管理) / §12.9 (責任分担マトリクス) → Red Hat AOC 年次取得 + 文書化必要
+  - §3.6 / §3.7 (鍵管理) → K8s Secret に乗る JWT 署名鍵に対し Red Hat 側 KMS 暗号化 + BYOK 可否確認必要
+- **APPI**:
+  - **法第 25 条**（委託先監督）: Red Hat = 委託先扱い、DPA + 監査権規定必要
+  - **法第 28 条**（外国第三者提供）★最大論点:
+    - データ物理保存地は ap-northeast-1 (東京) → 国内
+    - **Red Hat SRE の越境 JIT アクセス**が「外国にある第三者への提供」に該当する可能性
+    - 対応: DPA に GDPR SCC 相当条項統合 + SRE 越境アクセスログ取得
+  - 個人データ本体（Keycloak users テーブル / セッション）は Aurora（顧客 VPC）に閉じ込め、etcd 非流入設計を維持
+- **共通設計原則**: 「K8s Secret に個人データを直接保存しない（鍵のみ）/ 個人データはアプリ DB（顧客 VPC 内）/ Aurora KMS は CMK (BYOK)」を必須化
+
+**Upstream OSS + ECS Fargate (Default)** の場合、ECS タスク + RDS 全て顧客 AWS アカウント内に閉じるため、上記のコントロールプレーン越境論点は**発生しない**（PCI DSS / APPI 評価範囲がシンプル）。
+
+→ 詳細は [rosa-detailed-analysis.md §11](../reference/rosa-detailed-analysis.md#11-コントロールプレーンに入る情報とコンプライアンス影響pci-dss--appi)
 
 ### Neutral
 
@@ -164,6 +198,8 @@ ROSA を採用する場合の前提:
 | 複数 Red Hat ミドルウェアを統合運用予定か | **ROSA 規模効率が出る** |
 | Red Hat / リセラから ROSA + RHBK 統合サブスク見積を取れたか | **TCO 試算で再評価可能** |
 | 既存 OpenShift 運用経験があるか | **学習コスト軽減 → ROSA 候補度上がる** |
+| **PCI DSS スコープ内システムを認証基盤上で扱うか**（CHD 取扱い顧客の有無）| **CHD 非流入設計レビュー必要 → 採用時の追加運用コスト** |
+| **APPI 上、Red Hat SRE 越境アクセスが組織として許容可能か**（DPA + GDPR SCC 相当条項で対応可能か）| **法務確認必要、不可なら ROSA Classic（control plane も自社 AWS 内）に変更検討** |
 
 → これらが全て「No」なら **Upstream Keycloak OSS + ECS Fargate** で本番化が妥当。
 
@@ -195,6 +231,7 @@ ROSA を採用する場合の前提:
 | FIPS / HIPAA 要件ヒアリング | 顧客に規制業界の含有確認 | 1 週間 |
 | MAU 規模見込み確定 | 想定 MAU + 成長カーブ | 1 週間 |
 | Red Hat 営業との直接打合せ | 統合サブスク条件・実装支援 | 2-4 週間 |
+| **PCI DSS / APPI コンプライアンス要件ヒアリング** | CHD 取扱い顧客有無 + APPI 28 条法務確認 + Red Hat AOC 入手経路確認 | 2 週間 |
 | ROSA 検証（必要時）| Phase 10 Stage C として AWS Marketplace から ROSA HCP 試用 | 2-3 週間 |
 
 ### Decision 昇格条件
@@ -203,7 +240,7 @@ ROSA を採用する場合の前提:
 
 | 昇格先 | 条件 |
 |---|---|
-| **Accepted (ROSA 採用)** | リセラ見積取得 + FIPS/HIPAA 要件確定 + コスト承認 |
+| **Accepted (ROSA 採用)** | リセラ見積取得 + FIPS/HIPAA 要件確定 + コスト承認 + **PCI DSS / APPI 追加要件の整備計画承認** |
 | **Rejected (ROSA 不採用 = Default A: Upstream OSS + ECS)** | RHBK 商用サポート不要が確定 + ECS Fargate での Upstream OSS 運用に経営層合意 |
 | **Hold (継続判断保留)** | 要件・MAU 規模が固まらず、Phase 10 Stage B 完了まで判断保留 |
 

@@ -25,7 +25,8 @@
 8. [RHBK 採用との関係](#8-rhbk-採用との関係)
 9. [本 PoC からの移行考慮](#9-本-poc-からの移行考慮)
 10. [採用判断フレーム](#10-採用判断フレーム)
-11. [参考文献](#11-参考文献)
+11. [コントロールプレーンに入る情報とコンプライアンス影響（PCI DSS / APPI）](#11-コントロールプレーンに入る情報とコンプライアンス影響pci-dss--appi)
+12. [参考文献](#12-参考文献)
 
 ---
 
@@ -439,7 +440,122 @@ Red Hat の RHBK Operator が OpenShift 上で以下を自動管理:
 
 ---
 
-## 11. 参考文献
+## 11. コントロールプレーンに入る情報とコンプライアンス影響（PCI DSS / APPI）
+
+> **HCP モデル特有の論点**: コントロールプレーンが **Red Hat 所有 AWS アカウント内** で動くため、そこに乗る情報を具体的に把握し、PCI DSS / APPI 等の規制要件への影響を評価する必要がある。本セクションは [ADR-056](../adr/056-rosa-adoption-decision.md) の採用判断時に「コンプライアンス観点で何を追加要件とするか」を決める input source。
+
+### 11.1 HCP コントロールプレーンに入る情報
+
+**Red Hat 所有 AWS アカウント内**で稼働 / 永続化されるもの:
+
+| コンポーネント | 中身 | 認証基盤として影響 |
+|---|---|---|
+| **etcd**（暗号化済永続ストレージ）| 全 K8s リソース | ★最重要 |
+| └ Kubernetes Secrets | DB 接続文字列 / TLS 秘密鍵 / **Keycloak JWT 署名鍵** / Keycloak admin password / IdP Client Secret | ★ |
+| └ ConfigMaps | Keycloak realm.json 参照 / env 値 | △ |
+| └ ServiceAccount tokens | Pod → API server 認証 | △ |
+| └ Pod / Deployment specs | イメージ参照 / env 名 | △ |
+| └ Audit log buffer | 一時的（通常は CloudWatch へ flush）| △ |
+| **kube-apiserver** | API リクエスト処理（in-memory）| △ |
+| **OpenShift OAuth server** | クラスタ管理者 SSO（Keycloak 本体とは別）| △ |
+| **kube-controller-manager / scheduler** | 制御ループ（状態のみ）| △ |
+
+**顧客 VPC（データプレーン）側に残り、コントロールプレーンには入らない**もの:
+
+| データ | 場所 |
+|---|---|
+| **Keycloak users テーブル**（パスワードハッシュ / MFA seed / PII）| Aurora PostgreSQL（顧客 VPC）|
+| **セッションデータ**（Infinispan）| Worker Node メモリ（顧客 VPC）|
+| **アプリケーション DB**（カード会員データ等）| 顧客 VPC |
+| **監査ログ**（flush 後）| CloudWatch / S3（顧客アカウント）|
+
+**判定**:
+
+- **個人データ・CHD（Cardholder Data）本体は etcd には入らない**（適切な設計を維持する限り）
+- ただし **JWT 署名鍵 / DB 接続クレデンシャル / IdP Client Secret は etcd に入る** → 「個人データを保護するための鍵」として間接的に規制対象
+- **設計原則として「K8s Secret に個人データを直接保存しない（鍵のみ）/ 個人データはアプリ DB（顧客 VPC 内）」を必須化** する必要
+
+### 11.2 PCI DSS v4.0.1 の兼ね合い
+
+| 条項 | 要件 | ROSA HCP での扱い |
+|---|---|---|
+| **§3.6 / §3.7** | 暗号鍵の管理 / SoD（Separation of Duties）| etcd 内 K8s Secret に Keycloak JWT 署名鍵が乗る場合、Red Hat 側 KMS 暗号化 + BYOK (Bring Your Own Key) 可否確認が必要 |
+| **§7 / §8** | 最小権限 / 強認証 | Red Hat SRE の JIT (Just-In-Time) アクセス管理（OpenShift OAuth + Cluster Logging）|
+| **§10.2** | 監査証跡 | API server audit log を顧客 CloudWatch に強制 flush。SRE 操作も含む |
+| **§11** | ペネトレーションテスト | ROSA インフラ層は Red Hat が実施。顧客は worker node 上ワークロードのみ |
+| **§12.8** | TPSP (Third-Party Service Provider) リスト管理 | Red Hat を委託先として登録 / 監督記録 |
+| **§12.9** | TPSP 責任分担マトリクス | Red Hat AOC (Attestation of Compliance) + Shared Responsibility Matrix 取得 |
+| **§6.4.3** | サプライチェーン整合性 | OpenShift コンテナイメージ署名 (Cosign / sigstore) 適用 |
+
+**Red Hat / AWS の attestation 入手経路**:
+
+- ROSA は **PCI DSS Level 1 Service Provider** として AWS Artifact から AOC 取得可能（要確認: 2024 年版 + リージョン別カバレッジ）
+- Red Hat 側補完統制 (compensating controls) を顧客監査人 (QSA) に提示可能
+
+**判断**:
+
+- **CHD 本体を etcd に乗せない設計を維持できれば** ROSA HCP は PCI DSS スコープ内クラスタとして許容される
+- 前提: カード番号自体は決済代行 (Stripe / Adyen / GMO) でトークン化し、認証基盤に流さない
+- 運用要件: Red Hat AOC を**毎年取得** + §12.8 / §12.9 文書化を継続
+
+### 11.3 APPI（個人情報の保護に関する法律）の兼ね合い
+
+| 条文 | 要件 | ROSA HCP での扱い |
+|---|---|---|
+| **法第25条**（委託先の監督）| 委託先の安全管理措置監督義務 | Red Hat = 委託先（マネージドサービスは原則「委託」）。DPA (Data Processing Addendum) + 監査権規定必要 |
+| **法第27条**（第三者提供の制限）| 第三者提供は同意 or 例外 | 委託扱いなら 27 条非該当 |
+| **法第28条**（外国第三者提供） | 越境提供は「相当措置」必要 | ★最大の論点（後述）|
+| **規則第7条**（安全管理措置）| 組織的 / 人的 / 物理的 / 技術的措置 | 委託監督に含む |
+
+**法第28条の論点**:
+
+| 観点 | 状況 |
+|---|---|
+| **データ物理保存地** | ROSA HCP コントロールプレーンは **ap-northeast-1（東京）に配置可能** → 物理保存は国内 |
+| **Red Hat SRE のアクセス** | 米国 / EMEA 等の Red Hat SRE が JIT アクセス → 「**外国にある第三者への提供**」に該当する可能性 |
+| **個人データ本体の所在** | etcd には入らない（適切な設計時）→ 28 条主たる懸念は限定的 |
+| **間接的処理** | K8s Secret 経由で「個人データを処理するための鍵」を扱う → 委託監督義務 (法第 25 条) |
+
+**APPI 28 条への対応オプション**:
+
+1. **本人同意**: 越境前に明示同意取得（実務的に困難、SaaS では非現実的）
+2. **相当措置**: 委託先国が「個人情報保護委員会が指定する国」 (EU + 英国) → 米国は対象外（Red Hat 本社 = 米国）
+3. **基準適合体制**: 委託先が「基準に適合する体制」を整備 → **DPA + GDPR SCC (Standard Contractual Clauses) 相当条項で対応可能**（実務上の主流）
+
+**判断**:
+
+ROSA HCP は APPI 上採用可能だが、以下を整備する必要あり:
+
+- **Red Hat との DPA に APPI 28 条「相当措置」相当の規定**（GDPR SCC 統合可否を Red Hat 営業に確認）
+- **Red Hat SRE 越境アクセスログ**を顧客側で取得できる契約条項
+- **設計原則**: 「ROSA は K8s 管理データのみ、個人データはアプリ DB（顧客 VPC 内）に閉じ込める」を維持
+- **個人情報保護方針 / プライバシーポリシー**に Red Hat / AWS の役割明示（委託先公表）
+
+### 11.4 まとめ — コンプライアンス影響による採用条件追加
+
+| 規制 | ROSA HCP 採用時の追加要件 |
+|---|---|
+| **PCI DSS v4.0.1** | Red Hat AOC 年次取得 + §12.8 / §12.9 文書化 + CHD 非流入設計維持 + BYOK 適用 |
+| **APPI** | DPA に 28 条相当措置規定 + SRE 越境アクセスログ取得 + 個人データ非流入設計維持 + 委託先公表 |
+| **共通設計原則** | K8s Secret に個人データを直接保存しない（鍵のみ）/ 個人データはアプリ DB（顧客 VPC 内）/ Aurora KMS は CMK (BYOK) |
+
+→ これらの追加要件は **ROSA Classic では「Control plane も顧客 AWS アカウント内」** のため評価範囲が縮小される（Red Hat SRE 越境アクセスのみが残論点）が、**コスト差が解消されるほどではない**（Classic は HCP の 1.7 倍）。
+
+### 11.5 ADR-056 の Decision への影響
+
+本セクションの分析より、[ADR-056](../adr/056-rosa-adoption-decision.md) の **Default 不採用方針** は維持されるが、**採用時の追加要件**として以下を必須化する:
+
+1. Red Hat との **DPA + Shared Responsibility Matrix** 締結
+2. AWS Artifact から **Red Hat AOC 取得 + 年次更新運用**
+3. **個人データ / CHD を etcd に流入させない設計レビュー**（K8s Secret 設計監査）
+4. **Red Hat SRE 越境アクセスログ**の可視化要件確認
+5. **規制要件発生時の再評価条件**に「コンプライアンス追加要件の整備コスト」を含める
+
+→ ADR-056 の「採用再評価条件」と「Follow-up」セクションに反映。
+
+---
+
+## 12. 参考文献
 
 ### 公式ソース
 
@@ -472,3 +588,4 @@ Red Hat の RHBK Operator が OpenShift 上で以下を自動管理:
 ## 改訂履歴
 
 - 2026-06-25: 初版作成。Red Hat / AWS 公式から ROSA Classic vs HCP / 価格モデル / SLA 99.95% / リージョン展開 / AWS サービス統合 / RHBK との関係 / 本 PoC からの移行考慮 / 採用判断フレームを統合。[ADR-056 ROSA 採用判断](../adr/056-rosa-adoption-decision.md) の input source として機能
+- 2026-06-29: §11「コントロールプレーンに入る情報とコンプライアンス影響（PCI DSS / APPI）」追加。HCP モデルで Red Hat 所有 AWS アカウント内 etcd に乗る情報範囲（K8s Secrets / ConfigMaps）と乗らないもの（個人データ・CHD 本体）を区別し、PCI DSS v4.0.1 §3.6/§3.7/§7/§8/§10.2/§11/§12.8/§12.9/§6.4.3 + APPI 法第 25/27/28 条 + 規則第 7 条への影響を分析。採用時の追加要件 4 項目を整理し ADR-056 への反映ポイントを明示
