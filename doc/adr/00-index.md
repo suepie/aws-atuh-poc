@@ -59,3 +59,4 @@
 | [053](053-observability-strategy.md) | Observability Strategy（OpenTelemetry + SLO + Distributed Tracing + Dashboards） | Proposed | 2026-06-23 |
 | [054](054-id-integration-strategy.md) | **ID 統合戦略（現状調査 + 人事 DB を SoT + マッピング DB + 3 段階移行プロセス + メアド不可対応）** | Proposed | 2026-06-24 |
 | [055](055-hrd-implementation-method-selection.md) | **HRD 実装方式選定（Custom Authenticator SPI vs SPA 主導 kc_idp_hint vs URL + CloudFront Function、Phase 1 = A、Phase 2 で C 併用）** | Proposed | 2026-06-25 |
+| [056](056-rosa-adoption-decision.md) | **ROSA (Red Hat OpenShift Service on AWS) 採用判断**（Default 不採用 = Upstream OSS + ECS Fargate 維持、FIPS/HIPAA/10M MAU/Red Hat 統合サブスク条件付きで再評価。詳細 input は [rosa-detailed-analysis.md](../reference/rosa-detailed-analysis.md)） | Proposed | 2026-06-25 |

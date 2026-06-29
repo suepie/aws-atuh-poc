@@ -30,6 +30,7 @@
 | [keycloak-dr-aurora-sync.md](keycloak-dr-aurora-sync.md) | Aurora Global DBのレプリケーション詳細、フェイルバック手順、Cognito DR比較 |
 | [keycloak-upstream-vs-rhbk.md](keycloak-upstream-vs-rhbk.md) | Upstream（OSS版）vs Red Hat build of Keycloak の比較・切り替え難易度・本番判断フレーム |
 | [rhbk-support-and-pricing.md](rhbk-support-and-pricing.md) | RHBK サポート対象範囲（OS/DB/JVM/コンテナ基盤）・サブスクリプション構造・価格レンジ・現 PoC との差分・Red Hat 確認事項リスト |
+| [rosa-detailed-analysis.md](rosa-detailed-analysis.md) | **ROSA (Red Hat OpenShift Service on AWS) 詳細調査リファレンス** — Classic vs HCP / 価格モデル詳細 / 本基盤 Keycloak HA の月額試算 (HCP 3y RI = ~$590/月) / SLA 99.95% / リージョン展開 / RHBK 統合 / 移行工数 6-8 週間 / 採用判断フレーム。[ADR-056](../adr/056-rosa-adoption-decision.md) の input source |
 
 ## 過去の検討ドキュメント
 
