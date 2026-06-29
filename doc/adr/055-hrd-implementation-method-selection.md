@@ -1,8 +1,9 @@
 # ADR-055: HRD 実装方式選定（Custom Authenticator SPI / SPA 主導 kc_idp_hint / URL + Edge）
 
-- **ステータス**: Proposed（要件定義フェーズで Accepted に昇格予定）
-- **日付**: 2026-06-25
+- **ステータス**: **Phase 1 採用確定 = 方式 A（Custom Authenticator SPI、Java、社内開発）**（2026-06-25 ユーザー判断）/ Phase 2 候補：方式 C 併用
+- **日付**: 2026-06-25 作成、2026-06-25 採用方針確定
 - **関連**:
+  - [ADR-056 ROSA 採用判断](056-rosa-adoption-decision.md)（**実行基盤次第で CI/CD ツールチェーン変化、§A.6 / §A.7 で併記**）
   - [ADR-020 HRD ヒントキー戦略 + フェデ/ローカル混在 Identifier-First](020-hrd-hint-keys-mixed-login.md)（**戦略レイヤ、本 ADR の上位**）
   - [ADR-018 ユーザー識別子 3 階層戦略](018-user-identifier-3layer-emailless.md)
   - [ADR-039 v2 ネットワーク監査アカウント設計](039-centralized-network-account-edge-layer.md)（CloudFront Function / Lambda@Edge 配置）
@@ -56,10 +57,12 @@
 | **全員 email 非保有 + 顧客別 URL 許容** | **方式 C: URL + CloudFront Function**（subdomain → `kc_idp_hint` 変換）|
 | 全員 email 保有 + 1 顧客 = 1 ドメイン | Keycloak Organizations 標準のみ（方式 A 不要）|
 
-### 本基盤 Phase 1 の暫定採用
+### 本基盤 Phase 1 の採用確定（2026-06-25）
 
-- **第一推奨**：**方式 A（Custom Authenticator SPI）**
-  - 理由：URL を顧客別に分けたくない（運用シンプル）、Java/JVM 開発リソース有り想定
+- **採用確定**：**方式 A（Custom Authenticator SPI、Java、社内開発）**
+  - 理由：共通 URL シンプル運用、ID 統合戦略（ADR-054）の Keycloak User Attribute マッピング DB と直結、Keycloak 内完結
+  - **開発体制**：**社内 Java 開発者**で実装（外部委託・OSS Fork は不採用）
+  - **テスト方針**：別途検討（[Phase X TBD]）
 - **Phase 2 候補（フォールバック）**：方式 C（URL + Edge）併用
   - 大口顧客（規制業種 / カスタムブランディング要望）のみ顧客別 URL 提供
 
@@ -204,6 +207,96 @@ kc.sh start
 | **Microsoft Entra ID** | sign-in name で同様の挙動（managed / federated 振り分け、内部実装は非公開だが概念同等）|
 | **Auth0 Identifier-First** | 識別子→connection マッピング、内部実装は Custom Authenticator 相当 |
 | **Vidiemme**（イタリア企業）| KeyCloak custom provider for authentication、社内 ID システム連携で SPI 実装 |
+
+### A.6 実装基盤別の CI/CD 差分（2026-06-25 追加、ROSA 採用判断連動）
+
+実行基盤（EKS / ROSA Classic / ROSA HCP）次第で Custom SPI の CI/CD ツールチェーンが変化。**Java + Maven + Custom Container Image + Registry + Deploy の基本フローは共通**だが、ツール選定が異なる。
+
+| 観点 | **EKS Fargate（現状想定）** | **ROSA Classic** | **ROSA HCP** |
+|---|---|---|---|
+| **CI 推奨ツール** | GitHub Actions / CodeBuild / Jenkins | **OpenShift Pipelines (Tekton)** / GitHub Actions | 同左 |
+| **CD 推奨ツール** | ArgoCD / Flux（別途インストール）| **OpenShift GitOps (ArgoCD)** 標準同梱 | 同左 |
+| **Container Image Build** | Docker build / Kaniko on EKS / 外部 CI | OpenShift BuildConfig (S2I / Buildah / Kaniko) / 外部 CI | 同左 |
+| **Container Registry** | **ECR**（AWS 統合） | **Quay.io**（Red Hat 推奨、RHBK 連動）/ ECR | 同左 |
+| **Image 更新トリガー** | GitOps（ArgoCD Image Updater 等）| **ImageStream + ImageChange Trigger**（OpenShift 独自）or GitOps | 同左 |
+| **Keycloak デプロイ** | Helm Chart values.image | **Keycloak CR の `image:` フィールド**（rhbk-operator） | 同左 |
+| **Secret 管理** | **AWS Secrets Manager + External Secrets Operator** | OpenShift Secret + Sealed Secret / Vault | 同左 |
+
+#### 推奨 CI/CD パイプライン構成（ROSA Classic / HCP）
+
+```mermaid
+flowchart LR
+    Git[GitHub<br/>SPI Source]
+    Tekton[OpenShift Pipelines<br/>Tekton]
+    Maven[Maven Build Task]
+    Image[Image Build<br/>Buildah / Kaniko]
+    Quay[Quay.io<br/>Container Registry]
+    ArgoCD[OpenShift GitOps<br/>ArgoCD]
+    Operator[rhbk-operator<br/>Keycloak CR]
+    KC[Keycloak Pod<br/>ROSA Worker Node]
+
+    Git --> Tekton
+    Tekton --> Maven
+    Maven --> Image
+    Image --> Quay
+    Quay --> ArgoCD
+    ArgoCD --> Operator
+    Operator --> KC
+
+    style Tekton fill:#fff3e0
+    style ArgoCD fill:#e3f2fd
+    style Operator fill:#fce4ec
+```
+
+→ **ROSA Classic / HCP の CI/CD 差分なし**（Control Plane の所在は違うが、Pipeline / GitOps / Operator は同じ）。違いは **OpenShift 独自ツール（Tekton / BuildConfig / Operator）+ Quay.io vs EKS の GitHub Actions / ECR / Helm**。
+
+### A.7 Keycloak バージョン追従プロセス（2026-06-25 追加、Classic / HCP 比較）
+
+Custom SPI は Keycloak 内部 API（`AuthenticationFlowContext` 等）に依存するため、**Keycloak メジャーバージョンアップ時に動作確認 + 必要なら修正**が必要。
+
+| 観点 | **EKS Upstream OSS** | **ROSA Classic（RHBK）** | **ROSA HCP（RHBK）** |
+|---|---|---|---|
+| **Keycloak ベース** | Upstream Keycloak OSS | **RHBK**（Red Hat build of Keycloak） | 同左 |
+| **メジャー版リリース頻度** | **年 4-6 回**（v26 / v27 / v28 等） | **年 1-2 回**（v26.0 / 26.2 / 26.4 等、Red Hat ライフサイクル） | 同左 |
+| **メジャー版サポート期間** | **1 メジャー版前のみ**（実質 〜6 ヶ月） | **v26.x = 2 年 / v27.x+ = 3 年** | 同左 |
+| **アップグレード方式** | Helm upgrade / 手動マニフェスト | **rhbk-operator + OLM**（Operator Lifecycle Manager） | 同左 |
+| **Operator 自動更新** | — | **OLM デフォルトで自動**（**要 Explicit Strategy 設定で手動承認制御**）| 同左 |
+| **SPI 動作確認頻度** | **年 4-6 回**（Upstream 変更追従） | **年 1-2 回**（RHBK 安定リリース、追従工数低） | 同左 |
+| **OpenShift Control Plane アップグレード** | — | **顧客主導、数時間** | **Red Hat が自動メンテ、約 1 時間** |
+| **アップグレード窓口の柔軟性** | EKS 任意 | 高（顧客指定）| 低（Red Hat 側メンテウィンドウ依存）|
+| **顧客の運用負荷** | Helm + 動作確認 | OpenShift + Keycloak/SPI | **Keycloak/SPI のみ集中可能** |
+
+#### バージョン追従フロー（ROSA Classic / HCP 共通）
+
+```mermaid
+sequenceDiagram
+    participant RH as Red Hat
+    participant OLM as OLM
+    participant Stg as Staging Cluster
+    participant SPI as Custom SPI<br/>(社内 Java)
+    participant Prod as Production Cluster
+
+    RH->>OLM: 新 RHBK Operator 公開<br/>(v26.4 等)
+    OLM-->>Stg: 更新通知<br/>(Explicit Strategy なら手動承認待ち)
+    Stg->>SPI: 互換性確認<br/>(Keycloak API 変更チェック)
+    SPI->>SPI: 必要なら SPI 修正<br/>(年 1-2 回想定、RHBK 安定リリース)
+    SPI->>Stg: Custom Image 再ビルド + デプロイ
+    Stg->>Stg: 統合テスト
+    Stg->>Prod: Manual Approval (Pipeline 経由)
+    Prod->>Prod: Rolling Update
+```
+
+#### 推奨追従ポリシー
+
+| Phase | 内容 |
+|---|---|
+| Phase 1 | **Explicit Strategy** 設定（OLM 自動更新を無効化）、Staging で動作確認後 Manual Approval |
+| Phase 2 | Staging 環境を ROSA Classic / HCP / EKS 別に用意（移行時に切替可能）|
+| Phase 3 | 年 1-2 回（RHBK）or 年 4-6 回（Upstream）の動作確認カレンダー化 |
+
+→ **HCP は OpenShift Control Plane アップグレードを Red Hat に委譲できるため、Keycloak/SPI の動作確認に集中可能**。Classic では Control Plane も顧客側でアップグレードする必要があり、運用負荷が高い。
+
+→ **本基盤 Phase 1 では EKS Fargate + Upstream OSS Keycloak 想定**（ADR-056 で確定）、**ROSA + RHBK は FIPS / HIPAA / 10M MAU / Red Hat 統合サブスクの条件付きで再評価**。実行基盤が変わると CI/CD ツールチェーン（GitHub Actions → Tekton）と バージョン追従頻度（年 4-6 → 年 1-2）が変化することに注意。
 
 ---
 

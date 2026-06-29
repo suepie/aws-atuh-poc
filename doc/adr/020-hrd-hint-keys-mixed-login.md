@@ -2,7 +2,7 @@
 
 - **ステータス**: Proposed（要件定義フェーズで Accepted に昇格予定）
 - **日付**: 2026-06-12
-- **⚠ 2026-06-25 補足**: 本 ADR は **HRD のヒントキー戦略（A〜E 案 + 補助 2）**を確定する**戦略レイヤ**。**実装方式（Custom Authenticator SPI / SPA 主導 kc_idp_hint / URL + CloudFront Function）の選定**は [ADR-055 HRD 実装方式選定](055-hrd-implementation-method-selection.md) で 3 方式を裏どり調査済。
+- **⚠ 2026-06-25 補足**: 本 ADR は **HRD のヒントキー戦略（A〜E 案 + 補助 2）**を確定する**戦略レイヤ**。**実装方式選定**は [ADR-055](055-hrd-implementation-method-selection.md) で 3 方式を裏どり調査の上、**Phase 1 = 方式 A（Custom Authenticator SPI、Java、社内開発）採用確定**（2026-06-25 ユーザー判断）。Phase 2 で大口顧客向けに方式 C（URL + CloudFront Function）併用候補。
 - **関連**:
   - [**ADR-055 HRD 実装方式選定**](055-hrd-implementation-method-selection.md)（**実装レイヤ、2026-06-25 新規**）
   - [§FR-2.3.3 ログイン画面で IdP 選択 UX / Home Realm Discovery](../requirements/proposal/fr/02-federation.md#fr-233-ログイン画面で-idp-選択-ux--home-realm-discovery--fr-fed-013)

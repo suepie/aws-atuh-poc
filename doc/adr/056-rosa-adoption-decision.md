@@ -4,6 +4,7 @@
 - **日付**: 2026-06-25
 - **関連**:
   - **[reference/rosa-detailed-analysis.md](../reference/rosa-detailed-analysis.md)** — **本 ADR の input source（詳細事実集約）**
+  - **[ADR-055 HRD 実装方式選定 §A.6 / §A.7](055-hrd-implementation-method-selection.md)**（2026-06-25 追加） — **Custom Authenticator SPI の CI/CD・バージョン追従が ROSA Classic / HCP / EKS 採用次第で変化**（EKS = GitHub Actions + ECR + Helm + 年 4-6 回追従 / ROSA = Tekton + Quay.io + rhbk-operator + 年 1-2 回追従）。本 ADR で実行基盤が確定したら ADR-055 §A.6 / §A.7 の該当パターンを採用
   - [ADR-006 Cognito vs Keycloak コスト損益分岐](006-cognito-vs-keycloak-cost-breakeven.md)
   - [ADR-008 Keycloak start-dev for PoC](008-keycloak-start-dev-for-poc.md)
   - [ADR-015 RHBK validation deferred](015-rhbk-validation-deferred.md)

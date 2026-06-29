@@ -1445,6 +1445,8 @@ flowchart LR
 > **§FR-2.3 内の位置付け**: §FR-2.3.1 並行運用・§FR-2.3.2 オンボーディングを**エンドユーザー体験**として完成させる UX 層   
 > **⚠ 前提依存**: A 案（メールドメイン HRD）は**ユーザーが email を持つことを前提**とする。[§FR-1.2.0.D](01-auth.md#fr-120d-ユーザー識別子戦略--メール非保有顧客独自-id-への対応) で確定したように email 非保有ユーザー（フィールドワーカー / 工場 / 病院 / 小売 / 教育）を収容する場合、A 案単独では破綻する。**email 非保有時の HRD ヒントキー拡張は [§FR-2.3.3.E](#fr-233e-email-非保有時の-hrd-パターン拡張--ヒントキーの選択) を参照**
 
+> **🆕 2026-06-25 HRD 実装方式 採用確定**: ヒントキー戦略（A〜E 案）の**実装方式**は [**ADR-055**](../../../adr/055-hrd-implementation-method-selection.md) で 3 方式（Custom Authenticator SPI / SPA 主導 kc_idp_hint / URL + CloudFront Function）を裏どり調査の上、**Phase 1 = 方式 A: Custom Authenticator SPI（Java、社内開発）採用確定**。Phase 2 候補：方式 C（URL + CloudFront Function）併用（大口顧客向け）。実行基盤別の CI/CD・バージョン追従差分（EKS vs ROSA Classic vs HCP）は [ADR-055 §A.6 / §A.7](../../../adr/055-hrd-implementation-method-selection.md) 参照。
+
 #### 5 案併記（要件次第で選定、ハイブリッド併用も可）
 
 | 案 | ヒントキー | UX | 実装 | 採用例 | email 非保有時 |
@@ -1744,7 +1746,9 @@ flowchart LR
 
 #### §FR-2.3.3.E email 非保有時の HRD パターン拡張 — ヒントキーの選択
 
-> **詳細は [ADR-020 HRD ヒントキー戦略 + 混在 Identifier-First](../../../adr/020-hrd-hint-keys-mixed-login.md) を参照**
+> **詳細は [ADR-020 HRD ヒントキー戦略 + 混在 Identifier-First](../../../adr/020-hrd-hint-keys-mixed-login.md)（戦略レイヤ）+ [ADR-055 HRD 実装方式選定](../../../adr/055-hrd-implementation-method-selection.md)（実装レイヤ）を参照**
+
+> **🆕 2026-06-25 実装方式 採用確定**：Phase 1 = **方式 A（Custom Authenticator SPI、Java、社内開発）採用確定**。Phase 2 候補：方式 C（URL + CloudFront Function）併用（大口顧客向けブランディング統一）。実装スケッチ・CI/CD・バージョン追従の詳細は [ADR-055 §A](../../../adr/055-hrd-implementation-method-selection.md) 参照。
 
 > **このサブ・サブセクションで定めること**: [§FR-1.2.0.D](01-auth.md#fr-120d-ユーザー識別子戦略--メール非保有顧客独自-id-への対応) で email 非保有ユーザーを受け入れる前提を確定したことに伴い、HRD パターン A（メールドメイン HRD）が破綻するシナリオの代替を確定。**HRD の本質は「ヒントキー → IdP マッピング」であり、ヒントキーは email ドメインに限らない**ことを明示する。   
 > **主な判断軸**: 顧客側 email 保有率（B-IDM-1 / B-IDM-10）、顧客独自 ID 体系、テナント数規模、ユーザーの認知負荷許容度   

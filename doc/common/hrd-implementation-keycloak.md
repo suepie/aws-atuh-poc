@@ -1,5 +1,7 @@
 # HRD 実装リファレンス — Keycloak v26 での Home Realm Discovery 設定と単一テナント複数 IdP 対応
 
+> **🆕 2026-06-25 採用方針確定**: 本基盤 Phase 1 = **§2.3 オプション ③ Custom Authenticator SPI（Java、社内開発）採用確定**（[ADR-055](../adr/055-hrd-implementation-method-selection.md) ユーザー判断、2026-06-25）。Phase 2 候補：方式 C（URL + CloudFront Function）併用。実行基盤別デプロイパターンは新規 [§3 実行基盤別デプロイパターン](#3-実行基盤別デプロイパターンeks--rosa-classic--hcp2026-06-25-追加) 参照。
+
 > **目的**: 認証基盤として HRD を実装するときの (1) アーキテクチャモデル選択（Universal Login vs アプリ主導）、(2) Keycloak v26 での 4 つの実装オプション、(3) 単一テナントが複数 IdP を持つケースの対応パターン を集約した implementation reference doc。
 > **対象読者**: 認証基盤設計者 / Keycloak 実装担当 / 顧客 PoC 担当
 > **前提**: 本基盤は [§FR-2.3.3](../requirements/proposal/fr/02-federation.md) で **A 案 HRD（メールドメインベース）を推奨ベースライン**、[§FR-2.3.3.C](../requirements/proposal/fr/02-federation.md) で **A+C ハイブリッド**（基本 HRD + 大口顧客のみ組織固有 URL）を方針化。本ドキュメントはその「HRD 部分」の実装層を詳述。
@@ -17,7 +19,8 @@
 
 1. [Universal Login vs アプリ主導 HRD](#1-universal-login-vs-アプリ主導-hrd)
 2. [Keycloak v26 での HRD 実装 4 オプション](#2-keycloak-v26-での-hrd-実装-4-オプション)
-3. [単一テナントが複数 IdP を持つ場合の対応 4 パターン](#3-単一テナントが複数-idp-を持つ場合の対応-4-パターン)
+3. [実行基盤別デプロイパターン（EKS / ROSA Classic / HCP、2026-06-25 追加）](#3-実行基盤別デプロイパターンeks--rosa-classic--hcp2026-06-25-追加)
+4. [単一テナントが複数 IdP を持つ場合の対応 4 パターン](#4-単一テナントが複数-idp-を持つ場合の対応-4-パターン)
 4. [realm.json / Organizations 設定サンプル](#4-realmjson--organizations-設定サンプル)
 5. [選定フロー](#5-選定フロー)
 6. [Stage B での検証推奨項目](#6-stage-b-での検証推奨項目)
@@ -264,9 +267,132 @@ Keycloak 標準の `Identity Provider Redirector` Authenticator が `kc_idp_hint
                    └─ Yes → ①+Identity-First Login (login_hint)
 ```
 
+### 2.7 採用結果（2026-06-25 確定）
+
+| 採用 | 理由 |
+|---|---|
+| **③ Custom Authenticator SPI（自前 Java 実装）** | 共通 URL シンプル運用、ID 統合戦略（ADR-054）の Keycloak User Attribute マッピング DB と直結、Keycloak 内完結、ライセンス問題なし、社内 Java 開発者で実装可能（外部委託・OSS Fork は不採用） |
+
+**Phase 2 候補**：方式 C（URL + CloudFront Function）併用（大口顧客 / カスタムブランディング要望時に顧客別 URL `acme.basis.example.com` 提供）。
+
+→ 詳細は [ADR-055 §A](../adr/055-hrd-implementation-method-selection.md) 参照。
+
 ---
 
-## 3. 単一テナントが複数 IdP を持つ場合の対応 4 パターン
+## 3. 実行基盤別デプロイパターン（EKS / ROSA Classic / HCP、2026-06-25 追加）
+
+Custom Authenticator SPI を **どの実行基盤に配置するか**で、CI/CD ツールチェーンと Keycloak バージョン追従プロセスが変化する。
+
+### 3.1 共通フロー
+
+```
+Java SPI ソース (.java)
+    ↓ Maven build
+SPI JAR (.jar)
+    ↓ Custom Keycloak Container Image にコピー
+    /opt/keycloak/providers/ に配置 + kc.sh build
+    ↓ Container Registry へ push
+    ↓ Container Image Pull
+Keycloak Pod 起動 + SPI を Service Loader で検出
+```
+
+**重要**：標準イメージに JAR だけ後付けは不可、必ず **Custom Container Image 作成 + `kc.sh build` 実行**が必要。
+
+### 3.2 実行基盤別比較
+
+| 観点 | **EKS Fargate（現状想定、ADR-056 Default）** | **ROSA Classic** | **ROSA HCP** |
+|---|---|---|---|
+| **Keycloak ベース** | Upstream Keycloak OSS | **RHBK**（Red Hat build of Keycloak）| 同左 |
+| **CI 推奨ツール** | GitHub Actions / CodeBuild | **OpenShift Pipelines (Tekton)** / GitHub Actions | 同左 |
+| **CD 推奨ツール** | ArgoCD / Flux | **OpenShift GitOps (ArgoCD)** 標準同梱 | 同左 |
+| **Image Build** | Docker build / Kaniko | OpenShift BuildConfig (S2I / Buildah / Kaniko) | 同左 |
+| **Container Registry** | **ECR** | **Quay.io 推奨** / ECR | 同左 |
+| **Image 更新トリガー** | GitOps（ArgoCD Image Updater 等）| **ImageStream + ImageChange Trigger**（OpenShift 独自）| 同左 |
+| **Keycloak デプロイ** | Helm Chart values.image | **Keycloak CR の `image:` フィールド**（rhbk-operator）| 同左 |
+| **Secret 管理** | **AWS Secrets Manager + External Secrets Operator** | OpenShift Secret + Sealed Secret / Vault | 同左 |
+| **SPI バージョン追従頻度** | **年 4-6 回**（Upstream 変更頻度）| **年 1-2 回**（RHBK 安定リリース）| 同左 |
+| **メジャー版サポート期間** | **1 メジャー版前のみ**（実質 〜6 ヶ月）| **v26.x = 2 年 / v27.x+ = 3 年** | 同左 |
+| **Control Plane アップグレード** | EKS マネージド（顧客側設定）| **顧客主導、数時間** | **Red Hat が自動メンテ、約 1 時間** |
+
+### 3.3 EKS パターン（Phase 1 デフォルト）
+
+```mermaid
+flowchart LR
+    Git[GitHub<br/>SPI Source]
+    GHA[GitHub Actions<br/>CI]
+    Build[Docker Build<br/>+ kc.sh build]
+    ECR[ECR]
+    Helm[Helm Chart Update]
+    Argo[ArgoCD]
+    KC[Keycloak Pod<br/>EKS Fargate]
+
+    Git --> GHA
+    GHA --> Build
+    Build --> ECR
+    ECR --> Helm
+    Helm --> Argo
+    Argo --> KC
+
+    style GHA fill:#fff3e0
+    style Argo fill:#e3f2fd
+```
+
+### 3.4 ROSA Classic / HCP パターン（条件付き採用、ADR-056）
+
+```mermaid
+flowchart LR
+    Git[GitHub<br/>SPI Source]
+    Tekton[OpenShift Pipelines<br/>Tekton]
+    Maven[Maven Build]
+    Image[Image Build<br/>Buildah / Kaniko]
+    Quay[Quay.io]
+    OCG[OpenShift GitOps<br/>ArgoCD]
+    Operator[rhbk-operator<br/>Keycloak CR]
+    KC[Keycloak Pod<br/>ROSA Worker Node]
+
+    Git --> Tekton
+    Tekton --> Maven
+    Maven --> Image
+    Image --> Quay
+    Quay --> OCG
+    OCG --> Operator
+    Operator --> KC
+
+    style Tekton fill:#fff3e0
+    style OCG fill:#e3f2fd
+    style Operator fill:#fce4ec
+```
+
+→ **ROSA Classic / HCP の差分**：CI/CD ツールチェーンは同じ。違いは Control Plane の所在のみ。
+
+### 3.5 バージョン追従プロセス（共通）
+
+```mermaid
+sequenceDiagram
+    participant Up as Upstream / RH
+    participant CI as CI System
+    participant Stg as Staging
+    participant SPI as Custom SPI<br/>(社内 Java)
+    participant Prod as Production
+
+    Up->>CI: 新 Keycloak 公開
+    CI-->>Stg: 更新通知<br/>(自動 or 手動承認)
+    Stg->>SPI: 互換性確認<br/>(API 変更チェック)
+    SPI->>SPI: 必要なら SPI 修正
+    SPI->>Stg: Custom Image 再ビルド + デプロイ
+    Stg->>Stg: 統合テスト
+    Stg->>Prod: Manual Approval
+    Prod->>Prod: Rolling Update
+```
+
+**追従ポリシー**：
+- **Explicit Strategy**（OLM / Helm の自動更新を無効化）
+- Staging で動作確認後 Manual Approval
+- Staging 環境を ROSA Classic / HCP / EKS 別に用意（移行時に切替可能）
+
+---
+
+## 4. 単一テナントが複数 IdP を持つ場合の対応 4 パターン
 
 ### 3.1 想定シナリオ
 
