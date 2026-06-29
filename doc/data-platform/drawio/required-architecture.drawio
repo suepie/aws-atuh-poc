@@ -1,0 +1,359 @@
+<mxfile host="app.diagrams.net" modified="2026-06-23T00:00:00.000Z" agent="Claude/Anthropic" version="22.0.0" type="device">
+  <diagram name="必須項目のみ構成図" id="data-platform-required-only">
+    <mxGraphModel dx="2400" dy="1400" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2400" pageHeight="1700" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- ===== タイトル ===== -->
+        <mxCell id="title" value="データプラットフォーム — 必須項目のみ構成図&#xa;§4.5.2 統合料金一覧表「必須 41 項目」のみ採用（任意 31 / 削除 2 は含まず）&#xa;対応 Mermaid: doc/data-platform/drawio/required-architecture.mmd" style="text;html=1;align=center;verticalAlign=middle;fontSize=16;fontStyle=1;fillColor=none;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry x="400" y="20" width="1600" height="70" as="geometry" />
+        </mxCell>
+
+        <!-- ===== アクター ===== -->
+        <mxCell id="actor_steward" value="👤 データスチュワード&#xa;役割 2 / DataStewardRole" style="ellipse;whiteSpace=wrap;html=1;fillColor=#fffacd;strokeColor=#b8860b;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="40" y="350" width="140" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="actor_owner" value="👤 データ責任者&#xa;役割 1 / DataProductOwnerRole" style="ellipse;whiteSpace=wrap;html=1;fillColor=#fffacd;strokeColor=#b8860b;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="40" y="430" width="140" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="actor_admin" value="👤 カタログ管理者&#xa;役割 3 / DataLakeAdminRole" style="ellipse;whiteSpace=wrap;html=1;fillColor=#fffacd;strokeColor=#b8860b;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="40" y="800" width="140" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="actor_analyst" value="👤 中央 BI チーム&#xa;役割 4 / DataAnalystRole" style="ellipse;whiteSpace=wrap;html=1;fillColor=#fffacd;strokeColor=#b8860b;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="40" y="1080" width="140" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="actor_reader" value="👤 業務利用者&#xa;役割 6 / DataReaderRole" style="ellipse;whiteSpace=wrap;html=1;fillColor=#fffacd;strokeColor=#b8860b;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="40" y="1160" width="140" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- ===== Producer Account 全体枠 ===== -->
+        <mxCell id="producer_container" value="🟢 AWS アカウント: App 1〜N（Producer、既存活用）— 必須 19 項目" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e8f5e9;strokeColor=#388e3c;fontSize=13;fontStyle=1;align=left;verticalAlign=top;strokeWidth=3;" vertex="1" parent="1">
+          <mxGeometry x="220" y="120" width="900" height="700" as="geometry" />
+        </mxCell>
+
+        <!-- Producer: 取込層 -->
+        <mxCell id="ingest_box" value="📥 取込層（必須）" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffecb3;strokeColor=#ff8f00;fontSize=11;fontStyle=1;align=left;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry x="260" y="160" width="820" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="dms_icon" value="AWS DMS&#xa;インスタンス + Storage&#xa;+ データ転送" style="sketch=0;outlineConnect=0;fontColor=#232F3E;fillColor=#3334B9;strokeColor=#232F3E;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.database_migration_service;" vertex="1" parent="1">
+          <mxGeometry x="320" y="190" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="lambda_icon" value="AWS Lambda&#xa;リクエスト&#xa;+ コンピューティング" style="sketch=0;outlineConnect=0;fontColor=#232F3E;fillColor=#ED7100;strokeColor=#232F3E;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.lambda;" vertex="1" parent="1">
+          <mxGeometry x="520" y="190" width="78" height="78" as="geometry" />
+        </mxCell>
+
+        <!-- Producer: S3 Medallion -->
+        <mxCell id="s3_medallion_box" value="Amazon S3 Medallion（必須）" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ccffcc;strokeColor=#388e3c;fontSize=11;fontStyle=1;align=left;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry x="260" y="300" width="820" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="s3_raw_icon" value="S3 raw 層&#xa;生データ" style="sketch=0;outlineConnect=0;fontColor=#232F3E;fillColor=#7AA116;strokeColor=#232F3E;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.s3;" vertex="1" parent="1">
+          <mxGeometry x="320" y="330" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="s3_cur_icon" value="S3 curated 層&#xa;クレンジング済" style="sketch=0;outlineConnect=0;fontColor=#232F3E;fillColor=#7AA116;strokeColor=#232F3E;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.s3;" vertex="1" parent="1">
+          <mxGeometry x="520" y="330" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="s3_ana_icon" value="S3 analytics 層&#xa;分析用集計" style="sketch=0;outlineConnect=0;fontColor=#232F3E;fillColor=#7AA116;strokeColor=#232F3E;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.s3;" vertex="1" parent="1">
+          <mxGeometry x="720" y="330" width="78" height="78" as="geometry" />
+        </mxCell>
+
+        <!-- Producer: AWS Glue -->
+        <mxCell id="glue_producer_box" value="AWS Glue（必須）" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffd5cc;strokeColor=#c85a3f;fontSize=11;fontStyle=1;align=left;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry x="260" y="440" width="820" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="glue_catalog_p_icon" value="Glue Data Catalog&#xa;ストレージ + リクエスト&#xa;※App 自身の S3 定義" style="sketch=0;outlineConnect=0;fontColor=#232F3E;fillColor=#E7157B;strokeColor=#232F3E;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.glue;" vertex="1" parent="1">
+          <mxGeometry x="320" y="475" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="glue_crawler_icon" value="Glue Crawler" style="sketch=0;outlineConnect=0;fontColor=#232F3E;fillColor=#E7157B;strokeColor=#232F3E;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.glue;" vertex="1" parent="1">
+          <mxGeometry x="520" y="475" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="glue_etl_icon" value="Glue ETL Flex" style="sketch=0;outlineConnect=0;fontColor=#232F3E;fillColor=#E7157B;strokeColor=#232F3E;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.glue;" vertex="1" parent="1">
+          <mxGeometry x="720" y="475" width="78" height="78" as="geometry" />
+        </mxCell>
+
+        <!-- Producer: オーケスト・監視層 -->
+        <mxCell id="orch_box" value="🔁 オーケスト・監視（必須）" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1976d2;fontSize=11;fontStyle=1;align=left;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry x="260" y="590" width="820" height="220" as="geometry" />
+        </mxCell>
+        <mxCell id="stepfn_icon" value="Step Functions" style="sketch=0;outlineConnect=0;fontColor=#232F3E;fillColor=#E7157B;strokeColor=#232F3E;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.step_functions;" vertex="1" parent="1">
+          <mxGeometry x="320" y="625" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="eventbridge_icon" value="EventBridge&#xa;Scheduler" style="sketch=0;outlineConnect=0;fontColor=#232F3E;fillColor=#E7157B;strokeColor=#232F3E;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.eventbridge;" vertex="1" parent="1">
+          <mxGeometry x="520" y="625" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="cw_icon" value="CloudWatch&#xa;Logs Ingestion + Storage&#xa;+ Alarms + API Requests" style="sketch=0;outlineConnect=0;fontColor=#232F3E;fillColor=#E7157B;strokeColor=#232F3E;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.cloudwatch_2;" vertex="1" parent="1">
+          <mxGeometry x="320" y="720" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="cw_label" value="※ Glue ETL の Continuous Logging は&#xa;Logs Ingestion の最大要因。本番は無効化を推奨。" style="text;html=1;align=left;verticalAlign=middle;fontSize=10;fillColor=none;strokeColor=none;fontStyle=2;" vertex="1" parent="1">
+          <mxGeometry x="440" y="730" width="600" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- ===== 中央 BI / Catalog アカウント 全体枠 ===== -->
+        <mxCell id="central_container" value="🟠 AWS アカウント: 中央 BI / Catalog 同居 (Option B + D-2、新規 +1) — 必須 13 項目" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff3e0;strokeColor=#e65100;fontSize=13;fontStyle=1;align=left;verticalAlign=top;strokeWidth=3;" vertex="1" parent="1">
+          <mxGeometry x="1160" y="120" width="1180" height="1050" as="geometry" />
+        </mxCell>
+
+        <!-- 中央: カタログ層 -->
+        <mxCell id="cat_layer_box" value="📚 カタログ層（必須）— DataLakeAdminRole 管理" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffebee;strokeColor=#c62828;fontSize=11;fontStyle=1;align=left;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry x="1200" y="160" width="1100" height="220" as="geometry" />
+        </mxCell>
+        <mxCell id="lf_icon" value="AWS Lake Formation&#xa;全機能（LF-Tag /&#xa;Data Filter /&#xa;Cross-account Grants）" style="sketch=0;outlineConnect=0;fontColor=#232F3E;fillColor=#E7157B;strokeColor=#232F3E;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.lake_formation;" vertex="1" parent="1">
+          <mxGeometry x="1260" y="200" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="glue_catalog_c_icon" value="Glue Data Catalog（中央）&#xa;※LF 利用基盤&#xa;Producer Federation" style="sketch=0;outlineConnect=0;fontColor=#232F3E;fillColor=#E7157B;strokeColor=#232F3E;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.glue;" vertex="1" parent="1">
+          <mxGeometry x="1500" y="200" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="kms_cmk_icon" value="KMS CMK&#xa;鍵管理 5 鍵" style="sketch=0;outlineConnect=0;fontColor=#232F3E;fillColor=#DD344C;strokeColor=#232F3E;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.key_management_service;" vertex="1" parent="1">
+          <mxGeometry x="1740" y="200" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="kms_req_icon" value="KMS リクエスト&#xa;API 呼出" style="sketch=0;outlineConnect=0;fontColor=#232F3E;fillColor=#DD344C;strokeColor=#232F3E;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.key_management_service;" vertex="1" parent="1">
+          <mxGeometry x="1940" y="200" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="cat_note" value="※ Lake Formation は Glue Data Catalog の上に乗る認可レイヤー。LF 自身は無料、KMS CMK が主なコスト" style="text;html=1;align=left;verticalAlign=middle;fontSize=10;fillColor=none;strokeColor=none;fontStyle=2;" vertex="1" parent="1">
+          <mxGeometry x="1240" y="320" width="1000" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- 中央: 利用者層 -->
+        <mxCell id="user_layer_box" value="📊 利用者層（必須）— DataAnalystRole / DataReaderRole 管理" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1976d2;fontSize=11;fontStyle=1;align=left;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry x="1200" y="400" width="1100" height="220" as="geometry" />
+        </mxCell>
+        <mxCell id="athena_icon" value="Amazon Athena&#xa;Standard On-Demand&#xa;Workgroups" style="sketch=0;outlineConnect=0;fontColor=#232F3E;fillColor=#8C4FFF;strokeColor=#232F3E;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.athena;" vertex="1" parent="1">
+          <mxGeometry x="1260" y="440" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="qs_icon" value="QuickSight Enterprise&#xa;Author + Reader&#xa;+ SPICE" style="sketch=0;outlineConnect=0;fontColor=#232F3E;fillColor=#8C4FFF;strokeColor=#232F3E;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.quicksight;" vertex="1" parent="1">
+          <mxGeometry x="1500" y="440" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="user_note" value="※ Athena Standard $5/TB スキャン、QuickSight Author $24/月 + Reader $3/月 + SPICE $0.38/GB-月" style="text;html=1;align=left;verticalAlign=middle;fontSize=10;fillColor=none;strokeColor=none;fontStyle=2;" vertex="1" parent="1">
+          <mxGeometry x="1240" y="560" width="1000" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- 中央: S3 ストレージ -->
+        <mxCell id="s3_central_box" value="Amazon S3（必須 5 種類）" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ccffcc;strokeColor=#388e3c;fontSize=11;fontStyle=1;align=left;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry x="1200" y="640" width="1100" height="220" as="geometry" />
+        </mxCell>
+        <mxCell id="s3_derived" value="S3 central-derived&#xa;Parquet 派生&#xa;12-24 ヶ月" style="sketch=0;outlineConnect=0;fontColor=#232F3E;fillColor=#7AA116;strokeColor=#232F3E;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.s3;" vertex="1" parent="1">
+          <mxGeometry x="1240" y="680" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="s3_athena_res" value="S3 athena-results&#xa;× WG 別 5 バケット&#xa;一時クエリ結果" style="sketch=0;outlineConnect=0;fontColor=#232F3E;fillColor=#7AA116;strokeColor=#232F3E;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.s3;" vertex="1" parent="1">
+          <mxGeometry x="1440" y="680" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="s3_audit" value="S3 audit-results&#xa;Object Lock 7 年&#xa;監査専用 CMK" style="sketch=0;outlineConnect=0;fontColor=#232F3E;fillColor=#7AA116;strokeColor=#232F3E;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.s3;" vertex="1" parent="1">
+          <mxGeometry x="1640" y="680" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="s3_common" value="S3 common-domain&#xa;顧客マスタ等&#xa;D-2 同居" style="sketch=0;outlineConnect=0;fontColor=#232F3E;fillColor=#7AA116;strokeColor=#232F3E;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.s3;" vertex="1" parent="1">
+          <mxGeometry x="1840" y="680" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="s3_req" value="S3 リクエスト&#xa;PUT + GET&#xa;全5バケット合算" style="sketch=0;outlineConnect=0;fontColor=#232F3E;fillColor=#7AA116;strokeColor=#232F3E;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.s3;" vertex="1" parent="1">
+          <mxGeometry x="2040" y="680" width="78" height="78" as="geometry" />
+        </mxCell>
+
+        <!-- 中央: 月額注釈 -->
+        <mxCell id="central_total" value="中央 BI / Catalog アカウント Phase 1 月額: $399（カタログ層 $8 + Athena $1.5 + QuickSight $386 + S3 派生・結果 $3）" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fffacd;strokeColor=#b8860b;fontSize=11;fontStyle=1;align=center;" vertex="1" parent="1">
+          <mxGeometry x="1200" y="900" width="1100" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- ===== 横断インフラ 全体枠 ===== -->
+        <mxCell id="cross_container" value="🔵 横断インフラ（全アカウント共通） — 必須 9 項目" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e1f5fe;strokeColor=#0277bd;fontSize=13;fontStyle=1;align=left;verticalAlign=top;strokeWidth=3;" vertex="1" parent="1">
+          <mxGeometry x="220" y="850" width="900" height="320" as="geometry" />
+        </mxCell>
+        <mxCell id="ram_icon" value="AWS RAM&#xa;リソース共有&#xa;（無料）" style="sketch=0;outlineConnect=0;fontColor=#232F3E;fillColor=#E7157B;strokeColor=#232F3E;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.resource_access_manager;" vertex="1" parent="1">
+          <mxGeometry x="280" y="900" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="ctrail_icon" value="CloudTrail&#xa;Management +&#xa;Data Events" style="sketch=0;outlineConnect=0;fontColor=#232F3E;fillColor=#C7131F;strokeColor=#232F3E;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.cloudtrail;" vertex="1" parent="1">
+          <mxGeometry x="450" y="900" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="vpc_interface_icon" value="VPC Interface&#xa;Endpoint&#xa;× 8 endpoints" style="sketch=0;outlineConnect=0;fontColor=#232F3E;fillColor=#8C4FFF;strokeColor=#232F3E;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.privatelink;" vertex="1" parent="1">
+          <mxGeometry x="620" y="900" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="vpc_gateway_icon" value="VPC Gateway&#xa;Endpoint&#xa;S3 / DynamoDB（無料）" style="sketch=0;outlineConnect=0;fontColor=#232F3E;fillColor=#8C4FFF;strokeColor=#232F3E;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.privatelink;" vertex="1" parent="1">
+          <mxGeometry x="790" y="900" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="config_icon" value="AWS Config&#xa;継続記録項目" style="sketch=0;outlineConnect=0;fontColor=#232F3E;fillColor=#C7131F;strokeColor=#232F3E;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.config;" vertex="1" parent="1">
+          <mxGeometry x="950" y="900" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="datatrans_icon" value="データ転送&#xa;同一リージョン + クロス AZ&#xa;同一 AZ 無料 / クロス AZ $0.01/GB" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#0277bd;fontSize=10;align=center;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="280" y="1020" width="380" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="cross_total" value="横断インフラ 月額: $342（CloudTrail $32 + VPC Endpoint $174 + Config $130 + データ転送 $1 + VPC Flow Logs（任意で別途）+ RAM 無料）" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fffacd;strokeColor=#b8860b;fontSize=11;fontStyle=1;align=center;" vertex="1" parent="1">
+          <mxGeometry x="280" y="1100" width="800" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- ===== Producer 月額注釈 ===== -->
+        <mxCell id="producer_total" value="Producer アカウント Phase 1 月額（1 アプリ）: $85（取込層 $47 + ストレージ層 $9 + Glue 層 $13 + オーケスト層 $16）" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fffacd;strokeColor=#b8860b;fontSize=11;fontStyle=1;align=center;" vertex="1" parent="1">
+          <mxGeometry x="280" y="780" width="780" height="30" as="geometry" />
+        </mxCell>
+
+        <!-- ===== Connections ===== -->
+        <!-- Steward → Glue ETL / Crawler -->
+        <mxCell id="e_steward_etl" style="endArrow=open;html=1;dashed=1;strokeColor=#666666;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="actor_steward" target="glue_etl_icon">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_owner_catalog" style="endArrow=open;html=1;dashed=1;strokeColor=#666666;" edge="1" parent="1" source="actor_owner" target="glue_catalog_p_icon">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_admin_lf" style="endArrow=open;html=1;dashed=1;strokeColor=#666666;" edge="1" parent="1" source="actor_admin" target="lf_icon">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_admin_kms" style="endArrow=open;html=1;dashed=1;strokeColor=#666666;" edge="1" parent="1" source="actor_admin" target="kms_cmk_icon">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_analyst_athena" style="endArrow=open;html=1;dashed=1;strokeColor=#666666;" edge="1" parent="1" source="actor_analyst" target="athena_icon">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_analyst_qs" style="endArrow=open;html=1;dashed=1;strokeColor=#666666;" edge="1" parent="1" source="actor_analyst" target="qs_icon">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_reader_qs" style="endArrow=open;html=1;dashed=1;strokeColor=#666666;" edge="1" parent="1" source="actor_reader" target="qs_icon">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Producer data flow -->
+        <mxCell id="e_dms_s3raw" style="endArrow=classic;html=1;strokeColor=#388e3c;" edge="1" parent="1" source="dms_icon" target="s3_raw_icon">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_lambda_s3raw" style="endArrow=classic;html=1;strokeColor=#388e3c;" edge="1" parent="1" source="lambda_icon" target="s3_raw_icon">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_raw_etl" style="endArrow=classic;html=1;strokeColor=#388e3c;" edge="1" parent="1" source="s3_raw_icon" target="glue_etl_icon">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_etl_cur" style="endArrow=classic;html=1;strokeColor=#388e3c;" edge="1" parent="1" source="glue_etl_icon" target="s3_cur_icon">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_cur_ana" style="endArrow=classic;html=1;strokeColor=#388e3c;" edge="1" parent="1" source="s3_cur_icon" target="s3_ana_icon">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_crawler_catalog" style="endArrow=classic;html=1;strokeColor=#388e3c;" edge="1" parent="1" source="glue_crawler_icon" target="glue_catalog_p_icon">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Producer orchestration -->
+        <mxCell id="e_eventbridge_stepfn" style="endArrow=open;html=1;dashed=1;strokeColor=#1976d2;" edge="1" parent="1" source="eventbridge_icon" target="stepfn_icon">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_stepfn_etl" style="endArrow=open;html=1;dashed=1;strokeColor=#1976d2;" edge="1" parent="1" source="stepfn_icon" target="glue_etl_icon">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_etl_cw" style="endArrow=open;html=1;dashed=1;strokeColor=#1976d2;" edge="1" parent="1" source="glue_etl_icon" target="cw_icon">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Cross-account Federation -->
+        <mxCell id="e_glue_p_to_c" style="endArrow=open;html=1;dashed=1;strokeColor=#e65100;strokeWidth=2;" edge="1" parent="1" source="glue_catalog_p_icon" target="glue_catalog_c_icon">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1140" y="514" />
+              <mxPoint x="1180" y="240" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_glue_p_to_c_label" value="Cross-account Federation" style="text;html=1;align=center;verticalAlign=middle;fontSize=9;fontStyle=2;fillColor=none;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry x="1130" y="380" width="160" height="20" as="geometry" />
+        </mxCell>
+
+        <!-- Lake Formation → Glue Central -->
+        <mxCell id="e_lf_glue_c" style="endArrow=open;html=1;dashed=1;strokeColor=#666666;" edge="1" parent="1" source="lf_icon" target="glue_catalog_c_icon">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Athena -> S3 ana (cross-account read) -->
+        <mxCell id="e_athena_s3ana" style="endArrow=open;html=1;dashed=1;strokeColor=#e65100;strokeWidth=2;" edge="1" parent="1" source="athena_icon" target="s3_ana_icon">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1180" y="479" />
+              <mxPoint x="1140" y="369" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_athena_s3ana_label" value="データ直読" style="text;html=1;align=center;verticalAlign=middle;fontSize=9;fontStyle=2;fillColor=none;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry x="1080" y="420" width="100" height="20" as="geometry" />
+        </mxCell>
+
+        <!-- Athena → Lake Formation (auth) -->
+        <mxCell id="e_athena_lf" style="endArrow=open;html=1;dashed=1;strokeColor=#666666;" edge="1" parent="1" source="athena_icon" target="lf_icon">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_athena_lf_label" value="認可問合せ" style="text;html=1;align=center;verticalAlign=middle;fontSize=9;fontStyle=2;fillColor=none;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry x="1320" y="360" width="100" height="20" as="geometry" />
+        </mxCell>
+
+        <!-- Athena → S3 results -->
+        <mxCell id="e_athena_results" style="endArrow=classic;html=1;strokeColor=#666666;" edge="1" parent="1" source="athena_icon" target="s3_athena_res">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_athena_derived" style="endArrow=classic;html=1;strokeColor=#666666;" edge="1" parent="1" source="athena_icon" target="s3_derived">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- QuickSight → Athena -->
+        <mxCell id="e_qs_athena" style="endArrow=open;html=1;dashed=1;strokeColor=#666666;" edge="1" parent="1" source="qs_icon" target="athena_icon">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- KMS → S3 raw (encryption) -->
+        <mxCell id="e_kms_s3raw" style="endArrow=open;html=1;dashed=1;strokeColor=#c62828;" edge="1" parent="1" source="kms_cmk_icon" target="s3_raw_icon">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1779" y="180" />
+              <mxPoint x="900" y="180" />
+              <mxPoint x="900" y="280" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_kms_label" value="暗号化" style="text;html=1;align=center;verticalAlign=middle;fontSize=9;fontStyle=2;fillColor=none;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry x="1200" y="160" width="80" height="20" as="geometry" />
+        </mxCell>
+
+        <!-- KMS Req → CMK -->
+        <mxCell id="e_kmsreq_cmk" style="endArrow=open;html=1;dashed=1;strokeColor=#666666;" edge="1" parent="1" source="kms_req_icon" target="kms_cmk_icon">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- CloudTrail → audit-results -->
+        <mxCell id="e_ctrail_audit" style="endArrow=classic;html=1;dashed=1;strokeColor=#0277bd;" edge="1" parent="1" source="ctrail_icon" target="s3_audit">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="489" y="870" />
+              <mxPoint x="1680" y="870" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_ctrail_label" value="監査ログ保管" style="text;html=1;align=center;verticalAlign=middle;fontSize=9;fontStyle=2;fillColor=none;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry x="950" y="850" width="100" height="20" as="geometry" />
+        </mxCell>
+
+        <!-- ===== 凡例 ===== -->
+        <mxCell id="legend_box" value="凡例" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fafafa;strokeColor=#999999;fontSize=11;fontStyle=1;align=left;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry x="1160" y="1200" width="600" height="280" as="geometry" />
+        </mxCell>
+        <mxCell id="legend_actor" value="👤 アクター（人間の役割、IAM Role）" style="text;html=1;align=left;verticalAlign=middle;fontSize=10;fillColor=none;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry x="1180" y="1230" width="400" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="legend_account_green" value="🟢 緑枠: Producer アカウント（既存活用、App N 個分）" style="text;html=1;align=left;verticalAlign=middle;fontSize=10;fillColor=none;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry x="1180" y="1260" width="500" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="legend_account_orange" value="🟠 オレンジ枠: 中央 BI / Catalog アカウント（新規 +1、Option B + D-2 同居）" style="text;html=1;align=left;verticalAlign=middle;fontSize=10;fillColor=none;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry x="1180" y="1290" width="600" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="legend_account_blue" value="🔵 青枠: 横断インフラ（全アカウント共通、AWS Organizations 配下で機能）" style="text;html=1;align=left;verticalAlign=middle;fontSize=10;fillColor=none;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry x="1180" y="1320" width="600" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="legend_solid" value="実線 → : データの流れ（ETL / 取込 / 結果保存）" style="text;html=1;align=left;verticalAlign=middle;fontSize=10;fillColor=none;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry x="1180" y="1350" width="500" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="legend_dashed" value="点線 ⇢ : 制御・認可・暗号化・横断接続" style="text;html=1;align=left;verticalAlign=middle;fontSize=10;fillColor=none;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry x="1180" y="1380" width="500" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="legend_excluded" value="本図は §4.5.2 「必須 41 項目」のみ。任意 31 項目（Firehose / AppFlow / Transfer Family / SageMaker / IA-Glacier / Provisioned Capacity / VPC Flow Logs 等）は含まない" style="text;html=1;align=left;verticalAlign=middle;fontSize=10;fillColor=none;strokeColor=none;fontStyle=2;" vertex="1" parent="1">
+          <mxGeometry x="1180" y="1410" width="570" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- ===== 全体月額サマリ ===== -->
+        <mxCell id="summary_total" value="全体合計（Phase 1、必須のみ）&#xa;1 アプリ: $85 + $399 + $342 = ~$826/月&#xa;5 アプリ: ~$1,166/月  /  10 アプリ: ~$1,591/月  /  20 アプリ: ~$2,441/月" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff3e0;strokeColor=#e65100;fontSize=12;fontStyle=1;align=center;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="220" y="1200" width="900" height="100" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

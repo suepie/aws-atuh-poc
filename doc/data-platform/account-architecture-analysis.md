@@ -2986,7 +2986,87 @@ flowchart TB
 
 ---
 
-### 4.5.6 公式リソース一覧（再掲）
+### 4.5.6 必須項目のみの構成図
+
+§4.5.2 統合料金一覧表で「**必須**」フラグを付けた **41 項目のみ**を抽出した構成図。任意 31 項目（Firehose / AppFlow / Transfer Family / SageMaker / IA-Glacier / Provisioned Capacity / VPC Flow Logs 等）と削除 2 項目は含まない。
+
+**ファイル**:
+
+| 形式 | ファイル | 用途 |
+|---|---|---|
+| Mermaid | [drawio/required-architecture.mmd](drawio/required-architecture.mmd) | Markdown レビュー / GitHub Preview |
+| drawio | [drawio/required-architecture.drawio](drawio/required-architecture.drawio) | プレゼン・印刷・編集（VS Code 拡張 / diagrams.net）|
+| 説明 | [drawio/README.md](drawio/README.md) | 配置方針 + 更新ルール |
+
+**含まれる必須リソース**（41 項目の AWS サービス内訳）:
+
+| 配置場所 | AWS サービス（必須項目） | 数 |
+|---|---|---|
+| Producer（1 アプリ）| DMS / Lambda / S3 Medallion (raw/curated/analytics + 各リクエスト) / Glue (ETL Flex + Crawler + Catalog) / Step Functions / EventBridge Scheduler / CloudWatch (Logs Ingestion+Storage+Alarms+API Requests) | 19 |
+| 中央 BI / Catalog | Lake Formation / Glue Data Catalog（中央）/ KMS (CMK + Requests) / Athena Standard / QuickSight (Author + Reader + SPICE) / S3 (central-derived + athena-results + audit-results + common-domain + Requests) | 13 |
+| 横断インフラ | RAM / CloudTrail (Management + Data Events) / VPC Interface Endpoint (時間 + データ) / VPC Gateway Endpoint / AWS Config / データ転送 (同一AZ + クロスAZ) | 9 |
+
+**Phase 1 月額**: 10 アプリで **~$1,591/月**（必須のみ採用時）。詳細は §4.5.3 全体合計参照。
+
+**Mermaid 概要図**（コンパクト版）:
+
+```mermaid
+flowchart TB
+    Steward(["👤 データスチュワード"])
+    Admin(["👤 カタログ管理者"])
+    Analyst(["👤 中央 BI チーム"])
+    Reader(["👤 業務利用者"])
+
+    subgraph App["🟢 Producer App 1〜N（必須 19）"]
+        direction TB
+        Ingest["📥 取込: DMS + Lambda"]
+        S3M["S3 Medallion<br/>raw → curated → analytics"]
+        Glue["AWS Glue<br/>ETL Flex + Crawler + Catalog"]
+        Orch["🔁 オーケスト<br/>Step Functions + EventBridge + CloudWatch"]
+        Ingest --> S3M --> Glue
+        Orch -.制御.-> Glue
+    end
+
+    subgraph Central["🟠 中央 BI / Catalog（必須 13、Option B + D-2）"]
+        direction TB
+        Cat["📚 カタログ層<br/>Lake Formation + Glue Catalog 中央 + KMS"]
+        User["📊 利用者層<br/>Athena Workgroups + QuickSight (Author/Reader/SPICE)"]
+        S3C["Amazon S3 (5 種)<br/>central-derived / athena-results × 5 WG / audit / common-domain"]
+        Cat -.認可.-> User
+        User -.結果保存.-> S3C
+    end
+
+    subgraph Cross["🔵 横断インフラ（必須 9）"]
+        direction LR
+        RAM[RAM]
+        CTrail[CloudTrail<br/>Mgmt + Data]
+        VPCEP[VPC Endpoint<br/>Interface + Gateway]
+        Config[AWS Config]
+        DT[データ転送]
+    end
+
+    Steward -.実装.-> Glue
+    Admin -.LF/Tag/鍵.-> Cat
+    Analyst -.クエリ.-> User
+    Reader -.閲覧.-> User
+
+    Glue -.Federation.-> Cat
+    User -.直読.-> S3M
+    Cross -.AWS Organizations 横断.-> App
+    Cross -.AWS Organizations 横断.-> Central
+
+    style App fill:#e8f5e9,stroke:#388e3c,stroke-width:3px
+    style Central fill:#fff3e0,stroke:#e65100,stroke-width:3px
+    style Cross fill:#e1f5fe,stroke:#0277bd,stroke-width:3px
+```
+
+→ **詳細版**（アクター・データフロー・暗号化・全リソース表示）は [drawio/required-architecture.mmd](drawio/required-architecture.mmd) を参照。
+
+**更新方針**: 設計変更で必須/任意の分類が変わった場合は、§4.5.2 統合表 + Mermaid + drawio の 3 箇所を同期更新。
+
+---
+
+### 4.5.7 公式リソース一覧（再掲）
 
 | サービス | 公式料金ページ |
 |---|---|
