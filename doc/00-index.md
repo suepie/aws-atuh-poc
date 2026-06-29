@@ -22,6 +22,7 @@ doc/
 | ドキュメント | 内容 |
 |------------|------|
 | [architecture.md](common/architecture.md) | ⚠ **§C-7 へ移管済**（→ [proposal/common/07-implementation-architecture.md](requirements/proposal/common/07-implementation-architecture.md)、本ファイルはリダイレクトのみ）|
+| [drawio/](common/drawio/) | **🆕 drawio 詳細図**（5 アカウント体系全体俯瞰 + ネットワーク監査詳細、2026-06-25 追加）|
 | [poc-scope.md](common/poc-scope.md) | PoC範囲・制約・技術スタック |
 | [poc-results.md](common/poc-results.md) | 検証結果サマリー（Phase 1-7）・Cognito vs Keycloak比較 |
 | [destroy-guide.md](common/destroy-guide.md) | 環境削除・残存リソース確認手順 |

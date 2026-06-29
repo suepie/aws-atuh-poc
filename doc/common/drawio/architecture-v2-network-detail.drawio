@@ -1,0 +1,162 @@
+<mxfile host="app.diagrams.net" modified="2026-06-25T00:00:00.000Z" agent="Claude/Anthropic" version="22.0.0" type="device">
+  <diagram name="ネットワーク監査 Acct 詳細" id="net-detail-v2">
+    <mxGraphModel dx="2400" dy="1400" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2400" pageHeight="1600" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- ===== タイトル ===== -->
+        <mxCell id="title" value="ネットワーク監査 Acct 詳細&#xa;アプリごと独立 CloudFront + WAF + Lambda@Edge セット (1 アプリ = 1 セット)&#xa;(2026-06-25 / ADR-039 v2 §A §B)" style="text;html=1;align=center;verticalAlign=middle;fontSize=18;fontStyle=1;fillColor=none;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry x="400" y="20" width="1600" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- ===== ネットワーク監査 Acct 全体枠 ===== -->
+        <mxCell id="netaudit_container" value="🟣 ネットワーク監査 Acct (Network 監査チーム) — Shield Advanced で全 CloudFront 保護 + Network Firewall で Egress / East-West 検査" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff3e0;strokeColor=#e65100;fontSize=13;fontStyle=1;align=left;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry x="100" y="100" width="2200" height="1050" as="geometry" />
+        </mxCell>
+
+        <!-- Shield Advanced (全体保護) -->
+        <mxCell id="shield_global" value="Shield Advanced  /  全 CloudFront Distribution + ALB を保護 ($3K/月 × 1 全社購入)  /  DDoS Response Team サポート付き" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fce4e4;strokeColor=#c62828;fontSize=11;fontStyle=1;align=center;dashed=1;dashPattern=8 4;" vertex="1" parent="1">
+          <mxGeometry x="140" y="160" width="2120" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- ===== 認証基盤系セット (CloudFront-Auth + CloudFront-Admin) ===== -->
+        <mxCell id="auth_set_container" value="認証基盤系 CloudFront/WAF セット (2 セット)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff8e1;strokeColor=#ff8f00;fontSize=11;fontStyle=1;align=left;verticalAlign=top;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="140" y="230" width="620" height="450" as="geometry" />
+        </mxCell>
+
+        <!-- CloudFront-Auth セット -->
+        <mxCell id="auth_box" value="セット 1: CloudFront-Auth (auth.basis.example.com)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontSize=10;fontStyle=1;align=left;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry x="160" y="280" width="580" height="180" as="geometry" />
+        </mxCell>
+        <mxCell id="cf_auth_d" value="CloudFront&#xa;-Auth" style="sketch=0;outlineConnect=0;fontColor=#232F3E;fillColor=#8C4FFF;strokeColor=#232F3E;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.cloudfront;" vertex="1" parent="1">
+          <mxGeometry x="200" y="320" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="waf_auth_d" value="WAF-Auth&#xa;Bot Control + ATP&#xa;+ /admin 全 IP Deny" style="sketch=0;outlineConnect=0;fontColor=#232F3E;fillColor=#DD344C;strokeColor=#232F3E;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.waf;" vertex="1" parent="1">
+          <mxGeometry x="360" y="320" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="le_auth_d" value="Lambda@Edge&#xa;-Auth&#xa;(エラー/案内画面&#xa;リダイレクト)" style="sketch=0;outlineConnect=0;fontColor=#232F3E;fillColor=#ED7100;strokeColor=#232F3E;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.lambda;" vertex="1" parent="1">
+          <mxGeometry x="540" y="320" width="78" height="78" as="geometry" />
+        </mxCell>
+
+        <!-- CloudFront-Admin セット -->
+        <mxCell id="admin_box" value="セット 2: CloudFront-Admin (admin.basis.example.com、ユーザ管理画面)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontSize=10;fontStyle=1;align=left;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry x="160" y="480" width="580" height="180" as="geometry" />
+        </mxCell>
+        <mxCell id="cf_admin_d" value="CloudFront&#xa;-Admin" style="sketch=0;outlineConnect=0;fontColor=#232F3E;fillColor=#8C4FFF;strokeColor=#232F3E;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.cloudfront;" vertex="1" parent="1">
+          <mxGeometry x="200" y="520" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="waf_admin_d" value="WAF-Admin&#xa;厳格 Rate Limit&#xa;+ テナントスコープ" style="sketch=0;outlineConnect=0;fontColor=#232F3E;fillColor=#DD344C;strokeColor=#232F3E;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.waf;" vertex="1" parent="1">
+          <mxGeometry x="360" y="520" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="le_admin_d" value="Lambda@Edge&#xa;-Admin" style="sketch=0;outlineConnect=0;fontColor=#232F3E;fillColor=#ED7100;strokeColor=#232F3E;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.lambda;" vertex="1" parent="1">
+          <mxGeometry x="540" y="520" width="78" height="78" as="geometry" />
+        </mxCell>
+
+        <!-- ===== 業務アプリ系セット (CloudFront-AppA, B, C) ===== -->
+        <mxCell id="app_set_container" value="業務アプリ系 CloudFront/WAF セット (N セット、アプリ別カスタマイズ可能)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e8f5e9;strokeColor=#388e3c;fontSize=11;fontStyle=1;align=left;verticalAlign=top;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="800" y="230" width="1460" height="450" as="geometry" />
+        </mxCell>
+
+        <!-- CloudFront-AppA セット -->
+        <mxCell id="appa_box" value="セット 3: CloudFront-AppA (app-a.example.com) - 例: 経費精算 (PCI DSS 適用)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontSize=10;fontStyle=1;align=left;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry x="820" y="280" width="440" height="180" as="geometry" />
+        </mxCell>
+        <mxCell id="cf_appa_d" value="CloudFront&#xa;-AppA" style="sketch=0;outlineConnect=0;fontColor=#232F3E;fillColor=#8C4FFF;strokeColor=#232F3E;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.cloudfront;" vertex="1" parent="1">
+          <mxGeometry x="860" y="320" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="waf_appa_d" value="WAF-AppA&#xa;Common + Targeted&#xa;+ Bot Control&#xa;+ Geo-Match 国内&#xa;+ 厳格 Rate Limit" style="sketch=0;outlineConnect=0;fontColor=#232F3E;fillColor=#DD344C;strokeColor=#232F3E;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=9;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.waf;" vertex="1" parent="1">
+          <mxGeometry x="1020" y="320" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="le_appa_d" value="Lambda@Edge&#xa;-AppA" style="sketch=0;outlineConnect=0;fontColor=#232F3E;fillColor=#ED7100;strokeColor=#232F3E;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.lambda;" vertex="1" parent="1">
+          <mxGeometry x="1180" y="320" width="78" height="78" as="geometry" />
+        </mxCell>
+
+        <!-- CloudFront-AppB セット -->
+        <mxCell id="appb_box" value="セット 4: CloudFront-AppB (app-b.example.com) - 例: 勤怠管理 (社内ツール、緩い WAF)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontSize=10;fontStyle=1;align=left;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry x="820" y="480" width="440" height="180" as="geometry" />
+        </mxCell>
+        <mxCell id="cf_appb_d" value="CloudFront&#xa;-AppB" style="sketch=0;outlineConnect=0;fontColor=#232F3E;fillColor=#8C4FFF;strokeColor=#232F3E;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.cloudfront;" vertex="1" parent="1">
+          <mxGeometry x="860" y="520" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="waf_appb_d" value="WAF-AppB&#xa;Common&#xa;+ IP Allowlist&#xa;社内 NW のみ" style="sketch=0;outlineConnect=0;fontColor=#232F3E;fillColor=#DD344C;strokeColor=#232F3E;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=9;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.waf;" vertex="1" parent="1">
+          <mxGeometry x="1020" y="520" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="le_appb_d" value="Lambda@Edge&#xa;-AppB" style="sketch=0;outlineConnect=0;fontColor=#232F3E;fillColor=#ED7100;strokeColor=#232F3E;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.lambda;" vertex="1" parent="1">
+          <mxGeometry x="1180" y="520" width="78" height="78" as="geometry" />
+        </mxCell>
+
+        <!-- CloudFront-AppC セット (例) -->
+        <mxCell id="appc_box" value="セット 5+: CloudFront-AppC.. (公開 API、取引先連携) - N アプリ分独立" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontSize=10;fontStyle=1;align=left;verticalAlign=top;dashed=5;" vertex="1" parent="1">
+          <mxGeometry x="1300" y="280" width="940" height="380" as="geometry" />
+        </mxCell>
+        <mxCell id="cf_appc_d" value="CloudFront&#xa;-AppC" style="sketch=0;outlineConnect=0;fontColor=#232F3E;fillColor=#8C4FFF;strokeColor=#232F3E;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.cloudfront;" vertex="1" parent="1">
+          <mxGeometry x="1340" y="340" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="waf_appc_d" value="WAF-AppC&#xa;Common&#xa;+ 取引先&#xa;IP Allowlist&#xa;+ API Token 検証" style="sketch=0;outlineConnect=0;fontColor=#232F3E;fillColor=#DD344C;strokeColor=#232F3E;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=9;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.waf;" vertex="1" parent="1">
+          <mxGeometry x="1480" y="340" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="cf_more" value="...&#xa;(N アプリ分&#xa;CloudFront / WAF / Lambda@Edge セット&#xa;独立配置)" style="text;html=1;align=center;verticalAlign=middle;fontSize=12;fontStyle=2;fillColor=none;strokeColor=#999999;" vertex="1" parent="1">
+          <mxGeometry x="1700" y="450" width="380" height="120" as="geometry" />
+        </mxCell>
+
+        <!-- ===== Network Firewall + ACM ===== -->
+        <mxCell id="nfw_box" value="共有インフラ (アプリ非依存)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f3e5f5;strokeColor=#7b1fa2;fontSize=11;fontStyle=1;align=left;verticalAlign=top;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="140" y="710" width="2120" height="200" as="geometry" />
+        </mxCell>
+        <mxCell id="nfw_d" value="Network Firewall&#xa;Suricata 互換ルール&#xa;Egress 集約検査&#xa;East-West 検査" style="sketch=0;outlineConnect=0;fontColor=#232F3E;fillColor=#DD344C;strokeColor=#232F3E;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.network_firewall;" vertex="1" parent="1">
+          <mxGeometry x="200" y="760" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="acm_d" value="ACM Certs&#xa;(us-east-1)&#xa;auth.basis.example.com&#xa;admin.basis.example.com&#xa;app-a.example.com ..." style="sketch=0;outlineConnect=0;fontColor=#232F3E;fillColor=#DD344C;strokeColor=#232F3E;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.certificate_manager;" vertex="1" parent="1">
+          <mxGeometry x="400" y="760" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="cwl_waf" value="CloudWatch Logs&#xa;(全 WAF Logs)&#xa;→ Audit Acct S3" style="sketch=0;outlineConnect=0;fontColor=#232F3E;fillColor=#E7157B;strokeColor=#232F3E;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.cloudwatch_2;" vertex="1" parent="1">
+          <mxGeometry x="600" y="760" width="78" height="78" as="geometry" />
+        </mxCell>
+
+        <!-- ===== Cross-Account 接続説明 ===== -->
+        <mxCell id="xacct_box" value="Cross-Account 接続パターン (3 種)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e1f5fe;strokeColor=#0277bd;fontSize=11;fontStyle=1;align=left;verticalAlign=top;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="140" y="940" width="2120" height="190" as="geometry" />
+        </mxCell>
+        <mxCell id="xacct_text" value="① Public ALB + secret header&#xa;  CloudFront-Auth → Auth Acct Public ALB → Broker Keycloak&#xa;  (顧客 IdP からの SAML AuthnRequest 等で Public IPv4 必要)&#xa;  CloudFront から 'X-CloudFront-Secret' を付与、ALB Listener Rule で検証&#xa;&#xa;② VPC Origins (2024-12 GA) ★ 推奨&#xa;  CloudFront-AppA, B, C → App Acct Internal ALB (PrivateLink で直接接続)&#xa;  ALB 公開不要、AWS バックボーン経由、最も安全&#xa;&#xa;③ OAC (Origin Access Control)&#xa;  CloudFront → Auth Acct S3 (SPA bundles、サービス選択画面 / ユーザ管理画面 / エラー画面)&#xa;  S3 バケットポリシーで 'aws:SourceArn' を該当 CloudFront ARN に制限" style="text;html=1;align=left;verticalAlign=top;fontSize=11;fillColor=none;strokeColor=none;whiteSpace=wrap;" vertex="1" parent="1">
+          <mxGeometry x="160" y="970" width="2080" height="160" as="geometry" />
+        </mxCell>
+
+        <!-- ===== 凡例 ===== -->
+        <mxCell id="legend_box" value="凡例 + 設計判断ポイント" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontSize=11;fontStyle=1;align=left;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry x="100" y="1180" width="2200" height="380" as="geometry" />
+        </mxCell>
+        <mxCell id="legend_detail" value="◾ アプリごと独立 CloudFront/WAF/Lambda@Edge セット&#xa;  - 1 アプリ = 1 セット完全独立、Blast Radius 最小化&#xa;  - アプリ別 WAF ルールカスタマイズ可能 (カード扱いは厳格、社内ツールは緩い)&#xa;  - Lambda@Edge は CloudFront と同一 Acct 必須 (AWS 仕様) のためアプリごと独立&#xa;&#xa;◾ /admin パス保護 (重要)&#xa;  - WAF-Auth で /admin/* パスに対して全 IP Deny ルール (最優先)&#xa;  - Auth Platform Acct ALB Listener Rule で /admin/* は Internal Listener のみ受付&#xa;  - 弊社運用者は VPN/社内 NW → Transit Gateway → Auth Acct Internal ALB → Keycloak /admin の経路のみ&#xa;  - ユーザ管理画面 (admin.basis.example.com) は別物、外部からアクセス可 (テナントスコープ強制)&#xa;&#xa;◾ Shield Advanced (全社購入 $3K/月 × 1)&#xa;  - ネットワーク監査 Acct 内の全 CloudFront を透過的に保護&#xa;  - DDoS Response Team サポート含む&#xa;&#xa;◾ Network Firewall (Egress + East-West 検査)&#xa;  - Transit Gateway 経由の通信を検査&#xa;  - VPC → インターネットへの通信 (C&amp;C 通信 / DLP)&#xa;  - Auth Acct ↔ App Acct ↔ Network Acct 間の通信 (必要時)&#xa;&#xa;◾ コスト試算 (10 アプリ想定)&#xa;  - CloudFront 10 個: $500/月 + WAF Web ACL 10 個: $50/月 + WAF Managed Rules × 10: $3,100/月&#xa;  - Lambda@Edge 10 個: $200/月 + Network Firewall: $600/月 + Shield Advanced: $3,000/月&#xa;  - ACM: $0 / 合計 〜$7,560/月 (年 〜$91K)&#xa;  - v1 集約モデル比 +$3K/月 (アプリ間影響分離 + アプリ別 WAF カスタマイズのメリットを許容)" style="text;html=1;align=left;verticalAlign=top;fontSize=11;fillColor=none;strokeColor=none;whiteSpace=wrap;" vertex="1" parent="1">
+          <mxGeometry x="120" y="1210" width="2160" height="340" as="geometry" />
+        </mxCell>
+
+        <!-- ===== セット内接続 ===== -->
+        <mxCell id="es1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#000000;strokeWidth=1;endArrow=classic;" edge="1" parent="1" source="cf_auth_d" target="waf_auth_d">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="es2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#000000;strokeWidth=1;endArrow=classic;" edge="1" parent="1" source="waf_auth_d" target="le_auth_d">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="es3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#000000;strokeWidth=1;endArrow=classic;" edge="1" parent="1" source="cf_admin_d" target="waf_admin_d">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="es4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#000000;strokeWidth=1;endArrow=classic;" edge="1" parent="1" source="waf_admin_d" target="le_admin_d">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="es5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#000000;strokeWidth=1;endArrow=classic;" edge="1" parent="1" source="cf_appa_d" target="waf_appa_d">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="es6" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#000000;strokeWidth=1;endArrow=classic;" edge="1" parent="1" source="waf_appa_d" target="le_appa_d">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="es7" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#000000;strokeWidth=1;endArrow=classic;" edge="1" parent="1" source="cf_appb_d" target="waf_appb_d">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="es8" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#000000;strokeWidth=1;endArrow=classic;" edge="1" parent="1" source="waf_appb_d" target="le_appb_d">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

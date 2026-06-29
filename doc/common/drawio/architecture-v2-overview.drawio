@@ -1,0 +1,251 @@
+<mxfile host="app.diagrams.net" modified="2026-06-25T00:00:00.000Z" agent="Claude/Anthropic" version="22.0.0" type="device">
+  <diagram name="認証基盤 v2 全体俯瞰" id="overview-v2">
+    <mxGraphModel dx="2400" dy="1600" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2400" pageHeight="1700" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- ===== タイトル ===== -->
+        <mxCell id="title" value="認証基盤 v2 全体俯瞰&#xa;5 アカウント体系 + アプリごと独立 CloudFront/WAF + 認可 C ハイブリッド&#xa;(2026-06-25 / 元情報: §C-7.2.2 + ADR-039 v2)" style="text;html=1;align=center;verticalAlign=middle;fontSize=18;fontStyle=1;fillColor=none;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry x="400" y="20" width="1600" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- ===== 外部アクター ===== -->
+        <mxCell id="actor_lane" value="外部アクター" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=12;fontStyle=1;align=left;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry x="40" y="100" width="220" height="1580" as="geometry" />
+        </mxCell>
+        <mxCell id="end_user" value="エンドユーザー&#xa;(P-3 / P-4)" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#232F3E;strokeColor=#232F3E;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=11;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.users;" vertex="1" parent="1">
+          <mxGeometry x="100" y="160" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="tenant_admin" value="顧客テナント管理者&#xa;(P-2)" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#232F3E;strokeColor=#232F3E;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=11;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.user;" vertex="1" parent="1">
+          <mxGeometry x="100" y="320" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="op_user" value="弊社運用者 (P-1)&#xa;VPN/社内 NW 経由" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#232F3E;strokeColor=#232F3E;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=11;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.user;" vertex="1" parent="1">
+          <mxGeometry x="100" y="480" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="customer_idp" value="顧客 IdP&#xa;(Entra / Okta 等)" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#DD344C;strokeColor=#232F3E;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=11;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.identity_and_access_management_identity;" vertex="1" parent="1">
+          <mxGeometry x="100" y="640" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="hr_db" value="人事 DB / HRIS&#xa;(ADR-054 SoT)" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#3334B9;strokeColor=#232F3E;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=11;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.database;" vertex="1" parent="1">
+          <mxGeometry x="100" y="800" width="78" height="78" as="geometry" />
+        </mxCell>
+
+        <!-- ===== 🟣 ネットワーク監査 Acct ===== -->
+        <mxCell id="netaudit_lane" value="🟣 ネットワーク監査 Acct (NEW、2026-06-24)  —  Network 監査チーム  /  アプリごと独立 CloudFront + WAF + Lambda@Edge + Network Firewall + Shield Advanced + ACM" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff3e0;strokeColor=#e65100;fontSize=12;fontStyle=1;align=left;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry x="280" y="100" width="2080" height="330" as="geometry" />
+        </mxCell>
+        <!-- CloudFront-Auth + WAF + Lambda@Edge -->
+        <mxCell id="cf_auth" value="CloudFront-Auth&#xa;auth.basis.example.com" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#8C4FFF;strokeColor=#232F3E;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.cloudfront;" vertex="1" parent="1">
+          <mxGeometry x="340" y="170" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="waf_auth" value="WAF-Auth&#xa;/admin 全 IP Deny" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#DD344C;strokeColor=#232F3E;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.waf;" vertex="1" parent="1">
+          <mxGeometry x="340" y="290" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="le_auth" value="Lambda@Edge&#xa;-Auth" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#ED7100;strokeColor=#232F3E;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.lambda;" vertex="1" parent="1">
+          <mxGeometry x="450" y="170" width="78" height="78" as="geometry" />
+        </mxCell>
+        <!-- CloudFront-Admin + WAF -->
+        <mxCell id="cf_admin" value="CloudFront-Admin&#xa;admin.basis.example.com" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#8C4FFF;strokeColor=#232F3E;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.cloudfront;" vertex="1" parent="1">
+          <mxGeometry x="640" y="170" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="waf_admin" value="WAF-Admin" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#DD344C;strokeColor=#232F3E;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.waf;" vertex="1" parent="1">
+          <mxGeometry x="640" y="290" width="78" height="78" as="geometry" />
+        </mxCell>
+        <!-- CloudFront-AppA + WAF -->
+        <mxCell id="cf_appa" value="CloudFront-AppA&#xa;app-a.example.com" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#8C4FFF;strokeColor=#232F3E;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.cloudfront;" vertex="1" parent="1">
+          <mxGeometry x="940" y="170" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="waf_appa" value="WAF-AppA" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#DD344C;strokeColor=#232F3E;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.waf;" vertex="1" parent="1">
+          <mxGeometry x="940" y="290" width="78" height="78" as="geometry" />
+        </mxCell>
+        <!-- CloudFront-AppB + WAF -->
+        <mxCell id="cf_appb" value="CloudFront-AppB&#xa;app-b.example.com" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#8C4FFF;strokeColor=#232F3E;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.cloudfront;" vertex="1" parent="1">
+          <mxGeometry x="1240" y="170" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="waf_appb" value="WAF-AppB" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#DD344C;strokeColor=#232F3E;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.waf;" vertex="1" parent="1">
+          <mxGeometry x="1240" y="290" width="78" height="78" as="geometry" />
+        </mxCell>
+        <!-- CloudFront-AppC + WAF -->
+        <mxCell id="cf_appc" value="CloudFront-AppC&#xa;app-c.example.com&#xa;(... N アプリ分)" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#8C4FFF;strokeColor=#232F3E;dashed=5;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.cloudfront;" vertex="1" parent="1">
+          <mxGeometry x="1540" y="170" width="78" height="78" as="geometry" />
+        </mxCell>
+        <!-- Network Firewall + Shield Advanced + ACM -->
+        <mxCell id="nfw" value="Network Firewall&#xa;(Egress 集約検査)" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#DD344C;strokeColor=#232F3E;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.network_firewall;" vertex="1" parent="1">
+          <mxGeometry x="1820" y="170" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="shield" value="Shield Advanced&#xa;全社購入 $3K/月" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#DD344C;strokeColor=#232F3E;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.shield;" vertex="1" parent="1">
+          <mxGeometry x="1820" y="290" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="acm" value="ACM Certs&#xa;(CloudFront 用)" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#DD344C;strokeColor=#232F3E;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.certificate_manager;" vertex="1" parent="1">
+          <mxGeometry x="2000" y="170" width="78" height="78" as="geometry" />
+        </mxCell>
+
+        <!-- ===== 🔷 ネットワーク Acct ===== -->
+        <mxCell id="net_lane" value="🔷 ネットワーク Acct  —  Network チーム  /  Transit Gateway + VPC ピアリング + Direct Connect + VPN (純粋なインフラ L3 接続性)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#cfe8ff;strokeColor=#1976d2;fontSize=12;fontStyle=1;align=left;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry x="280" y="450" width="2080" height="170" as="geometry" />
+        </mxCell>
+        <mxCell id="tgw" value="Transit Gateway" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#8C4FFF;strokeColor=#232F3E;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=11;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.transit_gateway;" vertex="1" parent="1">
+          <mxGeometry x="900" y="510" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="dx" value="Direct Connect" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#8C4FFF;strokeColor=#232F3E;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=11;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.direct_connect;" vertex="1" parent="1">
+          <mxGeometry x="1140" y="510" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="vpn" value="Site-to-Site VPN&#xa;(社内 NW 接続)" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#8C4FFF;strokeColor=#232F3E;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=11;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.site_to_site_vpn;" vertex="1" parent="1">
+          <mxGeometry x="1380" y="510" width="78" height="78" as="geometry" />
+        </mxCell>
+
+        <!-- ===== 🟠 Auth Platform Acct ===== -->
+        <mxCell id="auth_lane" value="🟠 Auth Platform Acct  —  認証基盤チーム  /  Broker KC + IdP-KC + Aurora Global DB + ITDR + ユーザ管理画面 Backend + S3 SPA" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fce4ec;strokeColor=#c2185b;fontSize=12;fontStyle=1;align=left;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry x="280" y="640" width="2080" height="330" as="geometry" />
+        </mxCell>
+        <mxCell id="public_alb" value="Public ALB&#xa;Broker KC 用&#xa;(secret header)" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#8C4FFF;strokeColor=#232F3E;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.application_load_balancer;" vertex="1" parent="1">
+          <mxGeometry x="340" y="710" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="internal_alb" value="Internal ALB&#xa;(IdP-KC + Admin)" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#8C4FFF;strokeColor=#232F3E;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.application_load_balancer;" vertex="1" parent="1">
+          <mxGeometry x="500" y="710" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="broker_kc" value="Broker Keycloak&#xa;(EKS Pod)" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#ED7100;strokeColor=#232F3E;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.elastic_kubernetes_service;" vertex="1" parent="1">
+          <mxGeometry x="700" y="710" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="idp_kc" value="IdP Keycloak&#xa;(EKS Pod)" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#ED7100;strokeColor=#232F3E;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.elastic_kubernetes_service;" vertex="1" parent="1">
+          <mxGeometry x="860" y="710" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="aurora_broker" value="Aurora Global DB&#xa;(Broker)" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#3334B9;strokeColor=#232F3E;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.aurora;" vertex="1" parent="1">
+          <mxGeometry x="700" y="850" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="aurora_idp" value="Aurora Global DB&#xa;(IdP-KC)" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#3334B9;strokeColor=#232F3E;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.aurora;" vertex="1" parent="1">
+          <mxGeometry x="860" y="850" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="kms_l1l2" value="KMS CMK&#xa;3 階層 + MRK" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#DD344C;strokeColor=#232F3E;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.key_management_service;" vertex="1" parent="1">
+          <mxGeometry x="1020" y="850" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="s3_spa" value="S3 SPA Bundles&#xa;(サービス選択画面&#xa;/ ユーザ管理画面&#xa;/ エラー画面)" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#7AA116;strokeColor=#232F3E;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.s3;" vertex="1" parent="1">
+          <mxGeometry x="1180" y="710" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="admin_lambda" value="ユーザ管理画面&#xa;Backend Lambda&#xa;(3 層スコープ検証)" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#ED7100;strokeColor=#232F3E;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.lambda;" vertex="1" parent="1">
+          <mxGeometry x="1340" y="710" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="itdr" value="ITDR&#xa;Lambda + DDB&#xa;+ EventBridge&#xa;(ADR-035)" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#ED7100;strokeColor=#232F3E;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.lambda;" vertex="1" parent="1">
+          <mxGeometry x="1500" y="710" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="scim" value="SCIM Server&#xa;(Phase Two)" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#ED7100;strokeColor=#232F3E;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.elastic_kubernetes_service;" vertex="1" parent="1">
+          <mxGeometry x="1660" y="710" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="r53_auth" value="Route 53&#xa;basis.example.com" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#8C4FFF;strokeColor=#232F3E;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.route_53;" vertex="1" parent="1">
+          <mxGeometry x="1820" y="710" width="78" height="78" as="geometry" />
+        </mxCell>
+
+        <!-- ===== 🟢 App Acct ===== -->
+        <mxCell id="app_lane" value="🟢 App Acct A / B / C / ...  —  各アプリチーム  /  Internal ALB + ECS/Lambda + DB + Route 53 Hosted Zone (アプリチーム管理)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e8f5e9;strokeColor=#388e3c;fontSize=12;fontStyle=1;align=left;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry x="280" y="990" width="2080" height="280" as="geometry" />
+        </mxCell>
+        <mxCell id="app_a_alb" value="App A&#xa;Internal ALB" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#8C4FFF;strokeColor=#232F3E;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.application_load_balancer;" vertex="1" parent="1">
+          <mxGeometry x="400" y="1060" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="app_a_ecs" value="App A 実体&#xa;(ECS / Lambda)" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#ED7100;strokeColor=#232F3E;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.elastic_container_service;" vertex="1" parent="1">
+          <mxGeometry x="400" y="1180" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="app_a_r53" value="Route 53&#xa;app-a.example.com" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#8C4FFF;strokeColor=#232F3E;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.route_53;" vertex="1" parent="1">
+          <mxGeometry x="540" y="1060" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="app_b_alb" value="App B&#xa;Internal ALB" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#8C4FFF;strokeColor=#232F3E;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.application_load_balancer;" vertex="1" parent="1">
+          <mxGeometry x="900" y="1060" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="app_b_ecs" value="App B 実体" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#ED7100;strokeColor=#232F3E;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.elastic_container_service;" vertex="1" parent="1">
+          <mxGeometry x="900" y="1180" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="app_b_r53" value="Route 53&#xa;app-b.example.com" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#8C4FFF;strokeColor=#232F3E;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.route_53;" vertex="1" parent="1">
+          <mxGeometry x="1040" y="1060" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="app_c_alb" value="App C&#xa;Internal ALB" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#8C4FFF;strokeColor=#232F3E;dashed=5;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.application_load_balancer;" vertex="1" parent="1">
+          <mxGeometry x="1400" y="1060" width="78" height="78" as="geometry" />
+        </mxCell>
+
+        <!-- ===== 🔵 監査 Acct ===== -->
+        <mxCell id="audit_lane" value="🔵 監査 Acct  —  Compliance チーム  /  AWS Organizations + CloudTrail Org Trail + 監査ログ集約 S3 (Object Lock 7 年) + Security Hub + GuardDuty + OpenSearch" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1565c0;fontSize=12;fontStyle=1;align=left;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry x="280" y="1290" width="2080" height="200" as="geometry" />
+        </mxCell>
+        <mxCell id="org" value="AWS Organizations&#xa;(全 Acct 統制)" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#DD344C;strokeColor=#232F3E;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.organizations;" vertex="1" parent="1">
+          <mxGeometry x="500" y="1360" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="cloudtrail" value="CloudTrail&#xa;Organization Trail" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#DD344C;strokeColor=#232F3E;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.cloudtrail;" vertex="1" parent="1">
+          <mxGeometry x="700" y="1360" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="audit_s3" value="監査ログ集約 S3&#xa;Object Lock 7 年" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#7AA116;strokeColor=#232F3E;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.s3;" vertex="1" parent="1">
+          <mxGeometry x="900" y="1360" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="opensearch" value="OpenSearch&#xa;(ITDR / 監査検索)" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#3334B9;strokeColor=#232F3E;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.opensearch_service;" vertex="1" parent="1">
+          <mxGeometry x="1100" y="1360" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="securityhub" value="Security Hub" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#DD344C;strokeColor=#232F3E;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.security_hub;" vertex="1" parent="1">
+          <mxGeometry x="1300" y="1360" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="guardduty" value="GuardDuty" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#DD344C;strokeColor=#232F3E;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.guardduty;" vertex="1" parent="1">
+          <mxGeometry x="1500" y="1360" width="78" height="78" as="geometry" />
+        </mxCell>
+
+        <!-- ===== 凡例 ===== -->
+        <mxCell id="legend" value="凡例" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontSize=11;fontStyle=1;align=left;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry x="40" y="1510" width="2320" height="170" as="geometry" />
+        </mxCell>
+        <mxCell id="legend_text" value="◾ 接続線:&#xa;  ━━━ HTTPS / Cross-Account（VPC Origins / OAC / Public ALB + secret header）&#xa;  ┄┄┄ VPN / 社内 NW (Internal アクセス、/admin 専用)&#xa;  ╳╳╳ /admin パス WAF Deny ルール (赤破線)&#xa;◾ 5 アカウント体系: 🔷 ネットワーク / 🟣 ネットワーク監査 / 🔵 監査 / 🟠 Auth Platform / 🟢 App (複数)&#xa;◾ アプリごと独立 CloudFront + WAF (1 アプリ = 1 CloudFront + 1 WAF + 1 Lambda@Edge セット、ネットワーク監査 Acct 内)&#xa;◾ Route 53 各 App Acct で別管理 (Hosted Zone はアプリチーム所有)&#xa;◾ /admin パス保護 = CloudFront WAF で外部 IP 全 Deny + VPN/社内 → Transit GW → Internal ALB のみ&#xa;◾ 認可 C ハイブリッド案: ユーザ管理画面で ON/OFF + 粗 roles 編集、詳細権限は各アプリ DB" style="text;html=1;align=left;verticalAlign=top;fontSize=11;fillColor=none;strokeColor=none;whiteSpace=wrap;" vertex="1" parent="1">
+          <mxGeometry x="60" y="1540" width="2280" height="140" as="geometry" />
+        </mxCell>
+
+        <!-- ===== 主要接続線 ===== -->
+        <!-- エンドユーザー → Route 53 → CloudFront-Auth -->
+        <mxCell id="e1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;strokeColor=#2196f3;strokeWidth=2;endArrow=classic;endFill=1;" edge="1" parent="1" source="end_user" target="cf_auth">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <!-- エンドユーザー → CloudFront-AppA -->
+        <mxCell id="e2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;strokeColor=#2196f3;strokeWidth=2;endArrow=classic;endFill=1;" edge="1" parent="1" source="end_user" target="cf_appa">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <!-- 顧客テナント管理者 → CloudFront-Admin -->
+        <mxCell id="e3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=1;entryDx=0;entryDy=0;strokeColor=#2196f3;strokeWidth=2;endArrow=classic;endFill=1;" edge="1" parent="1" source="tenant_admin" target="cf_admin">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <!-- 弊社運用者 → VPN → TGW → Internal ALB (Internal経路、破線) -->
+        <mxCell id="e4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;strokeColor=#f57c00;strokeWidth=2;endArrow=classic;endFill=1;dashed=1;" edge="1" parent="1" source="op_user" target="vpn">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="320" y="520" />
+              <mxPoint x="1380" y="520" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#f57c00;strokeWidth=2;endArrow=classic;endFill=1;dashed=1;" edge="1" parent="1" source="vpn" target="tgw">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e6" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#f57c00;strokeWidth=2;endArrow=classic;endFill=1;dashed=1;" edge="1" parent="1" source="tgw" target="internal_alb">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <!-- 顧客IdP → Broker KC (SAML/OIDC) -->
+        <mxCell id="e7" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;strokeColor=#9c27b0;strokeWidth=2;endArrow=classic;endFill=1;" edge="1" parent="1" source="customer_idp" target="broker_kc">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <!-- 人事DB → SCIM Server (SCIM Push, ADR-054) -->
+        <mxCell id="e8" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;strokeColor=#009688;strokeWidth=2;endArrow=classic;endFill=1;" edge="1" parent="1" source="hr_db" target="scim">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <!-- CloudFront-Auth → Public ALB (Cross-Acct, secret header) -->
+        <mxCell id="e9" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#000000;strokeWidth=2;endArrow=classic;endFill=1;" edge="1" parent="1" source="cf_auth" target="public_alb">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <!-- CloudFront-Auth → S3 SPA (OAC) -->
+        <mxCell id="e10" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#000000;strokeWidth=2;endArrow=classic;endFill=1;" edge="1" parent="1" source="cf_auth" target="s3_spa">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <!-- CloudFront-AppA → App A Internal ALB (VPC Origins) -->
+        <mxCell id="e11" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#000000;strokeWidth=2;endArrow=classic;endFill=1;" edge="1" parent="1" source="cf_appa" target="app_a_alb">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <!-- CloudTrail → Audit S3 -->
+        <mxCell id="e12" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#1565c0;strokeWidth=1;endArrow=classic;endFill=1;" edge="1" parent="1" source="cloudtrail" target="audit_s3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

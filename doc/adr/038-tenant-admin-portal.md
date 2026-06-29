@@ -1,13 +1,52 @@
 # ADR-038: ユーザ管理画面（顧客テナント管理者向け Admin UI）
 
 - **ステータス**: Proposed（要件定義フェーズで Accepted に昇格予定）
-- **日付**: 2026-06-18
+- **日付**: 2026-06-18 作成、**2026-06-24 認可スコープ C 案ハイブリッド確定**
 - **関連**:
   - [ADR-037 Shared Responsibility Model + 軽量 IGA](037-shared-responsibility-and-lightweight-iga.md)
   - [ADR-033 Keycloak 2-tier アーキテクチャ](033-keycloak-2tier-broker-idp-architecture.md)
-  - [ADR-021 Post-login Landing UX](021-post-login-landing-ux.md)
+  - [ADR-021 Post-login Landing UX（サービス選択画面）](021-post-login-landing-ux.md)
+  - [ADR-054 ID 統合戦略](054-id-integration-strategy.md)（マッピング DB との連動）
   - [§FR-8 管理](../requirements/proposal/fr/08-admin.md)
   - [§FR-1.2.0.B AWS アカウント境界による運用摩擦への対応](../requirements/proposal/fr/01-auth.md)（Layer 3 委譲管理者）
+
+---
+
+> **⚠ 2026-06-24 認可スコープ確定 — C 案ハイブリッド採用**
+>
+> ユーザ管理画面で編集する「認可」を **2 段階に分解**:
+>
+> | 段階 | 内容 | 管理場所 |
+> |---|---|---|
+> | **L1 アクセス可否（ON/OFF）** | 「経費精算アプリを使えるか?」「勤怠は?」 | **ユーザ管理画面**（本基盤）|
+> | **L2 アプリ内詳細権限** | 「経費精算で承認上限は?」「自部署のみ閲覧か?」 | **各アプリ側**（アプリ DB）|
+>
+> **採用根拠**：業界標準（Auth0 / Okta / Microsoft Entra ID 同パターン）、JWT サイズ最小化、アプリ独立性確保 + 横断 ON/OFF 把握両立。
+>
+> **JWT クレーム構造**（[ADR-030 最小 JWT 設計](030-minimal-jwt-claim-design.md)と整合）:
+>
+> ```json
+> {
+>   "sub": "550e8400-e29b-41d4-a716-446655440000",
+>   "tenant_id": "acme",
+>   "apps": ["expense", "attendance"],
+>   "roles": {
+>     "expense": "approver",
+>     "attendance": "user"
+>   }
+> }
+> ```
+>
+> **詳細権限解決**：各アプリは JWT の `roles` を起点に**自分の DB で詳細権限を解決**:
+>
+> - 経費精算アプリ：`approver` = 承認上限 100 万円 + 申請可
+> - 勤怠アプリ：`user` = 自己申請のみ
+>
+> **代替案検討（不採用）**：
+> - **A 案 アプリ別認可**（認証基盤は ON/OFF も持たない、Microsoft 365 パターン）→ 顧客が**アプリごとに権限編集**必要、横断把握困難
+> - **B 案 集中認可**（詳細権限まで認証基盤集約、Salesforce パターン）→ JWT 膨張 + アプリ独自要件追加で認証基盤改修頻発、アプリ独立性低い
+>
+> **詳細は本 ADR §X 認可スコープ（2026-06-24 追加）参照**。
 
 ---
 
