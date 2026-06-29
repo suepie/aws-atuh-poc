@@ -78,11 +78,14 @@ HCP モデルではコントロールプレーンが **Red Hat 所有 AWS アカ
 
 | 規制 | ROSA HCP 採用時の追加要件 |
 |---|---|
-| **PCI DSS v4.0.1** | Red Hat AOC 年次取得 + §12.8 / §12.9 文書化 + CHD 非流入設計維持 + BYOK 適用 |
-| **APPI** | Red Hat との DPA に法第 28 条「相当措置」相当の規定 + SRE 越境アクセスログ取得 + 個人データ非流入設計維持 + 委託先公表 |
-| **共通設計原則** | K8s Secret に個人データを直接保存しない（鍵のみ）/ 個人データはアプリ DB（顧客 VPC 内）/ Aurora KMS は CMK (BYOK) |
+| **PCI DSS v4.0.1** | Red Hat AOC 年次取得 + §12.8 / §12.9 文書化 + **CHD 本体の etcd 非流入** + 鍵類への BYOK 適用 + ガードレール L1-L5 整備 |
+| **APPI** | Red Hat との DPA に法第 28 条「相当措置」相当の規定 + **Red Hat SRE（Red Hat 社員）越境アクセスログ取得** + **個人データ本体の etcd 非流入** + 委託先公表 + ガードレール L1-L5 整備 |
+| **共通設計原則** | K8s Secret には鍵類のみ（個人データ本体は禁止）/ 個人データはアプリ DB（顧客 VPC 内）/ Aurora KMS は CMK (BYOK) / バックアップ保管先制御 |
 
-**前提**: 「**個人データ・CHD 本体は etcd に入らない**」設計（K8s Secret には鍵類のみ、個人データはアプリ DB に閉じ込め）を維持できれば ROSA HCP は PCI DSS / APPI スコープ内クラスタとして許容される。
+**前提**:
+- 「**個人データ本体・CHD 本体**は etcd に入らない」設計（K8s Secret には鍵類のみ、個人データはアプリ DB に閉じ込め）を維持できれば ROSA HCP は PCI DSS / APPI スコープ内クラスタとして許容される
+- ただし「**完全な etcd 非流入は K8s アーキ上不可能**」（鍵類は不可避）。現実的なラインは「個人データ本体・CHD 本体の非流入維持 + 鍵類は KMS + BYOK 保護」
+- **「SRE 越境」は Red Hat 社員（Red Hat ROSA SRE）の所在を指す**。弊社オペレーター（認証基盤運用チーム、国内想定）は APPI 28 条評価対象外
 
 ### 採用する場合の構成（参考）
 
@@ -128,22 +131,45 @@ ROSA を採用する場合の前提:
 
 ### Compliance（PCI DSS / APPI 観点）
 
+> **用語の明確化**:
+> - 本セクションで「**SRE 越境**」と呼ぶのは **Red Hat 社員のクラスタ運用チーム（Red Hat ROSA SRE）の所在**を指す。Red Hat の "follow-the-sun" モデルで米国 (Raleigh NC, Westford MA) + EMEA (Brno, Dublin) + APAC (Pune, Brisbane, Tokyo) の各拠点から 24/7 対応。**地理的制限を契約で保証することは難しい**
+> - **弊社オペレーター（認証基盤運用チーム）は国内想定**であり、APPI 28 条評価対象外
+> - 「**etcd 非流入**」と一括りに言うと誤解を招くため、**個人データ本体・CHD 本体**と**鍵類**を区別する（後述）
+
 ROSA HCP モデル特有のコンプライアンス影響を整理:
 
 - **PCI DSS v4.0.1**:
-  - HCP コントロールプレーン etcd は Red Hat 所有 AWS アカウント内。**CHD 本体は etcd に入らない**設計を維持できればスコープ内クラスタとして許容
+  - HCP コントロールプレーン etcd は Red Hat 所有 AWS アカウント内。**CHD 本体は etcd に入らない**設計を維持できればスコープ内クラスタとして許容（決済代行トークン化前提）
   - §12.8 (TPSP 管理) / §12.9 (責任分担マトリクス) → Red Hat AOC 年次取得 + 文書化必要
-  - §3.6 / §3.7 (鍵管理) → K8s Secret に乗る JWT 署名鍵に対し Red Hat 側 KMS 暗号化 + BYOK 可否確認必要
+  - §3.6 / §3.7 (鍵管理) → K8s Secret に乗る JWT 署名鍵等に対し Red Hat 側 KMS 暗号化 + BYOK 可否確認必要
 - **APPI**:
   - **法第 25 条**（委託先監督）: Red Hat = 委託先扱い、DPA + 監査権規定必要
   - **法第 28 条**（外国第三者提供）★最大論点:
     - データ物理保存地は ap-northeast-1 (東京) → 国内
-    - **Red Hat SRE の越境 JIT アクセス**が「外国にある第三者への提供」に該当する可能性
-    - 対応: DPA に GDPR SCC 相当条項統合 + SRE 越境アクセスログ取得
+    - **Red Hat SRE（Red Hat 社員）の越境 JIT アクセス**が「外国にある第三者への提供」に該当する可能性
+    - 対応: DPA に GDPR SCC 相当条項統合 + Red Hat SRE 越境アクセスログ取得
   - 個人データ本体（Keycloak users テーブル / セッション）は Aurora（顧客 VPC）に閉じ込め、etcd 非流入設計を維持
-- **共通設計原則**: 「K8s Secret に個人データを直接保存しない（鍵のみ）/ 個人データはアプリ DB（顧客 VPC 内）/ Aurora KMS は CMK (BYOK)」を必須化
 
-**Upstream OSS + ECS Fargate (Default)** の場合、ECS タスク + RDS 全て顧客 AWS アカウント内に閉じるため、上記のコントロールプレーン越境論点は**発生しない**（PCI DSS / APPI 評価範囲がシンプル）。
+- **「個人データ・CHD 本体の etcd 非流入」の達成可能 / 不可の区別**:
+
+  | 達成可能 ✅ | 達成不可 ❌ |
+  |---|---|
+  | 個人データ本体（users テーブル等）の etcd 非流入 | 鍵類（JWT 署名鍵等）の etcd 非流入 |
+  | CHD 本体の etcd 非流入（決済代行トークン化前提）| DB 接続文字列・TLS 秘密鍵の etcd 非流入 |
+
+  → **完全な etcd 非流入は K8s アーキ上不可能**。現実的なラインは「個人データ本体・CHD 本体の非流入を維持し、不可避な鍵類は etcd KMS 暗号化 + BYOK で保護」
+
+- **ガードレール 5 階層**（採用時に整備必要）:
+
+  | レベル | 内容 |
+  |---|---|
+  | **L1. 設計レベル** | K8s manifest レビューで「Secret / ConfigMap に PII / CHD が入っていないか」チェック |
+  | **L2. CI/CD ゲート** | OPA Gatekeeper / Kyverno で Secret 名前パターン・サイズ閾値超過検出 |
+  | **L3. 静的解析** | Kubescape / Polaris で manifest スキャン |
+  | **L4. 運用監査** | CronJob で定期に `kubectl get secrets -A` の中身を監査 + アラート |
+  | **L5. バックアップ制御** | Velero 等 K8s backup ツールが etcd snapshot を国外 S3 に送らない設定 + Red Hat 側 cluster backup 保管先確認 |
+
+**Upstream OSS + ECS Fargate (Default)** の場合、ECS タスク + RDS 全て顧客 AWS アカウント内に閉じるため、上記のコントロールプレーン越境論点 + ガードレール L1-L5 整備コスト**いずれも発生しない**（PCI DSS / APPI 評価範囲がシンプル）。
 
 → 詳細は [rosa-detailed-analysis.md §11](../reference/rosa-detailed-analysis.md#11-コントロールプレーンに入る情報とコンプライアンス影響pci-dss--appi)
 

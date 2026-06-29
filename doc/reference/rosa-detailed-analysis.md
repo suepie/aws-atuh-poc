@@ -509,11 +509,14 @@ Red Hat の RHBK Operator が OpenShift 上で以下を自動管理:
 
 **法第28条の論点**:
 
+> **用語の明確化**: 本セクションで「SRE 越境」と呼ぶのは **Red Hat 社員のクラスタ運用チーム（Red Hat ROSA SRE）の所在**を指す。**弊社オペレーター（認証基盤運用チーム）は国内想定**であり、APPI 28 条評価対象外。RHEL サブスクのサポートとは異なり、ROSA は「**Red Hat が顧客クラスタを管理する**」モデルのため、Red Hat SRE のアクセス所在地が論点となる。
+
 | 観点 | 状況 |
 |---|---|
 | **データ物理保存地** | ROSA HCP コントロールプレーンは **ap-northeast-1（東京）に配置可能** → 物理保存は国内 |
-| **Red Hat SRE のアクセス** | 米国 / EMEA 等の Red Hat SRE が JIT アクセス → 「**外国にある第三者への提供**」に該当する可能性 |
-| **個人データ本体の所在** | etcd には入らない（適切な設計時）→ 28 条主たる懸念は限定的 |
+| **Red Hat SRE の所在**（**Red Hat 社員**、弊社運用者ではない） | Red Hat の "follow-the-sun" モデルで **米国 (Raleigh NC, Westford MA) + EMEA (Brno チェコ, Dublin) + APAC (Pune インド、Brisbane 豪、Tokyo)** の各拠点から 24/7 対応。**地理的制限を契約で保証することは難しい**（ROSA 標準 SLA に地理限定規定なし） |
+| **Red Hat SRE のアクセス形態** | JIT (Just-In-Time) アクセス、インシデント対応時のみ顧客クラスタへ到達 → 「**外国にある第三者への提供**」に該当する可能性 |
+| **個人データ本体の所在** | etcd には入らない（適切な設計時、§11.4 参照）→ 28 条主たる懸念は限定的 |
 | **間接的処理** | K8s Secret 経由で「個人データを処理するための鍵」を扱う → 委託監督義務 (法第 25 条) |
 
 **APPI 28 条への対応オプション**:
@@ -531,13 +534,54 @@ ROSA HCP は APPI 上採用可能だが、以下を整備する必要あり:
 - **設計原則**: 「ROSA は K8s 管理データのみ、個人データはアプリ DB（顧客 VPC 内）に閉じ込める」を維持
 - **個人情報保護方針 / プライバシーポリシー**に Red Hat / AWS の役割明示（委託先公表）
 
-### 11.4 まとめ — コンプライアンス影響による採用条件追加
+### 11.4 「個人データ・CHD を etcd に入れない」の具体化と限界
+
+> **用語の厳密化**: 「etcd 非流入」と一括りに言うと誤解を招くため、以下に **何が達成可能で何が達成不可か**を明示する。
+
+#### Keycloak のデフォルト設計 — 個人データは元々 etcd に入らない
+
+| データ | デフォルト保存場所 | etcd に入るか |
+|---|---|---|
+| Keycloak users テーブル（パスハッシュ / MFA seed / PII）| Aurora PostgreSQL（顧客 VPC）| **入らない** |
+| セッション（Infinispan）| Worker Node メモリ | **入らない** |
+| Realm 設定（永続）| Aurora PostgreSQL | **入らない** |
+| アプリケーション DB（CHD があれば）| 各アプリ DB（決済代行トークン化前提）| **入らない** |
+| **JWT 署名鍵 / TLS 秘密鍵 / DB 接続文字列 / IdP Client Secret** | K8s Secret | **入る（避けられない）** |
+| 環境変数 / Realm 名 / Pod 数 | ConfigMap / Deployment spec | **入る** |
+
+→ Keycloak は **Stateless Pod + DB 分離アーキテクチャ**のため、**個人データ本体・CHD 本体は意図的に設計しない限り etcd に入らない**。「必須化」とは「現状の設計を意図的に維持し、誤って入れないようガードレールを敷く」運用。
+
+#### 「必須化」のガードレール 5 階層
+
+| レベル | 内容 | 工数目安 |
+|---|---|---|
+| **L1. 設計レベル** | K8s manifest レビュー時に「Secret / ConfigMap に PII / CHD が入っていないか」チェック | 設計段階のみ |
+| **L2. CI/CD ゲート** | OPA Gatekeeper / Kyverno で「Secret 名前パターン・サイズ閾値超過」検出 | 初期構築 1 週間 |
+| **L3. 静的解析** | Kubescape / Polaris で manifest スキャン | CI 統合 3 日 |
+| **L4. 運用監査** | CronJob で定期 (週次 / 月次) に `kubectl get secrets -A` の中身を監査 + アラート | 初期構築 1 週間 |
+| **L5. バックアップ制御** | Velero 等 K8s backup ツールが etcd snapshot を **国外 S3 に送らない**設定。Red Hat 側の cluster backup の保管先確認 | 設計時 + 監査運用 |
+
+#### 達成可能 / 達成不可の区別
+
+| 達成可能 ✅ | 達成不可 ❌ |
+|---|---|
+| ✅ 個人データ本体（users テーブル等）の etcd 非流入 | ❌ 鍵類（JWT 署名鍵等）の etcd 非流入 |
+| ✅ CHD 本体の etcd 非流入（決済代行トークン化前提）| ❌ DB 接続文字列・TLS 秘密鍵の etcd 非流入 |
+| ✅ ConfigMap への PII 直書き防止 | ❌ Deployment spec の環境変数名（PII カラム名想起可）の完全隠蔽 |
+
+→ **「完全な etcd 非流入」は K8s アーキテクチャ上不可能**。現実的なラインは:
+
+> **「個人データ本体・CHD 本体の非流入を維持し、不可避な鍵類は etcd KMS 暗号化 (Red Hat 管理) + BYOK (顧客 CMK) で保護」**
+
+これは PCI DSS §3.6 / §3.7 + APPI 規則第 7 条「技術的安全管理措置」の範疇で評価される。
+
+#### コンプライアンス影響による採用条件追加（まとめ）
 
 | 規制 | ROSA HCP 採用時の追加要件 |
 |---|---|
-| **PCI DSS v4.0.1** | Red Hat AOC 年次取得 + §12.8 / §12.9 文書化 + CHD 非流入設計維持 + BYOK 適用 |
-| **APPI** | DPA に 28 条相当措置規定 + SRE 越境アクセスログ取得 + 個人データ非流入設計維持 + 委託先公表 |
-| **共通設計原則** | K8s Secret に個人データを直接保存しない（鍵のみ）/ 個人データはアプリ DB（顧客 VPC 内）/ Aurora KMS は CMK (BYOK) |
+| **PCI DSS v4.0.1** | Red Hat AOC 年次取得 + §12.8 / §12.9 文書化 + **CHD 本体の etcd 非流入** + 鍵類への BYOK 適用 + ガードレール L1-L5 整備 |
+| **APPI** | DPA に 28 条相当措置規定 + Red Hat SRE 越境アクセスログ取得 + **個人データ本体の etcd 非流入** + 委託先公表 + ガードレール L1-L5 整備 |
+| **共通設計原則** | K8s Secret には鍵類のみ（個人データ本体は禁止）/ 個人データはアプリ DB（顧客 VPC 内）/ Aurora KMS は CMK (BYOK) / バックアップ保管先制御 |
 
 → これらの追加要件は **ROSA Classic では「Control plane も顧客 AWS アカウント内」** のため評価範囲が縮小される（Red Hat SRE 越境アクセスのみが残論点）が、**コスト差が解消されるほどではない**（Classic は HCP の 1.7 倍）。
 
@@ -547,8 +591,8 @@ ROSA HCP は APPI 上採用可能だが、以下を整備する必要あり:
 
 1. Red Hat との **DPA + Shared Responsibility Matrix** 締結
 2. AWS Artifact から **Red Hat AOC 取得 + 年次更新運用**
-3. **個人データ / CHD を etcd に流入させない設計レビュー**（K8s Secret 設計監査）
-4. **Red Hat SRE 越境アクセスログ**の可視化要件確認
+3. **個人データ本体・CHD 本体の etcd 非流入を維持する設計レビュー + ガードレール L1-L5（OPA / Kubescape / 監査 CronJob / Velero 保管先制御）整備**
+4. **Red Hat SRE（Red Hat 社員）の越境アクセスログ**の可視化要件確認 + 弊社オペレーター（国内）とは別評価
 5. **規制要件発生時の再評価条件**に「コンプライアンス追加要件の整備コスト」を含める
 
 → ADR-056 の「採用再評価条件」と「Follow-up」セクションに反映。
@@ -589,3 +633,4 @@ ROSA HCP は APPI 上採用可能だが、以下を整備する必要あり:
 
 - 2026-06-25: 初版作成。Red Hat / AWS 公式から ROSA Classic vs HCP / 価格モデル / SLA 99.95% / リージョン展開 / AWS サービス統合 / RHBK との関係 / 本 PoC からの移行考慮 / 採用判断フレームを統合。[ADR-056 ROSA 採用判断](../adr/056-rosa-adoption-decision.md) の input source として機能
 - 2026-06-29: §11「コントロールプレーンに入る情報とコンプライアンス影響（PCI DSS / APPI）」追加。HCP モデルで Red Hat 所有 AWS アカウント内 etcd に乗る情報範囲（K8s Secrets / ConfigMaps）と乗らないもの（個人データ・CHD 本体）を区別し、PCI DSS v4.0.1 §3.6/§3.7/§7/§8/§10.2/§11/§12.8/§12.9/§6.4.3 + APPI 法第 25/27/28 条 + 規則第 7 条への影響を分析。採用時の追加要件 4 項目を整理し ADR-056 への反映ポイントを明示
+- 2026-06-29 補足修正: §11.3 で「SRE 越境」を **Red Hat 社員（Red Hat ROSA SRE）の所在**であり弊社オペレーター（国内）は対象外と明示。Red Hat の "follow-the-sun" モデル（米国 + EMEA + APAC）の具体的所在を追記。§11.4 を「個人データ・CHD を etcd に入れない」の具体化と限界へ再構成 — Keycloak デフォルト設計で個人データは元々 etcd に入らないこと、ガードレール 5 階層 (L1 設計 / L2 OPA Gatekeeper / L3 Kubescape / L4 監査 CronJob / L5 Velero 保管先制御)、達成可能 (個人データ本体・CHD 本体非流入) と達成不可 (鍵類非流入) の区別を追加
