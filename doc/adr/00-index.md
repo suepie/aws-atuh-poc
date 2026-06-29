@@ -58,3 +58,4 @@
 | [052](052-multi-tenant-isolation-rate-limiting.md) | 認証 API への Rate Limit（旧マルチテナント Isolation、2026-06-24 スコープ縮小：認証 API のみ、その他は API プラットフォーム側）| **Scope Reduced** | 2026-06-23 |
 | [053](053-observability-strategy.md) | Observability Strategy（OpenTelemetry + SLO + Distributed Tracing + Dashboards） | Proposed | 2026-06-23 |
 | [054](054-id-integration-strategy.md) | **ID 統合戦略（現状調査 + 人事 DB を SoT + マッピング DB + 3 段階移行プロセス + メアド不可対応）** | Proposed | 2026-06-24 |
+| [055](055-hrd-implementation-method-selection.md) | **HRD 実装方式選定（Custom Authenticator SPI vs SPA 主導 kc_idp_hint vs URL + CloudFront Function、Phase 1 = A、Phase 2 で C 併用）** | Proposed | 2026-06-25 |
