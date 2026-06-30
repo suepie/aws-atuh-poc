@@ -1,8 +1,20 @@
-%% データプラットフォーム 必須項目のみ構成図（Mermaid 概要版）
-%% 対応: doc/data-platform/account-architecture-analysis.md §4.5.2 統合料金一覧表で「必須」フラグ 41 項目
-%% 対応 drawio: doc/data-platform/drawio/required-architecture.drawio
-%% 注: 「任意」31 項目（Firehose / AppFlow / Transfer Family / SageMaker / IA-Glacier / Insights / Provisioned Capacity 等）は含まない
+# データプラットフォーム 必須項目のみ構成図（Mermaid 詳細版）
 
+> **対応 SSOT**: [account-architecture-analysis.md §4.5.2 統合料金一覧表](../account-architecture-analysis.md) で「**必須**」フラグを付けた **41 項目**のみで構成
+> **対応 drawio**: [required-architecture.drawio](required-architecture.drawio)（同内容、AWS Architecture Icons 採用）
+> **対応参照**: [account-architecture-analysis.md §4.5.6](../account-architecture-analysis.md) に Mermaid 概要版を埋込
+
+## 含めるもの / 含めないもの
+
+| 区分 | 件数 | 内容 |
+|---|---|---|
+| **必須**（本図に含む）| 41 | DMS / Lambda / S3 Medallion / Glue (ETL Flex + Crawler + Catalog) / Step Functions / EventBridge / CloudWatch (Logs+Alarms) / Lake Formation / KMS / Athena Standard / QuickSight (Author+Reader+SPICE) / S3 (中央 5 種) / RAM / CloudTrail / VPC Endpoint / Config / データ転送 |
+| **任意**（含まない）| 31 | Firehose / AppFlow / Transfer Family / S3 IA-Glacier / Glue ETL Standard / Glue Data Quality / Schema Registry / CloudWatch カスタムメトリクス / SNS / LF Storage Optimizer / Athena Provisioned-Spark-Result Reuse / QuickSight Author Pro / Reader Pro / Paginated Reports / SageMaker（Phase 2）/ CloudTrail Insights-Lake / Config Rules / VPC Flow Logs / インターネット egress |
+| **削除**（含まない）| 2 | Firehose VPC delivery（S3 配信では適用外） |
+
+## Mermaid 詳細図
+
+```mermaid
 flowchart TB
     %% =========================================================
     %% アクター（必須運用に関わる役割のみ）
@@ -187,3 +199,22 @@ flowchart TB
     style Admin fill:#fffacd
     style Analyst fill:#fffacd
     style Reader fill:#fffacd
+```
+
+## 月額合計（Phase 1、必須のみ）
+
+| 規模 | Producer ($85/アプリ × N) | 中央 | 横断 | 合計 |
+|---|---:|---:|---:|---:|
+| 1 アプリ | $85 | $399 | $342 | **~$826/月** |
+| 5 アプリ | $425 | $399 | $342 | **~$1,166/月** |
+| 10 アプリ | $850 | $399 | $342 | **~$1,591/月** |
+| 20 アプリ | $1,700 | $399 | $342 | **~$2,441/月** |
+
+詳細単価は §4.5.2 統合料金一覧表（41 行）参照。
+
+## 更新方針
+
+設計変更で必須/任意の分類が変わった場合は、以下 **3 箇所を同期更新**:
+1. [§4.5.2 統合料金一覧表](../account-architecture-analysis.md)（必須/任意 列）
+2. [§4.5.6 必須項目のみの構成図](../account-architecture-analysis.md)（概要 Mermaid）
+3. 本ファイル + [required-architecture.drawio](required-architecture.drawio)（詳細図）

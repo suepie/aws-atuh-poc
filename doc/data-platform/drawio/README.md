@@ -9,7 +9,7 @@
 | ファイル | 内容 | 対応 SSOT |
 |---|---|---|
 | [required-architecture.drawio](required-architecture.drawio) | **必須項目のみの構成図**（§4.5.2「必須 41 項目」を抽出した構成図、任意 31 項目は含まない）| [account-architecture-analysis.md §4.5.2](../account-architecture-analysis.md) |
-| [required-architecture.mmd](required-architecture.mmd) | 上記の Mermaid 版（概要レビュー用） | 同上 |
+| [required-architecture.md](required-architecture.md) | 上記の Mermaid 詳細版（Markdown ラップ、GitHub Preview / VS Code でレンダリング可）| 同上 |
 
 ## 設計方針
 

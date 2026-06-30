@@ -2994,7 +2994,7 @@ flowchart TB
 
 | 形式 | ファイル | 用途 |
 |---|---|---|
-| Mermaid | [drawio/required-architecture.mmd](drawio/required-architecture.mmd) | Markdown レビュー / GitHub Preview |
+| Mermaid (Markdown) | [drawio/required-architecture.md](drawio/required-architecture.md) | Markdown レビュー / GitHub Preview / VS Code でレンダリング |
 | drawio | [drawio/required-architecture.drawio](drawio/required-architecture.drawio) | プレゼン・印刷・編集（VS Code 拡張 / diagrams.net）|
 | 説明 | [drawio/README.md](drawio/README.md) | 配置方針 + 更新ルール |
 
@@ -3060,7 +3060,7 @@ flowchart TB
     style Cross fill:#e1f5fe,stroke:#0277bd,stroke-width:3px
 ```
 
-→ **詳細版**（アクター・データフロー・暗号化・全リソース表示）は [drawio/required-architecture.mmd](drawio/required-architecture.mmd) を参照。
+→ **詳細版**（アクター・データフロー・暗号化・全リソース表示）は [drawio/required-architecture.md](drawio/required-architecture.md) を参照。
 
 **更新方針**: 設計変更で必須/任意の分類が変わった場合は、§4.5.2 統合表 + Mermaid + drawio の 3 箇所を同期更新。
 
