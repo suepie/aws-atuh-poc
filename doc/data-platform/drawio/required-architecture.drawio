@@ -148,7 +148,7 @@
         </mxCell>
 
         <!-- 中央: 月額注釈 -->
-        <mxCell id="central_total" value="中央 BI / Catalog アカウント Phase 1 月額: $399（カタログ層 $8 + Athena $1.5 + QuickSight $386 + S3 派生・結果 $3）" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fffacd;strokeColor=#b8860b;fontSize=11;fontStyle=1;align=center;" vertex="1" parent="1">
+        <mxCell id="central_total" value="中央 BI / Catalog アカウント Phase 1 月額（必須のみ）: $299（カタログ層 $8 + Athena $1.5 + QuickSight $286 [Paginated Reports 除外] + S3 派生・結果 $3）" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fffacd;strokeColor=#b8860b;fontSize=11;fontStyle=1;align=center;" vertex="1" parent="1">
           <mxGeometry x="1200" y="900" width="1100" height="40" as="geometry" />
         </mxCell>
 
@@ -174,12 +174,12 @@
         <mxCell id="datatrans_icon" value="データ転送&#xa;同一リージョン + クロス AZ&#xa;同一 AZ 無料 / クロス AZ $0.01/GB" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#0277bd;fontSize=10;align=center;dashed=1;" vertex="1" parent="1">
           <mxGeometry x="280" y="1020" width="380" height="60" as="geometry" />
         </mxCell>
-        <mxCell id="cross_total" value="横断インフラ 月額: $342（CloudTrail $32 + VPC Endpoint $174 + Config $130 + データ転送 $1 + VPC Flow Logs（任意で別途）+ RAM 無料）" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fffacd;strokeColor=#b8860b;fontSize=11;fontStyle=1;align=center;" vertex="1" parent="1">
+        <mxCell id="cross_total" value="横断インフラ 月額（必須のみ）: $214（CloudTrail Management+Data $10 + VPC Endpoint $174 + Config $30 + データ転送 $0.5 + RAM 無料。任意の Insights/Lake/Config Rules/VPC Flow Logs 除外）" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fffacd;strokeColor=#b8860b;fontSize=11;fontStyle=1;align=center;" vertex="1" parent="1">
           <mxGeometry x="280" y="1100" width="800" height="40" as="geometry" />
         </mxCell>
 
         <!-- ===== Producer 月額注釈 ===== -->
-        <mxCell id="producer_total" value="Producer アカウント Phase 1 月額（1 アプリ）: $85（取込層 $47 + ストレージ層 $9 + Glue 層 $13 + オーケスト層 $16）" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fffacd;strokeColor=#b8860b;fontSize=11;fontStyle=1;align=center;" vertex="1" parent="1">
+        <mxCell id="producer_total" value="Producer アカウント Phase 1 月額（1 アプリ、必須のみ）: $74（取込層 $46 + ストレージ層 $8 + Glue 層 $10 + オーケスト層 $10）" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fffacd;strokeColor=#b8860b;fontSize=11;fontStyle=1;align=center;" vertex="1" parent="1">
           <mxGeometry x="280" y="780" width="780" height="30" as="geometry" />
         </mxCell>
 
@@ -349,7 +349,7 @@
         </mxCell>
 
         <!-- ===== 全体月額サマリ ===== -->
-        <mxCell id="summary_total" value="全体合計（Phase 1、必須のみ）&#xa;1 アプリ: $85 + $399 + $342 = ~$826/月&#xa;5 アプリ: ~$1,166/月  /  10 アプリ: ~$1,591/月  /  20 アプリ: ~$2,441/月" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff3e0;strokeColor=#e65100;fontSize=12;fontStyle=1;align=center;strokeWidth=2;" vertex="1" parent="1">
+        <mxCell id="summary_total" value="全体合計（Phase 1、厳密に必須のみ）&#xa;1 アプリ: $74 + $299 + $214 = ~$587/月&#xa;5 アプリ: ~$883/月  /  10 アプリ: ~$1,253/月  /  20 アプリ: ~$1,993/月&#xa;※ さらにレベル 1 最適化（§4.5.4.B）全適用で 10 アプリ ~$1,011/月まで削減可能" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff3e0;strokeColor=#e65100;fontSize=12;fontStyle=1;align=center;strokeWidth=2;" vertex="1" parent="1">
           <mxGeometry x="220" y="1200" width="900" height="100" as="geometry" />
         </mxCell>
 
