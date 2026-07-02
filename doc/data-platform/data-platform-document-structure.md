@@ -110,9 +110,10 @@ doc/data-platform/
 │       └── DP-ADR-003-...-placement.md      ← 共通参照データ配置（Phase 1 中央同居 D-2 / Phase 2 D-1 再評価）
 │
 ├── [ヒアリング]
-│   ├── hearing-slide-deck.md                ← ヒアリング用スライド集（41 スライド、タイトル/内容/回答例）
+│   ├── hearing-slide-deck.md                ← ヒアリング用全体スライド集（45 枚、6 セクション）
+│   ├── hearing-slides-organization.md       ← ヒアリング用体制特化スライド（10 枚、DP-ORG 中心）
 │   ├── hearing-strategy.md                  ← ヒアリング戦略
-│   ├── hearing-checklist.md                 ← ヒアリング項目（単一一覧）
+│   ├── hearing-checklist.md                 ← ヒアリング項目（73 項目統合チェックリスト）
 │   ├── hearing-script/                      ← 章別スクリプト（必要に応じて）
 │   ├── hearing-phase-a.md                   ← Phase A: 対象データ・スコープ確認
 │   ├── hearing-phase-b.md                   ← Phase B: 技術要件（保存・連携・閲覧）
@@ -167,7 +168,9 @@ doc/data-platform/
 | # | ドキュメント | 目的 | 状態 |
 |---|------------|------|------|
 | 7 | hearing-strategy.md | Phase A〜D の進め方 | 📋 未着手 |
-| 8 | hearing-checklist.md | 全 TBD 項目一覧 | 📋 未着手 |
+| 8 | hearing-checklist.md | 全 73 項目統合チェックリスト（P0:22 / P1:31 / P2:20、対象者別 / トピック別 / 優先度別 4 索引）| ✅ 初版 |
+| 9 | hearing-slides-organization.md | 構成選択ヒアリングスライド **10 論点 / 16 スライド**（**Part 1（9 枚）集約の是非をビジネス価値・コスト・運用で総合判断**、うちスライド 4 は 4-1〜4-7 に分割（総合比較 A/B/C/D + 判定 + 補足 2 枚） → **Part 2（6 枚）集約する場合の A案 / B案 選択（体制で判断）**、日本語中心、60-90 分想定）| ✅ v4.2 |
+| 10 | data-collection-standards-for-future-aggregation.md | **【補足資料】C案 個別型 採用時でも将来の統合可能性を残すためのデータ収集標準 11 項目**（S3 + Parquet + パーティション + Glue Catalog + 機密度分類 等、追加コストほぼゼロで移行工数 3-4 倍短縮）| ✅ 初版 |
 | 9 | hearing-phase-a.md | 対象データ・スコープ確認結果 | 📋 未着手 |
 | 10 | hearing-phase-b.md | 技術要件（保存・連携・閲覧）確認結果 | 📋 未着手 |
 | 11 | hearing-phase-c.md | ガバナンス・運用要件確認結果 | 📋 未着手 |
