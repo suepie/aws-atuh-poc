@@ -32,6 +32,12 @@
 | [rhbk-support-and-pricing.md](rhbk-support-and-pricing.md) | RHBK サポート対象範囲（OS/DB/JVM/コンテナ基盤）・サブスクリプション構造・価格レンジ・現 PoC との差分・Red Hat 確認事項リスト |
 | [rosa-detailed-analysis.md](rosa-detailed-analysis.md) | **ROSA (Red Hat OpenShift Service on AWS) 詳細調査リファレンス** — Classic vs HCP / 価格モデル詳細 / 本基盤 Keycloak HA の月額試算 (HCP 3y RI = ~$590/月) / SLA 99.95% / リージョン展開 / RHBK 統合 / 移行工数 6-8 週間 / 採用判断フレーム。[ADR-056](../adr/056-rosa-adoption-decision.md) の input source |
 
+## ServiceNow / 外部 SP
+
+| ドキュメント | 内容 |
+|------------|------|
+| [servicenow-sso-user-linking-guide.md](servicenow-sso-user-linking-guide.md) | **ServiceNow SSO 既存ユーザリンク手順ガイド** — sys_id 保全の重要性 / 3 アンチパターン / Matching Field 選定フロー（推奨 `employee_number`）/ 5 Step 設定手順 / 並走期間 4 Phase / 重複統合スクリプト / SCIM 属性同期 / Break Glass 設定 / APPI/GDPR 対応 (匿名化) / 5 Test シナリオ。[ADR-023](../adr/023-servicenow-sp-integration.md) の実装手順裏どり、[§FR-2.4.B-2](../requirements/proposal/fr/02-federation.md) からの参照先 |
+
 ## 過去の検討ドキュメント
 
 `doc/old/` に過去の検討成果物がある（読み取り専用）。主要なものは以下：
