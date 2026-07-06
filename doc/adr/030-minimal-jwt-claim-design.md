@@ -5,6 +5,7 @@
 - **関連**:
   - [§FR-6.1.A 最小クレーム設計と接続元アプリ表現](../requirements/proposal/fr/06-authz.md#fr-61a-最小クレーム設計と接続元アプリ表現)
   - [ADR-018 ユーザー識別子 3 階層戦略](018-user-identifier-3layer-emailless.md)
+  - **[ADR-057 CSRF 対策の責任分界](057-csrf-protection-responsibility-boundary.md)** — Bearer JWT + `Authorization` ヘッダ前提で CSRF 免疫の根拠となる（2026-07-06 追記、[ADR-057 §C](057-csrf-protection-responsibility-boundary.md#c-bearer-jwt-が-csrf-免疫である-3-つの前提条件) 連動）
 
 ---
 

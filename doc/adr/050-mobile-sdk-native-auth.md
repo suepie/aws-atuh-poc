@@ -2,6 +2,8 @@
 
 - **ステータス**: Proposed（要件定義フェーズで Accepted に昇格予定）
 - **日付**: 2026-06-23 作成、2026-06-24 適用範囲明確化
+- **関連**:
+  - **[ADR-057 CSRF 対策の責任分界](057-csrf-protection-responsibility-boundary.md)** — AppAuth + System Browser + PKCE 経路は Bearer 明示付与のため CSRF 免疫（2026-07-06 追記、[ADR-057 §E.1](057-csrf-protection-responsibility-boundary.md#e1-モバイルappauth--system-browseradr-050) 連動）
 
 ---
 

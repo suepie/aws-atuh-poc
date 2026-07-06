@@ -93,84 +93,96 @@ flowchart LR
 
 → **アプリ開発者は「Network Acct CloudFront 経由必須」を意識せずに製品起動で自動準拠**。製品テンプレは ADR-039 § C-4 の Pattern A（Custom Header + IP Allowlist）を実装、Internal ALB 用は Pattern B（VPC Origins）を実装。
 
-- ⭐ **OpenAPI ドリブン Auth Synthetics canary 自動構成**（[§C-API-6 §C-6.6.8](06-external-api-auth-architecture.md) L5 Behavioral 実装手段）：
+- ⭐ **App Registry 自動登録 + OpenAPI Export 同梱**（[ADR-059 Central Auth Check Canary Architecture (Pattern β)](../../../adr/059-central-auth-check-canary-architecture.md) の統合点）：
 
-  製品テンプレが OpenAPI を入力として受け取り、API GW 構築 + 認証 probe canary 自動デプロイを一連で実行する。アプリチームは canary コードを一切書かない。
+  Canary 自体は **各アプリ製品には同梱しない**。ネットワーク監査 Acct に配置された **Central Canary が全アプリを横断監視**（[ADR-059 §A](../../../adr/059-central-auth-check-canary-architecture.md)）、Service Catalog 製品は **App Registry 登録** と **OpenAPI Export** の 2 つの Custom Resource を同梱してアプリ deploy と同時に監視対象に自動追随させる。
 
-  - **構成要素 4 つ**（製品テンプレが連動）：
-    1. **(a) アプリの OpenAPI 仕様**（アプリチーム維持）→ パラメータ `OpenAPIS3Url` で受け取る
-    2. **(b) Service Catalog 製品テンプレ**（Platform チーム保守）→ CFN 内で OpenAPI を `AWS::ApiGateway::RestApi.Body` に展開し API GW 構築
-    3. **(c) 共通 canary Lambda コード**（Platform チーム配布、Shared S3）→ canary は全アプリ共通の 1 本、API 仕様を Registry から動的取得して probe
-    4. **(d) OpenAPI Registry**（Shared S3、Platform-managed）→ deploy 後の正本を `{accountId}/{apiId}/openapi.yaml` に export
+  - **Service Catalog 製品が担う 3 責務**：
+    1. **API Gateway / ALB 構築**（OpenAPI を `AWS::ApiGateway::RestApi.Body` に展開）
+    2. **App Registry 自動登録**（ネットワーク監査 Acct DynamoDB へ Cross-Acct Put）
+    3. **OpenAPI Registry 自動 Export**（ネットワーク監査 Acct S3 へ Cross-Acct Put）
 
-  - **製品テンプレに同梱されるリソース**：
+  - **製品テンプレに同梱されるリソース**（Canary リソースは含まない）：
     ```yaml
     Resources:
-      ApiGateway:                # OpenAPI から API GW 構築
+      ApiGateway:                     # OpenAPI から API GW 構築
         Type: AWS::ApiGateway::RestApi
         Properties:
           Body: { Fn::Transform: { Name: AWS::Include, Parameters: { Location: !Ref OpenAPIS3Url } } }
-      OpenApiExporter:           # deploy 後 OpenAPI を Registry に export
+      OpenApiExporter:                # deploy 後 OpenAPI をネットワーク監査 Acct S3 に export
         Type: Custom::OpenApiExport
         Properties:
-          ServiceToken: !ImportValue SharedOpenApiExportFunction
+          ServiceToken: !ImportValue SharedOpenApiExportFunction  # Cross-Acct Role Assume 実装
           RestApiId: !Ref ApiGateway
           TargetS3Bucket: !ImportValue SharedOpenApiRegistryBucket
-      AuthCheckCanary:           # 共通 canary を 5 分周期で起動
-        Type: AWS::Synthetics::Canary
+      AppRegistryRegister:            # ⭐ App Registry へ Cross-Acct 登録
+        Type: Custom::AppRegistryRegister
         Properties:
-          Code: { S3Bucket: !ImportValue SharedCanaryBucket, S3Key: "canary-code/auth-check-v1.zip" }
-          RunConfig: { EnvironmentVariables: { OPENAPI_S3_URL: ... } }
-      AuthCheckAlarm:            # 違反時 Slack 通知
-        Type: AWS::CloudWatch::Alarm
+          ServiceToken: !ImportValue SharedAppRegistryRegisterFunction  # in ネットワーク監査 Acct via Cross-Acct
+          AppId: !Ref AppName
+          BaseUrl: !Sub "https://${DomainName}"
+          AuthPattern: !Ref AuthPattern               # api-gw-jwt / alb-cookie-monolith 等
+          OpenApiS3Key: !Sub "${AWS::AccountId}/${ApiGateway}/openapi.yaml"
+          TestTokenSecret: !Ref CanaryTestTokenSecret
+          AlertRouting: !Ref AlertRoutingConfig
     ```
 
-  - **Hybrid 検証（Negative + Positive 併用）**：「認証が正しく実装されている」を担保するには **negative test だけでは不十分**（テスト構成ミスと認証漏れが区別できない）。Service Catalog 製品テンプレは以下の 2 種を組み合わせて実装：
-    - **Negative test**：未認証リクエスト → 401/403 期待（認証実装漏れ検知）
-    - **Positive test**：valid token + valid body → 200/201/204 期待（API 稼働 + テスト健全性検証）
-    - **Smoke test**：canary 冒頭で既知 endpoint に対する正常 / 異常呼出を行い、テスト用 token 自体の健全性確認
-    - 詳細な Hybrid canary 実装と 4×4 真偽値表は [§C-API-6 §C-6.6.8](06-external-api-auth-architecture.md) 参照
+  - **Central Canary は本製品テンプレには含まれない**：ネットワーク監査 Acct で別途 CFN スタック管理、[ADR-059](../../../adr/059-central-auth-check-canary-architecture.md) 参照。アプリ deploy とは独立ライフサイクル。
 
-  - **OpenAPI アノテーションで認証 probe 対象を制御**：
+  - **Hybrid 検証（Negative + Positive 併用）は Central Canary 側で実装**：4×4 真偽値表による failure 分類は Central Canary が処理、Service Catalog 製品は App Registry の `alertRouting` フィールドで通知先だけを指定。詳細な Hybrid canary 実装は [§C-API-6 §C-6.6.8](06-external-api-auth-architecture.md) 参照。
+
+  - **OpenAPI アノテーションで Central Canary の挙動制御**（アプリチーム作業）：
     ```yaml
     paths:
       /api/users:
         get:
-          x-canary-positive-test: true                       # ⭐ positive test 有効（GET なので production 含む全環境）
-          x-canary-test-token-secret: "canary-readonly-token"  # ⭐ 使用 token（Secrets Manager 名）
-          responses: { ... }                                 # 認証必須として probe 対象（negative はデフォルト ON）
+          x-canary-positive-test: true                              # ⭐ positive test 有効
+          x-canary-test-token-secret: "canary-central-readonly"     # ⭐ ネットワーク監査 Acct 内 Secret 名
+          responses: { ... }
       /api/users/{userId}:
         get:
           x-canary-positive-test: true
-          x-canary-path-params:                              # ⭐ path parameter dummy
+          x-canary-path-params:                                      # ⭐ path parameter dummy
             userId: "canary-probe-user-001"
           responses: { ... }
       /api/orders:
         post:
-          x-canary-positive-test: pre-prod-only              # ⭐ 副作用あり、production は negative のみ
-          x-canary-test-token-secret: "canary-write-token"
-          x-canary-cleanup:                                  # ⭐ probe 後の後処理
+          x-canary-positive-test: pre-prod-only                     # ⭐ 副作用あり、production は negative のみ
+          x-canary-test-token-secret: "canary-central-write"
+          x-canary-cleanup:                                          # ⭐ probe 後の後処理
             action: DELETE
             path: "/api/orders/{orderId}"
             idFrom: response.body.orderId
           requestBody:
             content:
               application/json:
-                example: { productId: "canary-probe-product", quantity: 1 }  # ⭐ dummy body
-          responses: { ... }
+                example: { productId: "canary-probe-product", quantity: 1 }
       /_/health:
         get:
-          x-synthetics-skip-auth-check: true                 # ⭐ public endpoint、negative 対象外
-          x-canary-positive-test: true                       # positive のみ実施（health 確認）
+          x-synthetics-skip-auth-check: true                        # ⭐ public endpoint、negative 対象外
+          x-canary-positive-test: true
+      /dashboard:
+        get:
+          x-canary-auth-mode: cookie-redirect                       # ⭐ SSR モノリス（Cookie セッション）
+          x-canary-expected-redirect: "/login"
+          responses: { '200': { ... } }
     ```
 
-  - **環境別 probe 動作**：
+  - **環境別 probe 動作**（Central Canary が自動判定）：
     - **Production**：全 endpoint negative + GET endpoint positive（read-only）+ smoke test
     - **Staging / Dev**：全 endpoint negative + 全 endpoint positive（POST 等は cleanup 付き）+ smoke test
-  - **テスト用 token の運用**：Service Catalog 製品が `canary-readonly-token` / `canary-write-token` などの Secrets Manager Secret を初期構築時に作成、Rotation Lambda が共有認証基盤の M2M Client を 30 日周期で更新。アプリチーム作業ゼロ。
-  - **アプリチームの作業量はゼロ近い**：OpenAPI を S3 にアップ + Service Catalog 起動するだけ。canary コード / Alarm 設定 / Registry 仕組み / token 管理はすべて Platform 提供。
-  - **新規 endpoint 追加時も自動追従**：次回 deploy で OpenAPI が更新されれば canary が自動的に新 endpoint を probe 対象にする。
-  - **OpenAPI を持たないレガシー API**は別製品 `api-gateway-legacy-public`（Pattern D: Resource Explorer 自動発見）で対応、ただし positive test は別途 endpoint メタ情報必須。
+
+  - **テスト用 token の運用**（ネットワーク監査 Acct 集約）：Central Canary は `canary-central-readonly` / `canary-central-write` を最小権限で共有認証基盤に発行、ネットワーク監査 Acct 内 Secrets Manager に保管 + 30 日自動ローテ。アプリチームは OpenAPI に token 名を書くだけ。
+
+  - **アプリチームの作業量はゼロ近い**：OpenAPI 書く + S3 アップ + Service Catalog 起動のみ。canary 実装 / Central Canary 側の Registry / Alert Router / Token 管理は Network 監査チーム集約。
+
+  - **新規 endpoint 追加時も自動追従**：OpenAPI Export が新版を Registry に上書き → Central Canary が次回 probe から新 endpoint を対象化。**Central Canary の変更不要**。
+
+  - **モノリス API（API GW を使わない Cookie SSR / Bearer / Function URL 等）も対応**：Service Catalog 製品の `AuthPattern` パラメータで指定、Central Canary が assertion 方式を切替。詳細は [ADR-059 §D](../../../adr/059-central-auth-check-canary-architecture.md)。
+
+  - **Private API（VPC 内部）も対応**：Central Canary VPC + Transit Gateway 経由で到達。Phase 2 で実装。詳細は [ADR-059 §E](../../../adr/059-central-auth-check-canary-architecture.md)。
+
+  - **OpenAPI を持たないレガシー API** は Service Catalog 製品の `AuthPattern` を `alb-code-jwt` 等に設定し、Central Canary が固定 endpoint リスト（App Registry 内）で probe。
 
 → **アプリ開発者が「認証なし API」を Service Catalog 経由で作れない構造**を製品テンプレレベルで担保。例外は別途申請制（[§FR-API-2 §2.8.3](../fr/02-authn-authz.md)）。
 

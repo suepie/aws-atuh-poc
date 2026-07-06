@@ -7,6 +7,7 @@
   - [ADR-020 HRD ヒントキー + 混在 Identifier-First](020-hrd-hint-keys-mixed-login.md)
   - [common/branding-strategy-evidence.md](../common/branding-strategy-evidence.md)
   - [common/platform-architecture-patterns.md](../common/platform-architecture-patterns.md)
+  - **[ADR-057 CSRF 対策の責任分界](057-csrf-protection-responsibility-boundary.md)** — Custom Theme 実装時に Keycloak 標準の hidden CSRF field を消さないこと（2026-07-06 追記、[ADR-057 §D.1](057-csrf-protection-responsibility-boundary.md#d1-l1-keycloak-ui本基盤担当追加実装ゼロ) 連動）
 
 ---
 

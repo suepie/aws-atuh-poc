@@ -154,21 +154,23 @@ flowchart LR
 
 → 「Partner / Private の認証方式」と「Origin Protection」は **直交した関心事**。本資料 §2 / §3 で議論する認証方式は、上記 Origin Protection の **上に重ねる** 形で実装される。
 
-### 1.7 認証実装漏れの自動検知（アプリチーム作り込みゼロ）
+### 1.7 認証実装漏れの中央検知（Central Canary）
 
-「アプリチームに認証を実装させる」決定の **継続検証**として、本標準では Synthetics canary が **5 分周期で全 API endpoint に対して未認証リクエストを送信、401/403 が返らなければアラート** という仕組みを Service Catalog 製品に同梱する。
+「アプリチームに認証を実装させる」決定の **継続検証**として、本標準では **ネットワーク監査 Acct に配置された Central Canary が 5 分周期で全アプリの API endpoint に未認証リクエストを送信、401/403 が返らなければアラート** という仕組みを提供する（[ADR-059](../../adr/059-central-auth-check-canary-architecture.md)）。**各アプリチームは canary を deploy する必要がなく、App Registry への自動登録で監視対象に組み込まれる**。
 
-#### 1.7.1 アプリチームと Platform チームの責務分担
+#### 1.7.1 「各アプリ実装を中央でチェック」思想（Pattern β）
+
+本標準は **Deploy 漏れを原理的にゼロにする** ために、canary を各アプリで deploy せず、**ネットワーク監査 Acct の Central Canary が全アプリを横断監視**する Pattern β を採用（詳細比較・意思決定証跡は [ADR-059](../../adr/059-central-auth-check-canary-architecture.md)）。
 
 | 主体 | やること | 工数 |
 |---|---|---|
-| **アプリチーム** | API 開発の通常業務として **OpenAPI を書く** + public endpoint に `x-synthetics-skip-auth-check: true` アノテーション + S3 アップ + Service Catalog 起動 | 数分 |
-| **Platform チーム（初回のみ）** | 共通 canary Lambda 実装 + Service Catalog 製品テンプレ作成 + OpenAPI Registry 配備 | 1-2 週間 |
-| **Platform チーム（運用）** | canary バージョン更新時の S3 zip 差し替え（既存 canary 自動追従）| 必要時のみ |
+| **アプリチーム** | API 開発の通常業務として **OpenAPI を書く** + `x-synthetics-skip-auth-check` / `x-canary-positive-test` 等のアノテーション + S3 アップ + Service Catalog 起動 | 数分 |
+| **Network 監査チーム（初回のみ）** | Central Canary 実装 + App Registry + OpenAPI Registry + Alert Router 配備 | 1-2 週間 |
+| **Network 監査チーム（運用）** | Central Canary コード更新（アプリ数増加時も 1 実装で追随）| 必要時のみ |
 
-→ **canary の作り込み・Alarm 設定・OpenAPI Registry 運用はすべて Platform 集約**。アプリ数 N に対して 1 つの実装で済む。
+→ **canary の作り込み・Alarm・Registry 運用は Network 監査チームに集約**。アプリチームは OpenAPI を書くだけ、canary の存在すら意識しない。
 
-#### 1.7.2 仕組み（OpenAPI ドリブン）
+#### 1.7.2 仕組み（App Registry 自動追随）
 
 ```mermaid
 flowchart LR
@@ -179,46 +181,52 @@ flowchart LR
         OAS --> OAS_S3 --> SC_Launch
     end
 
-    subgraph Platform["Platform チーム（初回のみ整備）"]
-        Canary_Code[共通 canary Lambda<br/>auth-check-v1.zip]
-        SC_Product[Service Catalog 製品テンプレ]
-        Registry[OpenAPI Registry<br/>Shared S3]
-        Export_Lambda[OpenAPI Export<br/>Custom Resource Lambda]
+    subgraph Network["ネットワーク監査 Acct（中央運用）"]
+        Registry[App Registry<br/>DynamoDB]
+        OpenAPIReg[OpenAPI Registry<br/>S3]
+        CC[Central Canary<br/>Puppeteer 16.1]
+        Router[Alert Router<br/>4×4 分類 SNS]
     end
 
-    subgraph Auto["自動構築・実行"]
-        APIGW[API Gateway]
-        Canary[Synthetics canary]
-        Probe[5 分周期 probe]
-        Alarm[Slack 通知]
+    subgraph Auto["自動追随"]
+        Register[App Registry<br/>自動登録]
+        Export[OpenAPI Export]
+        Probe[5 分周期<br/>全アプリ probe]
+        Alerts[Slack / PagerDuty<br/>通知先自動振り分け]
     end
 
-    SC_Launch --> SC_Product
-    SC_Product --> APIGW
-    SC_Product --> Canary
-    SC_Product --> Export_Lambda
-    Canary_Code -.読込.-> Canary
-    Export_Lambda -.deploy 後 export.-> Registry
-    Registry -.読込.-> Canary
-    Canary --> Probe
-    Probe -.fail.-> Alarm
+    SC_Launch --> Register
+    SC_Launch --> Export
+    Register -->|Cross-Acct 書込| Registry
+    Export -->|Cross-Acct 書込| OpenAPIReg
+
+    CC -.Scan.-> Registry
+    CC -.Get.-> OpenAPIReg
+    CC --> Probe
+    Probe -.fail.-> Router
+    Router --> Alerts
 
     style App fill:#c8e6c9
-    style Platform fill:#e3f2fd
+    style Network fill:#fff3e0
     style Auto fill:#fff9c4
 ```
+
+→ **アプリ deploy と同時に監視対象に組み込まれる**、Central Canary の変更不要。
 
 #### 1.7.3 顧客説明用ポイント
 
 | 観点 | メッセージ |
 |---|---|
-| **アプリチームの負担** | OpenAPI は API 開発の通常業務、追加負担は数分（S3 アップ + Service Catalog 起動）|
-| **新規 endpoint の自動追従** | OpenAPI 更新 → 次回 deploy で canary が自動的に新 endpoint を probe 対象化 |
+| **アプリチームの負担** | OpenAPI は API 開発の通常業務、追加負担は数分（S3 アップ + Service Catalog 起動）。canary の存在すら意識しない |
+| **Deploy 漏れ防止** | **構造的にゼロ**。Service Catalog 起動が Registry 登録を強制、Central Canary が自動追随 |
+| **新規 endpoint の自動追従** | OpenAPI 更新 → 次回 deploy で Central Canary が自動的に新 endpoint を probe 対象化 |
 | **public endpoint の制御** | OpenAPI に `x-synthetics-skip-auth-check: true` を 1 行付けるだけ |
-| **canary コード保守** | Platform チームが集約、全アプリで共通の 1 本のみ |
+| **canary コード保守** | Network 監査チームが集約、全アプリで共通の 1 本のみ |
 | **検証頻度** | 5 分周期（運用コスト次第で 15min も可能）|
 | **コスト感** | アプリ 10 個 × endpoint 10 で月 $100 程度、95-99% の検知率達成 |
-| **OpenAPI を持たないレガシー API** | 別製品 `api-gateway-legacy-public`（自動発見方式）で対応可 |
+| **モノリス / Cookie セッションアプリ** | ✅ 対応（後述 §1.7.5）|
+| **Private API（VPC 内部）** | ✅ 対応（Canary VPC + TGW 経由、後述 §1.7.6、Phase 2）|
+| **DR region 併走監視** | ✅ Phase 2 で Multilocation replica を ap-northeast-3 に追加 |
 
 #### 1.7.4 検知できるパターン
 
@@ -275,16 +283,41 @@ flowchart LR
 
 → 「**全部 Security オンコールに飛ばす**」のではなく、**4×4 真偽値表に基づく自動分類**で適切な担当に振り分け、運用負担を最小化。
 
-##### テスト用 token の運用（Platform 集約）
+##### テスト用 token の運用（ネットワーク監査 Acct 集約）
 
-Positive test には **valid token** が必要だが、これも Platform 集約で運用：
+Positive test には **valid token** が必要だが、これも Network 監査チーム集約で運用：
 
-- 共有認証基盤に `canary-readonly-client` / `canary-write-client` を最小権限で作成
-- Secrets Manager に保管 + 30 日自動ローテ
+- 共有認証基盤に `canary-central-readonly` / `canary-central-write` を最小権限で作成
+- ネットワーク監査 Acct 内 Secrets Manager に保管 + 30 日自動ローテ
 - multi-tenant の場合は `canary-probe-tenant` を分離（production テナント影響ゼロ）
-- アプリチームは OpenAPI に `x-canary-test-token-secret: canary-readonly-token` と書くだけ
+- アプリチームは OpenAPI に `x-canary-test-token-secret: canary-central-readonly` と書くだけ
 
-→ 詳細は標準側 [§C-API-6 §C-6.6.8](../proposal/common/06-external-api-auth-architecture.md) 参照。
+→ 詳細は標準側 [§C-API-6 §C-6.6.8](../proposal/common/06-external-api-auth-architecture.md) および [ADR-059](../../adr/059-central-auth-check-canary-architecture.md) 参照。
+
+#### 1.7.6 モノリス API（API GW を使わない）の監視
+
+本標準は **API GW 以外のモノリス API（SSR / ALB 直接公開 / Lambda Function URL 等）も Central Canary で監査可能**。
+
+| モノリス構成 | 認証パターン | Central Canary の検証方法 |
+|---|---|---|
+| **Public ALB + Cookie SSR**（Rails / Django / Spring MVC 等）| セッション Cookie | Negative: 未認証 → **302 Redirect to /login 期待、Location ヘッダ検証** / Positive: Puppeteer でログインフォーム自動送信 |
+| **Public ALB + Bearer JWT ヘッダ** | アプリコード JWT 検証 | Negative: 401 / Positive: Bearer で 200（API GW と同一）|
+| **Lambda Function URL（AWS_IAM）**| SigV4 | Negative: 403 期待 |
+| **CloudFront + ALB + SSR** | Origin Protection 経由 | 同上、実プロダクション経路をテスト |
+
+→ **アプリチームは OpenAPI アノテーション `x-canary-auth-mode: cookie-redirect` を 1 行付けるだけ**、Central Canary が assertion を自動切替。詳細は [ADR-059 §D](../../adr/059-central-auth-check-canary-architecture.md#d-monolith-監査対応api-gw-を使わないアプリ) 参照。
+
+#### 1.7.7 Private API（VPC 内部のみ）の監視
+
+Internal ALB や API GW Private endpoint など **VPC 内部のみの API も Central Canary で監査可能**（Phase 2）。
+
+| Private 構成 | 到達手段 |
+|---|---|
+| **API GW Private endpoint** | VPC Interface Endpoint（`execute-api`）|
+| **Internal ALB / NLB** | **Canary VPC + Transit Gateway 経由** |
+| **VPC Lattice Service** | VPC Lattice Service Association |
+
+→ **Canary VPC** をネットワーク監査 Acct に配置し、既存 Transit Gateway（ネットワーク Acct）にアタッチすることで、全 App Acct の Private endpoint に到達可能。Phase 2 で採用。詳細は [ADR-059 §E](../../adr/059-central-auth-check-canary-architecture.md#e-private-api-監査対応) 参照。
 
 ---
 

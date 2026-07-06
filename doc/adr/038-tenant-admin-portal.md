@@ -8,6 +8,7 @@
   - [ADR-021 Post-login Landing UX（サービス選択画面）](021-post-login-landing-ux.md)
   - [ADR-054 ID 統合戦略](054-id-integration-strategy.md)（マッピング DB との連動）
   - **[ADR-055 HRD 実装方式選定](055-hrd-implementation-method-selection.md)（2026-06-29 連動：Tenant Admin Portal は Organization alias + リンク IdP の管理 UI を Phase 1 必須に含む）**
+  - **[ADR-057 CSRF 対策の責任分界](057-csrf-protection-responsibility-boundary.md)** — 本 SPA + 管理 API は L3 実装例、Bearer JWT + Lambda Authorizer + CORS + SameSite Lax で CSRF 免疫（2026-07-06 追記）
   - [§FR-8 管理](../requirements/proposal/fr/08-admin.md)
   - [§FR-1.2.0.B AWS アカウント境界による運用摩擦への対応](../requirements/proposal/fr/01-auth.md)（Layer 3 委譲管理者）
 

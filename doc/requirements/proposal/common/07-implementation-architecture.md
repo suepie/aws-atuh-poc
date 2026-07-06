@@ -96,6 +96,7 @@
 | **[ADR-051](../../../adr/051-multi-region-dr-failover.md) Multi-Region DR** | **Active-Passive Warm Standby + Aurora Global + DynamoDB Global Tables + S3 CRR + KMS MRK**（Tier 2 RTO 1h / RPO 1min、Tier 1 規制業種 30min オプション）|
 | **[ADR-052](../../../adr/052-multi-tenant-isolation-rate-limiting.md) Multi-tenant Isolation** | **Pool + Hybrid Silo + 3 軸 Rate Limit（Per-tenant / Per-client / Per-IP）+ Tier 別 Quota** |
 | **[ADR-053](../../../adr/053-observability-strategy.md) Observability** | **OpenTelemetry + AMP + AMG + X-Ray + SLO Burn Rate**（Datadog 等比 5-8 倍コスト削減）|
+| **[ADR-057](../../../adr/057-csrf-protection-responsibility-boundary.md) CSRF 対策の責任分界** | **L1 認証基盤 UI = Keycloak 標準 / L2 OAuth・SAML 認可 = `state` + PKCE + `RelayState` を RP ガイドで必須化 / L3 アプリ API = Bearer JWT + CORS + SameSite Lax で原則免疫**（[§C-7.3.30](#c-7-3-30-csrf-対策の責任分界adr-057-2026-07-06-新規)）|
 
 ---
 
@@ -1604,6 +1605,77 @@ flowchart LR
 | Phase 4 | 各アプリ統合（1 アプリ 1 ヶ月、並列可）| 半年〜1 年 |
 | Phase 5 | 旧 ID 廃止 + 完全統合運用 | 2 ヶ月 |
 | **合計** | | **約 1.5 年（10 アプリ想定）** |
+
+---
+
+### §C-7.3.30 CSRF 対策の責任分界（ADR-057、2026-07-06 新規）
+
+> **§C-7.3.30.0 背景・なぜここで決めるか**
+>
+> 顧客レビューで「**CSRF トークンは認証基盤で発行すべきか、各 API で発行すべきか**」と質問が出た。SPA + Bearer JWT + Keycloak UI + SAML/OAuth フロー + モバイルの **4 系統混在**で誤設計しやすいため、責任層 L1〜L3 を明示分界する必要がある。詳細判断は **[ADR-057](../../../adr/057-csrf-protection-responsibility-boundary.md)** に集約。
+
+#### §C-7.3.30.1 責任層 3 分界（L1 / L2 / L3）
+
+| 責任層 | 対象 | CSRF 対策 | 主体 |
+|---|---|---|---|
+| **L1 認証基盤内 UI** | Keycloak ログイン画面 / アカウント設定画面 / Admin Console | Keycloak 標準の CSRF トークン + POST 化 | **本基盤（追加実装ゼロ）** |
+| **L2 OAuth/OIDC/SAML 認可フロー** | authorize / SAML AuthnRequest | `state` + PKCE + `nonce` / SAML `RelayState` + `InResponseTo` | **本基盤（RP ガイドで顧客に必須化）** |
+| **L3 アプリ API（状態変更）** | ユーザ管理画面 API / 各業務アプリ API / モバイル BFF | **Bearer JWT + CORS + Origin/Referer + SameSite Lax で原則 CSRF 免疫**、Cookie セッション時は Double Submit Cookie or Synchronizer Token | **各アプリ / API プラットフォーム（本基盤はパターン提示のみ）** |
+
+#### §C-7.3.30.2 なぜ「認証基盤で全部やらない」か
+
+- **OWASP 原則**：CSRF トークンは **状態変更が起きる箇所で検証**（認証基盤は API の状態変更ポイントを知らない）
+- **SPOF 回避**：認証基盤に CSRF トークン発行 API を持たせると、各 API が「認証基盤に問い合わせて検証」→ 認証基盤がボトルネック
+- **Bearer JWT 前提**：SPA + `Authorization: Bearer <token>` はブラウザ自動送信されず **CSRF 免疫**（[ADR-030](../../../adr/030-minimal-jwt-claim-design.md) 前提）
+- **業界標準**：Auth0 / Okta / Microsoft Entra ID すべて同モデル（「CSRF は API 側の責任」を明記）
+
+#### §C-7.3.30.3 Bearer JWT 免疫の 3 前提条件（ADR-057 §C）
+
+| 条件 | 説明 |
+|---|---|
+| **C-1: Cookie 保管禁止** | JWT を Cookie に保存しない（localStorage / Memory / sessionStorage 保管）|
+| **C-2: 明示付与のみ** | `Authorization: Bearer <token>` を JS が明示的にセット |
+| **C-3: CORS 適切設定** | Origin ホワイトリスト明示 + `Access-Control-Allow-Credentials: false` |
+
+**留意**：C-1（localStorage 保管）は XSS リスクとセット対策（CSP + DOMPurify + React 標準 escape）が必須。
+
+#### §C-7.3.30.4 見落としがちな 5 パターン（[ADR-057 §A.2](../../../adr/057-csrf-protection-responsibility-boundary.md#a2-見落としがちな-5-パターン)）
+
+- **A. Login CSRF** → 本基盤（`state` + Keycloak 標準）
+- **B. Logout CSRF** → 本基盤（`logout` を POST 化、`id_token_hint` + `POST_LOGOUT_REDIRECT_URI`）
+- **C. IdP-initiated SAML CSRF** → 本基盤 + SP 側（SP-initiated 必須化、[ADR-023 §J](../../../adr/023-servicenow-sp-integration.md) 連動）
+- **D. OAuth `state` 未検証** → 顧客 RP（本基盤は実装ガイド提供）
+- **E. Refresh Token CSRF** → 顧客 RP / API プラットフォーム（SameSite=Strict + Custom Header）
+
+#### §C-7.3.30.5 Phase 1 採用構成（2026-07-06 確定）
+
+| 項目 | 採用 |
+|---|---|
+| L1 | Keycloak 標準機能（追加実装ゼロ）|
+| L2 | OAuth `state` + PKCE + OIDC `nonce` 必須化を **RP 実装ガイド + 顧客 Integration Guide** に明記 |
+| L2（SAML）| SP-initiated 推奨、IdP-initiated は原則不許可（要件時のみ短命 nonce Cookie）|
+| L3（本基盤直下）| Bearer JWT 前提（ADR-030）+ CORS Origin ホワイトリスト + SameSite=Lax |
+| L3（API プラットフォーム）| Double Submit Cookie 参照実装を [doc/api-platform/](../../../api-platform/) で別途標準化 |
+| Trust Center 記載 | 顧客監査向け説明は [customer-doc/security.md](../../../common/customer-doc/security.md) に格納（ADR-036 縮小により Trust Center は撤去）|
+
+#### §C-7.3.30.6 4 系統別 対策マトリクス
+
+| 系統 | 認証情報の運び方 | CSRF 成立 | 本基盤責任 | アプリ責任 |
+|---|---|:---:|:---:|:---:|
+| **Cookie セッション（Keycloak UI）** | Session Cookie 自動送信 | ✅ | ✅ Keycloak 標準 | — |
+| **Bearer JWT SPA** | JS 明示付与 | ❌（免疫）| — CORS 設定のみ | ✅ CORS + Origin 検証 |
+| **BFF + HttpOnly Cookie** | Session Cookie 自動送信 | ✅ | — | ✅ Double Submit / Synchronizer |
+| **モバイル（AppAuth）** | Bearer JWT 明示付与 | ❌（免疫）| — | ✅ PKCE 必須（ADR-050 連動）|
+
+#### §C-7.3.30.7 関連 ADR
+
+- **[ADR-057](../../../adr/057-csrf-protection-responsibility-boundary.md)**（本セクションの詳細判断）
+- [ADR-030 最小 JWT クレーム設計](../../../adr/030-minimal-jwt-claim-design.md)（Bearer JWT 前提）
+- [ADR-020 HRD ヒントキー戦略](../../../adr/020-hrd-hint-keys-mixed-login.md)（`state` パラメータの使用）
+- [ADR-023 ServiceNow SP 連携](../../../adr/023-servicenow-sp-integration.md)（SAML `RelayState` + IdP-initiated 拒否）
+- [ADR-024 ログイン画面アーキテクチャ](../../../adr/024-login-screen-architecture-branding.md)（Custom Theme での hidden CSRF field 保持義務）
+- [ADR-038 ユーザ管理画面](../../../adr/038-tenant-admin-portal.md)（L3 実装例：Bearer JWT + Lambda Authorizer）
+- [ADR-050 モバイルアプリ認証](../../../adr/050-mobile-sdk-native-auth.md)（PKCE + System Browser の CSRF 免疫根拠）
 
 ---
 

@@ -7,6 +7,7 @@
   - [§FR-7.4.10 発信プロビジョニング（基盤 → ServiceNow 等）](../requirements/proposal/fr/07-user.md#fr-7410-発信プロビジョニング基盤--servicenow-等)
   - [ADR-018 ユーザー識別子 3 階層戦略](018-user-identifier-3layer-emailless.md)
   - [ADR-019 既存システム移行戦略](019-existing-system-migration.md)
+  - **[ADR-057 CSRF 対策の責任分界](057-csrf-protection-responsibility-boundary.md)** — SAML `RelayState` + IdP-initiated 拒否方針（2026-07-06 追記、[ADR-057 §E.2](057-csrf-protection-responsibility-boundary.md#e2-servicenow-spsaml-jitadr-023) 連動）
   - [B-IDM-8 ServiceNow user_name との関係](../requirements/hearing-checklist.md)
   - 関連 Claude 内部メモリ: `project_servicenow_sp_integration.md`
 

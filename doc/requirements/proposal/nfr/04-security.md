@@ -207,6 +207,7 @@ flowchart LR
 | ブルートフォース | 連続失敗で一時ロック（5 回 / 30 分）|
 | 侵害クレデンシャル検出 | **有効**（Cognito Plus or Keycloak+HIBP）|
 | **Bot Detection / CAPTCHA** | **Phase 1：WAF Bot Control + ATP のみ**（Turnstile はメンテ負担考慮で Phase 2 オプション化、2026-06-24 確定）→ 詳細 [ADR-042](../../../adr/042-bot-detection-captcha.md) |
+| **CSRF 対策の責任分界** | **L1 認証基盤 UI = Keycloak 標準 / L2 OAuth・SAML 認可フロー = `state` + PKCE + `RelayState` を RP ガイドで必須化 / L3 アプリ API = Bearer JWT + CORS + SameSite Lax で原則 CSRF 免疫**（Cookie セッション時は Double Submit or Synchronizer）→ 詳細 [ADR-057](../../../adr/057-csrf-protection-responsibility-boundary.md) / [§C-7.3.30](../common/07-implementation-architecture.md#c-7-3-30-csrf-対策の責任分界adr-057-2026-07-06-新規) |
 | DDoS 対策 | Shield Standard（AWS 標準）|
 | ペネトレーションテスト | 年 1 回（顧客要件次第）|
 | 脆弱性スキャン | ECR Image Scan + Inspector |

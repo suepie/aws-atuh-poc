@@ -1144,11 +1144,34 @@ ORDER BY distinct_ips DESC;
 
 ### §C-6.6.8 L5: Behavioral（能動探査）詳細
 
+**配置方針（Pattern β 採用、[ADR-059](../../../adr/059-central-auth-check-canary-architecture.md)）**：
+
+CloudWatch Synthetics canary は **各アプリ Acct には配置しない**。**ネットワーク監査 Acct に Central Canary を集約**し、App Registry（DynamoDB）+ OpenAPI Registry（S3）を Scan して全アプリを横断監視する。アプリ deploy 時に Service Catalog 製品が App Registry へ自動登録するため、Central Canary の変更なしに新規アプリが監視対象に追随する。
+
+**Runtime バージョン（2026-07 時点）**：
+
+| Runtime | 用途 | 備考 |
+|---|---|---|
+| **`syn-nodejs-puppeteer-16.1`** ⭐ 最新 | Central Canary 本命（Puppeteer カスタム、OpenAPI 動的発見 / Cookie フロー / Multilocation 対応）| Lambda Node.js 22.x、Chromium 147 |
+| **`syn-nodejs-5.1`** ⭐ 最新 | Multi Checks Blueprint（小規模用）| Node.js-only 軽量 |
+| ~~`syn-nodejs-puppeteer-7.0`~~ | ❌ **Deprecated**（本ドキュメント旧記述に注意）| 過去実装案で誤って引用 |
+
+**Namespace（v13.1 以降変更）**：
+
+- `require('Synthetics')` → **`require('@aws/synthetics-puppeteer')`**
+- `require('SyntheticsLogger')` → **`require('@aws/synthetics-logger')`**
+
+**AWS SDK バージョン**：
+
+- `syn-nodejs-puppeteer-8.0+` は Lambda Node.js 18+、**AWS SDK v3 必須**
+- `const AWS = require('aws-sdk')` は動作しない、`@aws-sdk/client-*` を使用
+
 **主要ツール**：
 
 | ツール | 種別 | 用途 |
 |---|---|---|
-| **CloudWatch Synthetics canary** | AWS マネージド | 定期合成監視、軽量 |
+| **CloudWatch Synthetics canary (Puppeteer)** | AWS マネージド | Central Canary 本命、Node.js コードで OpenAPI 動的処理 |
+| **CloudWatch Synthetics Multi Checks Blueprint** | AWS マネージド | 10 checks/canary の JSON 設定、**OAuth Client Credentials + Secrets Manager `${AWS_SECRET:name:key}` ネイティブサポート**、小規模用 |
 | **OWASP ZAP** | OSS | 深掘り pen test |
 | **Burp Suite Enterprise** | 商用 | 高度 pen test |
 | **Postman / Newman scheduled** | 開発者親和性高 | 定期 API テスト |
@@ -1156,10 +1179,15 @@ ORDER BY distinct_ips DESC;
 **設置場所**：
 
 ```
-[CloudWatch Synthetics] → 5min interval → 各 endpoint へ probe
-        ↓ failure
-[EventBridge] → SNS → Slack / PagerDuty
-        ↓ 月次
+[ネットワーク監査 Acct]
+  Central Canary（Puppeteer 16.1）
+    ↓ 5min interval
+  各アプリの CloudFront URL に probe
+    ↓ failure
+  Alert Router Lambda（4×4 分類）
+    ↓ 通知先自動振り分け
+  Security オンコール / Platform / App team
+    ↓ 月次
 [OWASP ZAP automation] → 深掘り → レポート
 ```
 
@@ -1167,8 +1195,8 @@ ORDER BY distinct_ips DESC;
 
 ```javascript
 // synthetics-canary-auth-check.js
-const synthetics = require('Synthetics');
-const log = require('SyntheticsLogger');
+const synthetics = require('@aws/synthetics-puppeteer');
+const log = require('@aws/synthetics-logger');
 
 const protectedEndpoints = [
   { url: 'https://api.example.com/api/users', expected: [401, 403] },
@@ -1386,7 +1414,7 @@ Resources:
     Properties:
       Name: !Sub "${AppName}-auth-check"
       ExecutionRoleArn: !GetAtt CanaryRole.Arn
-      RuntimeVersion: syn-nodejs-puppeteer-7.0
+      RuntimeVersion: syn-nodejs-puppeteer-16.1  # ⭐ 最新（旧記述 syn-nodejs-puppeteer-7.0 は Deprecated）
       Schedule: { Expression: rate(5 minutes) }
       Code:
         Handler: index.handler
@@ -1418,11 +1446,11 @@ Resources:
 
 ```javascript
 // canary-code/auth-check-v1.zip 内 index.js
-const synthetics = require('Synthetics');
-const log = require('SyntheticsLogger');
+const synthetics = require('@aws/synthetics-puppeteer');
+const log = require('@aws/synthetics-logger');
 const yaml = require('js-yaml');
-const AWS = require('aws-sdk');
-const s3 = new AWS.S3();
+const { S3Client, GetObjectCommand } = require('@aws-sdk/client-s3');  // ⭐ SDK v3
+const s3 = new S3Client({});
 
 const authCheckCanary = async () => {
   const apiBaseUrl = process.env.API_BASE_URL;
@@ -1520,12 +1548,13 @@ exports.handler = async () => {
 
 ```javascript
 // hybrid-auth-canary.zip 内 index.js
-const synthetics = require('Synthetics');
-const log = require('SyntheticsLogger');
+const synthetics = require('@aws/synthetics-puppeteer');
+const log = require('@aws/synthetics-logger');
 const yaml = require('js-yaml');
-const AWS = require('aws-sdk');
-const s3 = new AWS.S3();
-const sm = new AWS.SecretsManager();
+const { S3Client, GetObjectCommand } = require('@aws-sdk/client-s3');  // ⭐ SDK v3
+const { SecretsManagerClient, GetSecretValueCommand } = require('@aws-sdk/client-secrets-manager');
+const s3 = new S3Client({});
+const sm = new SecretsManagerClient({});
 
 const hybridCanary = async () => {
   const apiBaseUrl = process.env.API_BASE_URL;
