@@ -68,7 +68,7 @@
 | [ADR-021](../../../adr/021-post-login-landing-ux.md) Landing UX | サービス選択画面 SPA + Sorry |
 | [ADR-022](../../../adr/022-aws-edge-sorry-control.md) AWS edge Sorry | CloudFront + Lambda@Edge |
 | [ADR-023](../../../adr/023-servicenow-sp-integration.md) ServiceNow SP | SAML JIT + side_door + sso_source |
-| [ADR-025](../../../adr/025-scim-positioning-and-receive-stance.md) SCIM | SCIM 2.0 Server（Phase Two plugin）|
+| [ADR-025](../../../adr/025-scim-positioning-and-receive-stance.md) SCIM（**§H 追記 2026-07-08**：LDAP(s) 顧客の JIT/SCIM 扱い）| SCIM 2.0 Server（Phase Two plugin）+ **LDAP User Federation Provider（Keycloak 標準）で LDAP 顧客対応**（§C-7.3.4.4.B）|
 | [ADR-026](../../../adr/026-aal-mismatch-stepup-mfa.md) ステップアップ MFA | Step-up Authenticator |
 | [ADR-029](../../../adr/029-local-user-categories-and-scope-scenarios.md) 利用者カテゴリ | P-1〜P-4 + I-1〜I-5 + M-1〜M-5 |
 | [ADR-030](../../../adr/030-minimal-jwt-claim-design.md) 最小 JWT | Protocol Mapper 設定 |
@@ -683,9 +683,11 @@ flowchart TB
 |---|---|---|
 | **HRD Authenticator SPI** ★ **Phase 1 採用確定（2026-06-25）** | **識別子先行 HRD（D 案 + A 案ハイブリッド）**、社内 Java 開発、Keycloak User Attribute マッピング DB 参照 | **ADR-020 / ADR-055** |
 | Risk-based Authenticator SPI | コンテキストベース動的判定（IP / 地理 / デバイス等） | ADR-034 |
-| Event Listener SPI | ITDR / 監査ログ Webhook | ADR-035 |
+| Event Listener SPI（G-1〜G-6 + L-GD-1〜L-GD-5 拡張）| ITDR / 監査ログ Webhook + Golden JWT/SAML/LDAP 検知シグナル発行 | ADR-035 / **ADR-060 §C.2**（2026-07-08 拡張）|
 | User Storage SPI | 旧 DB / ServiceNow REST API キャッシュ移行（並走期）| ADR-019, 023 §J-2 |
+| **LDAP User Federation Provider**（Keycloak 標準）| 顧客 IdP が LDAP(s) 直結の場合の User Federation、JIT 相当（Import Users = ON）+ Full Sync による SCIM 代替 | **ADR-025 §H**（2026-07-08 追加）|
 | Custom Authorization SPI | SoD ルール判定（軽量 IGA）| ADR-037 |
+| **Kerberos / GSSAPI Authenticator**（Keycloak 標準、**Phase 2 候補**）| Windows ドメイン参加 PC からの seamless SSO（SPNEGO）、B-LDAP-5 / B-IdP-Protocol-3 で要否確認 | ADR-025 §H.9 L-3 論点（2026-07-08 追加）|
 
 ##### §C-7.3.4.4.A HRD Authenticator SPI 詳細（2026-06-25 追加、Phase 1 採用確定）
 
@@ -703,6 +705,38 @@ flowchart TB
 | **デプロイ** | Custom Keycloak Container Image に JAR 配置 + `/opt/keycloak/providers/` + `kc.sh build` |
 | **テスト方針** | 別途検討（Phase X TBD）|
 | **CI/CD ツールチェーン** | EKS：GitHub Actions + ECR + Helm + ArgoCD / ROSA：OpenShift Pipelines (Tekton) + Quay.io + rhbk-operator + OpenShift GitOps（[ADR-055 §A.6](../../../adr/055-hrd-implementation-method-selection.md)）|
+
+##### §C-7.3.4.4.B LDAP User Federation Provider 詳細（2026-07-08 追加、顧客 IdP が LDAP(s) の場合）
+
+> **詳細は [ADR-025 §H](../../../adr/025-scim-positioning-and-receive-stance.md) 参照**
+
+| 観点 | 内容 |
+|---|---|
+| **実装** | **Keycloak 標準機能**（Custom SPI 開発不要）|
+| **対象顧客** | 顧客 IdP が LDAP(s) 直結（オンプレ AD 中心、金融/製造/官公庁で頻出）、マスター表 B 列 Y γ 判定 |
+| **JIT 相当** | Import Users = ON（推奨）、初回ログイン時に `ldap_search` + `ldap_bind` → Keycloak DB キャッシュ |
+| **SCIM 相当** | Full Sync（1 h 標準 / 5 min 金融規制、B-LDAP-2 で確認）、退職者 deprovisioning 用 |
+| **接続** | LDAPS TCP 636 必須（Plain LDAP 389 禁止）、経路は Direct Connect / VPN / VPC Peering（B-LDAP-7）|
+| **Bind Service Account** | **Read-only + 限定 OU 権限**（B-LDAP-6）、資格情報は KMS L2 CMK 暗号化管理 |
+| **Sync Registrations** | **OFF**（Keycloak → LDAP 書込禁止、Read-Only 運用） |
+| **主要マッパー** | User Attribute Mapper / Group Mapper / msad-user-account-control Mapper（AD 側 Disabled 状態反映）|
+| **セキュリティ考慮** | 本基盤経由でパスワードが AD に届く → Log scrubbing 必須（[ADR-060 §A](../../../adr/060-auth-protocol-attack-path-residual-tbd.md)）+ AD 側 MFA は bind で検証不可 → 本基盤側追加 MFA 必須（[ADR-009](../../../adr/009-mfa-responsibility-by-idp.md)）|
+| **Golden LDAP 検知** | Bind Service Account 乗っ取り検知（L-GD-1〜L-GD-5、[ADR-060 §C.2.2](../../../adr/060-auth-protocol-attack-path-residual-tbd.md)）|
+| **egress 経路監査** | Network Firewall + VPC Flow Log（[ADR-039 v2 §F.1.A](../../../adr/039-centralized-network-account-edge-layer.md)）|
+| **Cognito 対応可否** | ❌ **Cognito 不可**（LDAP 直結の User Federation なし）→ Keycloak 必須化（ADR-014 K-12）|
+
+##### §C-7.3.4.4.C Kerberos / GSSAPI Authenticator（2026-07-08 追加、Phase 2 候補）
+
+> **詳細は [ADR-025 §H.9 L-3 論点](../../../adr/025-scim-positioning-and-receive-stance.md) 参照**
+
+| 観点 | 内容 |
+|---|---|
+| **Phase** | **Phase 2 候補**（Phase 1 不採用、B-LDAP-5 / B-IdP-Protocol-3 で要否確認）|
+| **対象** | Windows ドメイン参加 PC からの seamless SSO（SPNEGO）、業務系オンプレ環境の顧客要望 |
+| **実装** | **Keycloak 標準機能**（Custom SPI 開発不要）、KDC 連携設定 |
+| **前提条件** | Kerberos KDC への接続経路 + Kerberos Realm 設定 + Keytab 発行 |
+| **Cognito 対応可否** | ❌ **Cognito 不可**（K-13）→ Keycloak 必須化 |
+| **Phase 1 前倒しトリガー** | 大口顧客の必須要件 / セキュリティ規制で SPNEGO 必須の業界 |
 
 #### §C-7.3.4.5 Protocol Mapper（JWT クレーム生成）
 

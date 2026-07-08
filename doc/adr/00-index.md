@@ -28,7 +28,7 @@
 | [022](022-aws-edge-sorry-control.md) | AWS edge での Sorry 制御パターン（ALB / CloudFront 統合） | Proposed | 2026-06-12 |
 | [023](023-servicenow-sp-integration.md) | ServiceNow SP 連携設計（SSO + プロビジョニング方向の選択） | Proposed | 2026-06-15 |
 | [024](024-login-screen-architecture-branding.md) | ログイン画面アーキテクチャとブランディング 4 パターン | Proposed | 2026-06-15 |
-| [025](025-scim-positioning-and-receive-stance.md) | SCIM 2.0 の位置づけと本基盤の受信スタンス | Proposed | 2026-06-15 |
+| [025](025-scim-positioning-and-receive-stance.md) | SCIM 2.0 の位置づけと本基盤の受信スタンス（**2026-07-08 §H 追記：顧客 IdP が LDAP(s) の場合の JIT/SCIM 扱い** — Pull vs Push モデル差 / LDAP User Federation が JIT 相当自動実現 / SCIM 基本不要（Sync で代替）/ 併用シナリオ / セキュリティ論点 6 件（パスワード転送・Service Account・AD MFA・Golden LDAP 検知）/ B-LDAP-1〜7 ヒアリング + L-1〜L-7 論点起票） | Proposed | 2026-06-15 |
 | [026](026-aal-mismatch-stepup-mfa.md) | AAL 不整合の具体例とステップアップ MFA 設計 | Proposed | 2026-06-15 |
 | [027](027-tenant-user-duplication-handling.md) | 同一テナント内ユーザー重複の扱い（7 シナリオ + アカウントリンク戦略） | Proposed | 2026-06-15 |
 | [028](028-idpless-customer-local-user-management.md) | IdP なし顧客のローカルユーザー管理 — 4 選択肢の比較 | Proposed | 2026-06-15 |

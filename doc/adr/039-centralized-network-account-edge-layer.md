@@ -1,13 +1,15 @@
 # ADR-039: ネットワーク監査アカウント設計（アプリごと独立 CloudFront/WAF + 5 アカウント体系）
 
 - **ステータス**: Proposed（要件定義フェーズで Accepted に昇格予定）
-- **日付**: 2026-06-23 作成、**2026-06-24 全面書き直し（v2、設計方針大幅変更）**
+- **日付**: 2026-06-23 作成、**2026-06-24 全面書き直し（v2、設計方針大幅変更）**、**2026-07-08 §F.1.A LDAP Egress 経路追記**
 - **関連**:
   - [ADR-011 認証基盤前段ネットワーク設計](011-auth-frontend-network-design.md)（更新あり）
   - [ADR-013 CloudFront + WAF による IP 制限の置き換え戦略](013-cloudfront-waf-ip-restriction.md)（更新あり）
   - [ADR-022 AWS edge での Sorry 制御パターン](022-aws-edge-sorry-control.md)（更新あり）
   - [ADR-036 Customer Audit Support](036-customer-audit-support.md)（**Scope Reduced**、監査ログ集約 Acct との関係）
   - [§C-7 実装アーキテクチャ](../requirements/proposal/common/07-implementation-architecture.md)（§C-7.2.2 全体図 / §C-7.2.3 アカウント境界 / §C-7.3.3 Network 層 / §C-7.3.11 Sorry 制御）
+  - **[ADR-025 §H 顧客 IdP が LDAP(s) の場合](025-scim-positioning-and-receive-stance.md)** — §F.1.A LDAP Egress 経路追記の起点（L-6 論点、2026-07-08 追記）
+  - **[ADR-060 §C.2.2 Golden LDAP 系検知](060-auth-protocol-attack-path-residual-tbd.md)** — §F.1.A.4 監査要件連動（2026-07-08 追記）
 
 ---
 
@@ -393,6 +395,98 @@ flowchart LR
 | **Egress 集約検査** | VPC → インターネットへの通信を Network Firewall で検査（C&C 通信 / DLP）|
 | **East-West 検査** | Auth Acct ↔ App Acct ↔ Network Acct 間の通信を必要に応じて検査 |
 | **ステートフル ルール** | Suricata 互換ルール、AWS Managed Rules + 独自ルール |
+| **LDAP(s) 顧客 AD への egress**（2026-07-08 追加、[ADR-025 §H.6](025-scim-positioning-and-receive-stance.md) L-6 論点）| **Auth Acct EKS Pod → 顧客 AD (TCP 636)** を Network Firewall で許可 + 監査（詳細下記 §F.1.A）|
+
+### F.1.A LDAP(s) 顧客 AD への Egress 経路（2026-07-08 追加、ADR-025 §H 波及）
+
+顧客 IdP が LDAP(s) 直結の場合（[ADR-025 §H](025-scim-positioning-and-receive-stance.md)）、**Auth Acct の Keycloak Pod から顧客 AD への outbound 通信**が必要になる。本節でその経路と監査を明示する。
+
+#### F.1.A.1 経路 3 パターン（ヒアリング [B-LDAP-7](../requirements/hearing-checklist.md) 選択）
+
+| 経路 | 用途 | 帯域 / 遅延 | 冗長化 | 適用顧客 |
+|---|---|---|---|---|
+| **① Direct Connect**（推奨、金融/大企業）| 顧客オンプレ AD への専用線 | 大帯域 / 低遅延（<10 ms）| DX 2 本 + BGP | 金融 / 製造 / 官公庁 |
+| **② Site-to-Site VPN** | 中小顧客 or Phase 1 開始時 | 中帯域 / 中遅延（20-50 ms）| VPN 2 本 + BGP | 中小 / 開発 / Staging |
+| **③ VPC Peering / TGW**（顧客 AD が AWS 内）| 顧客が自社 AWS Acct で Managed AD 運用 | AWS 内部 / 極低遅延（<5 ms）| AWS SLA | AWS ネイティブ顧客 |
+| ❌ Public LDAPS | **原則禁止**（要例外承認）| — | — | 要例外承認 |
+
+#### F.1.A.2 通信フロー（例：Direct Connect 経路）
+
+```
+[Auth Acct]                                    [顧客オンプレ]
+Keycloak Pod (EKS)
+    │
+    ▼
+Auth Acct VPC (Private Subnet)
+    │
+    ▼
+Transit Gateway Attachment (Auth Acct)
+    │
+    ▼
+【Transit Gateway】(ネットワーク Acct)
+    │
+    ▼
+【Network Firewall】(ネットワーク監査 Acct)
+    │ ┌── ルール: allow tcp:636 dest=customer-ad-cidr src=keycloak-pod-cidr
+    │ ├── 監査: VPC Flow Log + Network Firewall Alert Log
+    │ └── DPI: TLS ハンドシェイクのみ検査（LDAPS 内容は暗号化されており DPI 不可）
+    │
+    ▼
+Direct Connect Gateway
+    │
+    ▼
+Direct Connect (専用線)
+    │
+    ▼
+顧客オンプレ Router
+    │
+    ▼
+顧客 AD (TCP 636 LDAPS)
+```
+
+#### F.1.A.3 Network Firewall ルール例（Suricata 互換）
+
+```
+# Auth Acct EKS Keycloak Pod → 顧客 AD LDAPS
+pass tcp $KEYCLOAK_POD_CIDR any -> $CUSTOMER_AD_CIDR 636 \
+    (msg:"LDAP(S) egress to customer AD (permitted)"; \
+     flow:established,to_server; \
+     sid:1000101; rev:1;)
+
+# 顧客 AD 以外への LDAP 636 は拒否 + アラート
+drop tcp any any -> any 636 \
+    (msg:"LDAP(S) egress to unknown destination (Golden LDAP suspicion)"; \
+     sid:1000102; rev:1;)
+
+# Plain LDAP 389 は全拒否
+drop tcp any any -> any 389 \
+    (msg:"Plain LDAP 389 attempt (policy violation, LDAPS required)"; \
+     sid:1000103; rev:1;)
+```
+
+#### F.1.A.4 監査要件（[ADR-060 §C.2.2 L-GD](060-auth-protocol-attack-path-residual-tbd.md) 連動）
+
+| 監査項目 | 実装 | 用途 |
+|---|---|---|
+| **VPC Flow Log**（Auth Acct + ネットワーク監査 Acct）| S3 → OpenSearch | 通常時の bind パターン統計、L-GD-4 IP 異常検知 |
+| **Network Firewall Alert Log**| CloudWatch Logs → EventBridge → ITDR | L-GD-2 Off-hours / L-GD-4 IP 異常 の即時検知 |
+| **DNS 解決ログ**（Route 53 Resolver Query Log）| S3 → OpenSearch | 顧客 AD ホスト名解決の追跡、DNS スプーフィング検知 |
+| **Keycloak LDAP bind イベント**（Event Listener SPI）| EventBridge → Risk Engine | L-GD-1〜L-GD-3 / L-GD-5 の検知パイプライン ([ADR-060 §C](060-auth-protocol-attack-path-residual-tbd.md))|
+
+#### F.1.A.5 セキュリティ考慮事項
+
+- **LDAPS は E2E 暗号化**（Network Firewall での DPI 不可）→ **メタデータ検知（IP / 時間帯 / 頻度）が主軸**
+- **Bind Service Account 資格情報は Auth Acct KMS L2 CMK で暗号化管理**（[ADR-045 §L2](045-cryptographic-key-management-strategy.md) 準拠）
+- **証明書検証必須**：顧客 AD の CA 証明書を Keycloak Truststore に登録、期限監視
+- **障害時フォールバック**：DX or VPN 障害時の LDAP 断は本基盤側でユーザーへ通知（[ADR-022 Sorry パターン](022-aws-edge-sorry-control.md)）
+
+#### F.1.A.6 Phase 1 実装 TODO
+
+- [ ] 顧客ごとの LDAP CIDR / エンドポイントの Terraform モジュール化
+- [ ] Network Firewall ルールの IaC 化（Suricata ルール）
+- [ ] Route 53 Resolver Forwarding rule（顧客 AD DNS 参照）
+- [ ] VPC Flow Log → OpenSearch → Grafana ダッシュボード
+- [ ] LDAP 断障害の Sorry 画面ルーティング（[ADR-022](022-aws-edge-sorry-control.md) 連動）
 
 ### F.2 Shield Advanced
 

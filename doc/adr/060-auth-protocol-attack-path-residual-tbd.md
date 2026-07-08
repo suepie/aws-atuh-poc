@@ -13,6 +13,7 @@
   - [ADR-050 モバイルアプリ認証](050-mobile-sdk-native-auth.md)（DPoP 導入時の RP SDK 影響）
   - [ADR-053 Observability Strategy](053-observability-strategy.md)（本 ADR §A Log scrubbing の実装親 ADR）
   - [ADR-057 CSRF 対策の責任分界](057-csrf-protection-responsibility-boundary.md)（Phase 2 で DPoP 導入判断が波及）
+  - **[ADR-025 §H 顧客 IdP が LDAP(s) の場合](025-scim-positioning-and-receive-stance.md)** — §C.2.2 Golden LDAP 系シグナル L-GD-1〜L-GD-5 の起点となる LDAP Bind Service Account 乗っ取り論点（2026-07-08 追記）
 
 ---
 
@@ -200,7 +201,7 @@ s/(KEYCLOAK_SESSION|KEYCLOAK_IDENTITY)=[^;\s]+/\1=[REDACTED]/g
 
 ---
 
-## C. Adaptive Auth 連動強化（SAML P3 + OIDC O3 Golden 系対応）
+## C. Adaptive Auth 連動強化（SAML P3 + OIDC O3 + LDAP Bind Service Account 乗っ取り対応）
 
 ### C.1 対象攻撃
 
@@ -208,12 +209,15 @@ s/(KEYCLOAK_SESSION|KEYCLOAK_IDENTITY)=[^;\s]+/\1=[REDACTED]/g
 
 - **SAML P3 Golden SAML**：IdP 署名鍵盗難 → 任意 Assertion 偽造（SolarWinds 事件、2020）
 - **OIDC O3 Golden JWT**：JWKS 秘密鍵盗難 → 任意 JWT 偽造
+- **LDAP Bind Service Account 乗っ取り**（2026-07-08 追加、[ADR-025 §H.6](025-scim-positioning-and-receive-stance.md) L-5 論点）：本基盤が顧客 AD に bind する Service Account の資格情報漏洩 → 任意ユーザーとして bind 可能
 
-**共通課題**：**署名鍵が正当である以上、SP / RP から見て偽装との区別は不可能**。SP/RP 側では **"検知 + 影響最小化"** しかできない。
+**共通課題**：**署名鍵 / bind 資格情報が正当である以上、SP / RP から見て偽装との区別は不可能**。SP/RP 側では **"検知 + 影響最小化"** しかできない。
 
 ### C.2 検知シグナル（Adaptive Auth Risk Engine 拡張）
 
 **[ADR-034 Adaptive Authentication](034-adaptive-authentication.md)** の Risk Engine に以下シグナルを追加:
+
+#### C.2.1 Golden JWT / SAML 系シグナル（G-1〜G-6）
 
 | シグナル | 検知内容 | 通常時 vs 異常時 |
 |---|---|---|
@@ -223,6 +227,20 @@ s/(KEYCLOAK_SESSION|KEYCLOAK_IDENTITY)=[^;\s]+/\1=[REDACTED]/g
 | **G-4: 異常な地理的 IP + 未知デバイス**| 攻撃者が偽造 token でログイン | GeoIP + Device Fingerprint 統合 |
 | **G-5: JWKS 鍵の異常な使用パターン**| 廃止済 key ID の再登場、または `kid` 未指定 | JWKS ローテ履歴と照合 |
 | **G-6: 認証イベントなしの Access Token 発行**（OIDC 特化）| Authorization Code フローを経由しない発行 | Keycloak Event Listener で監視 |
+
+#### C.2.2 Golden LDAP 系シグナル（L-GD-1〜L-GD-5、2026-07-08 追加）
+
+**対象**：[ADR-025 §H.6](025-scim-positioning-and-receive-stance.md) LDAP Bind Service Account 乗っ取り
+
+| シグナル | 検知内容 | 通常時 vs 異常時 |
+|---|---|---|
+| **L-GD-1: LDAP bind 大量失敗**| Service Account を使った試行錯誤 or Brute Force | 1 分間 5 件超で警戒、20 件超で bind 遮断 |
+| **L-GD-2: 通常時間帯外の LDAP bind**（Off-hours LDAP）| Service Account の業務時間外使用 | Baseline: 業務時間中心分布（LDAP User Federation Sync 時刻を除外）|
+| **L-GD-3: LDAP 検索クエリの異常パターン**| Service Account が予期しない DN / OU / 大量属性を検索 | `Users DN` 設定値の外側検索、または `objectClass=*` 等の全件クエリ |
+| **L-GD-4: LDAP bind 元 IP の異常**| 本基盤 Auth Pod 以外からの bind 試行 | Keycloak Pod IAM Role でしか発生しないはず（[ADR-041 Workload Identity](041-workload-identity-spiffe.md) と照合）|
+| **L-GD-5: Sync 頻度異常**| Full Sync 設定値（1 h or 5 min）を超える頻度、または大量属性変更 | Sync ログと差分照合 |
+
+**特徴**：Golden JWT/SAML と違い、**LDAP は本基盤 → 顧客 AD の egress 通信で発生するため VPC Flow Log と組合わせて検知しやすい**（[ADR-039 v2 Network Firewall](039-centralized-network-account-edge-layer.md) 連動）。
 
 ### C.3 検知パイプライン（ADR-035 ITDR 連動）
 
@@ -290,11 +308,20 @@ public class GoldenDetectionEventListener implements EventListenerProvider {
 
 ### C.7 Phase 1 実装 TODO
 
+**Golden JWT / SAML 系（G-1〜G-6）**:
 - [ ] Event Listener SPI 拡張（G-1〜G-6 シグナル emit）
 - [ ] Risk Engine Lambda に G-1〜G-6 シグナル評価ロジック追加
 - [ ] 対応レベル 4 段階の閾値決定（ヒアリング B-GD-1〜3 参照）
 - [ ] 緊急鍵ローテ Runbook（SOC 手順書）
 - [ ] Grafana Dashboard で Golden 検知シグナル可視化
+
+**Golden LDAP 系（L-GD-1〜L-GD-5、2026-07-08 追加）**（[ADR-025 §H.6](025-scim-positioning-and-receive-stance.md) L-5 論点）:
+- [ ] Keycloak LDAP User Federation Provider の bind ログ収集（Event Listener SPI + Keycloak 内部ログ）
+- [ ] VPC Flow Log で LDAP egress 通信の可視化（Auth Pod IP → 顧客 AD IP、[ADR-039 v2](039-centralized-network-account-edge-layer.md) Network Firewall 経路連動）
+- [ ] Risk Engine Lambda に L-GD-1〜L-GD-5 シグナル評価ロジック追加
+- [ ] 対応レベル 4 段階の閾値決定（B-LDAP-1〜7 ヒアリング参照）
+- [ ] Bind Service Account の緊急ローテ Runbook（SOC 手順書）
+- [ ] Grafana Dashboard で Golden LDAP 検知シグナル可視化（Golden JWT/SAML と統合）
 
 ---
 
@@ -409,3 +436,4 @@ public class GoldenDetectionEventListener implements EventListenerProvider {
 | 日付 | 内容 |
 |---|---|
 | 2026-07-08 | 初版作成（§7.4 / §7.5 攻撃経路整理からの残 TBD 3 領域統合 ADR、A. Log scrubbing / B. Token Binding DPoP・mTLS / C. Adaptive Auth 連動 Golden 検知 6 シグナル）|
+| 2026-07-08 | **§C.2.2 Golden LDAP 系シグナル L-GD-1〜L-GD-5 追加**（[ADR-025 §H.6 L-5 論点](025-scim-positioning-and-receive-stance.md) 波及、LDAP Bind Service Account 乗っ取り検知）+ §C.7 Phase 1 実装 TODO に Golden LDAP 系追記 + ヘッダ関連に ADR-025 §H 追加 |
