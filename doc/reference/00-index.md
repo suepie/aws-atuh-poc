@@ -29,6 +29,7 @@
 | [keycloak-configuration-guide.md](keycloak-configuration-guide.md) | 設定の3箇所分類（ビルド時/環境変数/DB）、SSL問題、変更困難な設定一覧 |
 | [keycloak-dr-aurora-sync.md](keycloak-dr-aurora-sync.md) | Aurora Global DBのレプリケーション詳細、フェイルバック手順、Cognito DR比較 |
 | [keycloak-upstream-vs-rhbk.md](keycloak-upstream-vs-rhbk.md) | Upstream（OSS版）vs Red Hat build of Keycloak の比較・切り替え難易度・本番判断フレーム |
+| [keycloak-cpu-bottleneck-sizing-guide.md](keycloak-cpu-bottleneck-sizing-guide.md) | **Keycloak CPU 律速サイジングガイド** — Password Hashing が 60-80% を占める意図的な設計 / ハードウェア加速非対応 / キャッシュ不可 / ADR-033 の 2-tier アーキに基づく Broker (~500-1500 TPS/vCPU) vs IdP-KC (~50-100 TPS/vCPU) の CPU プロファイル比較 / Tier 別サイジング公式 / フェデ比率シナリオ別試算 (1.5M ユーザ / 10M MAU) / EC2 インスタンス候補 / 容量監視メトリクス / CPU 律速軽減策 5 レベル。[ADR-033 §G.2](../adr/033-keycloak-2tier-broker-idp-architecture.md) / B-BROK-1 ヒアリング項目 の裏どり |
 | [rhbk-support-and-pricing.md](rhbk-support-and-pricing.md) | RHBK サポート対象範囲（OS/DB/JVM/コンテナ基盤）・サブスクリプション構造・価格レンジ・現 PoC との差分・Red Hat 確認事項リスト |
 | [rosa-detailed-analysis.md](rosa-detailed-analysis.md) | **ROSA (Red Hat OpenShift Service on AWS) 詳細調査リファレンス** — Classic vs HCP / 価格モデル詳細 / 本基盤 Keycloak HA の月額試算 (HCP 3y RI = ~$590/月) / SLA 99.95% / リージョン展開 / RHBK 統合 / 移行工数 6-8 週間 / 採用判断フレーム。[ADR-056](../adr/056-rosa-adoption-decision.md) の input source |
 

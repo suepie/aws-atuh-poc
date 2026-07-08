@@ -272,6 +272,51 @@ sequenceDiagram
 
 → Keycloak OSS 採用の場合、運用人件費を加算しても 1 桁以上の差は維持される（[ADR-032](032-ciam-platform-cost-comparison-10m-mau.md) 詳細試算）。
 
+### G.2 CPU 律速の観点での分離根拠（2026-07-08 追加）
+
+Keycloak は CPU 律速なワークロードであり、**Broker と IdP-KC の CPU プロファイルが根本的に違う**。この違いが 2-tier 分離の技術的正当性を強化する。
+
+**Broker と IdP-KC の CPU 消費源**:
+
+| CPU 消費源 | Broker Keycloak | IdP Keycloak |
+|---|---|---|
+| **Password Hashing**（bcrypt / Argon2id / PBKDF2）| **~0%**（自身は password 持たない）| **60-80%** |
+| JWT Signing（ES256）| 20-30% | 5-10% |
+| SAML DSig 検証（顧客 IdP の SAML Response）| 20-30% | ~0% |
+| Federation プロトコル処理 | 15-20% | 0% |
+| JSON Serialization / JVM オーバーヘッド | 10-15% | 5-10% |
+
+**スループット/vCPU 比較**:
+
+- Broker: **~500-1,500 TPS/vCPU**（JWT signing / SAML DSig 中心）
+- IdP-KC: **~50-100 TPS/vCPU**（Password Hashing が支配）
+- 差 = **10-30 倍**
+
+→ Broker と IdP-KC は同じ Keycloak でも**別性能スケールのワークロード**。分離しないと Broker が余剰 CPU を持つか、IdP-KC が不足する。
+
+**2-tier 分離の CPU 観点での利点**:
+
+| 観点 | 単一 Keycloak（Broker + IdP 混在）| 2-tier 分離 |
+|---|---|---|
+| Tier 別 CPU サイジング | 全負荷を単一ノードで捌く必要、bcrypt に引きずられ全体スケール | Tier 別に最適サイズ選定、無駄なし |
+| Password Hashing CPU 隔離 | Broker への影響あり（Federation TPS 落ちる）| **完全隔離**、Broker は影響なし |
+| Auto Scale トリガ | 統合、細粒度制御難しい | Tier 別に別メトリック |
+| 障害 blast radius | Broker 障害 = IdP も止まる | 分離、独立障害 |
+| スケールポリシー | 統一（余剰）| Tier 別（最適）|
+
+**フェデ比率別の IdP-KC サイジング感度**（1.5M ユーザ / Peak 125 Login TPS ケース）:
+
+| フェデ比率（B-BROK-1 ヒアリング）| IdP-KC Login TPS | IdP-KC 必要 vCPU（bcrypt cost 12）| IdP-KC 推奨（3 node）|
+|---|---|---|---|
+| 100% フェデ / 0% ローカル | 0 | 0 | **IdP-KC 不要** |
+| 90% / 10% | 12.5 | 3-5 | c7g.large × 3 |
+| **70% / 30% ★典型** | 37.5 | 8-15 | **c7g.xlarge × 3** |
+| 50% / 50% | 62.5 | 12-20 | c7g.xlarge × 3 or 2xlarge × 3 |
+| 30% / 70% | 87.5 | 18-26 | c7g.2xlarge × 3 |
+| 0% / 100% ローカル | 125 | 25-35 | c7g.2xlarge × 4-5 |
+
+→ **フェデ比率のヒアリング（B-BROK-1）が IdP-KC サイジングに直結**。詳細な CPU 律速の技術根拠 + Tier 別サイジング公式 + フェデ比率シナリオ別試算は **[reference/keycloak-cpu-bottleneck-sizing-guide.md](../reference/keycloak-cpu-bottleneck-sizing-guide.md)** 参照。
+
 ---
 
 ## H. 運用上の留意点
