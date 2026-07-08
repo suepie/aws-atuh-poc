@@ -1912,6 +1912,139 @@ sequenceDiagram
     Note over SN: SN ローカル PW も無効化済の場合は SN 単体でも入れない
 ```
 
+### §C-7.4.7 LDAP 顧客の SSO ログイン（Bind Pull モデル、Import Users = ON、2026-07-08 追加）
+
+> **[ADR-025 §H](../../../adr/025-scim-positioning-and-receive-stance.md) 波及**：顧客 IdP が LDAP(s) 直結の場合の認証フロー。OIDC/SAML の Redirect Push と根本的に異なり、**本基盤 → 顧客 AD への Bind Pull** モデル。パスワードが本基盤経由で AD に届く点に注意。
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor U as Acme 社員 (P-3)<br/>AD ユーザー
+    participant App as 業務アプリ
+    participant BKC as Broker Keycloak<br/>(LDAP User Federation)
+    participant KDB as Keycloak Aurora<br/>(User キャッシュ)
+    participant NFW as Network Firewall<br/>(NW 監査 Acct)
+    participant AD as 顧客 AD<br/>(オンプレ / DX 経由)
+    participant RE as Risk Engine<br/>(L-GD 検知)
+
+    Note over U,AD: 【初回ログイン】Keycloak DB にキャッシュなし
+    U->>App: ① アプリ A にアクセス
+    App->>BKC: ② OIDC 認可要求 (client_id=app-a)
+    BKC->>U: ③ ログイン画面（Identifier-First）
+    U->>BKC: ④ user_name (sAMAccountName) 入力
+    BKC->>KDB: ⑤ キャッシュ検索 → miss
+
+    Note over BKC,AD: LDAP search: ユーザー DN + 属性取得
+    BKC->>NFW: ⑥ LDAP search (TCP 636)
+    NFW->>NFW: ⑦ ルール: allow tcp:636 to customer-ad<br/>+ VPC Flow Log 記録
+    NFW->>AD: ⑧ ldap_search(base="ou=users,dc=acme...",<br/>filter="sAMAccountName=tanaka")
+    AD-->>NFW: ⑨ userDN + 属性 (mail, memberOf, etc.)
+    NFW-->>BKC: ⑩ 結果転送
+    BKC-->>U: ⑪ パスワード入力画面
+
+    Note over BKC,AD: LDAP bind: 認証（パスワード本基盤経由で AD へ）
+    U->>BKC: ⑫ パスワード入力
+    BKC->>NFW: ⑬ LDAP bind (TCP 636)
+    NFW->>AD: ⑭ ldap_bind(userDN, password)
+    AD-->>NFW: ⑮ bind 成功
+    NFW-->>BKC: ⑯ 結果転送
+
+    Note over BKC,RE: Golden LDAP 検知（L-GD-1〜L-GD-5、ADR-060 §C.2.2）
+    BKC->>RE: ⑰ Event: ldap.bind.success<br/>(user, IP, time)
+    RE->>RE: ⑱ L-GD 評価<br/>（bind 元 IP / 時間帯 / 頻度 / 検索パターン）
+    RE-->>BKC: ⑲ 通常時 → 承認
+
+    Note over BKC,U: 本基盤側 MFA（AD 側 MFA は bind で検証不可、ADR-009）
+    BKC->>U: ⑳ MFA 画面（OTP/Push）
+    U->>BKC: ㉑ MFA 入力
+    BKC->>BKC: ㉒ MFA 検証 OK
+
+    Note over BKC,KDB: JIT 相当: Keycloak DB キャッシュ + Group Mapper
+    BKC->>KDB: ㉓ User + Attribute キャッシュ (Import Users = ON)<br/>+ msad-user-account-control 反映<br/>+ Group Mapper: memberOf → Keycloak Roles
+
+    Note over BKC,App: Protocol Mapper で統一 JWT 生成
+    BKC->>BKC: ㉔ Protocol Mapper で JWT 生成<br/>(sub, tenant_id=acme, roles, azp,<br/>amr=[pwd,mfa])
+    BKC->>App: ㉕ JWT 発行
+    App-->>U: ㉖ アプリ表示
+
+    Note over U,KDB: 【2 回目以降ログイン】Keycloak DB キャッシュあり
+    U->>BKC: ㉗ 再ログイン (user_name + PW)
+    BKC->>KDB: ㉘ キャッシュ検索 → hit（属性は不要）
+    BKC->>NFW: ㉙ LDAP bind のみ (属性検索スキップ)
+    NFW->>AD: ㉚ ldap_bind
+    AD-->>NFW: ㉛ bind 成功
+    NFW-->>BKC: ㉜ 結果転送
+    BKC->>App: ㉝ JWT 発行 (Adaptive Auth 通常時 OK)
+```
+
+**フローの要点**：
+
+| ステップ | ポイント |
+|---|---|
+| ⑤ キャッシュ確認 | Import Users = ON なので 2 回目以降は AD への属性検索スキップ、性能◎ |
+| ⑥〜⑯ LDAPS TCP 636 | Network Firewall で egress 許可 + VPC Flow Log 監査（[ADR-039 §F.1.A](../../../adr/039-centralized-network-account-edge-layer.md)）|
+| ⑫〜⑯ Bind 認証 | **パスワードが本基盤経由で AD に届く**（Zero Knowledge 崩れ、Log scrubbing 必須）|
+| ⑰〜⑲ Golden LDAP 検知 | Bind Service Account 乗っ取り検知（[ADR-060 §C.2.2](../../../adr/060-auth-protocol-attack-path-residual-tbd.md)）|
+| ⑳〜㉒ 本基盤側 MFA | AD 側 MFA (Duo / Windows Hello) は LDAP bind で検証されないため本基盤側で追加必須（[ADR-009](../../../adr/009-mfa-responsibility-by-idp.md)）|
+| ㉓ JIT 相当 | Keycloak DB キャッシュ + msad-user-account-control で AD 側 Disabled 状態反映 |
+| ㉗〜㉝ 2 回目以降 | 属性検索スキップで LDAP 呼び出し回数 1 回のみ（性能最適）|
+
+### §C-7.4.8 LDAP 顧客の退職時 Deprovision（Full Sync、SCIM 代替、2026-07-08 追加）
+
+> **[ADR-025 §H.4](../../../adr/025-scim-positioning-and-receive-stance.md)**：LDAP 顧客は **SCIM 不要**、LDAP Sync（バッチ）で退職者 deprovisioning を代替。§C-7.4.6（SCIM Push Deprovision）と対比。
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Admin as 顧客 AD 管理者
+    participant AD as 顧客 AD
+    participant BKC as Broker Keycloak<br/>(LDAP User Federation Sync)
+    participant NFW as Network Firewall
+    participant KDB as Keycloak Aurora
+    participant EB as EventBridge
+    participant WL as Webhook Lambda
+    participant App as App A
+
+    Note over Admin,AD: T=0: 退職処理
+    Admin->>AD: ① 退職者アカウント無効化<br/>(userAccountControl 変更)
+
+    Note over BKC,AD: T=Sync Interval 経過後<br/>(Full Sync 1 h 標準 / 5 min 金融規制)
+    BKC->>BKC: ② Sync Timer 起動<br/>(Changed Users Sync Period)
+    BKC->>NFW: ③ 定期 LDAP search (TCP 636)
+    NFW->>NFW: ④ ルール: allow tcp:636 to customer-ad<br/>+ VPC Flow Log
+    NFW->>AD: ⑤ ldap_search<br/>(filter="whenChanged>=lastSync")
+    AD-->>NFW: ⑥ 差分結果<br/>(Disabled ユーザー含む)
+    NFW-->>BKC: ⑦ 結果転送
+
+    Note over BKC,KDB: msad-user-account-control Mapper で反映
+    BKC->>BKC: ⑧ 差分解析：<br/>Disabled ユーザー特定<br/>(userAccountControl bit 検査)
+    BKC->>KDB: ⑨ Keycloak User 無効化<br/>(enabled=false)
+    BKC->>KDB: ⑩ Session Revocation<br/>+ Refresh Token 全失効
+
+    Note over BKC,App: Event 発火 → Webhook 通知
+    BKC->>EB: ⑪ Event: user.disabled<br/>(tenant_id=acme, user)
+    EB->>WL: ⑫ Webhook Lambda 起動
+
+    par 並列処理
+        WL->>App: ⑬a Webhook 通知 (HMAC 署名)
+        App->>App: ⑭a App 側セッション破棄
+    end
+
+    Note over BKC,App: 以降、退職者は SSO 不能<br/>(次回 LDAP bind 試行時 AD 側で拒否)
+    Note over Admin,BKC: 遅延: Sync Interval (最悪 1 h 標準 / 5 min 金融規制)<br/>リアルタイム性が必要なら SCIM 併用（§H.4.A）
+```
+
+**§C-7.4.6（SCIM Push）との比較**：
+
+| 観点 | SCIM Push（§C-7.4.6）| LDAP Sync（§C-7.4.8）|
+|---|---|---|
+| 起動タイミング | HR 更新時に IdP → 本基盤 push | Sync Interval バッチ |
+| 遅延 | 即時（秒単位）| Sync 頻度次第（1 h 標準 / 5 min 金融規制）|
+| プロトコル | HTTPS + SCIM 2.0 REST | LDAPS TCP 636 |
+| 方向 | IdP → 本基盤 | 本基盤 → 顧客 AD（pull）|
+| SCIM 併用要否 | — | HR 別ソース時のみ（B-LDAP-3、[ADR-025 §H.4.A](../../../adr/025-scim-positioning-and-receive-stance.md)）|
+| 顧客 IdP タイプ | Entra ID / Okta 等（SCIM 対応）| オンプレ AD 等（LDAP のみ）|
+
 
 ---
 

@@ -1,7 +1,7 @@
 # ADR-025: SCIM 2.0 の位置づけと本基盤の受信スタンス
 
 - **ステータス**: Proposed（要件定義フェーズで Accepted に昇格予定）
-- **日付**: 2026-06-15、**2026-07-08 §H 追記**（顧客 IdP が LDAP(s) の場合の JIT/SCIM 扱い）
+- **日付**: 2026-06-15、**2026-07-08 §H 追記**（顧客 IdP が LDAP(s) の場合の JIT/SCIM 扱い）+ **§H.7.A 認証フロー追加**（§C-7.4.7 SSO ログイン / §C-7.4.8 Full Sync Deprovision）
 - **関連**:
   - [§FR-7.4.0 SCIM の位置づけと本基盤のスタンス](../requirements/proposal/fr/07-user.md#fr-740-scim-の位置づけと本基盤のスタンス)
   - [§FR-2.2.1 JIT プロビジョニング](../requirements/proposal/fr/02-federation.md#321-jit-プロビジョニング--fr-fed-008)
@@ -370,6 +370,11 @@ Changed Users Sync Period: 300 (5min)
 - **Group Mapper**：LDAP `memberOf` → Keycloak Groups / Roles
 - **msad-user-account-control Mapper**（AD 特化）：AD 側の Disabled 状態を Keycloak に反映
 
+#### H.7.A 認証フロー図（2026-07-08 追加）
+
+- **[§C-7.4.7 LDAP 顧客の SSO ログイン（Bind Pull モデル、Import Users = ON）](../requirements/proposal/common/07-implementation-architecture.md#c-747-ldap-顧客の-sso-ログインbind-pull-モデルimport-users--on2026-07-08-追加)** — 初回 JIT + 2 回目以降キャッシュ利用の 33 ステップ Mermaid シーケンス、Network Firewall / Golden LDAP 検知 / 本基盤側 MFA を含む
+- **[§C-7.4.8 LDAP 顧客の退職時 Deprovision（Full Sync、SCIM 代替）](../requirements/proposal/common/07-implementation-architecture.md#c-748-ldap-顧客の退職時-deprovisionfull-syncscim-代替2026-07-08-追加)** — SCIM Push（§C-7.4.6）との対比表付き、Sync 頻度による遅延の議論
+
 ### H.8 Cognito 不可の理由（改めて確認）
 
 [ADR-014 K-12 制約](014-auth-patterns-scope.md) と [ADR-058 §比較](058-auth-platform-alternatives-comparison.md):
@@ -414,6 +419,7 @@ Changed Users Sync Period: 300 (5min)
 - **セキュリティ設計が変わる**：本基盤経由でパスワード転送 + 本基盤側 MFA 必須 + Log scrubbing 必須
 - **Cognito 不可、Keycloak 必須化**（[マスター表 B 列 Y γ](../requirements/hearing-checklist.md) 判定と整合）
 - **B-LDAP-1〜7 ヒアリング項目起票**（§H.10）+ **L-1〜L-7 論点整理**（§H.9）
+- **認証フロー 2 種を §C-7.4.7 / §C-7.4.8 に追加**（§H.7.A、SSO ログイン + Full Sync による退職者 deprovisioning）
 
 ### H.12 顧客説明で使える一言
 
