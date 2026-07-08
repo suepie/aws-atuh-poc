@@ -9,6 +9,7 @@
   - [ADR-024 ログイン画面アーキテクチャとブランディング](024-login-screen-architecture-branding.md)（Keycloak Theme の CSRF）
   - [ADR-050 モバイルアプリ認証設計](050-mobile-sdk-native-auth.md)（AppAuth + PKCE と CSRF）
   - [ADR-023 ServiceNow SP 連携](023-servicenow-sp-integration.md)（SAML の RelayState / IdP-initiated リスク）
+  - **[ADR-060 認証プロトコル攻撃経路 残 TBD 対応 §B](060-auth-protocol-attack-path-residual-tbd.md)** — DPoP / mTLS Bound Token 導入判断は本 ADR §I TBD の解消先（2026-07-08 追記）
   - [§NFR-4.3 攻撃対策](../requirements/proposal/nfr/04-security.md#nfr-43-攻撃対策)
   - [§C-7.3.30 CSRF 対策の責任分界](../requirements/proposal/common/07-implementation-architecture.md#c-7-3-30-csrf-対策の責任分界adr-057-2026-07-06-新規)
 
@@ -319,6 +320,7 @@ GET /realms/basis/protocol/openid-connect/auth?
 ## I. TBD / 要検討
 
 - **Phase 2 での判断**：DPoP（[RFC 9449](https://datatracker.ietf.org/doc/html/rfc9449)）採用可否 → Bearer から DPoP-bound Access Token へ移行時に CSRF 免疫がどう変化するか
+  - → **[ADR-060 §B Token Binding](060-auth-protocol-attack-path-residual-tbd.md#b-token-bindingoidc-o20-対応) で統合判断**（2026-07-08 追記、Phase 2 トリガー条件明示）
 - **BFF パターン標準化**：Cookie セッションを使うアプリ用の参照実装（Double Submit Cookie）を **本基盤側で「参照アプリ」として公開**するか、それとも `doc/api-platform/` に閉じるか
 - **Trust Center 記載**：ADR-036 縮小により Trust Center は削除されたため、顧客監査時の CSRF 対策説明資料の格納先を [customer-doc/security.md](../common/customer-doc/security.md) 想定として明記
 

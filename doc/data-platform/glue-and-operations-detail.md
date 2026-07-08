@@ -217,6 +217,477 @@ Data Contract で合意すべき 7 項目:
 
 → **「気軽に相談・合意する文化」が重要**。厳格な承認プロセスより、**日常的な軽い会話**の積み重ねが Hybrid モデルを機能させます。
 
+### 0.5 Data Contract の実装ガイド
+
+§0.4 で示した Hybrid モデルを**実装する際の具体的な役割・フロー・初期設計事項**を整理。Phase 0（基盤構築時）の合意形成のための資料。
+
+#### 0.5.1 関わる 5 つの役割と RACI
+
+| # | 役割 | 責任 | 誰が担うか（Phase 1）|
+|---|---|---|---|
+| ① | **Data Product Owner**（App 側）| Contract の最終承認、業務判断 | アプリのプロダクトオーナー or シニアデータエンジニア |
+| ② | **Data Producer**（App 側）| データ提供、Contract 実装、品質担保 | 各アプリのデータスチュワード（役割 2）|
+| ③ | **Data Consumer**（中央側）| データ利用、要件提示、フィードバック | 中央 BI Author（役割 4）|
+| ④ | **Data Steward**（中間、Optional）| Contract の調整・仲介、標準化推進 | Phase 1 は中央 BI が兼任 / Phase 2 で分離検討 |
+| ⑤ | **Data Governance 責任者**（横断）| 全 Contract の一貫性、規約管理 | カタログ管理者（役割 3）|
+
+**RACI マトリクス**（R=Responsible / A=Accountable / C=Consulted / I=Informed）:
+
+| アクション | Product Owner | Producer | Consumer | Steward | Governance |
+|---|:---:|:---:|:---:|:---:|:---:|
+| Contract 初回設計 | **A** | R | C | C | I |
+| Contract 実装 | I | **R/A** | C | I | I |
+| データ品質保証 | A | **R** | I | C | I |
+| Contract 変更提案 | A | C | **R** or C | C | I |
+| 変更承認 | **A** | C | C | C | C |
+| 廃止判断 | **A** | C | **A** | C | I |
+| 標準化・共通ルール | C | C | C | R | **A** |
+
+#### 0.5.2 ライフサイクル 4 フェーズ
+
+**フェーズ 1: 初期設計（Contract 定義）** - 期間 1-3 週間
+
+```
+Consumer が要件提示
+    ↓
+Producer が業務ドメイン視点で応答（実現可能性、業務ロジックの正しさ）
+    ↓
+議論・合意（1-3 回のミーティング）
+    ↓
+Contract 文書化（7 要素）
+    ↓
+Product Owner による承認
+    ↓
+実装（Producer 側で ETL 開発）
+    ↓
+Contract 公開・ドキュメント化 → 本番運用開始
+```
+
+**フェーズ 2: 定常運用（日常）** - 継続的
+
+- **日次**: Producer は ETL 実行監視、Consumer はダッシュボード利用、自動品質チェック
+- **週次**: 使用状況確認
+- **月次**: Contract レビュー会（30 分程度）で新規要望・品質状況・変更予告を共有
+
+**フェーズ 3: 変更管理**
+
+変更の 3 分類:
+
+| 種類 | 例 | 予告期間 | 承認 |
+|---|---|---|---|
+| **Non-breaking**（互換性維持）| 列追加、Optional 列の追加 | なし | Producer のみ |
+| **Deprecation**（廃止予告）| 特定列の廃止予告 | **3 ヶ月以上** | Product Owner + Consumer |
+| **Breaking**（互換性破壊）| 列削除、型変更、名前変更 | **2 週間以上** | Product Owner + 全 Consumer |
+
+変更フロー:
+
+```
+変更提案 → 影響分析 → 議論・合意 → バージョンアップ → Deprecation 予告
+→ 移行期間（2 週間〜3 ヶ月）→ 実装 → Consumer 側の対応 → 旧バージョン廃止
+```
+
+**フェーズ 4: 廃止管理**
+
+```
+廃止判断 → 影響分析 → Deprecation 通知 → 移行支援 → 移行期間（3-6 ヶ月）
+→ Contract 削除 → Glue Catalog テーブル削除 → S3 データ削除
+```
+
+#### 0.5.3 Contract テンプレート（YAML 例）
+
+```yaml
+# data-contract-expense-app-expenses-v1.2.0.yaml
+
+# メタ情報
+name: expense_app_curated.expenses
+version: 1.2.0
+owner: expense-team@company.com
+consumer: central-bi-team@company.com
+last_updated: 2026-07-06
+
+# 1. テーブル定義（場所・スキーマ）
+location: s3://acme-expense-curated-prd/expenses/
+catalog_database: expense_app_curated
+catalog_table: expenses
+schema:
+  columns:
+    - name: expense_id
+      type: STRING
+      nullable: false
+      description: 経費申請の一意 ID (UUID v4)
+    - name: tenant_id
+      type: STRING
+      nullable: false
+      description: 顧客企業 ID (T-001 等)
+    - name: submitter_id_hash
+      type: STRING
+      nullable: false
+      description: 申請者の社員番号 (SHA-256 ハッシュ、PII マスキング済)
+    - name: amount
+      type: BIGINT
+      nullable: false
+      description: 承認済み経費申請の金額 (税込、円)
+    - name: status
+      type: STRING
+      nullable: false
+      description: 申請ステータス (submitted/approved/rejected/resubmitted/cancelled)
+    - name: submitted_at
+      type: TIMESTAMP
+      nullable: false
+      description: 初回申請日時
+    - name: approved_at
+      type: TIMESTAMP
+      nullable: true
+      description: 最終承認日時 (未承認は NULL)
+  partitions:
+    - tenant_id
+    - year
+    - month
+    - day
+  format: PARQUET
+  compression: SNAPPY
+
+# 2. 業務定義（各列・テーブル全体の業務的な意味）
+business_definition: |
+  経費精算 SaaS の申請テーブル (curated 層)。
+  raw から以下の処理を施した業務データ:
+  - PII マスキング (submitter_id を SHA-256 ハッシュ化)
+  - tenant_id 強制付与 (欠損は除外)
+  - 重複排除 (expense_id で dedup)
+  - 差戻し (rejected) → 再申請 (resubmitted) は同一 expense_id で追跡
+
+# 3. 粒度（1 行が何を表すか）
+granularity: |
+  1 行 = 1 経費申請
+  差戻し後の再申請は同じ expense_id で status のみ変わる
+
+# 4. 更新頻度・鮮度 SLA
+sla:
+  freshness:
+    schedule: daily 02:00 JST
+    max_delay: 6 hours
+  availability: 99.5% (月次)
+
+# 5. データ品質
+quality:
+  completeness:
+    tenant_id_null_rate: < 0.1%
+    amount_null_rate: 0%
+  accuracy:
+    duplicate_rate: 0%
+    business_rule_violation: 0%
+  quality_checks:
+    - rule: tenant_id must not be null
+    - rule: amount must be positive integer
+    - rule: status must be in allowed enum
+    - rule: expense_id must be unique
+
+# 6. 変更管理プロセス
+change_management:
+  non_breaking:
+    approval: producer_only
+    notice_required: none
+  deprecation:
+    notice_period: 3 months minimum
+    approval: [product_owner, all_consumers]
+  breaking:
+    notice_period: 2 weeks minimum
+    approval: [product_owner, all_consumers]
+  notification_channel: "#data-contract-expense-app"
+
+# 7. バージョン管理
+version_history:
+  - version: 1.2.0
+    date: 2026-05-15
+    change: status に "resubmitted" 値を追加
+    type: non-breaking
+  - version: 1.1.0
+    date: 2026-03-01
+    change: approved_at 列を追加
+    type: non-breaking
+  - version: 1.0.0
+    date: 2026-01-01
+    change: 初版
+```
+
+#### 0.5.4 初期設計（Phase 0）で握るべき 10 項目
+
+**Phase 0（基盤構築時）に決めておく**と後で困らない項目:
+
+| # | 項目 | 推奨初期値 | 決めない時のリスク |
+|---|---|---|---|
+| ① | **Contract フォーマット** | **YAML**（人間可読 + プログラム可読、Git 管理しやすい）| 各アプリでバラバラの形式 |
+| ② | **Contract 保管場所** | **GitLab / GitHub リポジトリ**（PR 管理、履歴）| 発見困難、履歴管理不能 |
+| ③ | **役割の RACI** | 前述 §0.5.1 表参照 | 責任所在不明、意思決定停滞 |
+| ④ | **変更承認フロー** | **GitLab PR ベース**、Non-breaking は Producer 単独 | 場当たり的な変更、混乱 |
+| ⑤ | **予告期間の標準** | **Breaking: 2 週間 / Deprecation: 3 ヶ月** | 突然の変更でダッシュ壊れる |
+| ⑥ | **Data Quality 標準** | tenant_id NULL 率 < 0.1%、重複率 0%、鮮度 6 時間以内 | 品質のばらつき |
+| ⑦ | **SLA 標準** | 可用性 99.5%、鮮度 daily 02:00 JST | SLA 曖昧、期待値ズレ |
+| ⑧ | **コミュニケーション チャネル** | `#data-contract-<アプリ名>` を各アプリで作成 | 情報散在、伝達漏れ |
+| ⑨ | **エスカレーションルート** | Product Owner（App 側）→ 経営（データ活用基盤責任者）| 議論長期化、意思決定停滞 |
+| ⑩ | **可視化・棚卸し** | Confluence Wiki + GitLab で管理、月次棚卸し | 未使用 Contract 残存 |
+
+#### 0.5.5 ツール構成
+
+Data Contract 運用に必要なツール:
+
+| ツール | 用途 | Phase 1 最小構成 |
+|---|---|---|
+| **Contract 定義** | YAML / スキーマ管理 | **GitLab / GitHub**（PR ワークフロー）|
+| **文書化** | 業務説明・図解 | **Confluence** or GitBook |
+| **メタデータ管理** | テーブル・列・LF-Tag | **AWS Glue Data Catalog** + Lake Formation |
+| **品質チェック** | 自動品質評価 | **AWS Glue Data Quality** |
+| **監視・アラート** | 品質違反、鮮度違反 | **AWS CloudWatch** + SNS + Slack |
+| **コミュニケーション** | 日常のやりとり | **Slack** チャンネル |
+| **チケット管理** | 変更提案、バグ | **Jira** or **GitHub Issues** |
+| **依存関係可視化** | Consumer × Contract | Phase 2 で DataHub / Amundsen 検討 |
+
+#### 0.5.6 Phase 0 のワークショップ手順（3 回）
+
+**ワークショップ 1: 役割定義（1 日）**
+- 参加者: 中央 BI チーム、各アプリ代表、Governance 責任者
+- アジェンダ: Data Contract の背景・目的 → RACI 議論・合意 → Data Steward の配置 → エスカレーションルート
+- 成果物: 役割定義書（Confluence Wiki）
+
+**ワークショップ 2: フォーマット・プロセス（1 日）**
+- 参加者: 中央 BI チーム、Governance 責任者
+- アジェンダ: Contract フォーマット決定 → 保管場所・PR ワークフロー → 変更承認フロー → 予告期間 → Data Quality 標準
+- 成果物: Contract テンプレート YAML + 変更管理ガイドライン
+
+**ワークショップ 3: 最初の Contract 作成（半日 × アプリ数）**
+- 参加者: 各アプリ Producer + 中央 BI Consumer
+- アジェンダ: 各アプリ 1-2 テーブル分の Contract を実際に書く → 業務定義を詰める → 実運用イメージの共有
+- 成果物: 最初の Contract（各アプリ 1-2 個）
+
+**タイムライン**: Phase 0 の 1-2 ヶ月で完了
+
+#### 0.5.7 アンチパターンと対処法（実装編）
+
+| # | アンチパターン | 症状 | 対処法 |
+|---|---|---|---|
+| ① | Contract を書かないまま実装 | 認識ズレ、品質問題、責任所在不明 | **書かないと実装しないルール**を最初に決める |
+| ② | Contract が形骸化（書くだけで使われない）| 実装と Contract がズレる | **Contract を Single Source of Truth** に、実装は Contract から生成 |
+| ③ | Breaking change を予告なしで実施 | Consumer 側のダッシュ崩壊 | **CI/CD で Breaking change を検知して blocking**、承認必須 |
+| ④ | 全アプリの Contract を中央が管理 | 中央負荷、スケール不能 | **各アプリで Contract を owner-ship**、中央は標準チェックのみ |
+| ⑤ | Consumer の要望を全部飲む | Producer が「BI の下請け」化 | **Contract の中に定義がなければ CTAS で中央がやる**が原則 |
+| ⑥ | Contract の棚卸しをしない | 未使用 Contract 残存 | **月次 or 四半期の棚卸し会** |
+| ⑦ | バージョン管理せずに変更 | 履歴不明、事故対応困難 | **Semantic Versioning** を強制、GitLab タグ管理 |
+
+### 0.6 足りない項目・データがあった場合の 4 パターン対応
+
+中央 BI が「〇〇のデータが欲しい」と思った時、Contract に無い場合の対応を **4 パターン**に整理:
+
+#### 0.6.1 4 パターンの分類
+
+| # | 状況 | 対応 | 主体 |
+|---|---|---|---|
+| **1** | **中央が curated から計算できる** | 中央で **CTAS** | 中央のみ |
+| **2** | **業務ロジックが絡む**（差戻し込み計算 等）| App と **Data Contract 議論** → App が新列/新テーブル追加 | App が実装 |
+| **3** | **全く新しいデータが必要**（業務にない指標）| 中央と App で議論 → 業務定義合意 | 主担当を決める |
+| **4** | **複数アプリの横断**（全 SaaS 合算 等）| 中央で JOIN 実装 | 中央のみ |
+
+#### 0.6.2 判断フロー
+
+```
+BI「〇〇のデータが欲しい」
+    ↓
+その業務データはアプリの curated に既にあるか?
+    ├─ YES → 中央で CTAS (パターン 1) ← ほとんどこれ (80-90%)
+    └─ NO → 次へ
+        ↓
+    curated に追加すれば計算できるものか?
+        ├─ YES → App と Data Contract 議論 (パターン 2)
+        └─ NO → 次へ
+            ↓
+        複数アプリの横断か?
+            ├─ YES → 中央で JOIN 実装 (パターン 4)
+            └─ NO → 完全新規のデータ → 議論 (パターン 3)
+```
+
+#### 0.6.3 具体例
+
+| 例 | 判定 | 対応 |
+|---|---|---|
+| 「月次売上ランキング」| パターン 1 | `expenses.amount` を月次集計 → 中央 CTAS で完結 |
+| 「経費申請の平均処理時間」（業務ロジック絡み）| パターン 2 | 中央「submitted_at と approved_at の差?」→ App「差戻しがあるので『初回申請から最終承認』が正しい」→ 合意 → App に新列追加 |
+| 「解約予兆スコア」（新規指標）| パターン 3 | 中央と App で議論 → ML 特徴量として中央で構築 |
+| 「顧客の全 SaaS 合算売上」（横断）| パターン 4 | 中央で複数アプリの `expenses` を JOIN |
+
+#### 0.6.4 現場の実感
+
+実務では **80-90% がパターン 1（curated から中央で CTAS）** で処理できます。理由:
+
+- App の curated は業務データの本体をそのまま提供
+- 集計・フィルタ・JOIN は SQL で表現可能
+- 業務ロジック絡みは案外少ない（新規 KPI 定義時のみ）
+
+パターン 2-4 は「相談が必要な場合」ですが、頻度は低め。日常的にはパターン 1 で回ります。
+
+### 0.7 Pattern 2（中央集約型）を採用した場合の役割変化
+
+「Pattern 2 では役割分担がシンプルになるのか?」という疑問への回答: **簡略化されるが、代わりに中央の負担が大幅に増える**。
+
+#### 0.7.1 役割の変化
+
+| 役割 | Pattern 1 | Pattern 2 |
+|---|---|---|
+| Data Product Owner (App) | ⭕ Contract 承認、業務判断 | △ **情報提供役に降格** |
+| Data Producer (App) | ⭕ ETL 実装、curated 提供 | ❌ **データ供給のみ**（簡略化）|
+| Data Consumer (中央) | ⭕ Consumer | ⭕ **Consumer + Producer 兼任** |
+| Data Steward | ⭕ 独立して調整 | △ 中央内部の役割 |
+| Data Governance | ⭕ 標準化 | ⭕ 集約管理しやすい |
+| **Business Domain SME**（業務ドメイン専門家、新規）| 該当なし（App が持つ）| ⭕ **中央に新設必要** |
+
+**工数の移動**:
+- Pattern 1: App 側 10-20 名工数 + 中央 3-4 名
+- Pattern 2: App 側 ゼロ + 中央 **5-8 名の強力チーム**
+
+#### 0.7.2 Data Contract → Data Supply Contract に変化
+
+| 項目 | Pattern 1（Data Contract）| Pattern 2（Data Supply Contract）|
+|---|---|---|
+| **契約の焦点** | 業務定義 + スキーマ + 品質 | 供給仕様（プロトコル、頻度、認可）|
+| **契約の粒度** | 細かい（テーブル単位）| 粗い（アプリ供給パイプライン単位）|
+| **Contract 数** | 50 個（5 テーブル × 10 アプリ）| **10 個**（1 パイプライン × 10 アプリ）|
+| **業務理解の場所** | App が持つ | **中央が持つ必要**（App から情報受領）|
+| **変更頻度** | 業務変更時に発生 | 業務変更時に App→中央 通知 |
+| **品質責任** | App | 中央（App の生データ品質にも影響）|
+
+**Pattern 2 の Data Supply Contract の例**（簡略 YAML）:
+
+```yaml
+name: expense_app_data_supply
+version: 1.0.0
+producer: expense-team@company.com
+consumer: central-data-team@company.com
+
+# 供給仕様
+source:
+  system: Aurora PostgreSQL
+  method: DMS CDC (Change Data Capture)
+  frequency: near real-time (1-5 min delay)
+
+# 認可
+access:
+  central_iam_role: arn:aws:iam::CENTRAL:role/DataIngestionRole
+  network: VPC Peering to Producer VPC
+
+# 生データ仕様
+raw_data:
+  table_list:
+    - expense_records
+    - expense_receipts
+    - approval_workflows
+    - users  # PII 含む
+  format: JSON (Aurora native)
+
+# 通知プロトコル
+notifications:
+  schema_change_notice: 2 weeks minimum
+  business_logic_change_notice: 4 weeks minimum
+  channel: "#data-supply-expense-app"
+
+# PII 明示
+pii_columns:
+  - users.email
+  - users.employee_id
+  - expense_records.submitter_name
+```
+
+→ 業務スキーマの記述はなし、代わりに「供給仕様」が中心。
+
+#### 0.7.3 Pattern 2 で新たに発生する 3 つの課題
+
+**課題 ①: 中央が全アプリの業務を理解する必要**
+
+Pattern 1 では App が業務ロジックを反映した curated を作るので、中央は「業務は App が知っている」で済む。
+
+Pattern 2 では**中央が業務理解を持たないと ETL が書けない**:
+
+```
+中央 データエンジニア: 「経費申請の月次売上を計算したい」
+    ↓ (業務知識がない)
+中央: 「amount を月次で SUM すればいい?」
+    ↓
+中央: 「あれ、status は? 承認済だけ? 差戻しは?」
+    ↓ App に確認
+App: 「業務的にはこう扱う」
+    ↓
+中央: 「わかりました」→ 実装
+    ↓
+Or: 業務が変わったらまた確認…
+```
+
+→ **Data Contract は消えるが、業務理解のためのコミュニケーション コストは残る、むしろ増える**
+
+**課題 ②: App→中央への業務情報伝達プロトコル**
+
+- Pattern 1: App が変更を curated に反映 → 中央は curated 通りに使うだけ
+- Pattern 2: App がスキーマ or 業務ロジックを変更 → **中央 ETL を修正する必要** → App から中央への情報伝達必須
+
+具体例:
+- App でカラム追加 → 中央 ETL の変更必要
+- App で業務ステータスに新しい値追加 → 中央での分岐処理修正
+- App でテーブル構造変更 → 中央 ETL 全面書き直し
+
+→ **情報の非対称性、伝達漏れリスクが常態化**
+
+**課題 ③: 中央の設計負担・保守負担が桁違い**
+
+- 中央で **10 アプリ分の ETL を実装・保守**
+- 業務要件が 10 個分並列で入ってくる
+- 優先順位付けが必要
+- 中央がボトルネック化
+
+#### 0.7.4 中央側に新設が必要な役割
+
+Pattern 2 では、中央に **3 種の新規役割**が必要:
+
+| # | 役割 | 責任 | 必要スキル |
+|---|---|---|---|
+| ① | **Business Analyst / Domain SME**（1 名/アプリ分 or 領域ごと）| 各アプリの業務ドメインを理解、App とコミュニケーション | 業務ドメイン知識 + データエンジニアリング基礎 |
+| ② | **Data Engineer (拡張版)**（3-5 名）| 全アプリ分の ETL を実装 | Glue ETL、PySpark、業務理解の橋渡し |
+| ③ | **Domain Coordinator**（1 名 or 中央 BI Lead 兼任）| App と中央の窓口、情報伝達、優先順位付け | プロジェクトマネジメント + 業務知識 |
+
+→ **合計 5+ 名の高スキル人材を中央に確保**する必要があります。
+
+#### 0.7.5 Pattern 1 vs Pattern 2 の役割の総合比較
+
+| 観点 | Pattern 1 | Pattern 2 |
+|---|---|---|
+| **契約書類** | Data Contract（テーブル単位、細かい）| Data Supply Contract（アプリ単位、粗い）|
+| **契約の数** | 50 個程度 | 10 個程度 |
+| **業務理解の場所** | App 側（分散）| **中央**（集中）|
+| **App 側の負担** | 中〜大（自アプリの業務対応）| **小**（データ供給のみ）|
+| **中央側の負担** | 小〜中（少数精鋭）| **大**（全アプリの業務を扱う）|
+| **業務変更の反映** | App 側で自己完結 | **App→中央 の情報伝達必須**（非同期リスク）|
+| **担い手の人数（10 アプリ）**| App 10-20 名 + 中央 3-4 名 = 13-24 名工数 | App ゼロ + 中央 5-8 名 |
+| **人材確保の難度** | 中（各アプリで中級人材）| **高**（中央に 5+ 名の高スキル人材）|
+| **スキル要求水準** | 各アプリで中級 | **中央に上級**（業務理解 + 技術）|
+
+#### 0.7.6 実務で起きるジレンマ
+
+Pattern 2 で「役割分担がシンプル」と喜んで採用すると、以下が発生:
+
+- 中央データエンジニアが 10 アプリ分の業務を追いきれない
+- App と中央のコミュニケーションコストが実は Pattern 1 より高い（Contract がないので都度確認）
+- 業務変更時の対応が遅れて、ダッシュが古いまま
+- 中央チームがバックログで溢れる → ボトルネック化
+
+→ **「役割分担がシンプル」は表面的、実際は中央への負担集中で運用が破綻するリスク**
+
+#### 0.7.7 Pattern 2 採用の判断ポイント
+
+Pattern 2 を選ぶなら、**以下の条件がすべて揃う**必要があります:
+
+- [ ] 中央に **5+ 名の高スキル人材（業務理解 + データエンジニアリング）** を確保できる
+- [ ] 各アプリの業務ドメインが比較的シンプルで、中央が理解可能
+- [ ] アプリ数が **3-5 個で凍結**する見込み（中央の負担を抑える）
+- [ ] App 側チームが**データエンジニアリング スキルを持たない**（Pattern 1 が物理的に不可）
+- [ ] 中央から App への **業務ヒアリング体制**を組める（Domain Coordinator 等）
+
+上記の 5 条件がすべて揃えば Pattern 2 が現実的。そうでなければ Pattern 1 の方が実は運用が回りやすい、というのが実務上の経験則です。
+
 ---
 
 ## §1 Glue Data Catalog 管理（カテゴリー ①）
@@ -692,3 +1163,4 @@ job.commit()
 |---|---|
 | 2026-07-03 | 初版作成。Glue + 運用の 8 カテゴリー、役割別 スキル、Phase 別 人員計画 を整理 |
 | 2026-07-03 | §0.4 **アプリと中央の連携モデル（Data Contract パターン）**を追加。3 パターン比較（App-driven / Central-driven / Hybrid）、責務分担、判断フロー、Data Contract の 7 要素、アンチパターン 5 種、日常運用のやりとり例 |
+| 2026-07-06 | §0.5 **Data Contract の実装ガイド**（5 役割 + RACI、4 ライフサイクル フェーズ、Contract YAML テンプレート、Phase 0 で握る 10 項目、ツール構成、ワークショップ 3 回、アンチパターン 7 種）+ §0.6 **足りない項目対応の 4 パターン**（判断フロー、具体例、80-90% は Pattern 1 で完結）+ §0.7 **Pattern 2（中央集約型）採用時の役割変化**（Data Supply Contract、3 つの新規課題、中央に必要な 3 役割、判断チェックリスト）を追加 |

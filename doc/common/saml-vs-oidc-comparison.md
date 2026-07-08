@@ -731,9 +731,9 @@ XSW 自体は「正規 Response を入手した後の改ざん技法」なので
 
 **残る TBD 課題（本基盤の対応検討事項）**：
 
-1. **P3 Golden SAML の多層防御強化**：[ADR-034 Adaptive Auth](../adr/034-adaptive-authentication.md) で SAML ログイン時の異常検知（IP / デバイス / 行動異常）
-2. **P5 Browser 拡張対策**：Zero Trust + Device Trust で「危険な拡張入りのデバイス」からのログイン制限（将来検討）
-3. **P11 ログ scrubbing**：ALB access log / CloudWatch から SAMLResponse をマスク → **ADR 起票候補**
+1. **P3 Golden SAML の多層防御強化**：**[ADR-060 §C](../adr/060-auth-protocol-attack-path-residual-tbd.md) で統合対応**（Adaptive Auth 連動、G-1〜G-6 検知シグナル、Phase 1 実装）
+2. **P5 Browser 拡張対策**：Zero Trust + Device Trust で「危険な拡張入りのデバイス」からのログイン制限（将来検討、ADR-060 スコープ外）
+3. **P11 ログ scrubbing**：**[ADR-060 §A](../adr/060-auth-protocol-attack-path-residual-tbd.md) で統合対応**（Fluent Bit マスキング + Lambda 変換 + 監査スキャン、Phase 1 実装、OIDC O22 と共通）
 
 #### 7.4.6 顧客説明で使える一言
 
@@ -1010,8 +1010,8 @@ IdP は RS256 (RSA) で署名 → RP は IdP 公開鍵で検証
 
 **残る TBD 課題**：
 
-1. **O20 Token Substitution の DPoP / mTLS Bound Token 導入**（Phase 2 候補、[ADR-057 §I](../adr/057-csrf-protection-responsibility-boundary.md)）
-2. **O22 ログ scrubbing**：SAML §7.4.5 と同じ TBD（**ADR 起票候補、認証プロトコル共通**）
+1. **O20 Token Substitution の DPoP / mTLS Bound Token 導入**：**[ADR-060 §B](../adr/060-auth-protocol-attack-path-residual-tbd.md) で統合対応**（Phase 2 候補、DPoP RFC 9449 + mTLS RFC 8705、[ADR-057 §I](../adr/057-csrf-protection-responsibility-boundary.md) 統合先）
+2. **O22 ログ scrubbing**：**[ADR-060 §A](../adr/060-auth-protocol-attack-path-residual-tbd.md) で統合対応**（SAML P11 と共通、Phase 1 実装）
 
 #### 7.5.6 SAML と OIDC の攻撃経路比較
 

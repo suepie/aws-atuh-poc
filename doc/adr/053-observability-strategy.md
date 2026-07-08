@@ -11,6 +11,7 @@
   - [ADR-051 Multi-Region DR / Failover](051-multi-region-dr-failover.md)
   - [ADR-052 Multi-tenant Isolation + Rate Limiting](052-multi-tenant-isolation-rate-limiting.md)
   - [§NFR-6 運用](../requirements/proposal/nfr/06-operations.md)
+  - **[ADR-060 認証プロトコル攻撃経路 残 TBD 対応 §A](060-auth-protocol-attack-path-residual-tbd.md)** — Log scrubbing（SAMLResponse / Authorization Code / Access Token / Refresh Token マスキング）実装要件、Fluent Bit + Lambda + 監査スキャン（2026-07-08 追記）
 
 ---
 

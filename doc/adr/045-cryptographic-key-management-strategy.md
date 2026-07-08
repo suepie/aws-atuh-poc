@@ -11,6 +11,7 @@
   - [ADR-041 Workload Identity](041-workload-identity-spiffe.md)
   - [§NFR-4.1 暗号化・鍵管理](../requirements/proposal/nfr/04-security.md)
   - [§NFR-7 コンプライアンス](../requirements/proposal/nfr/07-compliance.md)
+  - **[ADR-060 認証プロトコル攻撃経路 残 TBD 対応 §C](060-auth-protocol-attack-path-residual-tbd.md)** — Golden SAML/JWT 検知時の緊急鍵ローテ SOP 追加要件（2026-07-08 追記）
 
 ---
 

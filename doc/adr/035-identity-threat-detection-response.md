@@ -6,6 +6,7 @@
   - [§NFR-4 セキュリティ](../requirements/nfr/04-security.md)
   - [ADR-034 Adaptive Authentication](034-adaptive-authentication.md)（連動）
   - [common/scim-operations.md §5](../common/scim-operations.md)（SCIM 非対応 IdP 顧客への ITDR 投資パターン B）
+  - **[ADR-060 認証プロトコル攻撃経路 残 TBD 対応 §C](060-auth-protocol-attack-path-residual-tbd.md)** — Golden SAML/JWT 検知パイプライン（Event Listener SPI → EventBridge → Risk Engine）拡張要件（2026-07-08 追記）
 
 ---
 
