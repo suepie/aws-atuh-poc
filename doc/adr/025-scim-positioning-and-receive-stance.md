@@ -11,6 +11,7 @@
   - **[ADR-014 認証パターン範囲 K-12 制約](014-auth-patterns-scope.md)**（§H.8 LDAP は Cognito 不可、Keycloak 必須化、2026-07-08 追記）
   - **[ADR-058 認証プラットフォーム比較](058-auth-platform-alternatives-comparison.md)**（§H LDAP 対応可否、2026-07-08 追記）
   - **[ADR-060 §A Log scrubbing / §C Golden 検知](060-auth-protocol-attack-path-residual-tbd.md)**（§H.6 LDAP パスワード転送のマスキング + Golden LDAP 検知 L-GD シグナル追加候補、2026-07-08 追記）
+- **[reference/scim-deletion-realtime-detection.md](../reference/scim-deletion-realtime-detection.md)** — §I の実装裏どり（Metatavu SCIM Server + Custom Event Listener SPI + EventBridge 統合の詳細実装ガイド、2026-07-08 追記）
 
 ---
 
@@ -375,6 +376,12 @@ Changed Users Sync Period: 300 (5min)
 - **[§C-7.4.7 LDAP 顧客の SSO ログイン（Bind Pull モデル、Import Users = ON）](../requirements/proposal/common/07-implementation-architecture.md#c-747-ldap-顧客の-sso-ログインbind-pull-モデルimport-users--on2026-07-08-追加)** — 初回 JIT + 2 回目以降キャッシュ利用の 33 ステップ Mermaid シーケンス、Network Firewall / Golden LDAP 検知 / 本基盤側 MFA を含む
 - **[§C-7.4.8 LDAP 顧客の退職時 Deprovision（Full Sync、SCIM 代替）](../requirements/proposal/common/07-implementation-architecture.md#c-748-ldap-顧客の退職時-deprovisionfull-syncscim-代替2026-07-08-追加)** — SCIM Push（§C-7.4.6）との対比表付き、Sync 頻度による遅延の議論
 
+#### H.7.B 実装時チェックリスト（2026-07-08 追加）
+
+**設定リファレンス + 実装チェックリスト**は独立ドキュメントに集約:
+
+- **[common/keycloak-ldap-configuration-notes.md](../common/keycloak-ldap-configuration-notes.md)** — 接続・Sync・Mapper・Truststore・Kerberos・マルチテナント・**AD 特有の落とし穴 Top 5** + **運用ハマりどころ Top 10** + **実装チェックリスト 8 領域**（事前準備 / Keycloak 設定 / Mapper / Truststore / Organization / Network Firewall / セキュリティ / 動作確認）
+
 ### H.8 Cognito 不可の理由（改めて確認）
 
 [ADR-014 K-12 制約](014-auth-patterns-scope.md) と [ADR-058 §比較](058-auth-platform-alternatives-comparison.md):
@@ -420,10 +427,130 @@ Changed Users Sync Period: 300 (5min)
 - **Cognito 不可、Keycloak 必須化**（[マスター表 B 列 Y γ](../requirements/hearing-checklist.md) 判定と整合）
 - **B-LDAP-1〜7 ヒアリング項目起票**（§H.10）+ **L-1〜L-7 論点整理**（§H.9）
 - **認証フロー 2 種を §C-7.4.7 / §C-7.4.8 に追加**（§H.7.A、SSO ログイン + Full Sync による退職者 deprovisioning）
+- **実装リファレンス [common/keycloak-ldap-configuration-notes.md](../common/keycloak-ldap-configuration-notes.md) を新規作成**（§H.7.B、AD 特有落とし穴 Top 5 + 運用ハマりどころ Top 10 + 実装チェックリスト 8 領域）
 
 ### H.12 顧客説明で使える一言
 
 > **「顧客 IdP が LDAP(s) の場合、SCIM は基本不要です。Keycloak の LDAP User Federation で JIT + Sync が自動実現し、退職者の deprovisioning は Sync 頻度で調整（5 分〜1 時間）。**ただし本基盤経由でパスワードが AD に届くので、Log scrubbing + 本基盤側追加 MFA + Bind Service Account 最小権限が必須**。Cognito は LDAP 直結非対応のため、この要件があれば Keycloak 必須化になります。」**
+
+---
+
+## I. 2-tier アーキでの SCIM 削除リアルタイム検知設計（2026-07-08 追加）
+
+### I.0 追加の背景
+
+- 顧客要件が「顧客 IdP + IdP-KC のユーザ削除をリアルタイムで検知したい」に絞られた
+- 前提: 顧客 IdP は SCIM 対応済み（JIT-only は Phase 2 別途）
+- 削除検知の具体的な実装フロー / SCIM Server 選定 / 保有データ最小化方針 / ゾンビセッション対策 を確定
+
+### I.1 4 方向 SCIM のうち Phase 1 で採用する 2 方向
+
+| 方向 | 内容 | Phase 1 | 用途 |
+|---|---|:-:|---|
+| **D1: 顧客 HRIS → IdP-KC** | HRIS が SCIM Push で IdP-KC のローカルユーザ管理 | ✅ 必須 | IdP なし顧客のマスタ同期 + 削除検知 |
+| **D2: 顧客 IdP → Broker** | 顧客 IdP が SCIM Push で Broker に事前プロビ / 削除通知 | ✅ 必須 | フェデ顧客のリアルタイム削除検知 |
+| D3: Broker → 外部 SaaS SP | Broker が SCIM Client で ServiceNow 等に Push | Phase 2 | 削除の下流連携 |
+| D4: IdP-KC → 外部 SaaS SP | 通常使わない | ❌ | Broker 経由（D3）で代替 |
+
+→ **Phase 1 は D1 + D2 の 2 方向。D3 は Phase 2、D4 は採用せず**。
+
+### I.2 実装スタック確定
+
+| コンポーネント | 実装 | 選定理由 |
+|---|---|---|
+| **Broker SCIM Server** | **Metatavu keycloak-scim-server** (Apache 2.0) | Phase Two ELv2 の SaaS 販売制約回避、Native 26.6 Experimental 回避 |
+| **IdP-KC SCIM Server** | 同上 | 同一実装、Realm 別デプロイ |
+| **Broker / IdP-KC Event Listener SPI** | Custom Java SPI（薄い実装）| SCIM DELETE 検知 → SQS enqueue |
+| **削除イベントバス** | AWS EventBridge | Broker + IdP-KC の削除イベント集約 |
+| **Session Revoke Lambda** | Node.js / Python | `not_before` セット + Session removal |
+| **Keycloak バージョン** | **26.6.0 以上必須** | SCIM PUT IDOR (#46658) + Group Auth Bypass (#47536) 修正済み |
+
+### I.3 Broker の PII 最小化方針（Minimum Storage）
+
+ADR-033 の「Shallow Broker」原則を踏襲しつつ、フェデユーザに対する PII 保有を最小化する設計判断:
+
+| データ | Broker 保有 | 実装方針 |
+|---|:-:|---|
+| user_entity.id (UUID) | ✅ 必須 | Keycloak 生成 |
+| user_entity.username | ✅ 必須 | ハイフン区切り `<tenant>-<userid>` |
+| user_entity.email | △ 削除検知用に持つ場合のみ | 顧客判断 |
+| user_entity.enabled | ✅ 必須 | 削除時 false |
+| federated_identity | ✅ 必須 | 顧客 IdP との連携維持 |
+| user_attribute (department 等) | ❌ 保有しない | 都度 Claim から取得、DB 保存なし |
+| user_role_mapping | ❌ 保有しない | Claim ベース算出 |
+| credential (PW hash) | ❌ 保有しない | ADR-033 Shallow Broker 原則、変更なし |
+
+**実装**: 顧客 IdP の SAML/OIDC Mapper で `sync-mode=FORCE` + Import 属性を `username` / `tenant_id` に絞る
+
+### I.4 APPI 観点の解釈（重要）
+
+**「最小化」に関する APPI の位置付け**:
+
+- APPI に GDPR Article 5(1)(c) のような「データ最小化」明示規定は**存在しない**
+- 関連条文: 法第 17 条（利用目的の特定）/ 法第 22 条（不要データの消去努力義務）/ 法第 23 条（安全管理措置）
+- **最小化は義務ではなく、ベストプラクティス扱い**
+
+**Minimum Storage の APPI 上のメリット**:
+
+- 法第 22 条の努力義務充足の説明容易化
+- 法第 23 条の安全管理措置対象データ量の縮小
+- 事故時の影響範囲限定（漏洩通知範囲の縮小）
+- 法第 30 条の削除権対応コスト削減
+
+**重要な認識**（誤解回避）:
+
+- Minimum Storage を採用しても **APPI 適用範囲は縮小しない**（保有事業者としての義務は同じ）
+- 「PII を保有しない」と言えるのは、事業者全体で個人特定が不可な場合のみ
+- 同一事業者内で他システムに PII があれば「保有」に該当（法第 2 条 + PPC 通則編 2-1）
+
+**顧客説明での注意**:
+
+| ❌ 誤解を招く | ✅ 正確 |
+|---|---|
+| PII を持たないので APPI 対象外 | PII を最小限に絞り、APPI の要件を満たす |
+| GDPR の最小化原則に従い | 実装ベストプラクティスとして最小化（APPI 明示規定なし）|
+
+### I.5 ゾンビセッション対策（JWT の Stateless 特性への対応）
+
+Access Token は JWT のため、Broker で `enabled=false` にしても最大 TTL 分は有効:
+
+| 対策 | ゾンビ期間 | Phase |
+|---|---|---|
+| **① Access Token TTL = 5 分** | 最大 5 分 | Phase 1 必須 |
+| **② SCIM DELETE 時に `not_before` + Session revoke** | Refresh 時に即時ブロック | Phase 1 必須 |
+| ③ Backchannel Logout（各 RP に実装）| 数秒 | Phase 2 |
+| ④ API Gateway Token Introspection（高機密 API のみ）| リアルタイム（<1 秒）| Phase 3 |
+
+**Phase 1 の実装で最大 5 分のゾンビ期間が発生する**（多くの規制業種で許容）。PCI DSS §8.2.5 の即時無効化 SLA 60 秒は超過するが、Access Token TTL 5-15 分は業界標準。
+
+### I.6 顧客 IdP 別の SCIM 対応状況（Auth0 例外）
+
+| 顧客 IdP | Outbound SCIM Push | 本設計の対応 |
+|---|:-:|---|
+| Microsoft Entra ID / Okta / Google / Ping | ✅ | Metatavu SCIM Endpoint に Push |
+| **Auth0** | ❌ **Native 非対応** | **Event Streams + Custom Actions で workaround**（B-SCIM-N ヒアリング）|
+| HENNGE One | 要確認 | 個別ヒアリング |
+| SAML JIT-only | ❌ | Phase 2 で別途検討 |
+
+### I.7 詳細実装ガイド
+
+具体的な実装手順、Metatavu の設定、Event Listener SPI コード例、Session Revoke Lambda 実装、Auth0 workaround 手順、Rate Limit の正確な値等は以下参照:
+
+**→ [reference/scim-deletion-realtime-detection.md](../reference/scim-deletion-realtime-detection.md)**（本 ADR §I の実装裏どり）
+
+### I.8 過去の情報の訂正（2026-07-08 検証で判明）
+
+以下の情報は誤りだったため訂正:
+
+| 誤り | 正しい情報 |
+|---|---|
+| ServiceNow SCIM Rate Limit = 20 req/sec | **公式に固定値なし**。インスタンス単位で Rate Limit Rules を管理者が設定 |
+| Salesforce SCIM = 100 req/sec | **公式に per-second 値なし**。24 時間あたりの上限（Edition 依存）、実運用 15 req/sec 以下推奨 |
+| Slack SCIM Tier 2 = 20 req/min per method | **Slack Web API と混同**。SCIM の正しい値は Write 600/min (burst 180) / Read 1000/min (burst 1000) |
+| Vymalo SCIM extension が存在 | **存在しない**（Vymalo は webhook / phone / bcrypt / mailchimp のみ）|
+| Auth0 は Outbound SCIM 対応 | **Native 非対応**（Event Streams + Custom Actions で workaround 必要）|
+
+詳細検証結果は reference/scim-deletion-realtime-detection.md §11 参照。
 
 ---
 
@@ -436,6 +563,8 @@ Changed Users Sync Period: 300 (5min)
 - 87% コスト削減効果（業界調査）
 - JIT との補完関係明示で誤解回避
 - **§H 追記により LDAP(s) 直結顧客の JIT/SCIM 扱いを明確化**（2026-07-08）
+- **§I 追記により 2-tier での SCIM 削除リアルタイム検知設計を確定**（2026-07-08）
+- **Minimum Storage 方針により Broker の APPI / セキュリティ影響範囲を限定**（2026-07-08）
 
 ### Negative
 
@@ -444,6 +573,9 @@ Changed Users Sync Period: 300 (5min)
 - 顧客側の SCIM 設定・上位ライセンス前提（採用希望時）
 - プラットフォーム選定で Keycloak がやや有利（SCIM 標準対応）
 - **§H LDAP 対応でパスワード転送経由となるため、Log scrubbing + 追加 MFA + Bind SA 最小権限化の運用オーバヘッド**（2026-07-08）
+- **§I Metatavu SCIM Server 導入 + Custom Event Listener SPI 実装工数（Phase 1 合計 2-3 週間）**（2026-07-08）
+- **§I Auth0 顧客は Event Streams + Custom Actions で workaround 必要（Auth0 個別対応が発生）**（2026-07-08）
+- **§I Access Token TTL 5 分によるゾンビ期間の発生（Phase 3 で API GW Introspection でリアルタイム化）**（2026-07-08）
 
 ---
 

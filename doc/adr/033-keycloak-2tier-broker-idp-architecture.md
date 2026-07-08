@@ -317,6 +317,67 @@ Keycloak は CPU 律速なワークロードであり、**Broker と IdP-KC の 
 
 → **フェデ比率のヒアリング（B-BROK-1）が IdP-KC サイジングに直結**。詳細な CPU 律速の技術根拠 + Tier 別サイジング公式 + フェデ比率シナリオ別試算は **[reference/keycloak-cpu-bottleneck-sizing-guide.md](../reference/keycloak-cpu-bottleneck-sizing-guide.md)** 参照。
 
+### G.3 Shallow Broker の定義と Minimum Storage 方針（2026-07-08 追加）
+
+「Shallow Broker」という用語は本 ADR 内で使用しているが、Keycloak 公式用語ではなく設計指針の呼称。以下で正確に定義する。
+
+#### Shallow Broker の意味
+
+「Shallow Broker」= **credential テーブルに PW ハッシュを保存しない**という設計判断。以下との対比:
+
+| 分類 | credential テーブル | 認証実行主体 | 実現 |
+|---|---|---|---|
+| **Deep Broker** | PW ハッシュ保存 | Broker 自身 | Keycloak 標準（Local User Realm）|
+| **Shallow Broker** ★本基盤 | **空**（フェデユーザは PW なし）| 顧客 IdP | Keycloak 標準（Federation Realm）|
+| True Zero-storage Broker | 空 + user_entity も持たない | 外部 IdP | Custom User Storage SPI 必須（Non-standard）|
+
+→ **本基盤の「Shallow Broker」は Keycloak 標準の Federation Realm 挙動**であり、Custom SPI 開発を伴わない。
+
+#### Broker が保有する情報の実態
+
+Shallow Broker（本基盤）でもフェデユーザについて以下は普通に保存される（Keycloak 標準動作）:
+
+- **user_entity**: id, username, email, enabled 等
+- **user_attribute**: IdP Mapper で Import した属性（可変）
+- **federated_identity**: 顧客 IdP との連携情報
+- **user_role_mapping / user_group_membership**: ロール・グループ
+- **user_session / client_session**: セッション状態
+
+**空になる（PW hash 非保持）**:
+- **credential**: PW hash / MFA 秘密鍵はフェデユーザに対して発行されない
+
+→ 「Shallow = ほぼ何も持たない」は誤解。「Shallow = PW hash 非保持、それ以外は保存」が正確。
+
+#### Minimum Storage 方針（Shallow Broker のさらなる細分化）
+
+事故時の影響範囲を限定し、APPI 安全管理措置対象データを縮小するため、Broker の user_attribute 保存を最小化する **Minimum Storage 方針**を採用可能:
+
+| 方針 | user_attribute 保存内容 | 実装 |
+|---|---|---|
+| **L1: フル保有**（Metatavu 標準）| department / manager / cost_center 等全属性 | IdP Mapper 標準設定 |
+| **★ L2: Minimum Storage** ★本基盤採用 | username / tenant_id のみ | IdP Mapper で Import 属性を絞る + Claim Mapper で JWT 埋込 |
+| L3: ほぼゼロ保有 | user_entity.id + session のみ | Custom User Storage SPI（2-4 週間開発）|
+
+**L2 Minimum Storage の実装**:
+- IdP Mapper で Import 属性を制限（username / tenant_id のみ）
+- 他属性は Claim ベースで都度取得、DB 保存なし
+- Role / Group は Claim Mapper で JWT に埋込、user_role_mapping 未使用
+- Sync Mode = FORCE で毎回上書き（陳腐化防止）
+
+**APPI 上の位置付け**（重要な認識）:
+- APPI に「データ最小化」明示規定は**存在しない**（GDPR とは異なる）
+- Minimum Storage は義務ではなく、**事故時リスク低減目的のベストプラクティス**
+- APPI 適用範囲は L1/L2/L3 いずれでも同じ（保有事業者としての義務）
+- 「PII を保有しない」と言えるのは事業者全体で個人特定不可な場合のみ
+
+**メリット**:
+- 事故時の影響範囲限定（漏洩通知範囲の縮小）
+- 法第 23 条の安全管理措置対象データ量の縮小
+- 法第 22 条の努力義務充足の説明容易化
+- 法第 30 条の削除権対応コスト削減
+
+詳細は **[ADR-025 §I](025-scim-positioning-and-receive-stance.md#i-2-tier-アーキでの-scim-削除リアルタイム検知設計2026-07-08-追加)** および **[reference/scim-deletion-realtime-detection.md §4-5](../reference/scim-deletion-realtime-detection.md#4-broker-の-pii-最小化方針minimum-storage)** 参照。
+
 ---
 
 ## H. 運用上の留意点

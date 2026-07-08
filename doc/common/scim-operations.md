@@ -10,6 +10,21 @@
 > - [ADR-025 SCIM 2.0 の位置づけと本基盤の受信スタンス](../adr/025-scim-positioning-and-receive-stance.md)
 > - [ADR-023 ServiceNow SP 連携設計](../adr/023-servicenow-sp-integration.md)
 > - [jit-scim-coexistence-keycloak.md](jit-scim-coexistence-keycloak.md) — Keycloak 実装詳細
+> - **[reference/scim-deletion-realtime-detection.md](../reference/scim-deletion-realtime-detection.md)** — 削除リアルタイム検知 + Broker PII 最小化（2026-07-08 追加）
+
+---
+
+> **⚠ 重要な注意事項（2026-07-08 追加、実装前必読）**:
+>
+> **Auth0 顧客の Outbound SCIM は Native 非対応**（2026-07 時点）。Auth0 → 本基盤への SCIM Push はネイティブで動作せず、**Event Streams + Custom Actions で workaround が必要**。詳細は [reference/scim-deletion-realtime-detection.md §7](../reference/scim-deletion-realtime-detection.md#7-顧客-idp-別の-scim-対応状況)。B-SCIM 系ヒアリング項目で Auth0 顧客の有無を確認する。
+>
+> **外部 SaaS の Rate Limit 情報の誤り訂正**:
+> - ServiceNow SCIM: 公式に固定値なし（インスタンス単位で管理者設定、旧記述「20 req/sec」は誤り）
+> - Salesforce SCIM: 公式に per-second 値なし（実運用 15 req/sec 以下推奨、旧記述「100 req/sec」は誤り）
+> - Slack SCIM: Write 600/min (burst 180) / Read 1000/min (burst 1000) が正しい（旧記述「Tier 2 = 20 req/min per method」は Web API と混同）
+> - Workday: 5 req/sec（唯一明確に公表されている値、Strategic Sourcing SCIM）
+> 
+> 詳細は [reference/scim-deletion-realtime-detection.md §11](../reference/scim-deletion-realtime-detection.md#11-rate-limit-の正確な値過去の誤り訂正) 参照。
 
 ---
 

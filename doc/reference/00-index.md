@@ -39,6 +39,12 @@
 |------------|------|
 | [servicenow-sso-user-linking-guide.md](servicenow-sso-user-linking-guide.md) | **ServiceNow SSO 既存ユーザリンク手順ガイド** — sys_id 保全の重要性 / 3 アンチパターン / Matching Field 選定フロー（推奨 `employee_number`）/ 5 Step 設定手順 / 並走期間 4 Phase / 重複統合スクリプト / SCIM 属性同期 / Break Glass 設定 / APPI/GDPR 対応 (匿名化) / 5 Test シナリオ。[ADR-023](../adr/023-servicenow-sp-integration.md) の実装手順裏どり、[§FR-2.4.B-2](../requirements/proposal/fr/02-federation.md) からの参照先 |
 
+## SCIM
+
+| ドキュメント | 内容 |
+|------------|------|
+| [scim-deletion-realtime-detection.md](scim-deletion-realtime-detection.md) | **SCIM 削除リアルタイム検知 + PII 最小化ガイド（2-tier Keycloak）** — 顧客 IdP / IdP-KC のユーザ削除をリアルタイムで検知し下流に反映する設計 + Broker の PII 保有を最小化する実装（Minimum Storage L2）。2 SCIM Server (Broker + IdP-KC) + EventBridge 統合 / 3 削除検知経路 / APPI 観点の解釈（最小化は義務ではないベストプラクティス）/ ゾンビセッション対策 4 手段 (TTL / not_before / Backchannel / API GW Introspection) / 顧客 IdP 別 SCIM 対応（Auth0 例外 workaround）/ Metatavu keycloak-scim-server 実装ガイド (Apache 2.0) / 外部 SaaS SCIM 送信の非同期化パターン / Rate Limit の正確な値（ServiceNow/Salesforce/Slack/Workday 誤情報訂正）/ Phase 別実装計画。[ADR-025 §I](../adr/025-scim-positioning-and-receive-stance.md) / [ADR-033 §G.3](../adr/033-keycloak-2tier-broker-idp-architecture.md) の実装裏どり |
+
 ## 過去の検討ドキュメント
 
 `doc/old/` に過去の検討成果物がある（読み取り専用）。主要なものは以下：
