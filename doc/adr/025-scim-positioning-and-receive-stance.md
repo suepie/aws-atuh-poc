@@ -1,7 +1,7 @@
 # ADR-025: SCIM 2.0 の位置づけと本基盤の受信スタンス
 
 - **ステータス**: Proposed（要件定義フェーズで Accepted に昇格予定）
-- **日付**: 2026-06-15、**2026-07-08 §H 追記**（顧客 IdP が LDAP(s) の場合の JIT/SCIM 扱い）+ **§H.7.A 認証フロー追加**（§C-7.4.7 SSO ログイン / §C-7.4.8 Full Sync Deprovision）、**2026-07-09 §H.6.3 Transient Password Exposure 追加**（Level 1 vs Level 2 区別 + フェーズ図 + 6 脅威 + 10 緩和策 + 3 規制対応 + 4 方式比較）+ **§H.4.B JIT vs SCIM 判別と自動 deprovisioning 追加**（scim_active + provisioned_by 3 段階戦略、[jit-scim §10.4.A/B](../common/jit-scim-coexistence-keycloak.md) + [ADR-060 §C.2.3](060-auth-protocol-attack-path-residual-tbd.md) 波及）
+- **日付**: 2026-06-15、**2026-07-08 §H 追記**（顧客 IdP が LDAP(s) の場合の JIT/SCIM 扱い）+ **§H.7.A 認証フロー追加**（§C-7.4.7 SSO ログイン / §C-7.4.8 Full Sync Deprovision）、**2026-07-09 §H.6.3 Transient Password Exposure 追加**（Level 1 vs Level 2 区別 + フェーズ図 + 6 脅威 + 10 緩和策 + 3 規制対応 + 4 方式比較）+ **§H.4.B JIT vs SCIM 判別と自動 deprovisioning 追加**（scim_active + provisioned_by 3 段階戦略、[jit-scim §10.4.A/B](../common/jit-scim-coexistence-keycloak.md) + [ADR-060 §C.2.3](060-auth-protocol-attack-path-residual-tbd.md) 波及）+ **⚠ §I.2 Metatavu keycloak-scim-server の Phase 1 実装前 PoC 検証追記**（[jit-scim §10.4.E 一次資料調査 14 件](../common/jit-scim-coexistence-keycloak.md) 反映、Keycloak 26 対応 / カスタム属性書込 / SPI 統合の 3 点確認必要）
 - **関連**:
   - [§FR-7.4.0 SCIM の位置づけと本基盤のスタンス](../requirements/proposal/fr/07-user.md#fr-740-scim-の位置づけと本基盤のスタンス)
   - [§FR-2.2.1 JIT プロビジョニング](../requirements/proposal/fr/02-federation.md#321-jit-プロビジョニング--fr-fed-008)
@@ -606,6 +606,21 @@ Changed Users Sync Period: 300 (5min)
 | **削除イベントバス** | AWS EventBridge | Broker + IdP-KC の削除イベント集約 |
 | **Session Revoke Lambda** | Node.js / Python | `not_before` セット + Session removal |
 | **Keycloak バージョン** | **26.6.0 以上必須** | SCIM PUT IDOR (#46658) + Group Auth Bypass (#47536) 修正済み |
+
+> **⚠ 2026-07-09 追加調査結果 — Metatavu keycloak-scim-server の再検証必要**
+>
+> [jit-scim §10.4.E.1 一次資料調査](../common/jit-scim-coexistence-keycloak.md) で判明した以下 3 事実により、**Metatavu keycloak-scim-server の以下 3 点の PoC 検証が Phase 1 実装開始前に必須**:
+>
+> 1. **Keycloak 26.6 対応度**：README 明記なし、実際の動作確認必要（一次資料 [E-2](../common/jit-scim-coexistence-keycloak.md)）
+> 2. **カスタム属性書込対応**：`scim_active` / `provisioned_by` 等のカスタム属性を SCIM 経由で user_attribute に書き込めるか（Phase Two 系は明記なしのため、Metatavu も同様の懸念、一次資料 [E-4 - E-7](../common/jit-scim-coexistence-keycloak.md)）
+> 3. **Custom Event Listener SPI との統合パス**：SCIM 受信後の SPI 呼び出し順序 + Transaction 分離（一次資料 [E-8 - E-10](../common/jit-scim-coexistence-keycloak.md) の Issue #14942 / #22902 の影響）
+>
+> **代替案**：
+> - **代替 A**：Metatavu が動かない場合、Keycloak 26.6 native SCIM Realm API + カスタム属性は Custom Authenticator SPI で自動セット（jit-scim §10.4.E.1 代替 A）
+> - **代替 B**：Metatavu + Custom SCIM Schema 拡張（工数 2-4 週間、jit-scim §10.4.E.1 代替 B）
+> - **代替 C**：SCIM 経由書込を諦め、LDAP User Federation Provider の federation_link 経由判別（[§H.4.B](#h4b-jit-vs-scim-判別と自動-deprovisioning2026-07-09-追加) 記載、LDAP 顧客のみ有効）
+>
+> **反映先**：**ヒアリング項目 B-SCIM-7〜10** で PoC 検証事項化（[hearing-checklist.md](../requirements/hearing-checklist.md)）
 
 ### I.3 Broker の PII 最小化方針（Minimum Storage）
 

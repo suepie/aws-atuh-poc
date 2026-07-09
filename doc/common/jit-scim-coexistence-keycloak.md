@@ -769,7 +769,12 @@ T+N 年 (PCI DSS=1年 / 一般=7年): 物理削除 or 匿名化バッチ実行
 
 #### 10.4.A.2 SPI 実装（既存 ADR-060 §C.2.2 SPI と統合）
 
+> **⚠ 2026-07-09 追加調査結果**：以下のシンプルな `user.setSingleAttribute()` 直呼び実装は **[Keycloak Issue #14942](https://github.com/keycloak/keycloak/issues/14942)（Closed as not planned）により動かない可能性が極めて高い**。本番実装は **[§10.4.E.2 案 B Custom Authenticator SPI](#e23-3-つの実装案一次資料に基づく) を強く推奨**。以下のコードは概念説明用リファレンスとして保持。
+
 ```java
+// ⚠ このコード例は Keycloak Issue #14942 により動かない可能性が極めて高い
+// 実装時は §10.4.E.2 案 B（Custom Authenticator SPI）に置き換え必須
+
 public class UnifiedEventListener implements EventListenerProvider {
     private final KeycloakSession session;
 
@@ -1190,6 +1195,267 @@ resource "keycloak_custom_identity_provider_mapper" "protect_provisioned_by" {
 | **既存ユーザーバックフィル** | ⚠ 導入時作業必要（§10.4.B.6）|
 
 **結論**：**基本的に実装可能、ただし Phase 1 実装開始前に V1/V2、実装中に V3 の PoC 検証が必要**。「確実に問題ない」と言うには PoC 結果を待つ必要がある。
+
+**⚠ 2026-07-09 追加調査結果**：一次資料調査により **V1/V3 の判定に重大な発見**あり。詳細は **[§10.4.E 検証結果と実装方式の見直し](#104e-緊急2026-07-09-追加検証結果と実装方式の見直し)** 参照（14 件の一次資料引用付き）。
+
+### 10.4.E 【緊急、2026-07-09 追加】検証結果と実装方式の見直し
+
+> **本セクションの位置付け**：§10.4.A/B/C/D の設計は Phase 1 実装開始前検証 V1/V2/V3 の結果を待つ前提だった。**2026-07-09 に一次資料調査を実施した結果、§10.4.A の SPI 実装コード例と ADR-025 の Phase Two SCIM 採用方針の両方に重大な問題が判明**。本セクションで検証結果と対応方針を明示する。**全 14 件の一次資料引用は §10.4.E.5 参照**。
+
+#### 10.4.E.1 V1 検証結果：Phase Two SCIM の Keycloak 26 対応状況
+
+##### E.1.1 一次資料調査（2026-07-09）
+
+**確定事実 1**：**[`p2-inc/keycloak-scim` は EOL](https://github.com/p2-inc/keycloak-scim/blob/master/README.MD)**
+
+> 公式 README より（意訳）：「21.0.x より後、Open Source project reached end of life」
+
+**確定事実 2**：**現行 Phase Two は `p2-inc/keycloak-orgs` に SCIM 機能を統合**（[GitHub keycloak-orgs](https://github.com/p2-inc/keycloak-orgs)）
+
+- **Keycloak > 17.0.0** で動作確認（**26 対応は明記なし**）
+- **SCIM は Inbound のみ**（Outbound なし）
+- **Elastic License v2**（[phasetwo.io blog](https://phasetwo.io/blog/licensing-change/)）
+- **Experimental**（configuration schema / surface が変わる可能性）
+- **カスタム属性マッピング設定方法は明記されていない**
+
+**確定事実 3**：**Keycloak 26.6 native SCIM Realm API**（[公式ブログ 2026-04](https://www.keycloak.org/2026/04/scim-as-experimental-feature)）
+
+> 公式ブログ verbatim（意訳）：
+> - "POST, GET, PATCH, PUT, and DELETE operations for managing users and groups"
+> - "kc.scim.schema.attribute annotation to a user profile attribute where the value is the name of the SCIM attribute you want to map to"
+> - "custom schemas and attributes yet" は**未実装**（既存スキーマのみ）
+> - "support for organizations" は **未実装**（ロードマップ）
+> - "experimental feature (not enabled by default)"
+
+##### E.1.2 V1 判定
+
+**判定**：❌ **[ADR-025 の Phase Two SCIM 採用方針は前提が崩れる](../adr/025-scim-positioning-and-receive-stance.md)**
+
+| プラグイン選択肢 | Keycloak 26 対応 | Inbound SCIM | Custom Attribute 対応 | scim_active 書込 |
+|---|:---:|:---:|:---:|:---:|
+| `p2-inc/keycloak-scim` | ❌ EOL | ✅ | ⚠ | 不明 |
+| `p2-inc/keycloak-orgs` | ⚠ 明記なし | ✅ | ⚠ 明記なし | 不明 |
+| **Keycloak 26.6 native SCIM Realm API** | ✅ | ✅ | ⚠ 既存スキーマのみ | ⚠ カスタムスキーマ未実装 |
+| **Metatavu keycloak-scim-server** | ⚠ 要確認 | ✅ | ⚠ 要確認 | ⚠ 要確認 |
+
+**含意**：**"scim_active" のようなカスタム属性を SCIM 経由で書き込む機能は、公式ドキュメント上明記されていない**。PoC 検証で不可な場合、以下の代替が必要:
+
+- **代替 A**：SCIM POST /Users 受信後、Custom Event Listener SPI で `scim_active=true` を自動セット（Keycloak native SCIM + カスタムマッパー）
+- **代替 B**：SCIM 側にカスタムスキーマ拡張の Custom SCIM Server を開発（工数 2-4 週間）
+- **代替 C**：SCIM ではなく **LDAP User Federation Provider の federation_link** で判別（LDAP 顧客のみ有効、[ADR-025 §H.4.B](../adr/025-scim-positioning-and-receive-stance.md) 記載）
+
+#### 10.4.E.2 V3 検証結果：Event Listener SPI で setSingleAttribute の動作
+
+##### E.2.1 一次資料調査（2026-07-09）
+
+**確定事実 1**：**[Keycloak Issue #14942](https://github.com/keycloak/keycloak/issues/14942) - Closed as "not planned"**
+
+> Issue タイトル verbatim：**"setSingleAttribute doesn't add the attribute inside an EventListenerProvider"**
+>
+> Issue 内容（意訳）：Keycloak 10.0.2 → 19.0.2 アップグレード後、EventListenerProvider 内で `setSingleAttribute()` メソッドが機能しなくなった。「コードはエラーなく実行されるがユーザー属性が追加されない」
+>
+> **公式回答**：**Closed as not planned**（Keycloak チームは修正しない方針）
+
+**確定事実 2**：**[Keycloak Issue #22902](https://github.com/keycloak/keycloak/issues/22902) - Open**
+
+> Issue タイトル verbatim：**"EventListenerProvider hooked to transaction while accessing userAttributes is causing ConcurrentModificationException"**
+>
+> 技術的根本原因（意訳）：`EventBuilder.error()` 呼び出し時に新しい transaction scope が開始される。`enlistAfterCompletion()` でフックした event listener が delegated resources（user attributes 等）にアクセスすると、iteration 中に underlying transaction listener list が変更され、ConcurrentModificationException が発生。
+>
+> **ステータス**：**Open**（未解決、Keycloak 22.0.1 で報告、26.x でも影響推測）
+
+**確定事実 3**：**公式推奨 workaround**（[Keycloak EventListenerProvider Javadoc](https://www.keycloak.org/docs-api/latest/javadocs/org/keycloak/events/EventListenerProvider.html)）
+
+> 公式 Javadoc verbatim（意訳）：`onEvent` / `onAdminEvent` は running transaction 内で実行される。JPA を使ってイベント詳細をテーブルに insert する場合、event を含む transaction 全体が commit or rollback される。Transaction 処理が option ではない場合、**`KeycloakTransactionManager.enlistAfterCompletion(KeycloakTransaction)` メソッド経由で transaction commit 後にフック**することを推奨。
+
+##### E.2.2 V3 判定
+
+**判定**：⚠ **既存の §10.4.A / ADR-060 §C.2.3 の SPI 実装例（シンプルな setSingleAttribute 直呼び）は動かない可能性が極めて高い**
+
+##### E.2.3 3 つの実装案（一次資料に基づく）
+
+**案 A: `enlistAfterCompletion` workaround（公式推奨）**
+
+```java
+public void onEvent(Event event) {
+    if (event.getType() != EventType.LOGIN) return;
+
+    KeycloakSession session = /* obtain from SPI context */;
+    RealmModel realm = session.realms().getRealm(event.getRealmId());
+
+    // ⚠ 公式推奨: Transaction commit 後のコールバックとして登録
+    // 一次資料: Keycloak EventListenerProvider Javadoc (26.6.3)
+    session.getTransactionManager().enlistAfterCompletion(new KeycloakTransaction() {
+        @Override
+        public void begin() {}
+
+        @Override
+        public void commit() {
+            // Transaction コミット後にここが呼ばれる
+            try {
+                UserModel user = session.users().getUserById(realm, event.getUserId());
+                if (user != null) {
+                    String lastLogin = user.getFirstAttribute("last_login");
+                    long now = event.getTime();
+                    if (lastLogin == null || (now - Long.parseLong(lastLogin)) > 86400000L) {
+                        user.setSingleAttribute("last_login", String.valueOf(now));
+                    }
+                }
+            } catch (Exception e) {
+                log.warn("Failed to update last_login", e);
+            }
+        }
+
+        @Override
+        public void rollback() {}
+
+        @Override
+        public void setRollbackOnly() {}
+
+        @Override
+        public boolean getRollbackOnly() { return false; }
+
+        @Override
+        public boolean isActive() { return true; }
+    });
+}
+```
+
+- ✅ 公式推奨（Javadoc 明記）
+- ⚠ **エラーイベント時に ConcurrentModificationException**（[Issue #22902](https://github.com/keycloak/keycloak/issues/22902) 未解決）
+- 対策：LOGIN の Success イベントのみで使用、Error イベントは別処理
+
+**案 B: Custom Authenticator SPI で書き込み（推奨、確実性最高）**
+
+Event Listener ではなく Authentication Flow 内で属性書込を実行する:
+
+```java
+// LastLoginTrackerAuthenticator を First Broker Login Flow or Browser Flow の
+// 末尾に組込
+public class LastLoginTrackerAuthenticator implements Authenticator {
+    @Override
+    public void authenticate(AuthenticationFlowContext context) {
+        UserModel user = context.getUser();
+        if (user != null) {
+            String lastLogin = user.getFirstAttribute("last_login");
+            long nowMs = System.currentTimeMillis();
+            if (lastLogin == null || (nowMs - Long.parseLong(lastLogin)) > 86400000L) {
+                user.setSingleAttribute("last_login", String.valueOf(nowMs));
+            }
+        }
+        context.success();
+    }
+    // action, requiresUser, configuredFor, setRequiredActions, close 略
+}
+```
+
+- ✅ **認証フロー内なので transaction 制御が明示的、確実に動作**
+- ✅ Success / Error 両方で対応可能
+- ⚠ 実装コスト中（新規 SPI 開発 + Flow 設定）
+- **[ADR-055 HRD Authenticator SPI](../adr/055-hrd-implementation-method-selection.md)** と同じ Java SPI パターン、既存の SPI 開発体制で対応可能
+
+**案 C: 外部 DB 別管理（Aurora / DynamoDB、最も堅牢）**
+
+Event Listener SPI は EventBridge 送信のみ、実際の user_attribute UPDATE は Lambda で非同期処理:
+
+```java
+public void onEvent(Event event) {
+    if (event.getType() == EventType.LOGIN) {
+        // Event Listener は emit のみ、失敗しても認証は通す
+        emitToEventBridge(event.getUserId(), event.getTime(), "LOGIN");
+    }
+}
+```
+
+```python
+# Lambda（EventBridge Rule でトリガー）
+def handler(event, context):
+    user_id = event['detail']['userId']
+    login_time = event['detail']['loginTime']
+
+    # DynamoDB LastLoginTable に UPSERT
+    ddb.put_item(TableName='LastLoginTable',
+                 Item={'user_id': user_id, 'last_login': login_time})
+```
+
+バッチスクリプトは Keycloak DB + DynamoDB を JOIN:
+```bash
+# Keycloak Admin API で全ユーザー取得
+KC_USERS=$(kcadm.sh get users -r $REALM ...)
+
+# DynamoDB から last_login 取得
+for USER_ID in ...; do
+    LAST_LOGIN=$(aws dynamodb get-item --table-name LastLoginTable ...)
+    # 判定 + enabled=false 更新
+done
+```
+
+- ✅ **Keycloak Issue の影響を受けない**
+- ✅ **性能問題も外部 DB 側でスケール**
+- ⚠ 実装コスト大（EventBridge + Lambda + DynamoDB IaC）
+- ⚠ Keycloak DB と外部 DB の同期整合性管理
+
+##### E.2.4 案の推奨順位
+
+| 順位 | 案 | Phase 1 適用 | 理由 |
+|:---:|---|:---:|---|
+| 1 | **案 B: Custom Authenticator SPI** | ✅ **推奨** | 確実性最高、[ADR-055](../adr/055-hrd-implementation-method-selection.md) と同じ Java SPI 体制で開発可能、既存 [ADR-060 §C.2.2](../adr/060-auth-protocol-attack-path-residual-tbd.md) の SPI と別モジュール化 |
+| 2 | **案 A: enlistAfterCompletion** | ⚠ 検証必須 | 公式推奨だが Issue #22902 の懸念、Success イベントのみ対象 |
+| 3 | **案 C: 外部 DB 別管理** | ⚠ Phase 2 候補 | 実装コスト大、Phase 1 で不要かは V3 負荷試験次第 |
+
+#### 10.4.E.3 §10.4.A / §10.4.B / §10.4.C / §10.4.D への影響
+
+| セクション | 影響 | 対応 |
+|---|---|---|
+| **§10.4.A** SPI コード例 | ⚠ 動かない可能性 | **案 B（Custom Authenticator SPI）に書き換え**、警告バナー追加 |
+| **§10.4.A** バッチスクリプト | ✅ 影響なし | user_attribute から読むだけなので書込方式に依存しない |
+| **§10.4.B** 判別ロジック | ⚠ scim_active 書込方式に影響 | Phase Two 検証結果次第で追加代替案 |
+| **§10.4.C** debounce | ✅ 影響なし | Custom Authenticator でも同じ debounce パターン適用可 |
+| **§10.4.D** V1/V2/V3 検証事項 | ⚠ V1/V3 の判定が変化 | 本セクション §10.4.E で検証結果反映済み |
+
+#### 10.4.E.4 Phase 1 実装フローの更新
+
+```
+Phase 1 実装開始前
+├── V1': ADR-025 §I Phase Two SCIM プラグイン再選定（本 §10.4.E.1 一次資料調査結果反映）
+│   ├── keycloak-orgs で Keycloak 26 動作確認
+│   ├── Keycloak 26 native SCIM で Organizations 統合待つか判断
+│   └── scim_active カスタム属性書込の代替方式決定
+├── V2: Sync Mode override PoC → ✅ 一次資料上動作確認済（§10.4.E.2 結論）
+└── V3': Custom Authenticator SPI 案 B を採用（本 §10.4.E.2 一次資料調査結果反映）
+
+Phase 1 実装中
+├── ADR-060 §C.2.2 Event Listener SPI（既存、Golden 検知 + last_login は案 B へ分離）
+├── ★新規：Last Login Tracker Authenticator SPI（案 B）を First Broker Login Flow 末尾に組込
+├── §10.4.A バッチスクリプト実装 + CronJob デプロイ（変更なし）
+├── §10.4.B 判別ロジック実装 + Terraform IaC
+├── §10.4.C debounce 実装（1 日 1 回制限）+ User Profile schema 登録
+└── V3 負荷試験（案 B 前提で再計画）
+
+Phase 1 リリース
+├── 既存ユーザー バックフィル実行（§10.4.B.6）
+├── 監査ログ / 監視ダッシュボード有効化
+└── PCI DSS Req 8.2.6 適合エビデンス確定
+```
+
+#### 10.4.E.5 検証結果の一次資料エビデンス集（14 件）
+
+| # | 事実 | 一次資料 URL | Verbatim / 意訳 |
+|---|---|---|---|
+| **E-1** | Phase Two `keycloak-scim` EOL | [p2-inc/keycloak-scim README](https://github.com/p2-inc/keycloak-scim/blob/master/README.MD) | "21.0.x より後、Open Source project reached end of life"（意訳）|
+| **E-2** | Phase Two `keycloak-orgs` は Keycloak > 17.0.0 対応 | [p2-inc/keycloak-orgs](https://github.com/p2-inc/keycloak-orgs) | "currently known to work with Keycloak > 17.0.0"、26 対応は明記なし |
+| **E-3** | Phase Two Elastic License v2 | [phasetwo.io blog](https://phasetwo.io/blog/licensing-change/) | Elastic License v2 適用、ビジネスユース要注意 |
+| **E-4** | Keycloak 26.6 native SCIM = Experimental | [Keycloak Blog 2026-04](https://www.keycloak.org/2026/04/scim-as-experimental-feature) | "experimental feature (not enabled by default)" |
+| **E-5** | Keycloak 26.6 SCIM カスタムスキーマ未実装 | 同上 | "custom schemas and attributes yet"（未実装）|
+| **E-6** | Keycloak 26.6 SCIM Organizations 統合ロードマップ | 同上 | "support for organizations" はロードマップ、26.6 未実装 |
+| **E-7** | `kc.scim.schema.attribute` アノテーションで SCIM マッピング | 同上 | User Profile Attribute にアノテーション付与でマップ可能 |
+| **E-8** | **`setSingleAttribute` in EventListenerProvider 動作しない** | **[Keycloak Issue #14942](https://github.com/keycloak/keycloak/issues/14942)** | **"Closed as not planned"**（Keycloak チーム修正しない方針）|
+| **E-9** | **`enlistAfterCompletion` の ConcurrentModificationException**| **[Keycloak Issue #22902](https://github.com/keycloak/keycloak/issues/22902)** | **Open**（未解決、Error イベント時に発生）|
+| **E-10** | 公式推奨 workaround = `enlistAfterCompletion` | [Keycloak EventListenerProvider Javadoc 26.6.3](https://www.keycloak.org/docs-api/latest/javadocs/org/keycloak/events/EventListenerProvider.html) | "KeycloakTransactionManager.enlistAfterCompletion(KeycloakTransaction) メソッド経由で transaction commit 後にフック"（意訳）|
+| **E-11** | Sync Mode Override 4 モード | [Red Hat Docs 22.0 Identity Broker](https://docs.redhat.com/en/documentation/red_hat_build_of_keycloak/22.0/html/server_administration_guide/identity_broker) | Legacy / Import / Force / Inherit |
+| **E-12** | Per-Mapper syncMode Keycloak 10+ | [Terraform Provider Keycloak - custom_identity_provider_mapper](https://github.com/keycloak/terraform-provider-keycloak/blob/main/docs/resources/custom_identity_provider_mapper.md) | "If you are using Keycloak 10 or higher, you will need to specify the extra_config argument in order to define a syncMode for the mapper" |
+| **E-13** | User Profile Unmanaged Attributes 4 ポリシー | [Red Hat Build of Keycloak 26.6 Managing Users](https://docs.redhat.com/en/documentation/red_hat_build_of_keycloak/26.6/html/server_administration_guide/assembly-managing-users_server_administration_guide) | Disabled / Enabled / Admin can view / Admin can edit |
+| **E-14** | User Profile Read-only 環境変数設定 | 同上 | `KC_SPI_USER_PROFILE_DECLARATIVE_USER_PROFILE_READ_ONLY_ATTRIBUTES` |
 
 ### 10.5 Keycloak DB 保持・削除マトリクス（実装詳細）
 

@@ -259,7 +259,12 @@ s/(KEYCLOAK_SESSION|KEYCLOAK_IDENTITY)=[^;\s]+/\1=[REDACTED]/g
 
 **実装統合例**：
 
+> **⚠ 2026-07-09 追加調査結果**：以下の Event Listener + `setSingleAttribute` 直呼び実装は **[Keycloak Issue #14942](https://github.com/keycloak/keycloak/issues/14942)（Closed as not planned）により動かない可能性が極めて高い**。本番実装は **Custom Authenticator SPI に置換必須**（[jit-scim §10.4.E.2 案 B](../common/jit-scim-coexistence-keycloak.md)、確実性最高）。以下のコードは概念説明用リファレンスとして保持。詳細な代替実装 3 案と 14 件の一次資料引用は [jit-scim §10.4.E](../common/jit-scim-coexistence-keycloak.md) 参照。
+
 ```java
+// ⚠ このコード例は Keycloak Issue #14942 により動かない可能性が極めて高い
+// 実装時は jit-scim §10.4.E.2 案 B（Custom Authenticator SPI）に置き換え必須
+
 public class UnifiedEventListener implements EventListenerProvider {
     @Override
     public void onEvent(Event event) {
@@ -267,6 +272,8 @@ public class UnifiedEventListener implements EventListenerProvider {
         emitToEventBridge(event);
 
         // 追加①（2026-07-09）: last_login 書込（PCI DSS 8.2.6 対応）
+        // ⚠ Keycloak Issue #14942 により setSingleAttribute が動かない可能性
+        // 実装時は Custom Authenticator SPI（jit-scim §10.4.E.2 案 B）に置換
         if (event.getType() == EventType.LOGIN) {
             UserModel user = getUser(event);
             if (user != null) {
@@ -275,6 +282,7 @@ public class UnifiedEventListener implements EventListenerProvider {
         }
 
         // 追加②（2026-07-09）: provisioned_by 書込（JIT/SCIM 判別）
+        // ⚠ 同上、Custom Authenticator SPI 実装推奨
         if (event.getType() == EventType.IDENTITY_PROVIDER_FIRST_LOGIN) {
             UserModel user = getUser(event);
             if (user != null && user.getFirstAttribute("provisioned_by") == null) {
@@ -286,6 +294,12 @@ public class UnifiedEventListener implements EventListenerProvider {
     }
 }
 ```
+
+**Phase 1 実装での置換方針**（2026-07-09 追記）：
+
+- **Event Listener SPI**：Golden 検知系（G-1〜G-6 / L-GD-1〜L-GD-5）の EventBridge emit **のみ**
+- **`last_login` / `provisioned_by` 書込**：**新規 Custom Authenticator SPI** で対応（[jit-scim §10.4.E.2 案 B](../common/jit-scim-coexistence-keycloak.md)）
+- 詳細と 14 件一次資料引用：[jit-scim §10.4.E](../common/jit-scim-coexistence-keycloak.md)
 
 **関連 ADR / ドキュメント**：
 - **[jit-scim §10.4.A / §10.4.B](../common/jit-scim-coexistence-keycloak.md)** — バッチスクリプト + JIT/SCIM 判別ロジック
