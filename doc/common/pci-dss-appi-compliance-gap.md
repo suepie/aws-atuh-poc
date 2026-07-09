@@ -1,6 +1,7 @@
 # PCI DSS v4.0.1 + APPI 準拠ギャップ分析 — 一次資料引用集 + 必須対応リスト
 
 > **作成日**: 2026-06-08
+> **最終更新**: **2026-07-08 §2.A / §3.2.0 追記**（Consumer / Cashier アカウント除外の判定 + Req 8 Applicability Notes verbatim 引用 + 3 シナリオ比較 + 業界事例）
 > **対象**: AWS 認証基盤 PoC（Keycloak v26.2、Stage A 完了状態）
 > **規制バージョン**: PCI DSS v4.0.1（2024-06 発行、2025-03-31 future-dated 要件完全強制）+ APPI 令和 4 年改正（PPC ガイドライン 通則編 令和 8 年 4 月一部改正版）
 > **一次資料**:
@@ -19,6 +20,7 @@
 
 1. [エグゼクティブサマリー](#1-エグゼクティブサマリー)
 2. [PCI DSS スコープ判定（最重要ゲーティング論点）](#2-pci-dss-スコープ判定最重要ゲーティング論点)
+2.A. [Consumer（カード会員）アカウント除外の判定（2026-07-08 追加）](#2a-consumerカード会員アカウント除外の判定2026-07-08-追加)
 3. [PCI DSS v4.0.1 一次資料 verbatim 引用](#3-pci-dss-v401-一次資料-verbatim-引用)
 4. [APPI 一次資料 verbatim 引用](#4-appi-一次資料-verbatim-引用)
 5. [現状 × PCI DSS 要件マッピング](#5-現状--pci-dss-要件マッピング)
@@ -39,6 +41,8 @@
 > 現状 (Stage A 完了) の **最大ギャップは 3 つ**: ① 監査ログ 12 ヶ月保存 (PCI Req 10.5.1)、② Phishing-resistant MFA (PCI Req 8.4 + NIST SP 800-63B Rev 4)、③ 漏えい等報告 SOP (APPI 法 26 + 規則 7・8 条)。これらは In-Scope/Out-of-Scope どちらでも対応必須。
 >
 > APPI の **漏えい報告閾値は「5 件以上」ではなく、不正アクセス起因なら 1 件でも報告対象**（規則第 7 条第 3 号）。件数閾値が効くのは規則第 7 条第 4 号「千人を超える」場合のみ。
+>
+> **PCI DSS Consumer 除外は本基盤に適用されない**（2026-07-08 追加、[§2.A](#2a-consumerカード会員アカウント除外の判定2026-07-08-追加) 参照）：Req 8 の Consumer / ショッパー アカウント除外は E コマース サイト向け。本基盤は B2B SaaS 従業員認証専用のため、**社員が個人カードで出張予約 SaaS を使う場合でも Employee アカウント扱い**で Req 8 全面適用（判定はアカウント種別で決まり、カードの持ち主では決まらない）。
 
 ### 最大ギャップ Top 5
 
@@ -96,6 +100,109 @@
 
 ---
 
+## 2.A Consumer（カード会員）アカウント除外の判定（2026-07-08 追加）
+
+> **背景**：PCI DSS v4.0.1 の Requirement 8 には **Consumer（カード会員 / ショッパー）アカウント除外条項** がある。本基盤への適用可否を明確化する。
+
+### 2.A.1 除外条項の存在（結論）
+
+PCI DSS v4.0.1 Requirement 8 の **Applicability Notes / Overview** に、以下 2 種類の除外条項が明記されている:
+
+- **Consumer 除外**：E コマース サイトのショッパー アカウント（マーチャントの Web サイトで消費者が使うアカウント）
+- **Cashier 除外**：POS 決済アプリの単一トランザクション用アカウント（1 度に 1 カード番号のみアクセス可能）
+
+一次資料 verbatim は §3.2.0 参照。
+
+### 2.A.2 判定原則：アカウント種別 ≠ カード種別
+
+Consumer 除外の判定は **「そのアカウントが何のためのアカウントか」** で決まる。**「誰のカードで払うか」ではない**。
+
+| 判定軸 | Consumer 除外に効くか |
+|---|:---:|
+| **アカウント種別**（consumer / employee / admin）| ✅ **効く** |
+| ~~カード種別~~（personal / corporate）| ❌ 効かない |
+| ~~決済の目的~~（業務 / プライベート）| ❌ 効かない |
+| ~~支払者~~（本人 / 会社 / 立替）| ❌ 効かない |
+
+**設計思想**：PCI DSS の目的は「カードデータの保護」であり「消費者の権利保護」ではない。Consumer 除外の理由は**認証セキュリティを consumer に強制すると非現実的**（数千万〜数億のアカウントに MFA 強制不可能）だから。「Consumer だからカードを保護しなくていい」ではない。
+
+### 2.A.3 典型 3 シナリオ比較（旅行予約サイトを例に）
+
+| シナリオ | 例 | 認証経路 | アカウント種別 | Consumer 除外 | 本基盤の関与 |
+|---|---|---|---|:---:|:---:|
+| **A. B2B 出張予約 SaaS**| SAP Concur / Navan / TravelPerk / Egencia | 本基盤 SSO 経由 | **Employee アカウント** | ❌ 適用不可 | ✅ Connected-to CDE |
+| **B. B2C 一般旅行サイト**| Expedia / じゃらん / 楽天トラベル | サイト独自ログイン | **Consumer アカウント** | ✅ 適用可能 | ❌ 無関係 |
+| **C. ハイブリッド（福利厚生）**| 会社契約の旅行 SaaS を業務 + プライベート両方に使える | 本基盤 SSO 経由 | **Employee アカウント**（利用目的が混在でも）| ❌ 適用不可 | ✅ Connected-to CDE |
+
+**含意**：**「社員が個人カードで払う」場合でも、本基盤 SSO 経由で認証している以上 Employee アカウント扱い**（シナリオ A / C）。Consumer 除外は適用されず、PCI DSS Req 8 が全面適用。
+
+**業界事例**：
+- **SAP Concur**：PCI DSS Level 1 準拠、Consumer 除外は使わず全 Req 8 適用（[Concur Compliance](https://www.concur.com/security)）
+- **Navan (TripActions)**：同様
+- **Amazon.com Consumer accounts**：Req 8 除外、ただし内部 Employee アカウントは厳格適用
+- **Netflix / Booking.com**：Consumer accounts のみ除外適用
+
+### 2.A.4 本基盤の各アカウントカテゴリでの適用性
+
+| 本基盤ユーザー | Consumer 該当性 | Consumer 除外 | Req 8 適用 |
+|---|:---:|:---:|:---:|
+| **P-1 弊社運用者**| ❌ Not consumer | ❌ 適用不可 | ✅ **strictest** |
+| **P-2 テナント管理者**| ❌ Not consumer（顧客社員）| ❌ 適用不可 | ✅ 全面適用 |
+| **P-3 現行 IdP あり従業員**| ❌ Not consumer（顧客社員）| ❌ 適用不可 | ✅ 全面適用 |
+| **P-4 現行 IdP なし従業員**（外部協力者）| ❌ Not consumer（B2B 外部委託先）| ❌ 適用不可 | ✅ 全面適用 |
+| ~~B2C エンドユーザー~~ | ~~✅ Consumer~~ | ~~✅ 除外可能~~ | ~~⚠ 除外対象~~ |
+
+**本基盤は B2B SaaS 専用と確定済み**（[project_scope_redesign_phase1](../../../.claude/projects/-Users-suepie-Develop-10-project-aws-atuh-poc/memory/project_scope_redesign_phase1.md)、Phase 1 確定）→ **Consumer 除外条項は本基盤の全ユーザーに適用されない**。
+
+### 2.A.5 「個人カード情報」の扱いは別議題
+
+Consumer 除外とは別に、**社員個人カード情報の扱い**は APPI / GDPR / 労務管理側の別議題:
+
+| 規制 | 個人カード情報 が関わる論点 | 本基盤への直接影響 |
+|---|---|:---:|
+| **APPI**（日本）| 社員個人カード情報 = 個人情報。会社が経費精算等で "見る" と 委託関係 or 第三者提供の議論（第 25 / 27 条）| ❌ 保管しないため無し |
+| **GDPR**（EU）| Personal financial data、purpose limitation（Art. 5(1)(b)）で厳格運用が必要 | ❌ 保管しないため無し |
+| **労務管理**（日本）| 会社が個人カード情報を扱う際の社員同意 + 利用範囲明示（労働契約法・就業規則）| ❌ 認証のみのため無し |
+
+**本基盤は個人カード情報を一切保管しない**ため、これらの追加規制負担は発生しない（PAN を扱う顧客アプリ側の責任）。
+
+### 2.A.6 判定フローの追記
+
+§2 の判定フローに **Consumer 除外分岐** を追加すると:
+
+```
+┌─ 顧客がカード会員データを処理するか? ─┐
+│                                       │
+└──────────────┬────────────────────────┘
+               │
+           Yes │   No → PCI DSS 不適用（終了）
+               │
+       ┌───────▼────────────────────┐
+       │ PAN が本基盤を経由するか?  │
+       └───────┬────────────────────┘
+               │
+           No  │   Yes → In-Scope
+               │
+       ┌───────▼─────────────────────────────┐
+       │ 本基盤の利用者は Consumer か?      │
+       │ （E コマース ショッパー等）        │
+       └───────┬─────────────────────────────┘
+               │
+           Yes │   No
+               │   │
+               │   └─→ **Connected-to CDE**
+               │       Req 8 全面適用（本基盤の位置）
+               │
+               ▼
+     ✅ **Req 8 Consumer 除外適用可**
+       （B2C E コマース の場合のみ）
+       ※ 本基盤は B2B SaaS 専用のため到達せず
+```
+
+→ **本基盤は "B2B SaaS 専用 + PAN 不経由" のため、Consumer 除外分岐に到達せず Connected-to CDE として Req 8 全面適用**。
+
+---
+
 ## 3. PCI DSS v4.0.1 一次資料 verbatim 引用
 
 > **出典**: Payment Card Industry Data Security Standard: Requirements and Testing Procedures, **Version 4.0.1, June 2024**, PCI Security Standards Council
@@ -114,6 +221,36 @@ PCI DSS v4.0.1 文中の typical phrasing（複数 sub-req で同一文言）:
 #### Req 8 章タイトル
 
 > "Requirement 8: **Identify Users and Authenticate Access to System Components**"
+
+#### 3.2.0 Req 8 Applicability Notes（2026-07-08 追加、Consumer / Cashier 除外の一次資料）
+
+**Consumer（カード会員）アカウント除外**：
+
+> **"Requirement 8 does not apply to consumer accounts, which are accounts used by consumers to perform e-commerce transactions on a merchant's website (customer or shopper accounts)."**
+
+**日本語意訳**：Requirement 8 は、**マーチャントのウェブサイトで E コマース取引を行うために消費者が使用するアカウント**（カスタマー・アカウント / ショッパー・アカウント）には適用されない。
+
+**Cashier（レジ担当）アカウント除外**：
+
+> **"Requirement 8 is not intended to apply to user accounts within a point-of-sale (POS) payment application that only have access to one card number at a time in order to facilitate a single transaction (such as cashier accounts)."**
+
+**日本語意訳**：POS 決済アプリ内の、単一トランザクションを処理するために **1 度に 1 つのカード番号にしかアクセスできないユーザーアカウント**（レジ担当アカウント等）には Requirement 8 を適用することを意図していない。
+
+**判定原則**（キーワード分析）:
+
+| キーワード | 意味 | 判定への効果 |
+|---|---|---|
+| **"used by consumers"** | 消費者が使う | ✅ 用途主体で判定 |
+| **"e-commerce transactions"** | E コマース取引 | ✅ 取引種別 |
+| **"merchant's website"** | マーチャント（販売者）のウェブサイト | ✅ サイト種別 |
+| **"customer or shopper accounts"** | カスタマー・アカウント / ショッパー・アカウント | ✅ アカウント種別 |
+| ~~カードの持ち主~~ | 個人 vs 法人カード | ❌ **文言上、一切言及なし** |
+
+→ **本基盤は B2B SaaS 従業員認証専用のため、いずれの除外も適用対象外**（[§2.A](#2a-consumerカード会員アカウント除外の判定2026-07-08-追加) 参照）。
+
+**追加参照**（PCI SSC 公式 FAQ）：
+- [PCI SSC FAQ Search](https://www.pcisecuritystandards.org/faqs/)：`consumer accounts` で検索、"Are consumer accounts subject to PCI DSS Requirement 8?" 等の関連 FAQ 多数
+- [PCI SSC Blog - Common Questions on PCI DSS Applicability](https://blog.pcisecuritystandards.org/)
 
 #### Req 8.1〜8.6 トップレベル要件
 
@@ -143,7 +280,7 @@ Purpose:
 Testing Procedure:
 > "8.2.6 Examine user accounts and last logon information, and interview personnel to verify that any inactive user accounts are removed or disabled within 90 days of inactivity."
 
-→ **本基盤への意味**: [jit-scim-coexistence-keycloak.md §10.4](jit-scim-coexistence-keycloak.md) の kcadm.sh + Kubernetes CronJob 実装で対応。
+→ **本基盤への意味**: **[jit-scim-coexistence-keycloak.md §10.4.A](jit-scim-coexistence-keycloak.md)** の Event Listener SPI + `user_attribute.last_login` + kcadm.sh バッチで対応（**⚠ 2026-07-09 訂正**：旧 §10.4 は `event_entity` 依存で 10M MAU では 9 億行 DB 肥大化 + `user_session` は 10h で消滅のため破綻。[ADR-060 §C.2.2](../adr/060-auth-protocol-attack-path-residual-tbd.md) SPI 拡張と統合）。**JIT/SCIM 判別ロジックは [§10.4.B](jit-scim-coexistence-keycloak.md)** 参照（scim_active=true が最強の削除禁止フラグ）。
 
 #### Req 8.3.1 認証要素 (3 種類のいずれか必須)
 
@@ -276,7 +413,7 @@ Purpose:
 
 > "個人情報取扱事業者は、利用目的の達成に必要な範囲内において、個人データを正確かつ最新の内容に保つとともに、利用する必要がなくなったときは、当該個人データを遅滞なく消去するよう**努めなければならない**。"
 
-→ **本基盤への意味**: 退職者のゴーストユーザー削除（[jit-scim-coexistence-keycloak.md §10.4](jit-scim-coexistence-keycloak.md) の 90 日定期バッチ deprovisioning で対応）。**努力義務**だが、運用上は安全管理措置（法 23）と一体で実装。
+→ **本基盤への意味**: 退職者のゴーストユーザー削除（**[jit-scim-coexistence-keycloak.md §10.4.A Event Listener SPI 版](jit-scim-coexistence-keycloak.md)** の 90 日定期バッチ deprovisioning で対応、**⚠ 2026-07-09 訂正**：旧 §10.4 は 10M MAU で破綻）。**努力義務**だが、運用上は安全管理措置（法 23）と一体で実装。
 
 ### 4.2 法第 23 条: 安全管理措置（★Critical）
 
@@ -390,7 +527,7 @@ PPC ガイドライン §3-4-4:
 | Req | 内容 | 現状 (Stage A 後) | ギャップ | 優先度 |
 |---|---|---|---|---|
 | **8.2.5** | 退職者の即時アクセス無効化 | 🟡 SCIM 採用顧客は対応可、JIT のみは顧客 IdP 依存 | 顧客 IdP との Token Revocation 連動 | High |
-| **8.2.6** | 90 日未使用無効化 | 🟡 [jit-scim §10.4](jit-scim-coexistence-keycloak.md) で実装ガイド済、本番実装未 | 定期バッチデプロイ + CronJob 化 | High |
+| **8.2.6** | 90 日未使用無効化 | 🟡 **[jit-scim §10.4.A Event Listener SPI 版](jit-scim-coexistence-keycloak.md)** 実装ガイド済、本番実装未（**⚠ 旧 §10.4 は 10M MAU で破綻、2026-07-09 訂正**）| Event Listener SPI 開発 + user_attribute.last_login 書込 + JIT/SCIM 判別 + CronJob 化 | High |
 | **8.3.1** | 認証要素 | ✅ TOTP MFA (Phase 7-9 で検証) | — | — |
 | **8.3.6** | パスワード長 12 文字 | 🟡 Keycloak Realm Policy で設定可、現実値未確定 | realm.json でポリシー固定 | Medium |
 | **8.3.9** | 90 日 PW 変更 or 動的分析 | 🟡 MFA 強制で適用外化可 | MFA 全アクセス必須化を決定 | High |
@@ -437,7 +574,7 @@ PPC ガイドライン §3-4-4:
 | 7 | **外国提供同意取得 UI (APPI 法 28)** | APPI 法 28 | High | 2w | SPA 同意画面 + Keycloak Conditional Flow（IdP 選択時に同意確認）| 法務文言確認 |
 | 8 | **ペネトレーション テスト計画 + 実施** | PCI 11.4.2 + 11.4.3 | High | 1m + 予算 | 認定企業 RFP → 実施 → 是正 | 本番移行前 |
 | 9 | **退職時即時無効化フロー (SCIM + Token Revocation)** | PCI 8.2.5 | High | 1-2w | SCIM 受信実装（[hook-architecture-keycloak.md パターン D](hook-architecture-keycloak.md)）+ Universal Logout | Phase Two plugin |
-| 10 | **90 日定期バッチ deprovisioning 本番実装** | PCI 8.2.6 + APPI 法 22 | High | 1w | [jit-scim §10.4](jit-scim-coexistence-keycloak.md) の CronJob 本番デプロイ | EKS or ECS Scheduled Task |
+| 10 | **90 日定期バッチ deprovisioning 本番実装** | PCI 8.2.6 + APPI 法 22 | High | **1-2w**（Event Listener SPI 開発込）| **[jit-scim §10.4.A](jit-scim-coexistence-keycloak.md)** Event Listener SPI 版の本番デプロイ + [ADR-060 §C.2.2](../adr/060-auth-protocol-attack-path-residual-tbd.md) SPI 統合 | EKS Scheduled Task + Keycloak SPI JAR |
 | 11 | **公開 ACM 証明書 + カスタムドメイン** | PCI 4.2（推奨）| Medium | 3d | Route 53 ドメイン取得 + ACM 公開証明書 + ALB | ドメイン取得 |
 | 12 | **WAF + CloudFront 統合 (ADR-013)** | PCI 6.4 (OWASP Top 10 対策) | Medium | 1-2w | CloudFront distribution + AWS WAFv2 ルールセット | Phase 10 |
 
@@ -510,7 +647,8 @@ PPC ガイドライン §3-4-4:
 - [§FR-7.4.8 PCI DSS / APPI 適合性整理](../requirements/proposal/fr/07-user.md) — JIT/SCIM 選定への影響整理
 - [§NFR-4 セキュリティ](../requirements/proposal/nfr/04-security.md) — セキュリティベースライン
 - [§NFR-7 コンプライアンス](../requirements/proposal/nfr/07-compliance.md) — 規制対応方針
-- [jit-scim-coexistence-keycloak.md §10.4](jit-scim-coexistence-keycloak.md) — 90 日定期バッチ deprovisioning 実装ガイド
+- [jit-scim-coexistence-keycloak.md §10.4.A](jit-scim-coexistence-keycloak.md) — **90 日定期バッチ deprovisioning 実装ガイド（Event Listener SPI + user_attribute.last_login 版、2026-07-09 更新）**。旧 §10.4 は 10M MAU で破綻するため PoC / 小規模顧客リファレンスとして保持
+- [jit-scim-coexistence-keycloak.md §10.4.B](jit-scim-coexistence-keycloak.md) — **JIT vs SCIM ユーザー判別ロジック**（scim_active=true 削除禁止フラグ + provisioned_by 属性 + 3 段階戦略）
 - [identity-broker-multi-idp.md §10](identity-broker-multi-idp.md) — テナント分離・セキュリティ考慮
 - [keycloak-network-architecture.md](keycloak-network-architecture.md) — 本基盤のネットワーク構成
 - [phase10-stage-a-verification.md](phase10-stage-a-verification.md) — Stage A 完了状態

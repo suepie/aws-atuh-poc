@@ -1,7 +1,7 @@
 # ADR-025: SCIM 2.0 の位置づけと本基盤の受信スタンス
 
 - **ステータス**: Proposed（要件定義フェーズで Accepted に昇格予定）
-- **日付**: 2026-06-15、**2026-07-08 §H 追記**（顧客 IdP が LDAP(s) の場合の JIT/SCIM 扱い）+ **§H.7.A 認証フロー追加**（§C-7.4.7 SSO ログイン / §C-7.4.8 Full Sync Deprovision）
+- **日付**: 2026-06-15、**2026-07-08 §H 追記**（顧客 IdP が LDAP(s) の場合の JIT/SCIM 扱い）+ **§H.7.A 認証フロー追加**（§C-7.4.7 SSO ログイン / §C-7.4.8 Full Sync Deprovision）、**2026-07-09 §H.6.3 Transient Password Exposure 追加**（Level 1 vs Level 2 区別 + フェーズ図 + 6 脅威 + 10 緩和策 + 3 規制対応 + 4 方式比較）+ **§H.4.B JIT vs SCIM 判別と自動 deprovisioning 追加**（scim_active + provisioned_by 3 段階戦略、[jit-scim §10.4.A/B](../common/jit-scim-coexistence-keycloak.md) + [ADR-060 §C.2.3](060-auth-protocol-attack-path-residual-tbd.md) 波及）
 - **関連**:
   - [§FR-7.4.0 SCIM の位置づけと本基盤のスタンス](../requirements/proposal/fr/07-user.md#fr-740-scim-の位置づけと本基盤のスタンス)
   - [§FR-2.2.1 JIT プロビジョニング](../requirements/proposal/fr/02-federation.md#321-jit-プロビジョニング--fr-fed-008)
@@ -315,6 +315,33 @@ SCIM の存在意義は「IdP 側で CRUD が起きた瞬間に本基盤に push
 
 → **「LDAP なら SCIM 一切不要」は誤り**、シナリオ次第で併用あり。ヒアリング B-LDAP-3（§H.7）で確認。
 
+#### H.4.B JIT vs SCIM 判別と自動 deprovisioning（2026-07-09 追加）
+
+**背景**：LDAP + SCIM 併用時、Broker Keycloak に残るユーザーレコードを **JIT 由来 / SCIM 由来 / LDAP 由来** で見分ける必要がある。特に PCI DSS Req 8.2.6（90 日未使用無効化）の自動バッチで **SCIM 管理下ユーザーを誤削除しない** ためのロジックが必須。
+
+**判別戦略の 3 段階**（詳細実装は [jit-scim §10.4.B](../common/jit-scim-coexistence-keycloak.md) 参照）:
+
+```
+【判定 1】user_attribute.scim_active == "true" → 削除禁止（最強フラグ）
+【判定 2】サービスアカウント / ローカルユーザー / 管理者ロール → 除外
+【判定 3】user_attribute.provisioned_by の値で判定:
+        - "jit"           → 90 日未ログインで自動削除対象
+        - "scim"          → 削除禁止（SCIM 管理下）
+        - "ldap"          → LDAP Sync に委譲（AD 側 Disable で自動反映）
+        - "manual" / null → 人間レビュー対象
+```
+
+**LDAP User Federation ユーザーの特殊性**:
+- `federation_link` = LDAP User Federation Provider ID が設定される
+- **LDAP Sync で AD 側の Disabled 状態が反映される**（msad-user-account-control-mapper 経由、[§H.7](#h7-keycloak-実装ldap-user-federation-provider-設定) 参照）
+- そのため **本基盤側での定期バッチは不要**（LDAP Sync が担当）
+- ただし `provisioned_by=ldap` を明示的に付与して、JIT 側の削除バッチが誤って対象化しないよう保護
+
+**参照**:
+- **[jit-scim §10.4.A Event Listener SPI 版 バッチスクリプト](../common/jit-scim-coexistence-keycloak.md)** — 10M MAU 対応の本番実装
+- **[jit-scim §10.4.B 判別ロジック 3 段階](../common/jit-scim-coexistence-keycloak.md)** — scim_active + provisioned_by + federated_identity の 3 段階
+- **[ADR-060 §C.2.3](060-auth-protocol-attack-path-residual-tbd.md)** — Event Listener SPI で last_login + provisioned_by を書込
+
 ### H.5 利用者カテゴリ別の LDAP 適用（§C 拡張）
 
 | カテゴリ | 想定される顧客構成 | LDAP JIT 成立 | LDAP Sync（SCIM 代替）| SCIM 併用 |
@@ -346,6 +373,120 @@ SCIM の存在意義は「IdP 側で CRUD が起きた瞬間に本基盤に push
 | **Kerberos / GSSAPI 対応**| Windows デスクトップ SSO 要件時、Keycloak + KDC 連携必要（Phase 2 候補）|
 | **Golden LDAP 検知**| Service Account 乗っ取りは [ADR-060 §C](060-auth-protocol-attack-path-residual-tbd.md) の Golden 系検知に**新シグナル追加が必要**（bind DN の異常アクセス、L-GD シグナル）|
 | **Egress 通信の監査**| 本基盤 → 顧客 AD の outbound 通信を Network Firewall + VPC Flow Log で監視 |
+
+#### H.6.3 Transient Password Exposure — "本基盤経由パスワード" の実体（2026-07-09 追加）
+
+> **§H.6.2 の "パスワードが本基盤経由" 論点を深掘り**。永続保管 vs 一時保持の 2 段階区別、Keycloak Pod メモリ上のパスワードの旅、6 つの現実的脅威、10 の緩和策を整理する。
+
+##### H.6.3.1 「パスワードを持つ」の 2 段階
+
+| レベル | 意味 | Broker Keycloak の状態 |
+|---|---|:---:|
+| **Level 1: 永続保管**（Persistent Storage）| DB / ディスク / Cache に保存 | ✅ **持たない**（credential テーブル 0 行、READ_ONLY モード）|
+| **Level 2: 一時保持**（Transient Memory）| 処理中にメモリに載る | ⚠ **持つ**（LDAP bind の瞬間だけ）|
+
+**「本基盤経由でパスワード」は Level 2 の話**。Level 1 は変わらず 0 保管。
+
+##### H.6.3.2 LDAP bind 実行中のパスワードの旅（フェーズ別）
+
+```
+【フェーズ 1】ブラウザ入力
+    ユーザーのブラウザ  input type="password" value="tanaka-pass-123"  ← 当然平文
+              │  HTTPS (TLS 1.3 暗号化)
+              ▼
+【フェーズ 2】TLS 終端 → Keycloak Pod のメモリ ★★★問題の箇所★★★
+    Keycloak Pod (Auth Acct EKS) の Java プロセス
+      HTTP Body Parser → Authenticator → LDAP User Federation Provider → JNDI LDAP Client
+    ★ この間、Java の String or char[] に平文で数ミリ秒〜数百ミリ秒存在
+              │  LDAPS (TLS 1.2/1.3 暗号化)
+              ▼
+【フェーズ 3】顧客 AD で bind 検証
+    ldap_bind(userDN, PW) → AD 内部で hash 検証
+              │  bind 成功/失敗の結果のみ
+              ▼
+【フェーズ 4】結果 Keycloak に返る
+    メモリ上の平文 String は GC 対象に（明示的 zero-out は Java 標準では困難）
+```
+
+**核心**：**フェーズ 2 の「Keycloak Pod メモリ上に平文で数ミリ秒〜数百ミリ秒存在」が "Broker がパスワードを持つ" の実体**。
+
+##### H.6.3.3 OIDC/SAML との根本的違い — Zero Knowledge の崩れ
+
+**OIDC/SAML の場合**（Zero Knowledge 保持）:
+```
+ユーザー → 顧客 IdP のログイン画面（Entra/Okta のドメイン）
+           パスワード検証は顧客 IdP 内で完結
+           Broker はトークンだけ受信 → **本基盤はパスワードを一切知らない**
+```
+
+**LDAP の場合**（Zero Knowledge 崩壊）:
+```
+ユーザー → **Broker Keycloak** のログイン画面（自社ドメイン）
+           パスワード入力は Keycloak の form → **本基盤のメモリを通過** ★
+           Keycloak → LDAP bind（TLS 経由で AD へ）
+```
+
+**設計上の意味**：LDAP の場合、**本基盤サーバは "MITM 位置"** に立つ。悪意ある攻撃者の話ではなく、**アーキテクチャ上必然的にパスワード転送の中継点になる**という意味。
+
+##### H.6.3.4 現実的な 6 脅威
+
+| # | 脅威 | 詳細 |
+|---|---|---|
+| **1** | ヒープダンプ漏洩 | Keycloak Pod がクラッシュ or 手動 dump → Java heap ファイルにパスワード文字列が残存 |
+| **2** | デバッグログ漏洩 | 誤って `logger.debug(request.getBody())` 等でパスワード出力 → [ADR-060 §A Log scrubbing](060-auth-protocol-attack-path-residual-tbd.md) 対象 |
+| **3** | kubectl exec でメモリ dump | Pod シェルアクセス可能な者が `jmap` 等で稼働中プロセスのヒープ取得 |
+| **4** | Swap file への書き出し | コンテナ memory pressure 時に swap → ディスクにパスワード文字列 |
+| **5** | APM / Java Agent のメモリスキャン | Datadog / New Relic / Dynatrace 等の Agent が Method 引数を capture → 送信先ベンダーへ漏洩 |
+| **6** | Keycloak バグ / 脆弱性経由の情報開示 | CVE 経由でリクエスト内容が別レスポンスに混入等 |
+
+##### H.6.3.5 規制対応（APPI / GDPR / PCI DSS）
+
+| 規制 | 該当条項 | 影響 |
+|---|---|---|
+| **APPI 第 23 条**（安全管理措置）| パスワードは個人データ、一時保持でも "取り扱う" 状態 → 安全管理措置対象 | [pci-dss-appi-compliance-gap.md §4](../common/pci-dss-appi-compliance-gap.md) |
+| **GDPR Art. 32**（Security of processing）| Processor（本基盤）に technical measures 実装義務、pseudonymisation / encryption | 同上 |
+| **PCI DSS Req 8.3.2**（Strong cryptography）| "during transmission" は TLS で担保、"storage" は memory の一時保持が該当するかグレー | 業界慣行では transient nature を理由に storage 除外 |
+| **PCI DSS Req 3.5.1**（認証情報保護）| 認証情報の cryptographic protection | 一時保持も対象になり得る |
+
+##### H.6.3.6 10 の緩和策（本基盤で実装）
+
+| # | 対策 | 実装 | 参照 |
+|---|---|---|---|
+| 1 | **Log scrubbing 徹底** | Password field を含むログを Fluent Bit / Lambda マスク | [ADR-060 §A](060-auth-protocol-attack-path-residual-tbd.md) |
+| 2 | **char[] 使用**（Java String 回避）| Keycloak 内部で `char[]` 使用、明示 zero-out（対応範囲） | Keycloak 本体依存 |
+| 3 | **ヒープダンプ無効化**（本番）| JVM flag `-XX:-HeapDumpOnOutOfMemoryError` | EKS deployment.yaml |
+| 4 | **kubectl exec 禁止**（本番）| Pod Security Standard `restricted` + RBAC | [ADR-041](041-workload-identity-spiffe.md) |
+| 5 | **Swap 無効化** | Kubernetes ノードで swap off + `--fail-swap-on=true` | EKS 標準 |
+| 6 | **APM の request body capture 禁止** | Datadog / New Relic / Dynatrace の Agent 設定でマスキング | [ADR-053 Observability](053-observability-strategy.md) |
+| 7 | **Debug flag OFF**（本番）| Keycloak `KC_LOG_LEVEL=INFO`、debug は Staging のみ | Keycloak 設定 |
+| 8 | **メモリ暗号化オプション**（Enclaves）| AWS Nitro Enclaves / SEV 対応（Phase 2 候補）| 本基盤 Phase 2 |
+| 9 | **本基盤側追加 MFA 必須** | 万一パスワードが漏れても MFA で防御 | [ADR-009](009-mfa-responsibility-by-idp.md) + §H.6.2 |
+| 10 | **短命セッション**（PW 再確認頻度）| Access Token 15 分 + Refresh Rotation | [ADR-030](030-minimal-jwt-claim-design.md) |
+
+##### H.6.3.7 4 認証方式のパスワード扱い比較（LDAP の位置づけ）
+
+| 認証方式 | 顧客 IdP | ブラウザ | 本基盤（Broker）メモリ | 本基盤（Broker）DB | Zero Knowledge |
+|---|:---:|:---:|:---:|:---:|:---:|
+| **OIDC**（Entra/Okta 等）| ✅ 検証 | ⚪ 一時 | ❌ **通過しない** | ❌ 無し | ✅ **保つ** |
+| **SAML**（Entra/Okta 等）| ✅ 検証 | ⚪ 一時 | ❌ **通過しない** | ❌ 無し | ✅ **保つ** |
+| **LDAP**（オンプレ AD）| ✅ 検証 | ⚪ 一時 | **⚠ 平文で通過** ★ | ❌ 無し（READ_ONLY）| ❌ **崩れる** |
+| **ローカルユーザー**（IdP-KC）| ❌ 該当なし | ⚪ 一時 | ⚠ 平文で通過 → hash 化して保存 | ✅ **ハッシュ保存** | ❌ 崩れる |
+
+**LDAP の特殊性**：**メモリは通過するが DB には保存しない**中間状態。ローカルユーザー（DB にハッシュ保存）とも顧客 IdP フェデ（メモリ通過なし）とも異なる。
+
+##### H.6.3.8 §H.6.3 まとめ
+
+- **「Broker がパスワードを持つ」= 永続保管 (Level 1) ではなく、LDAP bind 実行時の一時保持 (Level 2)**
+- Broker Keycloak DB には保存しない（credential テーブル 0 行、READ_ONLY モード）
+- ただし Keycloak Pod メモリ上に数ミリ秒〜数百ミリ秒平文で存在（アーキ上必然）
+- 6 脅威（ヒープダンプ / debug ログ / kubectl exec / swap / APM / CVE）
+- 10 緩和策で 5 層防御（Log scrubbing / char[] / ヒープダンプ無効化 / exec 禁止 / swap 無効化 / APM マスキング / debug OFF / Enclaves Phase 2 / 追加 MFA / 短命セッション）
+- 3 規制対応（APPI 23 / GDPR 32 / PCI DSS 8.3.2 + 3.5.1）
+- Zero Knowledge が崩れる点で OIDC/SAML と本質的に異なる
+
+##### H.6.3.9 顧客説明で使える一言
+
+> **「LDAP 直結の場合、パスワードは Broker Keycloak の DB には保存されません（credential テーブル 0 行、READ_ONLY モード）。ただし LDAP bind を実行する数ミリ秒だけ Broker Keycloak Pod のメモリ上に平文で通過します。これは "本基盤が MITM 位置に立つ" という LDAP プロトコルの構造的特性で、OIDC/SAML の Zero Knowledge 設計とは根本的に異なります。緩和策として Log scrubbing + ヒープダンプ無効化 + APM マスキング + 本基盤側追加 MFA + Pod Security Standard restricted の 5 層防御を実装します。」**
 
 ### H.7 Keycloak 実装：LDAP User Federation Provider 設定
 
@@ -428,6 +569,7 @@ Changed Users Sync Period: 300 (5min)
 - **B-LDAP-1〜7 ヒアリング項目起票**（§H.10）+ **L-1〜L-7 論点整理**（§H.9）
 - **認証フロー 2 種を §C-7.4.7 / §C-7.4.8 に追加**（§H.7.A、SSO ログイン + Full Sync による退職者 deprovisioning）
 - **実装リファレンス [common/keycloak-ldap-configuration-notes.md](../common/keycloak-ldap-configuration-notes.md) を新規作成**（§H.7.B、AD 特有落とし穴 Top 5 + 運用ハマりどころ Top 10 + 実装チェックリスト 8 領域）
+- **§H.6.3 Transient Password Exposure 深掘り追加**（Level 1 vs Level 2 の区別、Keycloak Pod メモリ上のパスワードの旅、6 脅威 + 10 緩和策 + 3 規制対応 + 4 方式比較、2026-07-09）
 
 ### H.12 顧客説明で使える一言
 

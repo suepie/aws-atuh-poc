@@ -242,6 +242,57 @@ s/(KEYCLOAK_SESSION|KEYCLOAK_IDENTITY)=[^;\s]+/\1=[REDACTED]/g
 
 **特徴**：Golden JWT/SAML と違い、**LDAP は本基盤 → 顧客 AD の egress 通信で発生するため VPC Flow Log と組合わせて検知しやすい**（[ADR-039 v2 Network Firewall](039-centralized-network-account-edge-layer.md) 連動）。
 
+#### C.2.3 last_login + provisioned_by 属性書込（2026-07-09 追加、JIT deprovisioning 統合）
+
+**Event Listener SPI に以下 2 機能を統合**（Golden 検知系 SPI と同一 JAR、追加開発コスト小）:
+
+| 機能 | 動作 | 目的 |
+|---|---|---|
+| **last_login 書込** | LOGIN イベント発生時、`user_attribute.last_login` に epoch ms を書込 | **PCI DSS Req 8.2.6（90 日未使用無効化）対応**、[jit-scim §10.4.A](../common/jit-scim-coexistence-keycloak.md) 依存 |
+| **provisioned_by 書込** | REGISTER / IDENTITY_PROVIDER_FIRST_LOGIN 時に `provisioned_by=jit` + `jit_idp_alias`、SCIM プラグイン側で `provisioned_by=scim` + `scim_active=true` を書込 | **JIT/SCIM 判別ロジック**（[jit-scim §10.4.B](../common/jit-scim-coexistence-keycloak.md)）|
+
+**背景**：
+- **Keycloak 26.x には native の `last_login_time` フィールドが無い**（[Keycloak Issue #10545 継続 Open](https://github.com/keycloak/keycloak/issues/10545)）
+- `user_session` は SSO Session Max（10h）で消滅
+- `event_entity` は 10M MAU で 9 億行に肥大化 → **業界標準は Event Listener SPI + `user_attribute` 方式**
+- 既存の [jit-scim §10.4](../common/jit-scim-coexistence-keycloak.md) スクリプトは `event_entity` 依存で 10M MAU 破綻 → [§10.4.A Event Listener SPI 版](../common/jit-scim-coexistence-keycloak.md) が代替
+
+**実装統合例**：
+
+```java
+public class UnifiedEventListener implements EventListenerProvider {
+    @Override
+    public void onEvent(Event event) {
+        // 既存: Golden 検知系（G-1〜G-6 / L-GD-1〜L-GD-5）
+        emitToEventBridge(event);
+
+        // 追加①（2026-07-09）: last_login 書込（PCI DSS 8.2.6 対応）
+        if (event.getType() == EventType.LOGIN) {
+            UserModel user = getUser(event);
+            if (user != null) {
+                user.setSingleAttribute("last_login", String.valueOf(event.getTime()));
+            }
+        }
+
+        // 追加②（2026-07-09）: provisioned_by 書込（JIT/SCIM 判別）
+        if (event.getType() == EventType.IDENTITY_PROVIDER_FIRST_LOGIN) {
+            UserModel user = getUser(event);
+            if (user != null && user.getFirstAttribute("provisioned_by") == null) {
+                user.setSingleAttribute("provisioned_by", "jit");
+                user.setSingleAttribute("jit_idp_alias", event.getDetails().get("identity_provider"));
+                user.setSingleAttribute("jit_created_at", String.valueOf(event.getTime()));
+            }
+        }
+    }
+}
+```
+
+**関連 ADR / ドキュメント**：
+- **[jit-scim §10.4.A / §10.4.B](../common/jit-scim-coexistence-keycloak.md)** — バッチスクリプト + JIT/SCIM 判別ロジック
+- **[broker-data-model.md §2 ③](../common/broker-data-model.md)** — `user_attribute` に `last_login` / `provisioned_by` / `scim_active` を追加
+- **[pci-dss-appi-compliance-gap.md §3.2 Req 8.2.6](../common/pci-dss-appi-compliance-gap.md)** — 対応方針
+- **ADR-025 §H** — LDAP User Federation の場合の判別戦略（LDAP link 有無で追加識別）
+
 ### C.3 検知パイプライン（ADR-035 ITDR 連動）
 
 ```
@@ -437,3 +488,4 @@ public class GoldenDetectionEventListener implements EventListenerProvider {
 |---|---|
 | 2026-07-08 | 初版作成（§7.4 / §7.5 攻撃経路整理からの残 TBD 3 領域統合 ADR、A. Log scrubbing / B. Token Binding DPoP・mTLS / C. Adaptive Auth 連動 Golden 検知 6 シグナル）|
 | 2026-07-08 | **§C.2.2 Golden LDAP 系シグナル L-GD-1〜L-GD-5 追加**（[ADR-025 §H.6 L-5 論点](025-scim-positioning-and-receive-stance.md) 波及、LDAP Bind Service Account 乗っ取り検知）+ §C.7 Phase 1 実装 TODO に Golden LDAP 系追記 + ヘッダ関連に ADR-025 §H 追加 |
+| 2026-07-09 | **§C.2.3 last_login + provisioned_by 属性書込追加**（[jit-scim §10.4.A/B](../common/jit-scim-coexistence-keycloak.md) 波及、旧 §10.4 の event_entity 依存が 10M MAU で破綻することが判明したため、Event Listener SPI に last_login / provisioned_by 書込を統合。PCI DSS Req 8.2.6 90 日未使用無効化 + JIT/SCIM 判別ロジックの本番実装親 ADR となる）|

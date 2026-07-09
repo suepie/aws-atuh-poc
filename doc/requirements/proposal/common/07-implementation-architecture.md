@@ -708,7 +708,8 @@ flowchart TB
 
 ##### §C-7.3.4.4.B LDAP User Federation Provider 詳細（2026-07-08 追加、顧客 IdP が LDAP(s) の場合）
 
-> **詳細は [ADR-025 §H](../../../adr/025-scim-positioning-and-receive-stance.md) 参照**
+> **戦略と設計判断は [ADR-025 §H](../../../adr/025-scim-positioning-and-receive-stance.md) 参照**
+> **実装リファレンス（設定チェックリスト + AD 落とし穴 Top 5 + 運用ハマりどころ Top 10）は [common/keycloak-ldap-configuration-notes.md](../../../common/keycloak-ldap-configuration-notes.md) 参照**
 
 | 観点 | 内容 |
 |---|---|

@@ -615,6 +615,17 @@ resource "keycloak_oidc_identity_provider" "entra_id" {
 
 ### 10.4 JIT 定期バッチ deprovisioning 実装（PCI DSS 8.2.6 / APPI 法 22 条対応）
 
+> **⚠ 2026-07-09 重要警告：本 §10.4 のスクリプトは 10M MAU 規模では破綻します**
+>
+> - `kcadm.sh get "events?type=LOGIN"` = **Keycloak `event_entity` テーブル依存** だが以下 3 つの落とし穴で機能しない:
+>   - **① `eventsExpiration` 未設定だとイベント自体が保存されない**（Realm Settings で明示設定必要）
+>   - **② 10M MAU × 90 日保持 = 約 9 億行の `event_entity` 肥大化** → DB 性能・コスト破綻
+>   - **③ 全ユーザ分の逐次クエリ = O(N × log M) で実行時間非現実的**（10M ユーザで数十時間〜）
+> - **PoC / 小規模顧客（数百ユーザ）向けのリファレンス実装として保持**
+> - **本番実装 = [§10.4.A Event Listener SPI 版](#104a-推奨2026-07-09-event-listener-spi--user_attribute-方式)** を使用
+> - **JIT/SCIM 判別 = [§10.4.B](#104b-推奨2026-07-09-jit-vs-scim-ユーザー判別ロジック) 参照**
+> - 影響範囲整理は [ADR-060 §D](../adr/060-auth-protocol-attack-path-residual-tbd.md) 波及議論参照
+
 > **背景**: JIT のみ顧客では「顧客 IdP 側で削除されても Keycloak は関知しない」（[proposal §FR-7.4.5 シーケンス 5](../requirements/proposal/fr/07-user.md)）→ ゴーストユーザー蓄積。**90 日未ログイン User の自動無効化** が必須（PCI DSS 8.2.6）。
 
 #### バッチスクリプト実装例（kcadm.sh + jq）
@@ -743,12 +754,449 @@ T+30 日 〜 T+N 年: 法的保持期間中は論理削除のまま保持
 T+N 年 (PCI DSS=1年 / 一般=7年): 物理削除 or 匿名化バッチ実行
 ```
 
+### 10.4.A 【推奨、2026-07-09】Event Listener SPI + user_attribute 方式
+
+> **§10.4 破綻の代替として、10M MAU 規模で確実に動作する本番実装**。ADR-060 §C.2.2 の Event Listener SPI 拡張と統合。
+
+#### 10.4.A.1 なぜこの方式か（Keycloak native の制約）
+
+**確実な事実**（[Keycloak Issue #10545 "Track last user login" 2019 年〜 継続 Open](https://github.com/keycloak/keycloak/issues/10545)）：
+- **Keycloak 26.x でも `user_entity` テーブルには `last_login_time` フィールドが無い**
+- `user_session.last_session_refresh` は **SSO Session Max（デフォルト 10 時間）**で消滅
+- `event_entity` は `eventsExpiration` 設定次第 + DB 肥大化リスク
+
+**業界標準の解**：**Event Listener SPI で LOGIN イベントを捕捉 → `user_attribute` に `last_login` を書き込む**（Ghent University / Phase Two 等の主要 OSS 実装で採用）。
+
+#### 10.4.A.2 SPI 実装（既存 ADR-060 §C.2.2 SPI と統合）
+
+```java
+public class UnifiedEventListener implements EventListenerProvider {
+    private final KeycloakSession session;
+
+    public UnifiedEventListener(KeycloakSession session) {
+        this.session = session;
+    }
+
+    @Override
+    public void onEvent(Event event) {
+        // 既存: Golden 検知系（ADR-060 §C.2.2 G-1〜G-6 / L-GD-1〜L-GD-5）
+        emitToEventBridge(event);
+
+        // ★ 追加（2026-07-09）: last_login 書き込み
+        if (event.getType() == EventType.LOGIN) {
+            updateLastLoginAttribute(event);
+        }
+    }
+
+    private void updateLastLoginAttribute(Event event) {
+        RealmModel realm = session.realms().getRealm(event.getRealmId());
+        UserModel user = session.users().getUserById(realm, event.getUserId());
+        if (user != null) {
+            user.setSingleAttribute("last_login", String.valueOf(event.getTime()));
+        }
+    }
+
+    @Override
+    public void onEvent(AdminEvent event, boolean includeRepresentation) {
+        // 管理者イベントは Golden 検知のみ、last_login は対象外
+        emitAdminEventToEventBridge(event);
+    }
+
+    @Override
+    public void close() {}
+}
+```
+
+#### 10.4.A.3 バッチスクリプト（Event Listener 前提）
+
+```bash
+#!/bin/bash
+# inactive-user-disable-v2.sh (2026-07-09)
+# user_attribute.last_login を参照して 90 日未ログインを判定
+# 前提: Event Listener SPI が全 LOGIN イベントを user_attribute.last_login に書き込み済
+# 実行頻度: 週次 (cron で毎週日曜 02:00)
+
+set -euo pipefail
+
+REALM="${1:-tenant-acme}"
+INACTIVE_DAYS="${INACTIVE_DAYS:-90}"
+GRACE_DAYS="${GRACE_DAYS:-30}"   # T-30 日前に警告メール送信
+DRY_RUN="${DRY_RUN:-false}"
+KC_URL="https://auth.example.com"
+ADMIN_USER="admin"
+ADMIN_PASS="$(vault kv get -field=password secret/keycloak/admin)"
+
+THRESHOLD_MS=$(($(date +%s%3N) - INACTIVE_DAYS * 86400 * 1000))
+WARNING_MS=$(($(date +%s%3N) - (INACTIVE_DAYS - GRACE_DAYS) * 86400 * 1000))
+
+/opt/keycloak/bin/kcadm.sh config credentials \
+  --server "$KC_URL" --realm master \
+  --user "$ADMIN_USER" --password "$ADMIN_PASS"
+
+# JIT ユーザーのみ抽出（provisioned_by=jit AND NOT scim_active=true）
+# ★ user_attribute.last_login をクエリパラメータで直接絞込（O(N) → O(1) per user）
+USERS=$(/opt/keycloak/bin/kcadm.sh get users \
+  -r "$REALM" \
+  --max 10000 \
+  -q "q=provisioned_by:jit" \
+  --fields "id,username,enabled,createdTimestamp,attributes")
+
+TARGETS_DISABLE=()
+TARGETS_WARN=()
+
+for USER_JSON in $(echo "$USERS" | jq -c '.[] | select(.enabled==true)'); do
+  USER_ID=$(echo "$USER_JSON" | jq -r '.id')
+  USERNAME=$(echo "$USER_JSON" | jq -r '.username')
+
+  # ★ 削除禁止フラグ確認（SCIM 管理下は絶対削除しない）
+  SCIM_ACTIVE=$(echo "$USER_JSON" | jq -r '.attributes.scim_active[0] // "false"')
+  if [ "$SCIM_ACTIVE" = "true" ]; then
+    continue  # SCIM 管理下、スキップ
+  fi
+
+  # ★ user_attribute.last_login をチェック（Event Listener SPI が書込済）
+  LAST_LOGIN=$(echo "$USER_JSON" | jq -r '.attributes.last_login[0] // "0"')
+  CREATED=$(echo "$USER_JSON" | jq -r '.createdTimestamp')
+
+  # last_login が無い場合は createdTimestamp を使う（初回ログイン前ユーザー救済）
+  EFFECTIVE_TS="${LAST_LOGIN:-$CREATED}"
+
+  if [ "$EFFECTIVE_TS" -lt "$THRESHOLD_MS" ]; then
+    TARGETS_DISABLE+=("$USER_ID:$USERNAME:$EFFECTIVE_TS")
+  elif [ "$EFFECTIVE_TS" -lt "$WARNING_MS" ]; then
+    TARGETS_WARN+=("$USER_ID:$USERNAME:$EFFECTIVE_TS")
+  fi
+done
+
+echo "Disable targets: ${#TARGETS_DISABLE[@]}"
+echo "Warning targets: ${#TARGETS_WARN[@]}"
+
+if [ "$DRY_RUN" = "true" ]; then
+  echo "DRY_RUN mode, no changes applied"
+  exit 0
+fi
+
+# 警告メール送信（7 日前）
+for ENTRY in "${TARGETS_WARN[@]}"; do
+  USER_ID=$(echo "$ENTRY" | cut -d: -f1)
+  # メール送信（SES 経由、実装略）
+  /opt/keycloak/bin/kcadm.sh update users/"$USER_ID" -r "$REALM" \
+    -s "attributes.deprovision_warning_at=[\"$(date -Iseconds)\"]"
+done
+
+# 無効化実行
+for ENTRY in "${TARGETS_DISABLE[@]}"; do
+  USER_ID=$(echo "$ENTRY" | cut -d: -f1)
+  USERNAME=$(echo "$ENTRY" | cut -d: -f2)
+
+  /opt/keycloak/bin/kcadm.sh update users/"$USER_ID" -r "$REALM" -s "enabled=false"
+  /opt/keycloak/bin/kcadm.sh post users/"$USER_ID"/logout -r "$REALM"
+  /opt/keycloak/bin/kcadm.sh update users/"$USER_ID" -r "$REALM" \
+    -s "attributes.deprovisioned_at=[\"$(date -Iseconds)\"]" \
+    -s "attributes.deprovisioned_reason=[\"inactive_${INACTIVE_DAYS}d\"]"
+
+  echo "DISABLED: $USERNAME"
+done
+```
+
+#### 10.4.A.4 なぜ §10.4 と比べて確実か
+
+| 観点 | §10.4（破綻）| §10.4.A（推奨）|
+|---|---|---|
+| データソース | event_entity（DB 肥大化）| **user_attribute.last_login**（1 ユーザ 1 行）|
+| 検索性能 | O(N × log M)（10M で数十時間）| **O(N)**（属性 index 使用、10M で数十分）|
+| Retention 依存 | eventsExpiration 設定必須 | ✅ 永続保管、依存なし |
+| SPI 開発工数 | 不要 | ⚠ 1-2 週間（既存 ADR-060 §C.2.2 SPI に統合）|
+| Multi-Realm 対応 | Realm ごと設定必要 | ✅ SPI が全 Realm 共通 |
+| 業界事例 | なし（PoC 独自）| Ghent University keycloak-last-login / Phase Two 等 |
+
+#### 10.4.A.5 フォールバック検証（OpenSearch 併用）
+
+Event Listener SPI 障害時の検証用：
+- **[ADR-053 Observability](../adr/053-observability-strategy.md)** で EventBridge → OpenSearch にログイン履歴を保持
+- OpenSearch から `type=LOGIN` を集計して user_attribute.last_login と照合
+- 齟齬発見時は SPI 再走行 or 手動修正
+
+### 10.4.B 【推奨、2026-07-09】JIT vs SCIM ユーザー判別ロジック
+
+> §10.4.A の削除フローで **SCIM 管理下ユーザーを絶対削除しない** ための判別ロジック。
+
+#### 10.4.B.1 Keycloak でのユーザー作成経路 5 種（確実な事実）
+
+| 経路 | user_entity | federated_identity | LDAP link | 判別マーカー |
+|---|:---:|:---:|:---:|---|
+| **JIT（OIDC/SAML フェデ）**| ✅ | ✅ 有り（IdP alias + IdP sub）| ❌ | `provisioned_by=jit`（First Broker Login Flow で書込）|
+| **SCIM POST /Users** | ✅ | ❌ 無し | ❌ | `provisioned_by=scim` + `scim_active=true`（プラグイン書込）|
+| **手動（Admin UI / API）** | ✅ | ❌ | ❌ | `provisioned_by=manual`（管理者操作時 Event Listener 書込）|
+| **Realm Import（JSON）**| ✅ | JSON 次第 | ❌ | `provisioned_by=realm_import`（一括インポート時）|
+| **LDAP User Federation**| ✅ | ❌ | ✅ `federation_link` あり | LDAP User Federation Provider ID 参照 |
+
+#### 10.4.B.2 判別戦略の 3 段階
+
+**必ずこの順序で判定**（優先度高から低へ）:
+
+```
+【判定 1: 削除禁止フラグ】
+  user_attribute.scim_active == "true"
+  → 削除禁止（SCIM 管理下、絶対削除しない）
+  ※ SCIM 経由でユーザーが削除された場合は SCIM DELETE が来るので、
+    それ以外で消してはいけない
+
+【判定 2: サービスアカウント / ローカルユーザー / 管理者除外】
+  user.serviceAccountClientLink != null → 除外
+  user has credential (type=password) → ローカルユーザー除外
+  user has admin role → 除外
+
+【判定 3: プロビジョニング元判定】
+  user_attribute.provisioned_by == "jit" → §10.4.A 対象
+  それ以外（manual / realm_import / null）→ 人間レビュー対象、自動削除しない
+```
+
+#### 10.4.B.3 SCIM Plugin 側の必要設定（Phase Two SCIM 例）
+
+**Phase Two SCIM プラグインの Custom Attribute Mapping**:
+
+```json
+{
+  "scim_active": "$active",
+  "scim_external_id": "$externalId",
+  "scim_last_sync": "$sync_timestamp",
+  "provisioned_by": "scim"
+}
+```
+
+- POST /Users で作成時: `provisioned_by=scim` + `scim_active=true`
+- PUT /Users で active=false: `scim_active=false` に更新（削除禁止フラグ解除）
+- DELETE /Users: user_entity 削除 or enabled=false（Phase Two 設定次第）
+
+#### 10.4.B.4 JIT 側の必要設定（First Broker Login Flow）
+
+**Keycloak Authentication → Flows → First Broker Login → カスタムマッパー**:
+
+```
+Set User Attribute:
+  Name:  provisioned_by
+  Value: jit
+
+Set User Attribute:
+  Name:  jit_idp_alias
+  Value: ${identity_provider}  (Keycloak template)
+
+Set User Attribute:
+  Name:  jit_created_at
+  Value: ${current_time}
+```
+
+#### 10.4.B.5 エッジケース 3 種の扱い（確実な情報）
+
+| ケース | 状態 | 判定 | 理由 |
+|---|---|---|---|
+| **① JIT 作成後に SCIM 対応追加** | `provisioned_by=jit` + `scim_active=true` + `federated_identity` 有り | ✅ **削除禁止** | scim_active 優先 |
+| **② SCIM 作成後に初回 JIT ログイン** | `provisioned_by=scim` + `scim_active=true` + `federated_identity` 追加 | ✅ **削除禁止** | scim_active 優先 |
+| **③ 完全 SCIM のみ、未ログイン** | `provisioned_by=scim` + `scim_active=true` + `federated_identity` 無し | ✅ **削除禁止** | scim_active 継続で生存 |
+
+**エッジケース対応の核心**：**scim_active=true が最強の削除禁止フラグ**、他の判定より常に優先。
+
+#### 10.4.B.6 バックフィル手順（導入時の既存ユーザー対応）
+
+既存の JIT/SCIM ユーザーには `provisioned_by` 属性が未付与。導入時に一括バックフィルが必要:
+
+```sql
+-- SCIM 由来判定：Phase Two SCIM が管理する user_id を SCIM 側 DB から抽出して attribute 付与
+-- JIT 由来判定：federated_identity テーブルに行がある全ユーザーに provisioned_by=jit 付与
+-- それ以外：manual フラグを付与し、人間レビュー対象化
+```
+
+#### 10.4.B.7 実装 ADR
+
+- **[ADR-060 §C.2.2](../adr/060-auth-protocol-attack-path-residual-tbd.md)** — Event Listener SPI に last_login 書込 + provisioned_by 判別統合
+- **[ADR-025 §H](../adr/025-scim-positioning-and-receive-stance.md)** — SCIM/JIT/LDAP 判別戦略追記候補
+
+### 10.4.C 【2026-07-09 追加】実装上の課題と対策（性能 + 運用）
+
+> §10.4.A/§10.4.B の実装で発生する 6 つの性能課題と対策、Keycloak 26 User Profile 対応。
+
+#### 10.4.C.1 6 つの性能課題
+
+| # | 課題 | 詳細 | 対策 |
+|---|---|---|---|
+| **1** | UPDATE 頻度 | 10M MAU × 1 login/日 = 平均 115 UPDATE/秒、朝 9 時ピークで 500-1000 UPDATE/秒 | **debounce**（後述 §10.4.C.2）で 100 倍削減 |
+| **2** | `setSingleAttribute()` の内部処理 | SELECT + UPDATE/INSERT + Infinispan cache invalidate の 3 操作 | debounce 前提なら Aurora Serverless v2 で余裕、実測必須 |
+| **3** | `user_attribute` テーブル肥大化 | 10M ユーザ × 20 属性 = 2 億行 | 既存 index `(user_id, name)` 有効、JOIN 性能問題なし |
+| **4** | HA cluster での cache invalidate broadcast | Multi-node Keycloak で全ノードに伝播、ネットワーク I/O 増 | debounce で頻度削減 + Multi-tier cache 設定 |
+| **5** | Transaction 分離 | Event Listener は認証成功後・レスポンス送信前に実行、SPI 失敗 → レスポンス遅延 | **必ず try-catch で認証を通す**、SPI 例外は log のみ |
+| **6** | SPI 実行成功率の監視 | SPI が動いていない場合、静かに last_login が付かない | **メトリクス化必須**（Attribute 書き込み成功率、[ADR-053 Observability](../adr/053-observability-strategy.md) 連動）|
+
+#### 10.4.C.2 debounce 戦略（性能課題の核心対策）
+
+**目的**：LOGIN イベント毎の UPDATE を **1 日 1 回のみ** に削減。
+
+```java
+public void onEvent(Event event) {
+    if (event.getType() != EventType.LOGIN) return;
+
+    UserModel user = getUser(event);
+    if (user == null) return;
+
+    String lastLogin = user.getFirstAttribute("last_login");
+    long now = event.getTime();
+
+    // 1 日（86,400,000 ms）以内の再ログインは書き込みスキップ
+    if (lastLogin == null || (now - Long.parseLong(lastLogin)) > 86400000L) {
+        try {
+            user.setSingleAttribute("last_login", String.valueOf(now));
+        } catch (Exception e) {
+            // 認証は通す、SPI 例外は log のみ
+            log.warn("Failed to update last_login for user " + user.getId(), e);
+        }
+    }
+}
+```
+
+**Trade-off**：
+
+| 観点 | debounce 有 | debounce 無 |
+|---|:---:|:---:|
+| 書き込み頻度削減 | ✅ 100 倍削減 | ❌ |
+| 90 日判定精度 | ✅ 十分（1 日ズレは許容）| ✅ |
+| リアルタイム "最後のログイン" 取得 | ❌ 最大 1 日ズレ | ✅ |
+| Aurora 書き込みコスト | ✅ 大幅削減 | ⚠ ピーク時懸念 |
+
+**結論**：**PCI DSS 8.2.6 の 90 日判定用途では debounce 有が最適**。「本当にリアルタイム最終ログイン」は別途 event_entity 短期保持（3-7 日）で対応。
+
+#### 10.4.C.3 Keycloak 26 User Profile 対応（Unmanaged Attributes）
+
+Keycloak 26 では **User Profile が強化**され、デフォルトで Unmanaged Attributes は制限される。
+
+**選択肢 A**：User Profile schema に明示登録（推奨）
+
+```json
+// Realm Settings → User Profile → JSON schema
+{
+  "attributes": [
+    {
+      "name": "last_login",
+      "displayName": "Last Login (epoch ms)",
+      "annotations": { "readOnly": true },
+      "permissions": { "view": ["admin"], "edit": ["admin"] },
+      "validations": { "long": {} }
+    },
+    {
+      "name": "provisioned_by",
+      "displayName": "Provisioning Source",
+      "annotations": { "readOnly": true },
+      "permissions": { "view": ["admin"], "edit": ["admin"] },
+      "validations": { "options": { "options": ["jit", "scim", "manual", "ldap", "realm_import"] } }
+    },
+    {
+      "name": "scim_active",
+      "displayName": "SCIM Managed Flag",
+      "annotations": { "readOnly": true },
+      "permissions": { "view": ["admin"], "edit": ["admin"] }
+    }
+  ]
+}
+```
+
+**選択肢 B**：Realm 全体で `unmanagedAttributePolicy = "ADMIN_EDIT"` 設定
+
+```
+Realm Settings → User Profile → Unmanaged Attributes: ADMIN_EDIT
+```
+
+**推奨**：**選択肢 A**（明示登録）。理由：Validation 強制 + 意図しない属性追加を防止 + IaC で構成管理容易。
+
+#### 10.4.C.4 SPI デプロイと運用課題
+
+| 課題 | 対策 |
+|---|---|
+| SPI JAR デプロイ | Keycloak Pod の `/providers/` に配置、Kubernetes ConfigMap or InitContainer で配布 |
+| Keycloak バージョンアップ時の SPI 互換性 | [ADR-055 §A.7 バージョン追従プロセス](../adr/055-hrd-implementation-method-selection.md) に **SPI 互換性テスト** を追加 |
+| Multi-Realm での SPI 有効化漏れ | IaC（Terraform / keycloak-config-cli）で担保、Realm 追加時に自動有効化 |
+| 障害時の切り分け（SPI 動作 / DB 書き込み / cache）| CloudWatch メトリクス：SPI 実行回数 / UPDATE 成功率 / cache invalidate 遅延 |
+
+### 10.4.D 【2026-07-09 追加】SCIM + JIT 同居の追加確認事項
+
+> §10.4.A/§10.4.B が SCIM Plugin と共存する際の 5 つの実際の問題と、Phase 1 実装前に検証すべき 3 事項。
+
+#### 10.4.D.1 SCIM + JIT 同居の 5 つの実際の問題
+
+| # | 問題 | シナリオ | 対策 |
+|---|---|---|---|
+| **1** | **Sync Mode = FORCE 時の `scim_active` 上書き** | SCIM で `scim_active=true` 設定済ユーザーが JIT ログイン（Sync Mode = FORCE）→ IdP アサーションで上書き | **Identity Provider Mapper で `scim_active` の `syncMode=IMPORT` override**（Mapper 単位で Realm デフォルト override 可、[§3.3](#33-identity-provider-mapperexternalid-の中核) 記載通り技術的に可能）|
+| **2** | **レースコンディション**（JIT ログイン vs SCIM Push 同時実行）| SCIM `PUT /Users` (active=false) 実行中、同ユーザーが JIT ログイン | Keycloak JPA の Optimistic Locking (@Version) で自動処理、Phase Two デフォルトのリトライ機能を維持（[§11 落とし穴 5](#11-落とし穴集7-つ)）|
+| **3** | **`last_login` の並行 UPDATE 競合** | 同時に 2 デバイスからログイン、両方で SPI が `last_login` 書き込み | SPI 内 try-catch で例外を握りつぶす、微秒差なので値精度上の問題なし |
+| **4** | **SCIM で作成 → JIT で federated_identity 追加時の重複** | SCIM で user_entity 作成後、初回 JIT ログインで externalId 突合が正しく動かないと重複 user_entity | **Phase Two 提供 or 検証済 Custom Authenticator を使用**（[§6.2](#62-custom-authenticator-による-externalid-突合実装)）|
+| **5** | **既存ユーザーへの provisioned_by / scim_active バックフィル**| 導入前の既存ユーザーには属性未付与 → 判定不可 | [§10.4.B.6 バックフィル手順](#104b6-バックフィル手順導入時の既存ユーザー対応) 参照、SCIM 側は Phase Two 管理 DB から抽出、JIT 側は `federated_identity` テーブル SELECT |
+
+#### 10.4.D.2 Phase 1 実装前検証事項 V1-V3（必須ゲート）
+
+| # | 検証項目 | 検証方法 | 期日 | ヒアリング項目 |
+|---|---|---|---|---|
+| **V1** | **Phase Two SCIM の Custom Attribute Mapping で `scim_active` を書けるか** | PoC 環境で POST /Users → user_attribute.scim_active 反映確認 + PUT /Users {active: false} → scim_active=false 確認 | **Phase 1 実装開始前** | B-SCIM-1（新規）|
+| **V2** | **Sync Mode = FORCE + Mapper 単位 syncMode = IMPORT override で `scim_active` を保護できるか** | PoC で SCIM 事前作成 → JIT ログイン → 属性値保持を確認 | **Phase 1 実装開始前** | B-SCIM-2（新規）|
+| **V3** | **debounce（1 日 1 回）の実装で性能は問題ないか** | 負荷試験（100 RPS × 24h × 10 万ユーザ、Aurora 書き込み IOPS 監視）| **Phase 1 実装中** | B-SCIM-3（新規）|
+
+#### 10.4.D.3 Sync Mode override の具体設定例（V2 対策）
+
+**Identity Provider Mapper で Mapper 単位で syncMode 制御**：
+
+```hcl
+# Terraform：Sync Mode = FORCE の IdP でも、特定属性は IMPORT で保護
+
+resource "keycloak_oidc_identity_provider" "acme_entra" {
+  realm     = "tenant-acme"
+  alias     = "acme-entra"
+  sync_mode = "FORCE"  # デフォルト FORCE（IdP アサーションで毎回上書き）
+}
+
+# scim_active は IMPORT で override（初回のみ設定、以降上書きしない）
+resource "keycloak_custom_identity_provider_mapper" "protect_scim_active" {
+  realm                    = "tenant-acme"
+  identity_provider_alias  = keycloak_oidc_identity_provider.acme_entra.alias
+  name                     = "protect-scim-active"
+  identity_provider_mapper = "hardcoded-user-session-attribute-idp-mapper"
+  extra_config = {
+    syncMode  = "IMPORT"  # Mapper 単位で override
+    attribute = "scim_active"
+  }
+}
+
+# provisioned_by も同様に保護
+resource "keycloak_custom_identity_provider_mapper" "protect_provisioned_by" {
+  realm                    = "tenant-acme"
+  identity_provider_alias  = keycloak_oidc_identity_provider.acme_entra.alias
+  name                     = "protect-provisioned-by"
+  identity_provider_mapper = "hardcoded-user-session-attribute-idp-mapper"
+  extra_config = {
+    syncMode  = "IMPORT"
+    attribute = "provisioned_by"
+  }
+}
+```
+
+**根拠**：Keycloak Identity Provider Mapper の `syncMode` は **Mapper 単位で Realm デフォルトを override 可能**（[Keycloak Server Admin Guide - Identity Broker Sync Mode](https://www.keycloak.org/docs/latest/server_admin/#_identity-provider-mappers)）。
+
+#### 10.4.D.4 総合判定（SCIM + JIT + last_login 同居）
+
+| 論点 | 結論 |
+|---|:---:|
+| **SCIM 実装可能性** | ✅ 可能（Phase Two 採用済）|
+| **JIT + SCIM 同居の基本枠組** | ✅ 既存議論で対応済（Sync Mode / externalId 突合 / First Broker Login Flow）|
+| **user_attribute.last_login 実装可能性** | ✅ 可能（debounce 前提）|
+| **user_attribute.scim_active 書き込み** | ⚠ **V1 検証必要**（Phase Two Custom Attribute Mapping 詳細）|
+| **Sync Mode = FORCE 時の scim_active 保護** | ⚠ **V2 検証必要**（Mapper 単位 syncMode override）|
+| **性能** | ⚠ **V3 検証必要**（debounce 負荷試験）|
+| **既存ユーザーバックフィル** | ⚠ 導入時作業必要（§10.4.B.6）|
+
+**結論**：**基本的に実装可能、ただし Phase 1 実装開始前に V1/V2、実装中に V3 の PoC 検証が必要**。「確実に問題ない」と言うには PoC 結果を待つ必要がある。
+
 ### 10.5 Keycloak DB 保持・削除マトリクス（実装詳細）
 
 | ケース | 影響テーブル | SQL/API 操作 |
 |---|---|---|
 | **JIT 顧客 IdP 削除** | なし（基盤に通知なし） | - |
-| **JIT 定期バッチ無効化**（10.4 のスクリプト）| `user_entity.enabled` = false / `user_attribute` に deprovisioned_at | `UPDATE user_entity SET enabled=false WHERE id=?` |
+| **JIT 定期バッチ無効化**（**§10.4.A 推奨版**、§10.4 は 10M MAU で破綻）| `user_entity.enabled` = false / `user_attribute` に deprovisioned_at | `UPDATE user_entity SET enabled=false WHERE id=?` |
 | **SCIM DELETE 受信**（デフォルト）| `user_entity.enabled` = false / `user_attribute.scim_deleted` = true | Phase Two SCIM Plugin が自動処理 |
 | **SCIM DELETE + Hard Delete 設定** | `user_entity` 物理削除 + 関連テーブル CASCADE | `DELETE FROM user_entity WHERE id=?`（FK CASCADE）|
 | **管理者手動 Hard Delete** | 同上 | `DELETE /admin/realms/{realm}/users/{id}` |
@@ -765,9 +1213,9 @@ T+N 年 (PCI DSS=1年 / 一般=7年): 物理削除 or 匿名化バッチ実行
 |---|---|
 | **8.2.1** ユーザー識別子の一意性 | `user_entity.username` UNIQUE 制約（Realm 内）|
 | **8.2.5** 退職時即時取消 | SCIM DELETE + Token Revocation（K8）+ Back-Channel Logout（K7）|
-| **8.2.6** 90 日未使用無効化 | **§10.4 のバッチスクリプト** 必須 |
+| **8.2.6** 90 日未使用無効化 | **§10.4.A Event Listener SPI 版**（§10.4 は 10M MAU で破綻、2026-07-09 訂正）|
 | **8.3.1** MFA 全アクセス | Realm Settings + Conditional Authentication Flow（[§3.2 / §4.6](../requirements/powerpoint-outline-and-references.md) と整合）|
-| **8.5** アクセスレビュー（四半期）| SCIM 採用顧客 = SCIM API でユーザー一覧取得 + 自動レビュー / JIT のみ顧客 = §10.4 バッチで未使用検出 |
+| **8.5** アクセスレビュー（四半期）| SCIM 採用顧客 = SCIM API でユーザー一覧取得 + 自動レビュー / JIT のみ顧客 = §10.4.A バッチで未使用検出（§10.4 は 10M MAU で破綻） |
 | **10.2** 監査ログ | Event Listener SPI + Phase Two `keycloak-events` で全イベント送出 |
 
 #### APPI 適合（個人データを扱う全顧客向け）
