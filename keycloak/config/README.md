@@ -87,6 +87,55 @@ git diff config/realm-export.json
 
 → Phase 8/9 中核機能（tenant_id / roles クレーム注入、Full Scope OFF、テストユーザー）は **コード経由で完全再現可能**。Admin Console の手作業ゼロ。
 
+## ⚠️ 既存 realm が存在する環境での `--import-realm` の挙動（重要）
+
+**`--import-realm` は既存 realm が DB に存在すると import を skip するデフォルト動作**。新しい realm-export.json を image に焼き付けても、初回構築後の realm 変更は反映されない。
+
+### 典型的な踏み方（Phase 10 Stage A で実機ヒット、2026-06-07）
+
+- Phase 6 で `auth-poc` realm が RDS に作成・永続化
+- Phase 10 Stage A で realm-export.json に Token Exchange v2 設定を追加
+  - `auth-poc-target-api` client（新規）
+  - `auth-poc-backend` の `standard.token.exchange.enabled = true` 属性
+  - `auth-poc-ssr` client（新規）
+- 新 image (KC 26.2 + features 焼き付け) を ECR push → ECS で新 task 起動
+- → 既存 realm があるため `--import-realm` skip → 新設定が realm に反映されない
+- → Token Exchange v2 curl が `invalid_client: Audience not found` で失敗
+- Admin REST API で realm を確認すると **`auth-poc-target-api` クライアント自体が存在しない**
+
+### 対処法（3 つ）
+
+| 方針 | 用途 | 影響 | 手順 |
+|---|---|---|---|
+| **A. Partial Import**（既存温存、差分追加） | 本番運用での realm 変更 | 既存ユーザー / セッション保持 | Admin Console → Realm Settings → Partial Import / REST `/admin/realms/{realm}/partialImport` |
+| **B. realm delete → 再起動**（fresh import） | PoC の「初期状態再現」テスト | **既存ユーザー / セッション全消失** | DELETE `/admin/realms/auth-poc` → `make kc-redeploy`（ECS force-new-deployment） → 新タスク起動時に realm-export.json が import される |
+| **C. Admin Console 手動変更** | 緊急 / 1 回限り | 設定が realm.json から drift | Admin Console で 1 つずつ変更 → 後で `export-realm.sh` で realm.json に書き戻し |
+
+### 本番運用想定の運用フロー
+
+「**realm.json を git の SSOT**」と「**Admin Console での直接変更**」の二系統管理は **drift の温床**になる。本番では:
+
+1. **Admin Console での直接変更は禁止**（読み取り専用運用）
+2. **realm 変更は PR ベースで realm.json を編集**
+3. **CI/CD で Partial Import を自動実行**（Keycloak Operator や Terraform Keycloak Provider）
+4. 既存ユーザー・セッションは温存（fresh import は禁止）
+
+### 確認用コマンド
+
+```bash
+# 現 AWS realm に特定 client が存在するか確認
+ALB=$(cd infra/keycloak && terraform output -raw keycloak_url | sed 's|http://||;s|https://||')
+ADMIN_PW=$(grep keycloak_admin_password infra/keycloak/terraform.tfvars | sed -E 's/.*= *"([^"]+)".*/\1/')
+ADMIN_TOKEN=$(curl -ks -X POST "https://$ALB/realms/master/protocol/openid-connect/token" \
+  -d "client_id=admin-cli&grant_type=password&username=admin&password=$ADMIN_PW" \
+  | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
+curl -ks -H "Authorization: Bearer $ADMIN_TOKEN" \
+  "https://$ALB/admin/realms/auth-poc/clients?clientId=auth-poc-target-api" | python3 -m json.tool
+# → [] なら未反映、{...} なら反映済
+```
+
+---
+
 ## 注意事項
 
 - **Secret 管理**: `realm-export.json` 内のパスワード（`TestPass1!` / `TestUser1!` 等）は PoC 用ダミー。本番では外部 Secrets Manager と連携する `--features=admin-fine-grained-authz` 等の機構へ移行

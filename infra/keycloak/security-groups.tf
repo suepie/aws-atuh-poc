@@ -125,6 +125,14 @@ resource "aws_security_group" "ecs" {
     protocol    = "tcp"
     cidr_blocks = [var.vpc_cidr]
   }
+
+  # 追加 ingress / egress は外部の `aws_security_group_rule` リソースで管理する方針
+  # （Internal ALB ingress、S3 prefix list egress、JGroups 7800 self-ref など）。
+  # この lifecycle 設定で、外部リソース管理の rule が SG attribute に取り込まれた際の
+  # phantom diff（インライン定義と attribute 全体の差分）を抑止する。
+  lifecycle {
+    ignore_changes = [ingress, egress]
+  }
 }
 
 # Stage A-2: Infinispan JGroups TCP（task 間のクラスタメッセージング）

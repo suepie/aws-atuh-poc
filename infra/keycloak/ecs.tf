@@ -157,13 +157,10 @@ resource "aws_ecs_task_definition" "keycloak" {
         }
       }
 
-      healthCheck = {
-        command     = ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/9000 && echo -e 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\n\\r\\n' >&3 && cat <&3 | grep -q '\"status\":\"UP\"'"]
-        interval    = 60
-        timeout     = 30
-        retries     = 10
-        startPeriod = 180
-      }
+      # Container Health Check は ALB Target Health Check（path=/realms/master）に統一。
+      # 旧版（bash + /dev/tcp + grep "UP"）は KC 26.2 公式 image (UBI 9 minimal) で
+      # 起動直後から成功せず、約 15 分周期で task が kill されるループに陥っていた。
+      # 詳細は doc/common/phase10-stage-a-aws-verification-log.md §c 参照。
     }
   ])
 }

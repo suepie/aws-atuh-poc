@@ -55,6 +55,6 @@ resource "aws_acm_certificate" "self_signed" {
 
   tags = {
     Name    = "${local.prefix}-self-signed"
-    Purpose = "Stage A-1 HTTPS 化 PoC（本番では ACM 公開証明書に差し替え）"
+    Purpose = "Stage A-1 HTTPS PoC - replace with public ACM cert in prod"
   }
 }
