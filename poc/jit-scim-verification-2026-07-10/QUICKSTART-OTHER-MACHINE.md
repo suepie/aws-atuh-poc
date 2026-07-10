@@ -3,6 +3,7 @@
 > **想定**: この PoC 一式（`poc/jit-scim-verification-2026-07-10/`）を別端末に持ち込んで実行する
 > **想定所要時間**: 環境準備 30 分 + 検証実施 2-3 時間 = 計 3-4 時間
 > **背景**: [../../doc/common/jit-scim-coexistence-keycloak.md §10.4.E](../../doc/common/jit-scim-coexistence-keycloak.md) の 14 件一次資料
+> **⚠ 2026-07-10 更新**: V3' 実施済み結果を [../../doc/common/jit-scim-coexistence-keycloak.md §10.4.F](../../doc/common/jit-scim-coexistence-keycloak.md) に反映済。**V3'' フェデ JIT 検証（§12 追加）を別端末で実施予定**
 
 ---
 
@@ -409,11 +410,17 @@ docker compose logs keycloak | tail -100
 # feature 有効確認
 docker compose exec keycloak env | grep KC_FEATURES
 
-# 26.6 で正しい feature 名は "scim-realm-api"
-# もし違う場合は https://www.keycloak.org/2026/04/scim-as-experimental-feature 確認
+# ⚠ 2026-07-10 実機検証で判明した誤記訂正:
+# 26.6 で正しい feature 名は "scim-api"（旧記述の "scim-realm-api" は存在せず起動失敗）
+# また "declarative-user-profile" は 26 系で GA 化・廃止されており、指定すると起動失敗
+# 詳細: docs/additional-poc-findings.md F-1、jit-scim §10.4.F.2
 
 # Keycloak 起動時に有効化された feature 一覧
 docker compose logs keycloak 2>&1 | grep -i "feature.*enabled"
+# → "Experimental features enabled: scim-api:v1" が出るはず
+
+# feature `scim-api:v1` 有効でも、native inbound SCIM endpoint `/scim/v2/*` は
+# realm 単位の追加設定なしでは 404 になる（F-4 実測、代替 A 採用理由）
 ```
 
 ### 8.3 SPI がロードされない
@@ -509,6 +516,162 @@ curl -s "http://localhost:18080/admin/realms/poc-jit-scim/clients?clientId=poc-t
 | **V3' FAIL のみ** | ✅ | ✅ | ❌ | ⚠ GO with Fallback、案 A / 案 C 検討 +1-2w |
 | **V1 + V3' FAIL** | ❌ | ✅ | ❌ | ⚠ GO with Fallback、Custom Authenticator SPI で両対応 +2-3w |
 | **全 FAIL**| ❌ | ❌ | ❌ | ❌ NO-GO、設計見直し |
+
+---
+
+## 12. 【2026-07-10 追加】V3'' フェデ JIT 検証（別端末で追加実施）
+
+> **背景**: V3' で PASS したのは **ローカル PW ユーザ（P-4）経路のみ**。本基盤主用途の **フェデ JIT ユーザ（P-3）** は Browser Flow の分岐構造上、現状 SPI 配置では動作しない。追加 PoC V3'' で **First Broker Login Flow + Post Broker Login Flow への SPI 配置**を実測確認する。
+>
+> **一次資料**: [../../doc/common/jit-scim-coexistence-keycloak.md §10.4.F.9](../../doc/common/jit-scim-coexistence-keycloak.md), [ADR-060 §C.2.3 F-9](../../doc/adr/060-auth-protocol-attack-path-residual-tbd.md), [hearing-checklist B-SCIM-11](../../doc/requirements/hearing-checklist.md)
+
+### 12.1 V3'' 検証項目
+
+| Test | 内容 | 期待結果 |
+|---|---|:---:|
+| **T1** | 初回フェデログイン → JIT 作成 → `last_login` 反映 | ✅ First Broker Login Flow の SPI 動作 |
+| **T2** | 2 回目フェデログイン → `last_login` 更新 | ✅ Post Broker Login Flow の SPI 動作 |
+| **T3** | フェデ JIT ユーザに `provisioned_by=jit` 付与 | ✅（Phase 1 の SPI 拡張候補）|
+| **T4** | federated_identity に customer-idp が紐付いていること | ✅ 真の JIT ユーザである確認 |
+
+### 12.2 V3'' 環境構成（同一 Keycloak 内 2-Realm）
+
+追加コンテナ不要。既存の Keycloak 26.6 に **customer-idp Realm を新設**して顧客 IdP を模擬:
+
+```
+Keycloak 26.6
+├── Realm: customer-idp    ← 顧客 IdP を模擬（新設）
+│   └── client: broker-poc（redirect: poc-jit-scim broker endpoint）
+│   └── user: fed-jit-user / fed-jit-user-2
+└── Realm: poc-jit-scim    ← 既存 PoC Realm（V1-V3' で使用済み）
+    └── Identity Provider: customer-idp (OIDC)
+        ├── firstBrokerLoginFlowAlias = first-broker-login-with-tracker
+        └── postBrokerLoginFlowAlias  = post-broker-login-with-tracker
+```
+
+### 12.3 V3'' 実行手順（Quick Start）
+
+#### Step 1: セットアップ（自動）
+
+```bash
+cd ~/poc-workspace/poc/jit-scim-verification-2026-07-10/
+# 既存の Keycloak が起動していることを前提
+docker compose ps  # または docker compose -f docker-compose.exec.yml ps
+
+# フェデ環境セットアップ
+./tests/setup-federation.sh 2>&1 | tee docs/setup-federation-log-$(date +%Y%m%d-%H%M).txt
+```
+
+**セットアップ内容**：
+1. customer-idp Realm 新設（fed-jit-user + fed-jit-user-2 作成）
+2. poc-jit-scim Realm に OIDC IdP 'customer-idp' 追加
+3. `first-broker-login-with-tracker` フロー作成 + Last Login Tracker 配置
+4. `post-broker-login-with-tracker` フロー新規作成 + Last Login Tracker 配置
+5. IdP に First/Post Broker Login Flow 紐付け
+6. User Profile 設定（`config/user-profile-poc.json` 適用）
+
+**成功確認**：ログ末尾に `セットアップ完了` が出力されること。
+
+#### Step 2: Realm Settings で Browser Flow 確認
+
+```
+1. Admin Console: http://localhost:18080/admin/ にログイン
+2. Realm: poc-jit-scim を選択
+3. Realm Settings → Login → Bindings タブ
+4. Browser Flow が 'browser-with-last-login' になっているか確認
+   （V3' で設定済みなら OK、そうでなければ変更 → Save）
+```
+
+#### Step 3: V3'' テスト実行
+
+```bash
+./tests/v4-federation-jit.sh 2>&1 | tee docs/v4-log-$(date +%Y%m%d-%H%M).txt
+```
+
+**テスト実行の流れ**：
+
+1. **Test 1-3**：IdP 登録 + First/Post Broker Login Flow の SPI 配置を自動検証
+2. **Test 4（手動）**：スクリプトが停止し、手動でブラウザログインを促す
+   - ブラウザ (Incognito) で `http://localhost:18080/realms/poc-jit-scim/account`
+   - `Customer IdP (Federation Test)` ボタンをクリック
+   - fed-jit-user / fed123 でログイン
+   - スクリプトに戻り Enter を押す
+3. **Test 5（手動）**：debounce をバイパスするため last_login を過去日に更新し、2 回目ログインを促す
+   - 同じブラウザまたは別 Incognito で再度フェデログイン
+   - スクリプトに戻り Enter を押す
+
+#### Step 4: 結果確認
+
+```bash
+# フェデ JIT ユーザの属性確認
+TOKEN=$(./tests/get-token.sh)
+FED_USER_ID=$(curl -s "http://localhost:18080/admin/realms/poc-jit-scim/users?email=fed-jit-user@customer.example.com" \
+    -H "Authorization: Bearer $TOKEN" | jq -r '.[0].id')
+curl -s "http://localhost:18080/admin/realms/poc-jit-scim/users/$FED_USER_ID" \
+    -H "Authorization: Bearer $TOKEN" | jq '{username, email, attributes, federatedIdentities}'
+```
+
+**期待出力**：
+```json
+{
+  "username": "fed-jit-user",
+  "email": "fed-jit-user@customer.example.com",
+  "attributes": {
+    "last_login": ["17XXXXXXXXXXX"]   ← ★ 書き込まれていることが重要
+  },
+  "federatedIdentities": [
+    {"identityProvider": "customer-idp", ...}   ← ★ 真の JIT ユーザ確認
+  ]
+}
+```
+
+### 12.4 判定基準
+
+| 判定 | 条件 | Phase 1 影響 |
+|---|---|:---:|
+| ✅ **PASS** | T1-T4 全て OK、last_login が初回/2 回目とも反映 | 案 B + 3 系統 Flow 配置で確定 |
+| ⚠ **PARTIAL** | 初回のみ OK、Post Broker Login Flow が動かない | Phase 1 で Post Broker Login Flow 設定調整 |
+| ❌ **FAIL** | 初回すら動かない | フェデ JIT 対応方式の再検討 |
+
+### 12.5 想定される追加是正（F-9 派生）
+
+セットアップ / 実行中に判明する可能性がある新是正:
+
+| 想定 | 是正 |
+|---|---|
+| Discovery URL 到達不可 | container 名解決の設定（`INTERNAL_KC_URL`）を環境に合わせて調整 |
+| First Broker Login Flow の SPI 位置が top-level だとログイン失敗 | F-6 と同様、Review Profile 等の後（サブフロー内 or フロー末尾）に配置 |
+| Post Broker Login Flow が動かない | IdP の `postBrokerLoginFlowAlias` 設定を再確認 |
+| 属性が反映されない | `last-login-tracker` が `requiresUser() = true` を返すため、user 確定後の位置に配置 |
+
+### 12.6 結果報告テンプレート（V3'' 用）
+
+```
+【追加 PoC V3'' 実行結果】フェデ JIT 経路の SPI 動作
+実施日: YYYY-MM-DD
+実施環境: 別端末
+
+■ Test 判定
+- T1 (IdP 登録): OK / NG
+- T2 (First Broker Login Flow SPI 配置): OK / NG
+- T3 (Post Broker Login Flow SPI 配置): OK / NG
+- T4 (初回フェデログイン + last_login 反映): OK / NG
+- T5 (2 回目ログイン + last_login 更新): OK / NG
+
+■ 判定
+V3'' 総合: PASS / PARTIAL / FAIL
+
+■ 追加是正（F-7 以降として）
+- F-X: ...
+
+■ Phase 1 実装への影響
+- SPI 配置: Browser + First Broker + Post Broker の 3 系統確定
+- Terraform IaC 追加項目: XX
+- 追加工数: +Xd
+
+■ 詳細
+docs/verification-log-v3fed.md を参照
+```
 
 ---
 

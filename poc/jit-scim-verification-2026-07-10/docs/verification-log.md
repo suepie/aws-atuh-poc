@@ -121,11 +121,39 @@ features: SCIM_API enabled=true (scim-api:v1, experimental)
 
 ### 4.2 判定
 
-- **総合**：✅ **PASS** — Custom Authenticator SPI の `user.setSingleAttribute("last_login", ...)` が **user_attribute に確実に永続化**される（Event Listener SPI の Issue #14942 問題を回避）。debounce も動作。
+- **総合**：✅ **PASS**（**⚠ ローカル PW ユーザ（P-4）経路のみ**）— Custom Authenticator SPI の `user.setSingleAttribute("last_login", ...)` が **user_attribute に確実に永続化**される（Event Listener SPI の Issue #14942 問題を回避）。debounce も動作。
 - **Fallback**：**不要**（案 A `enlistAfterCompletion` / 案 C 外部 DB は不要）。
 - **Phase 1 実装への影響**：**案 B（Custom Authenticator SPI）採用確定**。ADR-055 の SPI 開発体制を再利用。
 - **重要な実装制約（F-6）**：SPI を **フロー最上位（top-level）に REQUIRED で置くと、同レベルの ALTERNATIVE（Cookie / forms）が無視され、Username Password Form が実行されず**、`user is not set yet` でログイン自体が失敗する。
   → **必ず `forms` サブフロー内（Username Password Form の後）に REQUIRED で配置**すること。
+
+### 4.4 【2026-07-10 追加】⚠ 検証ギャップ：フェデ JIT 経路（P-3 主用途）は未検証
+
+**核心**：本 V3' 検証は `test-jit-user`（realm-import で作成した **ローカル PW ユーザ = P-4**）で実施。**フェデ JIT ユーザ（P-3、本基盤の主用途）は未検証**。
+
+**Browser Flow 分岐の制約**：
+```
+browser-with-last-login
+├── Cookie (ALT)
+├── Identity Provider Redirector (ALT)  ← ★ フェデ JIT はここを通る
+├── Organization (ALT)
+└── forms (ALT)                          ← ★ 現状の SPI 配置
+    ├── Username Password Form (REQ)
+    └── Last Login Tracker (REQ)         ← ★ ここで SPI 実行
+```
+
+**Keycloak 設計**：4 つの ALTERNATIVE のうち 1 つ成功で他は skip → **フェデユーザは `IdP Redirector` 成功 → `forms` skip → SPI 実行されない**。
+
+**影響**：**主用途である P-3（顧客従業員 JIT）で SPI が動かない**。
+
+**対策（Phase 1 実装で必須）**：SPI を 3 系統に配置
+1. Browser Flow の forms サブフロー内（V3' 実測済み）
+2. **First Broker Login Flow**（フェデ JIT 初回ログイン）
+3. **Post Broker Login Flow**（フェデ JIT 2 回目以降）
+
+**追加 PoC V3''（別端末で実施予定）**：`tests/setup-federation.sh` + `tests/v4-federation-jit.sh` でフェデ JIT 経路を実測確認。詳細は [../QUICKSTART-OTHER-MACHINE.md §V3''](../QUICKSTART-OTHER-MACHINE.md) と [../docs/verification-log-v3fed.md](verification-log-v3fed.md) 参照。
+
+**判定**：V3' PASS は **P-4 経路限定** で有効。**フェデ JIT 経路の PASS は V3'' で確定**、Phase 1 リリース前ゲートに追加。
 
 ### 4.3 詳細ログ
 

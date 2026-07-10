@@ -1457,6 +1457,273 @@ Phase 1 リリース
 | **E-13** | User Profile Unmanaged Attributes 4 ポリシー | [Red Hat Build of Keycloak 26.6 Managing Users](https://docs.redhat.com/en/documentation/red_hat_build_of_keycloak/26.6/html/server_administration_guide/assembly-managing-users_server_administration_guide) | Disabled / Enabled / Admin can view / Admin can edit |
 | **E-14** | User Profile Read-only 環境変数設定 | 同上 | `KC_SPI_USER_PROFILE_DECLARATIVE_USER_PROFILE_READ_ONLY_ATTRIBUTES` |
 
+### 10.4.F 【2026-07-10 追加】実機 PoC 検証結果（V1/V2/V3' 実測 + 是正 F-1〜F-6）
+
+> **§10.4.E で計画した V1/V2/V3' の PoC を [poc/jit-scim-verification-2026-07-10/](../../poc/jit-scim-verification-2026-07-10/) で実機実行した結果**。実機でしか判明しない 6 件の是正（F-1〜F-6）+ Phase 1 実装計画の確定事項をここに集約する。実測ログは [verification-log.md](../../poc/jit-scim-verification-2026-07-10/docs/verification-log.md) と [additional-poc-findings.md](../../poc/jit-scim-verification-2026-07-10/docs/additional-poc-findings.md) を参照。
+
+#### 10.4.F.1 総合判定
+
+**⚠ GO with Fallback**（V2/V3' は Fallback 不要、V1 のみ代替 A 発動、増分小）
+
+| 検証 | ゲート項目 | 判定 | 要点 |
+|---|---|:---:|---|
+| **V1** SCIM Custom Attribute | [B-SCIM-7](../requirements/hearing-checklist.md) | ⚠ **PARTIAL** | Native inbound SCIM は feature 有効でも `/scim/v2/*` が **404**。ただし User Profile で unmanaged 属性を有効化すれば **Admin API 経由で `scim_active`/`provisioned_by` は永続化可** → **代替 A** で実装可能 |
+| **V2** Sync Mode Override | [B-SCIM-8](../requirements/hearing-checklist.md) | ✅ **PASS** | per-Mapper `syncMode=IMPORT` が作成・保存される（E-12 整合、Fallback 不要）|
+| **V3'** Custom Authenticator SPI | [B-SCIM-10](../requirements/hearing-checklist.md) | ✅ **PASS** | 認可コードフロー経由ログインで **`last_login` 書込を実証** + **debounce 動作**確認 → **案 B 確定** |
+
+#### 10.4.F.2 実機でしか判明しなかった是正 6 件（F-1〜F-6）
+
+| # | 分類 | 事象 | 影響 | 是正 |
+|---|---|---|---|---|
+| **F-1** | KC26.6 仕様変更 | feature 名 `scim-realm-api` / `declarative-user-profile` が **存在せず起動失敗**（一次資料 E-4 の時点情報が古い）| 環境が起動しない | `scim-api` に変更、`declarative-user-profile` は削除（26 系で GA 化）|
+| **F-2** | 実行環境 | devcontainer + Docker Desktop WSL2 で **bind mount が空** | realm import / SPI が効かない | `Dockerfile.poc` でイメージに焼き込み |
+| **F-3** | KC26.6 仕様 | `unmanagedAttributePolicy` を **realm 属性で指定しても無効**、カスタム属性が黙って破棄 | **V1 の核心**、属性が保存されない | **User Profile API/config** で設定（[user-profile-poc.json](../../poc/jit-scim-verification-2026-07-10/config/user-profile-poc.json) 参照）|
+| **F-4** | KC26.6 仕様 | native **inbound SCIM server** が `/realms/{r}/scim/v2/*` で **404**（feature 有効でも）| V1 native SCIM 不可 | native に依存しない設計（代替 A）|
+| **F-5** | スクリプト不備 | `v3-*.sh` の SPI 検出が `serverinfo` の**誤キー**参照でクラッシュ | V3' が Test 1 で異常終了 | `AuthenticatorFactory` → **`Authenticator`** に修正 |
+| **F-6** | Keycloak フロー設計 | ⭐ **SPI を top-level REQUIRED に置くとログイン失敗**（forms が無視される）| **V3' 実装制約、Phase 1 で必ずハマる罠** | **必ず forms サブフロー内**（Username Password Form の後）に REQUIRED で配置 |
+
+#### 10.4.F.3 F-6 の詳細（Phase 1 実装で最重要）
+
+**問題の再現ログ**（top-level 配置時）:
+```
+WARN REQUIRED and ALTERNATIVE elements at same level!
+     Those alternative executions will be ignored: [auth-cookie, identity-provider-redirector, ...]
+WARN authenticator 'last-login-tracker' requires user to be set ... but user is not set yet
+-> LOGIN_ERROR invalid_user_credentials
+```
+
+**PASS した正しい配置**:
+```
+browser-with-last-login
+├── level0 Cookie (ALTERNATIVE)
+├── level0 Identity Provider Redirector (ALTERNATIVE)
+├── level0 Organization (ALTERNATIVE)
+└── level0 forms (ALTERNATIVE)
+    ├── level1 Username Password Form (REQUIRED)
+    └── level1 Last Login Tracker (REQUIRED)   ← ここに配置
+```
+
+**根拠**：Keycloak のフロー評価では、同一レベルに REQUIRED があると同レベルの ALTERNATIVE が無視される仕様。SPI は `requiresUser() = true` を返すため、user が確定した後（Username Password Form の後）に置く必要がある。
+
+#### 10.4.F.4 Phase 1 実装計画の確定事項
+
+##### F.4.1 SCIM 受信
+
+- **Keycloak native inbound SCIM には依存しない**（V1 で 404 実測、追加の realm 単位設定が必要と判明）
+- SCIM 受信は **外部コンポーネント or Admin API 経由**で実施
+- `scim_active` / `provisioned_by` は **SPI/Admin でセット + User Profile で対象属性を宣言**（[user-profile-poc.json](../../poc/jit-scim-verification-2026-07-10/config/user-profile-poc.json) パターン）
+
+##### F.4.2 last_login 記録
+
+- ✅ **案 B（Custom Authenticator SPI）確定**（[ADR-060 §C.2.3](../adr/060-auth-protocol-attack-path-residual-tbd.md) 反映）
+- ⚠ **forms サブフロー配置必須**（F-6、実装ガイドに明記）
+- ✅ debounce（1 日以内スキップ）動作実測済（初回書込 → 2 回目値不変）
+- [ADR-055 HRD Authenticator SPI](../adr/055-hrd-implementation-method-selection.md) の SPI 開発体制を再利用
+
+##### F.4.3 scim_active 保護
+
+- ✅ per-Mapper `syncMode=IMPORT` で確定（V2 PASS）
+- ⚠ 実 IdP を用いた JIT ログイン時の**動作確認**は Phase 1 実装フェーズで追加検証
+
+##### F.4.4 User Profile 設定（Phase 1 で必須）
+
+- **必ず User Profile API で `unmanagedAttributePolicy` 設定**（F-3、realm 属性では効かない）
+- **対象属性を User Profile schema に明示宣言**（`scim_active` / `provisioned_by` / `last_login` / `scim_external_id` / `jit_created_at` 等）
+- SPI で属性書込するなら `ENABLED` ポリシー、Admin 経由なら `ADMIN_EDIT` で十分
+
+#### 10.4.F.5 一次資料 14 件との突合（事前調査の妥当性）
+
+| 一次資料 | 事前予想 | 実測 | 一致度 |
+|---|---|---|:---:|
+| **E-4** SCIM Experimental | 不安定の可能性 | feature 名変更 + 404 で実証 | ✅ |
+| **E-5** カスタムスキーマ未実装 | scim_active 書けない可能性 | 404 で到達不可、代替 A 選択 | ✅ |
+| **E-8** Issue #14942 | Event Listener SPI 動かない | Custom Authenticator で回避 | ✅ 回避策実証 |
+| **E-11/E-12** Sync Mode Override | Mapper 単位 syncMode 動作 | 保存動作を実測 | ✅ |
+| **E-13** User Profile 4 ポリシー | `unmanagedAttributePolicy` で保護 | **設定方法が違った**（F-3）| ⚠ 部分的 |
+
+**評価**：**一次資料 14 件は 4/5 で的中**。E-13 のみ実装レベルで異なった（Realm 属性 vs User Profile API 経由）。**設定 API の詳細は実機でしか確定できない**という重要な教訓。
+
+#### 10.4.F.6 §10.4.A/B/C/D/E への影響と更新
+
+| セクション | 影響 | 対応 |
+|---|---|---|
+| **§10.4.A** SPI コード例 | **警告バナー削除可能**（案 B 確定で動作実証）| 案 B の Custom Authenticator SPI 版を推奨実装として明示 |
+| **§10.4.B** JIT/SCIM 判別 | `scim_active` 書込方式が確定 | Admin API + User Profile 経由の書込パターンを追記 |
+| **§10.4.C** debounce | ✅ 実機で 1 日 debounce が動作確認 | そのまま採用 |
+| **§10.4.D** V1/V2/V3' | ✅ V2/V3' は Fallback 不要、V1 のみ代替 A | 判定結果を反映 |
+| **§10.4.E** 一次資料 14 件 | ✅ 実測との突合結果を §10.4.F.5 に集約 | 補完関係 |
+
+#### 10.4.F.7 実測エビデンス（V3' PASS の証跡）
+
+```
+[SPI ログ]
+INFO LastLoginTracker: initial write for user=test-jit-user, now=1783666203620
+INFO LastLoginTracker: wrote last_login=1783666203620 for user=test-jit-user
+
+[debounce 検証] 2 回目ログイン → last_login 変化なし（1783666203620）= skip 動作 OK
+
+[認可コードフロー実測]
+POST /login-actions/authenticate {username=test-jit-user, password=test123} -> 302 code=a880b037-...
+last_login: NULL -> 1783666203620
+```
+
+**V1 追加検証（Admin + User Profile 経由）**:
+```
+PUT /admin/.../users/profile {unmanagedAttributePolicy: "ADMIN_EDIT"} -> 200
+PUT /admin/.../users/{id} {attributes:{scim_active:["true"],provisioned_by:["scim"]}} -> 204
+GET /admin/.../users/{id} .attributes -> {"provisioned_by":["scim"],"scim_active":["true"]} ✅
+```
+
+#### 10.4.F.8 反映先
+
+- **[hearing-checklist.md B-SCIM-7/8/9/10](../requirements/hearing-checklist.md)** — ⏳ → V1: ⚠(代替 A) / V2: ✅ / V3': ✅ 更新
+- **[ADR-025 §I.2](../adr/025-scim-positioning-and-receive-stance.md)** — Native inbound SCIM 未使用方針を明示
+- **[ADR-060 §C.2.3](../adr/060-auth-protocol-attack-path-residual-tbd.md)** — 案 B 確定 + F-6 forms サブフロー配置制約
+- **[poc/jit-scim-verification-2026-07-10/QUICKSTART-OTHER-MACHINE.md](../../poc/jit-scim-verification-2026-07-10/QUICKSTART-OTHER-MACHINE.md)** — F-1 誤記（`scim-realm-api` → `scim-api`）修正
+
+#### 10.4.F.9 【2026-07-10 追加】検証ギャップ：フェデ JIT 経路（V3'' 追加検証事項）
+
+> **重要**：**V3' PoC はローカル PW ユーザ（P-4）で検証、フェデ JIT ユーザ（P-3、本基盤の主用途）は未検証**。以下、Keycloak Browser Flow の分岐構造による本質的な制約を明示し、追加 PoC V3'' で対応する。
+
+##### F.9.1 実測経路と未検証経路
+
+V3' PoC で PASS したのは以下の 1 経路のみ:
+
+```
+[実測経路] test-jit-user（ローカル PW ユーザ）
+POST /login-actions/authenticate {username, password} → forms サブフロー → UPF → SPI
+```
+
+**未検証経路（実運用の主用途）**：
+
+```
+[未検証] フェデ JIT ユーザ（P-3 主用途）
+IdP Callback → Identity Provider Redirector (ALT) → skips forms → SPI 実行されない ❌
+```
+
+##### F.9.2 Keycloak Browser Flow 分岐構造の技術的説明
+
+`browser-with-last-login` の実測構造:
+
+```
+browser-with-last-login
+├── level0 Cookie (ALTERNATIVE)                  ← セッション Cookie 済み時
+├── level0 Identity Provider Redirector (ALT)    ← ★ フェデ JIT はここを通る
+├── level0 Organization (ALTERNATIVE)
+└── level0 forms (ALTERNATIVE)                   ← ★ ローカルユーザはこちら
+    ├── level1 Username Password Form (REQUIRED)
+    └── level1 Last Login Tracker (REQUIRED)     ← ★ SPI はここに配置
+```
+
+**Keycloak の設計**：4 つの ALTERNATIVE のうち **1 つが成功すると他は skip される**。フェデ経由の場合、`Identity Provider Redirector` が成功 → `forms` サブフロー全体（SPI 含む）が skip される。
+
+##### F.9.3 影響：主用途の P-3 で SPI 動作せず
+
+| カテゴリ | 認証経路 | V3' PoC 実測 | 実運用で SPI 動作 |
+|---|---|:---:|:---:|
+| **P-1** 弊社運用者 | 弊社内 IdP フェデ | — | ❌ **動かない** |
+| **P-2** テナント管理者 | 顧客 IdP フェデ | — | ❌ **動かない** |
+| **P-3** 顧客従業員 ★ **主役** | 顧客 IdP フェデ | — | ❌ **動かない** |
+| **P-4** ローカル PW ユーザ | ローカル PW | ✅ 実測 | ✅ 動く |
+
+**核心**：**JIT deprovisioning 対象の主用途は P-3 の "フェデ JIT ユーザ"**（§10.4.B の判定 3「`provisioned_by == "jit"` かつ長期未ログイン」対象）だが、**その経路は現在の SPI 配置では動作しない**。
+
+##### F.9.4 対策：3 系統 Flow 配置（Phase 1 実装で必須）
+
+Keycloak には認証経路別に以下 3 系統の Flow がある。SPI を **すべてに配置**する必要がある:
+
+| Flow | 対象経路 | 実行タイミング | Phase 1 実装で追加要 |
+|---|---|---|:---:|
+| **Browser Flow** | ローカル PW ユーザ（P-4）| 毎回ログイン | ✅ V3' 実測済み |
+| **First Broker Login Flow** | フェデ JIT ユーザ 初回ログイン | 初回のみ | ⚠ **追加要** |
+| **Post Broker Login Flow** | フェデ JIT ユーザ 2 回目以降 | 毎回（設定時）| ⚠ **追加要** |
+
+**Terraform 実装例**（Phase 1 実装）:
+
+```hcl
+# 1. Browser Flow（V3' 実測済み、既存 §10.4.F.4 通り）
+# forms サブフロー内に Last Login Tracker を REQUIRED で配置
+
+# 2. First Broker Login Flow に SPI 追加
+resource "keycloak_authentication_flow" "first_broker_login_with_tracker" {
+  realm_id = keycloak_realm.main.id
+  alias    = "first-broker-login-with-tracker"
+}
+
+resource "keycloak_authentication_execution" "first_broker_last_login" {
+  realm_id          = keycloak_realm.main.id
+  parent_flow_alias = "first-broker-login-with-tracker"
+  authenticator     = "last-login-tracker"
+  requirement       = "REQUIRED"
+  priority          = 90  # フロー末尾（Create User If Unique 等の後）
+}
+
+# 3. Post Broker Login Flow 新規作成 + SPI 追加
+resource "keycloak_authentication_flow" "post_broker_login_with_tracker" {
+  realm_id = keycloak_realm.main.id
+  alias    = "post-broker-login-with-tracker"
+}
+
+resource "keycloak_authentication_execution" "post_broker_last_login" {
+  realm_id          = keycloak_realm.main.id
+  parent_flow_alias = "post-broker-login-with-tracker"
+  authenticator     = "last-login-tracker"
+  requirement       = "REQUIRED"
+  priority          = 10
+}
+
+# 4. Identity Provider の設定で Flow を紐付け
+resource "keycloak_oidc_identity_provider" "customer_entra" {
+  realm     = keycloak_realm.main.id
+  alias     = "customer-entra"
+  # ... その他 IdP 設定 ...
+
+  first_broker_login_flow_alias = "first-broker-login-with-tracker"
+  post_broker_login_flow_alias  = "post-broker-login-with-tracker"
+}
+```
+
+##### F.9.5 追加 PoC V3''（別端末で実施予定）
+
+**目的**：フェデ JIT 経路で SPI が動作することを実測確認。
+
+**構成**（同一 Keycloak インスタンス内 2-Realm パターン、追加コンテナ不要）:
+
+```
+Keycloak 26.6
+├── Realm: customer-idp    ← 顧客 IdP を模擬（フェデ用テストユーザ保有）
+│   └── client: broker-poc（redirect: poc-jit-scim broker endpoint）
+│   └── user: fed-jit-user（PW=fed123）
+└── Realm: poc-jit-scim    ← 既存 PoC Realm
+    └── Identity Provider: customer-idp (OIDC)
+        ├── firstBrokerLoginFlowAlias = first-broker-login-with-tracker
+        └── postBrokerLoginFlowAlias  = post-broker-login-with-tracker
+```
+
+**テスト項目**:
+
+| # | テスト | 期待結果 |
+|---|---|:---:|
+| **T1** | 初回フェデログイン → JIT 作成 → `last_login` 反映 | ✅ First Broker Login Flow の SPI 動作確認 |
+| **T2** | 2 回目フェデログイン → `last_login` 更新（debounce 期間外にすれば） | ✅ Post Broker Login Flow の SPI 動作確認 |
+| **T3** | フェデ JIT ユーザに `provisioned_by=jit` が付いていること | ✅ First Broker Login Flow で自動セット確認 |
+
+**PoC 資産**（[poc/jit-scim-verification-2026-07-10/](../../poc/jit-scim-verification-2026-07-10/) に追加）:
+
+- `config/customer-idp-realm.json`（customer-idp Realm 定義）
+- `tests/setup-federation.sh`（IdP + Flow の自動設定）
+- `tests/v4-federation-jit.sh`（フェデ JIT テスト、V3'' 相当）
+- `docs/verification-log-v3fed.md`（結果ログスケルトン）
+- QUICKSTART-OTHER-MACHINE.md に V3'' セクション追加
+
+##### F.9.6 Phase 1 リリース判定への影響
+
+- ✅ **SPI コード自体は動作実証済み**（V3' PoC、コード変更不要）
+- ⚠ **Flow 配置は 3 系統要**（Browser + First Broker Login + Post Broker Login）
+- ⚠ **フェデ JIT 経路の統合テストは V3'' 追加 PoC または Phase 1 実装中で必須**
+
+**総合判定 "GO with Fallback" は継続可能**、ただし **V3'' 追加 PoC PASS または Phase 1 実装フェーズでの動作確認完了が Phase 1 リリース前ゲートに追加**。
+
 ### 10.5 Keycloak DB 保持・削除マトリクス（実装詳細）
 
 | ケース | 影響テーブル | SQL/API 操作 |

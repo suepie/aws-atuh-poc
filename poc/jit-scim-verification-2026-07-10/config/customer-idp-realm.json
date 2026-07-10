@@ -1,0 +1,67 @@
+{
+  "realm": "customer-idp",
+  "enabled": true,
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "editUsernameAllowed": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "adminEventsEnabled": true,
+  "eventsEnabled": true,
+  "eventsListeners": ["jboss-logging"],
+  "clients": [
+    {
+      "clientId": "broker-poc",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "secret": "broker-poc-secret-2026",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": false,
+      "redirectUris": [
+        "http://localhost:18080/realms/poc-jit-scim/broker/customer-idp/endpoint",
+        "http://poc-keycloak-266:8080/realms/poc-jit-scim/broker/customer-idp/endpoint"
+      ],
+      "webOrigins": ["*"],
+      "attributes": {
+        "post.logout.redirect.uris": "+",
+        "backchannel.logout.session.required": "true",
+        "backchannel.logout.revoke.offline.tokens": "false"
+      },
+      "defaultClientScopes": ["profile", "email", "roles", "web-origins"]
+    }
+  ],
+  "users": [
+    {
+      "username": "fed-jit-user",
+      "email": "fed-jit-user@customer.example.com",
+      "firstName": "Federation",
+      "lastName": "JITUser",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "fed123",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "username": "fed-jit-user-2",
+      "email": "fed-jit-user-2@customer.example.com",
+      "firstName": "Federation",
+      "lastName": "JITUser2",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "fed123",
+          "temporary": false
+        }
+      ]
+    }
+  ]
+}

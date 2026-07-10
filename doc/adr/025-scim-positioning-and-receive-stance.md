@@ -1,7 +1,7 @@
 # ADR-025: SCIM 2.0 の位置づけと本基盤の受信スタンス
 
 - **ステータス**: Proposed（要件定義フェーズで Accepted に昇格予定）
-- **日付**: 2026-06-15、**2026-07-08 §H 追記**（顧客 IdP が LDAP(s) の場合の JIT/SCIM 扱い）+ **§H.7.A 認証フロー追加**（§C-7.4.7 SSO ログイン / §C-7.4.8 Full Sync Deprovision）、**2026-07-09 §H.6.3 Transient Password Exposure 追加**（Level 1 vs Level 2 区別 + フェーズ図 + 6 脅威 + 10 緩和策 + 3 規制対応 + 4 方式比較）+ **§H.4.B JIT vs SCIM 判別と自動 deprovisioning 追加**（scim_active + provisioned_by 3 段階戦略、[jit-scim §10.4.A/B](../common/jit-scim-coexistence-keycloak.md) + [ADR-060 §C.2.3](060-auth-protocol-attack-path-residual-tbd.md) 波及）+ **⚠ §I.2 Metatavu keycloak-scim-server の Phase 1 実装前 PoC 検証追記**（[jit-scim §10.4.E 一次資料調査 14 件](../common/jit-scim-coexistence-keycloak.md) 反映、Keycloak 26 対応 / カスタム属性書込 / SPI 統合の 3 点確認必要）
+- **日付**: 2026-06-15、**2026-07-08 §H 追記**（顧客 IdP が LDAP(s) の場合の JIT/SCIM 扱い）+ **§H.7.A 認証フロー追加**（§C-7.4.7 SSO ログイン / §C-7.4.8 Full Sync Deprovision）、**2026-07-09 §H.6.3 Transient Password Exposure 追加**（Level 1 vs Level 2 区別 + フェーズ図 + 6 脅威 + 10 緩和策 + 3 規制対応 + 4 方式比較）+ **§H.4.B JIT vs SCIM 判別と自動 deprovisioning 追加**（scim_active + provisioned_by 3 段階戦略、[jit-scim §10.4.A/B](../common/jit-scim-coexistence-keycloak.md) + [ADR-060 §C.2.3](060-auth-protocol-attack-path-residual-tbd.md) 波及）+ **⚠ §I.2 Metatavu keycloak-scim-server の Phase 1 実装前 PoC 検証追記**（[jit-scim §10.4.E 一次資料調査 14 件](../common/jit-scim-coexistence-keycloak.md) 反映、Keycloak 26 対応 / カスタム属性書込 / SPI 統合の 3 点確認必要）、**2026-07-10 §I.2 実機 PoC 結果反映**（[poc/jit-scim-verification-2026-07-10](../../poc/jit-scim-verification-2026-07-10/) V1 PARTIAL / V2 PASS / V3' PASS、**代替 A 確定**：native inbound SCIM 非依存 + Admin API + Custom Authenticator SPI + User Profile で対象属性明示宣言、[jit-scim §10.4.F](../common/jit-scim-coexistence-keycloak.md) と同期）
 - **関連**:
   - [§FR-7.4.0 SCIM の位置づけと本基盤のスタンス](../requirements/proposal/fr/07-user.md#fr-740-scim-の位置づけと本基盤のスタンス)
   - [§FR-2.2.1 JIT プロビジョニング](../requirements/proposal/fr/02-federation.md#321-jit-プロビジョニング--fr-fed-008)
@@ -621,6 +621,33 @@ Changed Users Sync Period: 300 (5min)
 > - **代替 C**：SCIM 経由書込を諦め、LDAP User Federation Provider の federation_link 経由判別（[§H.4.B](#h4b-jit-vs-scim-判別と自動-deprovisioning2026-07-09-追加) 記載、LDAP 顧客のみ有効）
 >
 > **反映先**：**ヒアリング項目 B-SCIM-7〜10** で PoC 検証事項化（[hearing-checklist.md](../requirements/hearing-checklist.md)）
+
+> **✅ 2026-07-10 実機 PoC 検証結果 — Phase 1 は代替 A で確定**
+>
+> [poc/jit-scim-verification-2026-07-10/](../../poc/jit-scim-verification-2026-07-10/) で実機検証を実施した結果、上記 3 論点は以下の通り確定（詳細は [jit-scim §10.4.F](../common/jit-scim-coexistence-keycloak.md)）:
+>
+> 1. **Keycloak 26.6 対応度**：Metatavu は Keycloak 26.6 native SCIM Realm API との住み分けが不明瞭であることも判明。**Keycloak 26.6 native `scim-api:v1` feature が有効でも、native inbound SCIM は `/realms/{r}/scim/v2/*` で 404**（追加の realm 単位設定なしでは露出せず、実測ログ [verification-log.md §2](../../poc/jit-scim-verification-2026-07-10/docs/verification-log.md)）
+> 2. **カスタム属性書込対応**：**Native inbound SCIM 経由の書込は不可**（404 で到達不能）。**ただし User Profile で `unmanagedAttributePolicy=ADMIN_EDIT` 設定 + Admin API 経由で `scim_active` / `provisioned_by` の user_attribute への永続化を実測確認**
+> 3. **Custom Authenticator SPI との統合パス**：**Custom Authenticator SPI は認可コードフロー経由で `user_attribute.last_login` への書込を実証**（Issue #14942 の Event Listener SPI 問題を回避、[V3' PASS](../../poc/jit-scim-verification-2026-07-10/docs/verification-log.md)）
+>
+> **Phase 1 実装確定方針（代替 A 採用）**：
+>
+> - **SCIM 受信は Keycloak native inbound SCIM に依存しない**（V1 で 404 を実機確認）
+> - **SCIM 受信は外部コンポーネント or Admin API 経由で実施**
+> - **`scim_active` / `provisioned_by` は SPI/Admin でセット**（Custom Authenticator SPI 案 B の SPI 体制を流用）
+> - **User Profile で対象属性を明示宣言**（[user-profile-poc.json](../../poc/jit-scim-verification-2026-07-10/config/user-profile-poc.json) パターン: `scim_active`, `provisioned_by`, `last_login`, `scim_external_id`, `jit_created_at`）
+> - **`unmanagedAttributePolicy` は User Profile API で設定必須**（realm 属性では効かない、F-3）
+>
+> **§I.2 実装スタック更新**（Phase 1）：
+>
+> - `Broker SCIM Server`：**Metatavu keycloak-scim-server は選定不要**（native inbound 非依存方針のため）。代わりに **Admin API + Custom Authenticator SPI で対応**。
+> - `IdP-KC SCIM Server`：同上（Broker と同一実装）
+> - `Broker / IdP-KC Event Listener SPI`：**Custom Authenticator SPI に置換**（Issue #14942 回避、V3' で書込・debounce 実証済み）
+> - `削除イベントバス`：AWS EventBridge（変更なし）
+> - `Session Revoke Lambda`：Node.js / Python（変更なし）
+> - `Keycloak バージョン`：**26.6.0 以上必須 + feature `scim-api` 有効化**
+>
+> **反映先**：[jit-scim §10.4.F](../common/jit-scim-coexistence-keycloak.md)、[hearing-checklist.md B-SCIM-7〜10](../requirements/hearing-checklist.md)、[ADR-060 §C.2.3](060-auth-protocol-attack-path-residual-tbd.md) を更新
 
 ### I.3 Broker の PII 最小化方針（Minimum Storage）
 

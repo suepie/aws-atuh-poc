@@ -301,6 +301,79 @@ public class UnifiedEventListener implements EventListenerProvider {
 - **`last_login` / `provisioned_by` 書込**：**新規 Custom Authenticator SPI** で対応（[jit-scim §10.4.E.2 案 B](../common/jit-scim-coexistence-keycloak.md)）
 - 詳細と 14 件一次資料引用：[jit-scim §10.4.E](../common/jit-scim-coexistence-keycloak.md)
 
+**✅ 2026-07-10 実機 PoC 検証結果 — 案 B（Custom Authenticator SPI）確定 + Phase 1 実装制約 F-6 追加**
+
+[poc/jit-scim-verification-2026-07-10/](../../poc/jit-scim-verification-2026-07-10/) で実機検証を実施した結果（詳細は [jit-scim §10.4.F](../common/jit-scim-coexistence-keycloak.md)）:
+
+- ✅ **案 B PASS**：Custom Authenticator SPI の `user.setSingleAttribute("last_login", ...)` が認可コードフロー経由で **user_attribute への永続化を実測**（`last_login=1783666203620` 書込確認）
+- ✅ **debounce 動作確認**：1 日以内の再ログインで値不変（skip 動作）
+- ✅ **Event Listener SPI Issue #14942 の問題を回避**（Authentication Flow 内で transaction 明示制御）
+
+**⚠ Phase 1 実装で最重要の制約 F-6 — SPI の配置**：
+
+Custom Authenticator SPI を **top-level REQUIRED** に置くとログイン失敗する。実測ログ:
+
+```
+WARN REQUIRED and ALTERNATIVE elements at same level!
+     Those alternative executions will be ignored: [auth-cookie, identity-provider-redirector, ...]
+WARN authenticator 'last-login-tracker' requires user to be set ... but user is not set yet
+-> LOGIN_ERROR invalid_user_credentials
+```
+
+**根拠**：Keycloak のフロー評価では、同一レベルに REQUIRED があると同レベルの ALTERNATIVE が無視される仕様。SPI は `requiresUser() = true` を返すため、user が確定した後に置く必要がある。
+
+**必ずこの配置**（PoC で PASS した構成）:
+
+```
+browser-with-last-login
+├── level0 Cookie (ALTERNATIVE)
+├── level0 Identity Provider Redirector (ALTERNATIVE)
+├── level0 Organization (ALTERNATIVE)
+└── level0 forms (ALTERNATIVE)
+    ├── level1 Username Password Form (REQUIRED)
+    └── level1 Last Login Tracker (REQUIRED)   ← ★ ここに配置
+```
+
+**Phase 1 実装ガイド**：Terraform / keycloak-config-cli で以下を明示宣言:
+
+```hcl
+resource "keycloak_authentication_execution" "last_login_tracker" {
+  realm_id          = keycloak_realm.main.id
+  parent_flow_alias = "browser-with-last-login-forms"  # ★ forms サブフロー内
+  authenticator     = "last-login-tracker"
+  requirement       = "REQUIRED"
+  priority          = 30  # Username Password Form の後
+}
+```
+
+**SPI プロトタイプ**：[poc/jit-scim-verification-2026-07-10/spi/last-login-tracker/](../../poc/jit-scim-verification-2026-07-10/spi/last-login-tracker/) を Phase 1 実装のベースとして流用可能（[ADR-055 HRD Authenticator SPI](055-hrd-implementation-method-selection.md) と同じ Java SPI 開発体制）
+
+**⚠ 2026-07-10 追加：F-9 フェデ JIT 経路制約（V3' で未検証、Phase 1 実装で必ず対応）**
+
+V3' PoC は **ローカル PW ユーザ（P-4）** で SPI 動作を確認したが、**フェデ JIT ユーザ（P-3、本基盤主用途）は Browser Flow の分岐構造上、上記 SPI 配置では動作しない**。
+
+**Keycloak の分岐仕様**：`browser-with-last-login` の level0 に 4 つ ALTERNATIVE（Cookie / IdP Redirector / Organization / forms）が並ぶ。**1 つ成功すると他は skip**。フェデユーザは `IdP Redirector` で成功 → `forms` サブフロー全体（SPI 含む）が skip → **`last_login` が更新されない**。
+
+**対策：3 系統 Flow 配置**（Phase 1 実装で全て IaC 化）:
+
+| Flow | 対象 | 配置 |
+|---|---|---|
+| Browser Flow | ローカル PW（P-4）| `forms` サブフロー末尾（V3' 実測済み）|
+| **First Broker Login Flow** | フェデ JIT 初回（P-1〜P-3）| フロー末尾（Create User If Unique の後）|
+| **Post Broker Login Flow** | フェデ JIT 2 回目以降（P-1〜P-3）| フロー末尾 |
+
+**Identity Provider 設定で紐付け**：
+
+```hcl
+resource "keycloak_oidc_identity_provider" "customer_entra" {
+  # ... IdP 設定 ...
+  first_broker_login_flow_alias = "first-broker-login-with-tracker"
+  post_broker_login_flow_alias  = "post-broker-login-with-tracker"
+}
+```
+
+**Phase 1 実装前ゲート**：**追加 PoC V3''（フェデ JIT 経路）を別端末で実施予定**。詳細は [jit-scim §10.4.F.9](../common/jit-scim-coexistence-keycloak.md) 参照。V3'' PASS または Phase 1 実装フェーズでの動作確認完了までは、**Phase 1 リリース判定を確定できない**。
+
 **関連 ADR / ドキュメント**：
 - **[jit-scim §10.4.A / §10.4.B](../common/jit-scim-coexistence-keycloak.md)** — バッチスクリプト + JIT/SCIM 判別ロジック
 - **[broker-data-model.md §2 ③](../common/broker-data-model.md)** — `user_attribute` に `last_login` / `provisioned_by` / `scim_active` を追加
@@ -503,3 +576,5 @@ public class GoldenDetectionEventListener implements EventListenerProvider {
 | 2026-07-08 | 初版作成（§7.4 / §7.5 攻撃経路整理からの残 TBD 3 領域統合 ADR、A. Log scrubbing / B. Token Binding DPoP・mTLS / C. Adaptive Auth 連動 Golden 検知 6 シグナル）|
 | 2026-07-08 | **§C.2.2 Golden LDAP 系シグナル L-GD-1〜L-GD-5 追加**（[ADR-025 §H.6 L-5 論点](025-scim-positioning-and-receive-stance.md) 波及、LDAP Bind Service Account 乗っ取り検知）+ §C.7 Phase 1 実装 TODO に Golden LDAP 系追記 + ヘッダ関連に ADR-025 §H 追加 |
 | 2026-07-09 | **§C.2.3 last_login + provisioned_by 属性書込追加**（[jit-scim §10.4.A/B](../common/jit-scim-coexistence-keycloak.md) 波及、旧 §10.4 の event_entity 依存が 10M MAU で破綻することが判明したため、Event Listener SPI に last_login / provisioned_by 書込を統合。PCI DSS Req 8.2.6 90 日未使用無効化 + JIT/SCIM 判別ロジックの本番実装親 ADR となる）|
+| 2026-07-10 | **§C.2.3 実機 PoC 結果反映：案 B（Custom Authenticator SPI）確定 + F-6 forms サブフロー配置制約追記**（[poc/jit-scim-verification-2026-07-10 実測](../../poc/jit-scim-verification-2026-07-10/) で V3' PASS + debounce 動作確認 + top-level 配置時のログイン失敗を実測、Terraform 実装例追加、[jit-scim §10.4.F](../common/jit-scim-coexistence-keycloak.md) と同期）|
+| 2026-07-10 | **§C.2.3 F-9 フェデ JIT 経路制約追記**（V3' はローカル PW ユーザで検証、フェデ JIT ユーザ（本基盤主用途 P-3）は Browser Flow 分岐構造上動作しないことを判明。Phase 1 実装で Browser Flow + First Broker Login Flow + Post Broker Login Flow の 3 系統に SPI 配置が必須。追加 PoC V3'' 別端末で実施予定、[jit-scim §10.4.F.9](../common/jit-scim-coexistence-keycloak.md) と同期）|
