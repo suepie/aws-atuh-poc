@@ -1,0 +1,15 @@
+{
+  "_comment": "PoC 用 User Profile 設定（F-3 対応）。Keycloak 26.6 では unmanagedAttributePolicy を realm 属性で指定しても無効で、カスタム属性が黙って破棄される。適用: PUT /admin/realms/poc-jit-scim/users/profile。詳細: docs/additional-poc-findings.md F-3",
+  "unmanagedAttributePolicy": "ENABLED",
+  "attributes": [
+    { "name": "username", "displayName": "${username}", "permissions": { "view": ["admin", "user"], "edit": ["admin", "user"] }, "multivalued": false },
+    { "name": "email", "displayName": "${email}", "permissions": { "view": ["admin", "user"], "edit": ["admin", "user"] }, "validations": { "email": {} }, "multivalued": false },
+    { "name": "firstName", "displayName": "${firstName}", "permissions": { "view": ["admin", "user"], "edit": ["admin", "user"] }, "multivalued": false },
+    { "name": "lastName", "displayName": "${lastName}", "permissions": { "view": ["admin", "user"], "edit": ["admin", "user"] }, "multivalued": false },
+    { "name": "provisioned_by", "displayName": "Provisioned By (jit/scim)", "permissions": { "view": ["admin"], "edit": ["admin"] }, "multivalued": false },
+    { "name": "scim_active", "displayName": "SCIM Active", "permissions": { "view": ["admin"], "edit": ["admin"] }, "multivalued": false },
+    { "name": "scim_external_id", "displayName": "SCIM External ID", "permissions": { "view": ["admin"], "edit": ["admin"] }, "multivalued": false },
+    { "name": "last_login", "displayName": "Last Login (epoch ms)", "permissions": { "view": ["admin"], "edit": ["admin"] }, "multivalued": false },
+    { "name": "jit_created_at", "displayName": "JIT Created At (epoch ms)", "permissions": { "view": ["admin"], "edit": ["admin"] }, "multivalued": false }
+  ]
+}

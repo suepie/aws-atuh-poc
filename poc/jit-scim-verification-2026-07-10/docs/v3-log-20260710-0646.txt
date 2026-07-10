@@ -1,0 +1,8 @@
+[1;34m[TEST][0m  ====================================================
+[1;34m[TEST][0m  V3': Custom Authenticator SPI 検証
+[1;34m[TEST][0m  ====================================================
+[0;36m[INFO][0m  Waiting for Keycloak to be ready...
+[0;32m[OK][0m    Keycloak is ready
+[0;32m[OK][0m    Admin token acquired
+[1;34m[TEST][0m  Test 1: SPI が Keycloak にロードされているか確認
+jq: error (at <stdin>:1): Cannot iterate over null (null)

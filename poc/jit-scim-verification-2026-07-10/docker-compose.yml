@@ -24,9 +24,11 @@ services:
       KEYCLOAK_ADMIN_PASSWORD: admin_poc_2026
 
       # Feature Flags（PoC で必要）
-      # - scim-realm-api: Keycloak 26.6 Native SCIM Realm API（Experimental、E-4）
-      # - declarative-user-profile: User Profile schema サポート（E-13）
-      KC_FEATURES: scim-realm-api,declarative-user-profile,admin-fine-grained-authz
+      # - scim-api: Keycloak 26.6 Native SCIM API（Experimental、起動時 scim-api:v1）
+      #   ※ 2026-07-10 実機検証で判明：feature 名は `scim-api`（`scim-realm-api` は存在せず起動失敗）
+      #   ※ `declarative-user-profile` は 26 系で GA 化・廃止（指定すると起動失敗）→ 削除
+      #   詳細: docs/additional-poc-findings.md F-1
+      KC_FEATURES: scim-api,admin-fine-grained-authz
 
       # Health / Metrics
       KC_HEALTH_ENABLED: "true"

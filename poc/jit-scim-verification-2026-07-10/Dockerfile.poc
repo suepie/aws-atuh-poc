@@ -1,0 +1,15 @@
+# PoC 実行用イメージ（devcontainer + docker-desktop の bind mount 問題を回避するため
+# config / SPI JAR をイメージに焼き込む。docker build のコンテキストはストリーム送信される
+# ため、daemon がワークスペースパスを見えなくても動作する）
+#
+# Stage 1: SPI JAR を Maven でビルド
+FROM maven:3.9-eclipse-temurin-17 AS spibuild
+WORKDIR /build
+COPY spi/last-login-tracker/pom.xml .
+COPY spi/last-login-tracker/src ./src
+RUN mvn clean package -DskipTests -q
+
+# Stage 2: Keycloak 26.6 に config と JAR を焼き込む
+FROM quay.io/keycloak/keycloak:26.6
+COPY --from=spibuild /build/target/last-login-tracker.jar /opt/keycloak/providers/
+COPY config/ /opt/keycloak/data/import/
