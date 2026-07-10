@@ -1,0 +1,85 @@
+# PoC 環境：Keycloak 26.6 + PostgreSQL 16 + Metatavu SCIM Server
+# 参考：ADR-025 §I.2、jit-scim §10.4.E
+# 起動：docker compose up -d
+# 停止：docker compose down
+# 完全クリーンアップ：docker compose down -v
+
+version: "3.9"
+
+services:
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.6
+    container_name: poc-keycloak-266
+    ports:
+      - "18080:8080"  # 既存 PoC (8080) と衝突回避
+    environment:
+      # DB 設定
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak_poc
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: keycloak_poc_2026
+
+      # 管理者
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin_poc_2026
+
+      # Feature Flags（PoC で必要）
+      # - scim-realm-api: Keycloak 26.6 Native SCIM Realm API（Experimental、E-4）
+      # - declarative-user-profile: User Profile schema サポート（E-13）
+      KC_FEATURES: scim-realm-api,declarative-user-profile,admin-fine-grained-authz
+
+      # Health / Metrics
+      KC_HEALTH_ENABLED: "true"
+      KC_METRICS_ENABLED: "true"
+
+      # HTTP 許可（PoC のみ、本番は HTTPS）
+      KC_HTTP_ENABLED: "true"
+      KC_HOSTNAME_STRICT: "false"
+
+    volumes:
+      # SPI JAR 配置ディレクトリ（V3' で使用）
+      - ./spi/last-login-tracker/target:/opt/keycloak/providers:ro
+      # Realm 設定インポート
+      - ./config:/opt/keycloak/data/import:ro
+
+    command:
+      - start-dev
+      - --import-realm
+      - --log-level=INFO,org.keycloak.events:DEBUG
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+    healthcheck:
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/9000 && printf 'GET /health/ready HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n' >&3 && cat <&3 | grep -q '\"status\": \"UP\"'"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: poc-postgres-16
+    ports:
+      - "15432:5432"  # 既存 PoC (5432) と衝突回避
+    environment:
+      POSTGRES_DB: keycloak_poc
+      POSTGRES_USER: keycloak
+      POSTGRES_PASSWORD: keycloak_poc_2026
+    volumes:
+      - pgdata_poc:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U keycloak -d keycloak_poc"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Metatavu keycloak-scim-server（V1 検証対象）
+  # 注意：Metatavu の Docker image は公式提供が明確でない可能性
+  # 代替：SPI JAR として Keycloak にデプロイする方式が主流
+  # 本 PoC では Keycloak Native SCIM Realm API + Metatavu の SPI 実装を試す方針
+  # 実際のデプロイ方式は build 時に決定
+
+volumes:
+  pgdata_poc:

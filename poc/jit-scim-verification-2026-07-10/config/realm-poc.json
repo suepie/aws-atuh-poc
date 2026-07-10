@@ -1,0 +1,103 @@
+{
+  "realm": "poc-jit-scim",
+  "enabled": true,
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "editUsernameAllowed": false,
+  "resetPasswordAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "loginWithEmailAllowed": true,
+  "adminEventsEnabled": true,
+  "adminEventsDetailsEnabled": true,
+  "eventsEnabled": true,
+  "eventsListeners": ["jboss-logging"],
+  "enabledEventTypes": [
+    "LOGIN",
+    "LOGIN_ERROR",
+    "REGISTER",
+    "REGISTER_ERROR",
+    "IDENTITY_PROVIDER_FIRST_LOGIN",
+    "IDENTITY_PROVIDER_LOGIN",
+    "UPDATE_PROFILE",
+    "USER_INFO_REQUEST"
+  ],
+  "eventsExpiration": 259200,
+  "attributes": {
+    "unmanagedAttributePolicy": "ADMIN_EDIT"
+  },
+  "clients": [
+    {
+      "clientId": "poc-test-client",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": true,
+      "redirectUris": ["http://localhost:*"],
+      "webOrigins": ["*"],
+      "attributes": {
+        "post.logout.redirect.uris": "+"
+      }
+    }
+  ],
+  "users": [
+    {
+      "username": "test-jit-user",
+      "email": "test-jit@poc.example.com",
+      "firstName": "Test",
+      "lastName": "JIT",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "test123",
+          "temporary": false
+        }
+      ],
+      "attributes": {
+        "provisioned_by": ["jit"],
+        "jit_created_at": ["1720483200000"]
+      }
+    },
+    {
+      "username": "test-scim-user",
+      "email": "test-scim@poc.example.com",
+      "firstName": "Test",
+      "lastName": "SCIM",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "test123",
+          "temporary": false
+        }
+      ],
+      "attributes": {
+        "provisioned_by": ["scim"],
+        "scim_active": ["true"],
+        "scim_external_id": ["hr-12345"]
+      }
+    },
+    {
+      "username": "test-inactive-jit",
+      "email": "test-inactive@poc.example.com",
+      "firstName": "Test",
+      "lastName": "Inactive",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "test123",
+          "temporary": false
+        }
+      ],
+      "attributes": {
+        "provisioned_by": ["jit"],
+        "last_login": ["1691712000000"]
+      }
+    }
+  ]
+}
