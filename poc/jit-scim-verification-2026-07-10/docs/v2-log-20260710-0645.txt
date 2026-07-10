@@ -1,0 +1,49 @@
+[1;34m[TEST][0m  ====================================================
+[1;34m[TEST][0m  V2: Sync Mode Override 検証
+[1;34m[TEST][0m  ====================================================
+[0;36m[INFO][0m  Waiting for Keycloak to be ready...
+[0;32m[OK][0m    Keycloak is ready
+[0;32m[OK][0m    Admin token acquired
+[1;34m[TEST][0m  Test 1: Test OIDC IdP 作成（Sync Mode = FORCE）
+[0;32m[OK][0m    IdP 'v2-test-idp' created with Sync Mode = FORCE
+[1;34m[TEST][0m  Test 2: 通常 Mapper 作成（syncMode 未指定、Inherit）
+[0;32m[OK][0m    Default mapper created
+[1;34m[TEST][0m  Test 3: Sync Mode Override Mapper 作成（syncMode = IMPORT）
+[0;32m[OK][0m    ✅ Sync Mode Override Mapper created successfully
+[0;32m[OK][0m      → E-12（Per-Mapper syncMode Keycloak 10+）と整合
+[1;34m[TEST][0m  Test 4: Mapper 設定確認
+[
+  {
+    "id": "006167c7-42dc-40b1-8af8-7dcd6e15ab31",
+    "name": "map-email-default",
+    "identityProviderAlias": "v2-test-idp",
+    "identityProviderMapper": "oidc-user-attribute-idp-mapper",
+    "config": {
+      "claim": "email",
+      "user.attribute": "email"
+    }
+  },
+  {
+    "id": "492f16e1-c3d7-4d77-87ee-53575bb3c0c2",
+    "name": "protect-scim-active",
+    "identityProviderAlias": "v2-test-idp",
+    "identityProviderMapper": "hardcoded-attribute-idp-mapper",
+    "config": {
+      "attribute.value": "true",
+      "syncMode": "IMPORT",
+      "attribute": "scim_active"
+    }
+  }
+]
+[0;32m[OK][0m    ✅ syncMode = IMPORT が Mapper 設定に保存されている
+[0;32m[OK][0m      → V2 判定：技術的に override 可能（一次資料 E-12 と整合）
+[1;34m[TEST][0m  ====================================================
+[1;35m[VERDICT][0m V2 判定サマリ
+[1;34m[TEST][0m  ====================================================
+[0;36m[INFO][0m    Test 1: IdP 作成（Sync Mode = FORCE）
+[0;36m[INFO][0m    Test 2: 通常 Mapper 作成
+[0;36m[INFO][0m    Test 3: Sync Mode Override Mapper 作成
+[0;36m[INFO][0m    Test 4: 設定保存確認
+[0;36m[INFO][0m  
+[0;36m[INFO][0m  実動作の完全確認には実 JIT ログインが必要（本 PoC では設定検証のみ）
+[0;36m[INFO][0m  詳細ログを docs/verification-log.md に保存してください

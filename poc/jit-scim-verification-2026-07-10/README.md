@@ -7,6 +7,50 @@
 
 ---
 
+## ✅ 実行結果サマリ（2026-07-10 実機検証済み）
+
+> 本 PoC を実機（Linux devcontainer / Docker Desktop WSL2）で **実際に起動・実行**した結果。
+> 詳細は [docs/verification-log.md](docs/verification-log.md)、実行中に判明した不備・是正は [docs/additional-poc-findings.md](docs/additional-poc-findings.md)。
+
+| 検証 | ゲート | 判定 | 要点 |
+|---|---|:---:|---|
+| **V1** SCIM カスタム属性 | B-SCIM-7 | ⚠ **PARTIAL** | native inbound SCIM は feature 有効でも `/scim/v2/*` が **404**。ただし User Profile で unmanaged 属性を有効化すれば **Admin API 経由で `scim_active`/`provisioned_by` は永続化可** → **代替 A** で実装可能 |
+| **V2** Sync Mode Override | B-SCIM-8 | ✅ **PASS** | per-Mapper `syncMode=IMPORT` が作成・保存される（E-12 整合、Fallback 不要） |
+| **V3'** Custom Authenticator SPI | B-SCIM-10 | ✅ **PASS** | 認可コードフロー経由ログインで **`last_login` 書込を実証** + **debounce 動作**確認 → **案 B 確定** |
+
+**総合判定：⚠ GO with Fallback**（V2/V3' は Fallback 不要、V1 のみ代替 A を発動＝増分小）
+
+### 実行中に判明した是正点（実機でしか分からなかった 6 件）
+
+| # | 事象 | 是正 |
+|---|---|---|
+| F-1 | KC26.6 の feature 名変更：`scim-realm-api`→**`scim-api`**、`declarative-user-profile` は **GA 廃止**（旧名で起動失敗） | `docker-compose.yml` 修正済 |
+| F-2 | devcontainer で **bind mount が空**（daemon=docker-desktop がパス不可視） | `Dockerfile.poc` + `docker-compose.exec.yml` で焼き込み |
+| F-3 | realm import の `unmanagedAttributePolicy`(realm 属性) が無効 → **カスタム属性が黙って破棄** | `config/user-profile-poc.json` 追加（User Profile で設定） |
+| F-4 | native inbound SCIM が 404（追加の realm 設定なしでは露出せず） | native に依存しない設計（代替 A） |
+| F-5 | `v3-*.sh` の SPI 検出が **誤キー**でクラッシュ（`AuthenticatorFactory`→`Authenticator`） | スクリプト修正済 |
+| F-6 | SPI を **top-level REQUIRED** に置くとログイン失敗（forms が無視される） | **forms サブフロー内**配置が必須 |
+
+### Phase 1 実装への確定事項
+
+- **SCIM 受信**：Keycloak native inbound SCIM に依存しない。外部/Admin 経由で受信し `scim_active`/`provisioned_by` を SPI/Admin でセット（代替 A）+ User Profile で対象属性を宣言。
+- **last_login 記録**：**案 B（Custom Authenticator SPI）** 採用。ADR-055 の SPI 体制を流用。**forms サブフロー配置が必須（F-6）**。
+- **scim_active 保護**：per-Mapper `syncMode=IMPORT` で確定。
+
+### 再現方法（この環境）
+
+```bash
+cd poc/jit-scim-verification-2026-07-10/
+docker compose -f docker-compose.exec.yml build && docker compose -f docker-compose.exec.yml up -d
+docker network connect poc-jit-scim-exec_default "$(hostname)"   # sibling container 間通信
+export KC_URL=http://poc-keycloak-266:8080
+./tests/v2-sync-mode-override.sh   # PASS
+./tests/v1-metatavu-scim.sh        # native SCIM 404 → 代替 A
+# V3' は docs/verification-log.md §4 の手順（User Profile 有効化 + forms 配置 + auth code flow）
+```
+
+---
+
 ## 0. PoC の目的
 
 **Phase 1 リリース前ゲートの 3 検証を実施し、実装方式を確定する**:

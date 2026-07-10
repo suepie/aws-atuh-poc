@@ -35,7 +35,10 @@ log_test "Test 1: SPI が Keycloak にロードされているか確認"
 SERVER_INFO=$(curl -s "${KC_URL}/admin/serverinfo" \
               -H "Authorization: Bearer ${TOKEN}")
 
-AUTH_LOADED=$(echo "$SERVER_INFO" | jq -r '.componentTypes."org.keycloak.authentication.AuthenticatorFactory"[] | select(.id == "last-login-tracker") | .id')
+# 注意: serverinfo の componentTypes キーは "...authentication.Authenticator"
+#       （"...AuthenticatorFactory" ではない）。誤キーだと jq が null で crash する。
+#       詳細: docs/additional-poc-findings.md F-5
+AUTH_LOADED=$(echo "$SERVER_INFO" | jq -r '.componentTypes."org.keycloak.authentication.Authenticator"[]? | select(.id == "last-login-tracker") | .id')
 
 if [ "$AUTH_LOADED" = "last-login-tracker" ]; then
     log_ok "✅ 'last-login-tracker' Authenticator SPI がロードされている"

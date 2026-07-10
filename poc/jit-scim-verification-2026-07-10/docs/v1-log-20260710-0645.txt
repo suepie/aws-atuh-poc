@@ -1,0 +1,28 @@
+[1;34m[TEST][0m  ====================================================
+[1;34m[TEST][0m  V1: Metatavu SCIM Custom Attribute Mapping 検証
+[1;34m[TEST][0m  ====================================================
+[0;36m[INFO][0m  Waiting for Keycloak to be ready...
+[0;32m[OK][0m    Keycloak is ready
+[0;32m[OK][0m    Admin token acquired
+[1;34m[TEST][0m  Test 1: Keycloak 26.6 SCIM Realm API 有効性確認
+[0;33m[WARN][0m  SCIM Realm API returned HTTP 404
+[0;33m[WARN][0m    → Keycloak 26.6 で feature 'scim-realm-api' が有効か確認
+[0;33m[WARN][0m    → docker-compose.yml の KC_FEATURES 確認
+[1;34m[TEST][0m  Test 2: SCIM POST /Users で標準属性書込
+[0;31m[ERROR][0m SCIM endpoint not found (HTTP 404)
+[0;31m[ERROR][0m   → Native SCIM Realm API が Keycloak 26.6 で有効化されていない
+[0;31m[ERROR][0m   → Fallback A（Custom Authenticator SPI）検討
+[1;34m[TEST][0m  Test 3: SCIM POST /Users でカスタム属性書込試行
+[0;36m[INFO][0m  kc.scim.schema.attribute annotation の動作確認
+[0;36m[INFO][0m  User Profile schema で scim_active を定義する必要があるかも
+[0;33m[WARN][0m  SCIM POST HTTP 404
+[1;34m[TEST][0m  Test 4: SCIM PATCH で active=false 更新
+[1;34m[TEST][0m  ====================================================
+[1;35m[VERDICT][0m V1 判定サマリ
+[1;34m[TEST][0m  ====================================================
+[0;36m[INFO][0m    Test 1: SCIM Realm API 有効性
+[0;36m[INFO][0m    Test 2: 標準属性書込 (active → enabled)
+[0;36m[INFO][0m    Test 3: カスタム属性書込 (scim_active / provisioned_by)
+[0;36m[INFO][0m    Test 4: SCIM PATCH で状態更新
+[0;36m[INFO][0m  
+[0;36m[INFO][0m  詳細ログを docs/verification-log.md に保存してください
