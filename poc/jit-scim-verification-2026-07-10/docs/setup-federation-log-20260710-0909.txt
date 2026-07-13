@@ -1,0 +1,34 @@
+[TEST]  ====================================================
+[TEST]  セットアップ：フェデ JIT 検証環境（V3''）
+[TEST]  ====================================================
+[INFO]  Waiting for Keycloak to be ready...
+[OK]    Keycloak is ready
+[OK]    Admin token acquired
+[TEST]  Step 1: customer-idp Realm を作成
+[OK]    customer-idp Realm を作成しました
+[TEST]  Step 2: poc-jit-scim Realm の User Profile 設定
+[WARN]  User Profile 設定 HTTP 400
+[TEST]  Step 3: poc-jit-scim Realm に OIDC IdP を追加
+[WARN]  IdP 作成 HTTP 500
+{"error":"unknown_error","error_description":"For more on this error consult the server log."}
+500
+[TEST]  Step 4: First Broker Login Flow に SPI を追加
+[OK]    first-broker-login-with-tracker フロー準備完了
+[OK]    First Broker Login Flow に Last Login Tracker を追加
+[OK]    First Broker Login Flow の Last Login Tracker を REQUIRED に設定
+[TEST]  Step 5: Post Broker Login Flow を作成 + SPI 追加
+[OK]    post-broker-login-with-tracker フロー準備完了
+[OK]    Post Broker Login Flow に Last Login Tracker を追加
+[OK]    Post Broker Login Flow の Last Login Tracker を REQUIRED に設定
+[TEST]  ====================================================
+[OK]    セットアップ完了
+[TEST]  ====================================================
+[INFO]  次のステップ：
+[INFO]    ./tests/v4-federation-jit.sh を実行してフェデ JIT テストを実施
+[INFO]  
+[INFO]  作成された構成：
+[INFO]    1. customer-idp Realm（fed-jit-user / fed-jit-user-2 保有）
+[INFO]    2. poc-jit-scim Realm の OIDC IdP 'customer-idp'
+[INFO]    3. first-broker-login-with-tracker フロー（Last Login Tracker REQUIRED）
+[INFO]    4. post-broker-login-with-tracker フロー（Last Login Tracker REQUIRED）
+[INFO]    5. IdP に First/Post Broker Login Flow 紐付け

@@ -1,5 +1,4 @@
 {
-  "_comment": "PoC 用 User Profile 設定（F-3 対応）。Keycloak 26.6 では unmanagedAttributePolicy を realm 属性で指定しても無効で、カスタム属性が黙って破棄される。適用: PUT /admin/realms/poc-jit-scim/users/profile。詳細: docs/additional-poc-findings.md F-3",
   "unmanagedAttributePolicy": "ENABLED",
   "attributes": [
     { "name": "username", "displayName": "${username}", "permissions": { "view": ["admin", "user"], "edit": ["admin", "user"] }, "multivalued": false },

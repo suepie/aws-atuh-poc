@@ -16,11 +16,12 @@
 |---|---|:---:|---|
 | **V1** SCIM カスタム属性 | B-SCIM-7 | ⚠ **PARTIAL** | native inbound SCIM は feature 有効でも `/scim/v2/*` が **404**。ただし User Profile で unmanaged 属性を有効化すれば **Admin API 経由で `scim_active`/`provisioned_by` は永続化可** → **代替 A** で実装可能 |
 | **V2** Sync Mode Override | B-SCIM-8 | ✅ **PASS** | per-Mapper `syncMode=IMPORT` が作成・保存される（E-12 整合、Fallback 不要） |
-| **V3'** Custom Authenticator SPI | B-SCIM-10 | ✅ **PASS** | 認可コードフロー経由ログインで **`last_login` 書込を実証** + **debounce 動作**確認 → **案 B 確定** |
+| **V3'** Custom Authenticator SPI（P-4 ローカル PW） | B-SCIM-10 | ✅ **PASS** | 認可コードフロー経由ログインで **`last_login` 書込を実証** + **debounce 動作**確認 → **案 B 確定** |
+| **V3''** フェデ JIT 経路（P-3 主用途） | B-SCIM-11 | ✅ **PASS** | 二段認可コードフローで **First Broker Login Flow（初回）+ Post Broker Login Flow（2 回目）** の SPI 書込を実証 → **3 系統 Flow 配置で確定**。詳細 [docs/verification-log-v3fed.md](docs/verification-log-v3fed.md) |
 
-**総合判定：⚠ GO with Fallback**（V2/V3' は Fallback 不要、V1 のみ代替 A を発動＝増分小）
+**総合判定：⚠ GO with Fallback**（V2/V3'/V3'' は Fallback 不要、V1 のみ代替 A を発動＝増分小）
 
-### 実行中に判明した是正点（実機でしか分からなかった 6 件）
+### 実行中に判明した是正点（実機でしか分からなかった 8 件）
 
 | # | 事象 | 是正 |
 |---|---|---|
@@ -30,11 +31,13 @@
 | F-4 | native inbound SCIM が 404（追加の realm 設定なしでは露出せず） | native に依存しない設計（代替 A） |
 | F-5 | `v3-*.sh` の SPI 検出が **誤キー**でクラッシュ（`AuthenticatorFactory`→`Authenticator`） | スクリプト修正済 |
 | F-6 | SPI を **top-level REQUIRED** に置くとログイン失敗（forms が無視される） | **forms サブフロー内**配置が必須 |
+| F-7 | `setup-federation.sh` が IdP をフロー作成前に作り **500**（`No available authentication flow`） | フロー作成後に紐付ける **Step6** 追加（1 パス完走を検証済） |
+| F-8 | `user-profile-poc.json` の `_comment` を UPConfig が拒否し **400** | JSON から `_comment` 除去 |
 
 ### Phase 1 実装への確定事項
 
 - **SCIM 受信**：Keycloak native inbound SCIM に依存しない。外部/Admin 経由で受信し `scim_active`/`provisioned_by` を SPI/Admin でセット（代替 A）+ User Profile で対象属性を宣言。
-- **last_login 記録**：**案 B（Custom Authenticator SPI）** 採用。ADR-055 の SPI 体制を流用。**forms サブフロー配置が必須（F-6）**。
+- **last_login 記録**：**案 B（Custom Authenticator SPI）** 採用。ADR-055 の SPI 体制を流用。**SPI は 3 系統 Flow 配置**（Browser forms / First Broker Login / Post Broker Login）で P-4・P-3 両経路をカバー（F-6 / V3''）。
 - **scim_active 保護**：per-Mapper `syncMode=IMPORT` で確定。
 
 ### 再現方法（この環境）

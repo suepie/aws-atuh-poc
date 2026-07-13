@@ -151,9 +151,9 @@ browser-with-last-login
 2. **First Broker Login Flow**（フェデ JIT 初回ログイン）
 3. **Post Broker Login Flow**（フェデ JIT 2 回目以降）
 
-**追加 PoC V3''（別端末で実施予定）**：`tests/setup-federation.sh` + `tests/v4-federation-jit.sh` でフェデ JIT 経路を実測確認。詳細は [../QUICKSTART-OTHER-MACHINE.md §V3''](../QUICKSTART-OTHER-MACHINE.md) と [../docs/verification-log-v3fed.md](verification-log-v3fed.md) 参照。
+**追加 PoC V3''（2026-07-10 実施済み ✅）**：`tests/setup-federation.sh` + `tests/v4-federation-jit.sh` でフェデ JIT 経路を実測確認。curl で二段認可コードフローをシミュレートし、**Test 4（初回=First Broker Login Flow）/ Test 5（2 回目=Post Broker Login Flow）とも `last_login` 書込を実証 = V3'' 全 PASS**。詳細は [../QUICKSTART-OTHER-MACHINE.md §12](../QUICKSTART-OTHER-MACHINE.md) と [verification-log-v3fed.md](verification-log-v3fed.md) 参照。実行中に新是正 **F-7（setup 順序バグ）/ F-8（user-profile `_comment`）** を発見・修正。
 
-**判定**：V3' PASS は **P-4 経路限定** で有効。**フェデ JIT 経路の PASS は V3'' で確定**、Phase 1 リリース前ゲートに追加。
+**判定**：V3' PASS は P-4 経路、**V3'' PASS で P-3 フェデ JIT 経路も確定**。→ SPI は **3 系統 Flow 配置**（Browser forms / First Broker / Post Broker）で Phase 1 実装確定。検証ギャップ解消。
 
 ### 4.3 詳細ログ
 

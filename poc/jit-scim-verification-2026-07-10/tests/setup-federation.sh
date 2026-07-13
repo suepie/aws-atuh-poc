@@ -92,7 +92,10 @@ else
 fi
 
 # ==== Step 3: OIDC Identity Provider "customer-idp" を追加 ====
-log_test "Step 3: poc-jit-scim Realm に OIDC IdP を追加"
+# 注意（F-7）: IdP は First/Post Broker Login Flow を参照するが、それらは Step 4-5 で作成する。
+#             先に flow alias を指定すると "No available authentication flow" で 500 になるため、
+#             ここでは flow alias を付けず IdP を作成し、Step 6 でフロー作成後に紐付ける。
+log_test "Step 3: poc-jit-scim Realm に OIDC IdP を追加（flow alias は Step 6 で紐付け）"
 
 # 既存 IdP チェック
 IDP_EXISTS=$(curl -s -o /dev/null -w "%{http_code}" \
@@ -120,8 +123,6 @@ IDP_CONFIG=$(cat <<EOF
   "trustEmail": true,
   "storeToken": false,
   "linkOnly": false,
-  "firstBrokerLoginFlowAlias": "first-broker-login-with-tracker",
-  "postBrokerLoginFlowAlias": "post-broker-login-with-tracker",
   "config": {
     "syncMode": "IMPORT",
     "clientId": "broker-poc",
@@ -248,6 +249,27 @@ if [ -n "$PBL_TRACKER_ID" ] && [ "$PBL_TRACKER_ID" != "null" ]; then
         -H "Content-Type: application/json" \
         -d "$UPDATED_PBL" > /dev/null || true
     log_ok "Post Broker Login Flow の Last Login Tracker を REQUIRED に設定"
+fi
+
+# ==== Step 6: IdP に First/Post Broker Login Flow を紐付け（F-7 対応：フロー作成後に実施） ====
+log_test "Step 6: IdP に First/Post Broker Login Flow を紐付け"
+
+IDP_CURRENT=$(curl -s "${KC_URL}/admin/realms/${KC_REALM}/identity-provider/instances/customer-idp" \
+    -H "Authorization: Bearer ${TOKEN}")
+IDP_BOUND=$(echo "$IDP_CURRENT" | jq \
+    '.firstBrokerLoginFlowAlias = "first-broker-login-with-tracker"
+     | .postBrokerLoginFlowAlias = "post-broker-login-with-tracker"')
+
+BIND_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X PUT \
+    "${KC_URL}/admin/realms/${KC_REALM}/identity-provider/instances/customer-idp" \
+    -H "Authorization: Bearer ${TOKEN}" \
+    -H "Content-Type: application/json" \
+    -d "$IDP_BOUND")
+
+if [ "$BIND_CODE" = "204" ] || [ "$BIND_CODE" = "200" ]; then
+    log_ok "IdP に first/post broker login flow を紐付け（HTTP $BIND_CODE）"
+else
+    log_error "IdP への flow 紐付け失敗 (HTTP $BIND_CODE)"
 fi
 
 # ==== 完了 ====

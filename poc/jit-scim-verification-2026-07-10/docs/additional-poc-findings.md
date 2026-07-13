@@ -6,7 +6,7 @@
 
 ---
 
-## サマリ（6 件）
+## サマリ（8 件）
 
 | # | 分類 | 事象 | 影響 | 是正 |
 |---|---|---|---|---|
@@ -16,6 +16,10 @@
 | **F-4** | KC26.6 仕様 | native **inbound SCIM server** が `/realms/{r}/scim/v2/*` で **404**（feature 有効でも） | V1 native SCIM 不可 | native inbound に依存しない設計（代替 A） |
 | **F-5** | スクリプト不備 | `v3-custom-authenticator.sh` の SPI 検出が **serverinfo の誤キー**参照で crash | V3' が Test 1 で異常終了 | `AuthenticatorFactory` → `Authenticator` に修正 |
 | **F-6** | Keycloak フロー設計 | SPI を **top-level REQUIRED** に置くと ALTERNATIVE(forms) が無視されログイン失敗 | V3' 実装制約 | **forms サブフロー内**（Username Password Form の後）に配置 |
+| **F-7** | スクリプト不備（V3''） | `setup-federation.sh` が IdP 作成（Step3）で Step4-5 のフローを参照 → **500**（`No available authentication flow`） | フェデ環境が組めない | フロー作成後に IdP を紐付ける **Step6** を追加（Step3 は alias 無しで作成） |
+| **F-8** | config 不備（V3''） | `user-profile-poc.json` の `_comment` を UPConfig が拒否 → **400**（`Unrecognized field`） | User Profile 適用失敗 | JSON から `_comment` を除去 |
+
+> ※ F-7 / F-8 は V3''（フェデ JIT 検証）で判明。詳細と実測は [verification-log-v3fed.md](verification-log-v3fed.md) を参照。
 
 ---
 
