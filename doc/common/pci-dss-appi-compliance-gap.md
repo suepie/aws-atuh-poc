@@ -1,12 +1,18 @@
 # PCI DSS v4.0.1 + APPI 準拠ギャップ分析 — 一次資料引用集 + 必須対応リスト
 
 > **作成日**: 2026-06-08
-> **最終更新**: **2026-07-08 §2.A / §3.2.0 追記**（Consumer / Cashier アカウント除外の判定 + Req 8 Applicability Notes verbatim 引用 + 3 シナリオ比較 + 業界事例）
+> **最終更新**: **2026-07-15 §11 追加**（実装ガイド reference doc 導入 + 5 従業員類型 + Cat 分類フレーム + 12.9.2 契約条項の 4 主要更新）+ 2026-07-08 §2.A / §3.2.0 追記（Consumer / Cashier アカウント除外の判定 + Req 8 Applicability Notes verbatim 引用 + 3 シナリオ比較 + 業界事例）
 > **対象**: AWS 認証基盤 PoC（Keycloak v26.2、Stage A 完了状態）
 > **規制バージョン**: PCI DSS v4.0.1（2024-06 発行、2025-03-31 future-dated 要件完全強制）+ APPI 令和 4 年改正（PPC ガイドライン 通則編 令和 8 年 4 月一部改正版）
 > **一次資料**:
 > - PCI DSS v4.0.1 PDF（`doc/old/PCI-DSS-v4_0_1.pdf`、gitignore 済、PCI SSC 配布物）
 > - PPC ガイドライン 通則編 PDF（[公開 URL](https://www.ppc.go.jp/files/pdf/260401_guidelines01.pdf)）
+>
+> **⚠ 2026-07-15 追記 — 本 doc は "verbatim 引用 + Gap 分析" が主目的、実装ガイドは reference doc 参照**:
+>
+> - **[reference/pci-dss-v401-scope-for-auth-platform.md](../reference/pci-dss-v401-scope-for-auth-platform.md)** — PCI DSS v4.0.1 実装ガイド（Cat 1/2a/2b/3 分類 / 5 従業員類型 / Segmentation 3 パターン / TPSP 責任分担マトリクス / 12.9.2 契約条項テンプレート / Trust Portal 設計 / Phase 1-3 移行計画 / 業界事例）
+> - **本 doc**: v4.0.1 verbatim 引用と gap 分析
+> - **reference doc**: 実装への具体マッピング
 >
 > **関連**:
 > - [§FR-7.4.8 PCI DSS / APPI 適合性整理](../requirements/proposal/fr/07-user.md) — JIT/SCIM 選定への影響
@@ -658,3 +664,93 @@ PPC ガイドライン §3-4-4:
 ## 改訂履歴
 
 - 2026-06-08: 初版作成。PCI DSS v4.0.1 PDF (`doc/old/PCI-DSS-v4_0_1.pdf`) と PPC ガイドライン 通則編 PDF を pdftotext で実取得・原文照合し、Req 8 (認証)・10.5.1 (ログ保存)・11.4 (ペネトレ) と APPI 法 22-28 + 33-35 + 規則 7・8 条の verbatim quote を本ドキュメントに統合。現状 (Stage A 後) とのギャップマッピング + 必須対応 Top 12 + 要件定義 10 ゲーティング論点を整理
+- 2026-07-08: §2.A / §3.2.0 追記（Consumer / Cashier アカウント除外の判定 + Req 8 Applicability Notes verbatim 引用 + 3 シナリオ比較 + 業界事例）
+- 2026-07-15: **§11 追加 — v4.0.1 完全対応の主要 4 更新**:
+  - (1) [reference/pci-dss-v401-scope-for-auth-platform.md](../reference/pci-dss-v401-scope-for-auth-platform.md) 新規作成 → 本 doc から参照
+  - (2) 従業員 5 類型マップ（Std p.309-333 verbatim）
+  - (3) Cat 1/2a/2b/3 分類フレームワーク（PCI SSC 2016 Info Supplement）— 本基盤 5 アカウント体系との整合
+  - (4) 12.9.2 written acknowledgment（契約書内明文必須、Portal 単独不可、2025-03-31 施行済明確化）
+
+---
+
+## 11. v4.0.1 主要 4 更新（2026-07-15 追加）
+
+### 11.1 従業員 5 類型マップ（Std p.309-333 verbatim ベース）
+
+**重要引用**:
+
+- **Req 12.6.1**（Std p.309）: **「A formal security awareness program is implemented to make all personnel aware of...」** — CDE アクセスなくても**全社員が対象**
+- **Req 12.7.1**（Std p.314）: **「Potential personnel who will have access to the CDE are screened...」** — バックグラウンドチェックは **CDE アクセス社員のみ**（narrow）
+- **Req 12.10.3**（Std p.329）: **「Specific personnel are designated to be available on a 24/7 basis to respond to suspected or confirmed security incidents.」**
+
+**5 類型と適用要件**:
+
+| 類型 | 該当例（本基盤）| 主要適用要件 |
+|---|---|---|
+| **A. CDE アクセス admin / SRE** | Keycloak realm admin / Aurora DBA / KMS custodian / IAM admin / SOC | 12.7.1 / 12.6.1-3 / 7.2.4 / 8.x / 12.10.3-4 |
+| **B. Supporting IT** | Corp IT / Endpoint admin / 非 CDE 開発 | 12.6.1-3 / 7.2.4（CDE 隣接時） |
+| **C. 非 CDE 開発 / QA** | Segmented out product engineer | 12.6 研修のみ |
+| **D. Executive / Legal / HR / Sales** | 役員 / HR / 営業 / 財務 | 12.6 awareness + 12.5.3 + 12.8.3 |
+| **E. Third-party / TPSP スタッフ** | Contract DevOps / MSSP / SI | 12.7.1（CDE アクセス時）+ 12.8.1-5 + 12.9.1/2 |
+
+**詳細**: [reference/pci-dss-v401-scope-for-auth-platform.md §5](../reference/pci-dss-v401-scope-for-auth-platform.md#5-従業員範囲マップ5-類型-verbatim)
+
+### 11.2 Cat 1/2a/2b/3 分類フレームワーク
+
+**PCI SSC 2016 Info Supplement Guidance-PCI-DSS-Scoping-and-Segmentation_v1.pdf** より:
+
+> **「These systems may... provide security services to the CDE (such as an authentication server like Active Directory), support the requirements of the PCI DSS (like an audit log server), or provide the segmentation that separates the CDE from out-of-scope systems.」**
+
+→ **「Authentication server」が Cat 2b (Security-Impacting) の明示例**。本基盤（Keycloak）は該当。
+
+| カテゴリ | 定義 | 本基盤マッピング |
+|---|---|---|
+| **Cat 1 (CDE)** | CHD/SAD 直接処理 | ❌ 該当せず（PAN 持たない）|
+| **Cat 2a (Connected-to)** | CDE に接続可能 | Network Acct |
+| **Cat 2b (Security-Impacting)** | **CDE のセキュリティに影響** | **Auth Acct + 監査 Acct**（★）|
+| **Cat 3 (Out-of-Scope)** | 影響なし | 該当せず（Auth server なので不可能）|
+
+**Out-of-Scope 4 条件**（全て満たす必要）で本基盤は #3/#4 に該当し **Out-of-Scope 化不可能**。
+
+**5 アカウント体系との整合**:
+
+```
+[Auth Acct (Cat 2b)] ← 本基盤の PCI DSS 主対応
+[監査 Acct (Cat 2b)] ← ログ完全性、11.4.6 検証対象
+[Network Acct (Cat 2a)]
+[ネットワーク監査 Acct (Cat 2b)] ← Segmentation 境界検証
+[App Acct N (Cat 1、顧客責任)] ← TPSP 責任外
+```
+
+**詳細**: [reference/pci-dss-v401-scope-for-auth-platform.md §2-3](../reference/pci-dss-v401-scope-for-auth-platform.md#2-pci-dss-適用判定cat-1--2a--2b--3-の-3-カテゴリ)
+
+### 11.3 12.9.2 written acknowledgment（2025-03-31 施行済明確化）
+
+**PCI SSC 明確化**:
+
+> **「AoC / website statement / policy / responsibility matrix 単独では written acknowledgment に該当しない。契約書内の明文が必要」**
+
+→ **全 B2B 顧客 MSA/DPA に PCI DSS 12.9.2 準拠の written acknowledgment 条項を含める必要**。Trust portal / Portal 掲載単独では不足。
+
+**契約条項テンプレート**: [reference/pci-dss-v401-scope-for-auth-platform.md §9](../reference/pci-dss-v401-scope-for-auth-platform.md#9-1292-契約条項テンプレート)
+
+### 11.4 Segmentation 3 パターン + Trust Portal 復活検討
+
+**Segmentation 3 パターン**:
+- パターン A: 完全分離（片方向通信、5 アカウント体系で自然充足）
+- パターン B: Zone-based（Adaptive Auth 顧客連携部分の別 VPC 隔離）
+- **★ パターン C: Tokenization / 経由禁止**（Auth0/Okta 標準、推奨）
+
+**Trust Portal 再検討**（[ADR-036](../adr/036-customer-audit-support.md) との整合）:
+- 現状: ADR-036 Scope Reduced で「都度メール対応」
+- PCI DSS 対応時: **Trust Portal 復活検討推奨**（Auth0/Okta の trust.[domain] パターン）
+
+**詳細**: [reference/pci-dss-v401-scope-for-auth-platform.md §7 / §10](../reference/pci-dss-v401-scope-for-auth-platform.md#7-segmentation-3-パターンa--b--c)
+
+### 11.5 Follow-up
+
+以下は [reference/pci-dss-v401-scope-for-auth-platform.md](../reference/pci-dss-v401-scope-for-auth-platform.md) の Phase 1-3 移行計画（§11）に集約:
+
+- Phase 1（半年〜1 年）: SAQ D-SP 基盤整備 + 12.9.2 契約条項 + Trust Portal 静的版
+- Phase 2（1-2 年目）: QSA Pre-assessment → 是正 → RoC/AoC
+- Phase 3（3 年目以降）: 継続運用（半期スコープ確認 / 半期 Segmentation PenTest / 年次 QSA / 年次 AoC）

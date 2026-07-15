@@ -45,6 +45,12 @@
 |------------|------|
 | [scim-deletion-realtime-detection.md](scim-deletion-realtime-detection.md) | **SCIM 削除リアルタイム検知 + PII 最小化ガイド（2-tier Keycloak）** — 顧客 IdP / IdP-KC のユーザ削除をリアルタイムで検知し下流に反映する設計 + Broker の PII 保有を最小化する実装（Minimum Storage L2）。2 SCIM Server (Broker + IdP-KC) + EventBridge 統合 / 3 削除検知経路 / APPI 観点の解釈（最小化は義務ではないベストプラクティス）/ ゾンビセッション対策 4 手段 (TTL / not_before / Backchannel / API GW Introspection) / 顧客 IdP 別 SCIM 対応（Auth0 例外 workaround）/ Metatavu keycloak-scim-server 実装ガイド (Apache 2.0) / 外部 SaaS SCIM 送信の非同期化パターン / Rate Limit の正確な値（ServiceNow/Salesforce/Slack/Workday 誤情報訂正）/ Phase 別実装計画。[ADR-025 §I](../adr/025-scim-positioning-and-receive-stance.md) / [ADR-033 §G.3](../adr/033-keycloak-2tier-broker-idp-architecture.md) の実装裏どり |
 
+## コンプライアンス / PCI DSS
+
+| ドキュメント | 内容 |
+|------------|------|
+| [pci-dss-v401-scope-for-auth-platform.md](pci-dss-v401-scope-for-auth-platform.md) | **PCI DSS v4.0.1 適用範囲・実装ガイド（認証基盤事業者向け）** — 本基盤（Keycloak ベース B2B SaaS 認証基盤、CHD 非保持）における PCI DSS v4.0.1 の適用範囲・実装マッピング。**Cat 1/2a/2b/3 分類フローチャート**（authentication server は Cat 2b 明示例）/ **5 アカウント体系との Cat マッピング**（Auth Acct = Cat 2b）/ **Service Provider ステータス** Level 判定（Phase 1 SAQ D-SP、Phase 2 Level 1）/ **従業員 5 類型 verbatim**（12.6.1 全社員、12.7.1 CDE アクセス社員のみ）/ **要件マッピング** Req 3/6/7/8/10/11（JWT 署名鍵は Req 3 literal mandate 対象外の可能性、要 QSA 確認）/ **Segmentation 3 パターン** (A 完全分離 / B Zone-based / C Tokenization 経由禁止) / **TPSP Responsibility Matrix 完全版** / **12.9.2 契約条項テンプレート**（Portal 単独 NG、契約書内明文必須）/ **Trust Portal 設計指針**（ADR-036 復活検討）/ **Phase 1-3 移行計画**（1-2 年、$50-100K/年 PenTest）/ **日本コンテキスト** 割賦販売法 + JCDSC + 主要 QSA / **業界事例** Auth0 (2019 L1) / Okta (SAQ D) / MS Entra ID / AWS / **FAQ 10 項目**。[common/pci-dss-appi-compliance-gap.md](../common/pci-dss-appi-compliance-gap.md) の実装ガイド版として補完 |
+
 ## 過去の検討ドキュメント
 
 `doc/old/` に過去の検討成果物がある（読み取り専用）。主要なものは以下：

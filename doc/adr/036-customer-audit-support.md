@@ -1,7 +1,33 @@
 # ADR-036: Customer Audit Support（顧客監査支援）の設計
 
-- **ステータス**: **Scope Reduced**（2026-06-24 — Trust Center / Customer Portal 等のセルフサービス仕組み削除、都度メール対応 + 監査ログ提供で簡素化）
-- **日付**: 2026-06-18 作成、2026-06-24 スコープ縮小
+- **ステータス**: **Scope Reduced**（2026-06-24 — Trust Center / Customer Portal 等のセルフサービス仕組み削除、都度メール対応 + 監査ログ提供で簡素化）+ **2026-07-15 Trust Portal 復活候補**（PCI DSS 対応時、B-PCI-7 ヒアリング次第）
+- **日付**: 2026-06-18 作成、2026-06-24 スコープ縮小、2026-07-15 PCI DSS 対応観点で再検討ノート追加
+
+---
+
+> **⚠ 2026-07-15 Trust Portal 復活検討（PCI DSS 対応と連動）**
+>
+> [reference/pci-dss-v401-scope-for-auth-platform.md §10](../reference/pci-dss-v401-scope-for-auth-platform.md#10-trust-portal-設計指針) の分析より、**PCI DSS v4.0.1 対応が明確化された段階で Trust Portal の復活を検討推奨**:
+>
+> **背景**:
+> - PCI DSS Req 12.9.2（2025-03-31 施行済）で「AoC / website / Responsibility Matrix 単独では written acknowledgment に該当しない」明確化
+> - **契約書内の明文が必須**だが、Trust Portal による AoC / Responsibility Matrix / SOC 2 の集約提供は業界標準（Auth0 trust.auth0.com、Okta security.okta.com、AWS Artifact、Microsoft Service Trust Portal）
+> - 「都度メール対応」は顧客数増加時にスケールしない（1500 テナント × 年 1 回 AoC 更新 = 年 1500 回対応）
+>
+> **判断は B-PCI-7 ヒアリング結果次第**:
+> - A: 必須（Auth0/Okta と同水準）→ **Trust Portal 復活**（静的版 $10K、動的版 $50K-100K）
+> - B: 静的 PDF 掲載で十分 → **静的サイト（S3 + CloudFront）で最小実装**
+> - C: 都度メール対応維持 → 本 ADR 現状維持
+>
+> **推奨 Phase**:
+> - **Phase 1（PCI DSS 適用確定時）**: 静的 Trust Portal（NDA + Portal ログイン、AoC PDF + RM PDF 掲載）
+> - **Phase 2（Level 1 SP 目指す時）**: 動的 Trust Portal（Change Feed、Ticket 化、QSA 対応窓口）
+>
+> **本 ADR §A〜§F の Trust Center / Customer Portal 関連部分は、Phase 1（PCI DSS 適用確定時）に再有効化検討**。
+>
+> **関連**:
+> - [reference/pci-dss-v401-scope-for-auth-platform.md §10 Trust Portal 設計指針](../reference/pci-dss-v401-scope-for-auth-platform.md#10-trust-portal-設計指針)
+> - [hearing-checklist B-PCI-7 Trust Portal 提供の要否](../requirements/hearing-checklist.md)
 
 ---
 

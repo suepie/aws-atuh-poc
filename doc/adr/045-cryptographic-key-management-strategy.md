@@ -329,10 +329,68 @@ flowchart LR
 | 鍵種別 | ローテーション | 詳細 |
 |---|---|---|
 | KMS Symmetric CMK | **年次自動**（KMS 機能）| Re-encrypt 不要、旧鍵は復号化のみで保持 |
-| KMS Asymmetric CMK（JWT 署名鍵）| **手動年次**+ 鍵ロールオーバー | Keycloak の Rotation 機能で旧鍵を 30 日並走 |
+| **KMS Asymmetric CMK（JWT 署名鍵、ES256）**| **手動、90 日 Cryptoperiod**（**2026-07-15 短縮**）| Keycloak の Rotation 機能で旧鍵を 30 日並走、詳細は §D.4 参照 |
 | アプリケーション層 DEK | 90 日 | Envelope Encryption、KMS で DEK 暗号化 |
 | TLS 証明書（ACM）| 自動 | Public 証明書は自動更新 |
 | API キー / Bearer Token | 90 日（強制）| ユーザ管理画面 で警告 |
+
+### D.4 JWT 署名鍵の Cryptoperiod（2026-07-15 追記）
+
+#### 決定: 90 日 Cryptoperiod（旧「手動年次」から短縮）
+
+**背景**:
+
+- 前版では「手動年次 + 30 日並走」だったが、[reference/pci-dss-v401-scope-for-auth-platform.md §6.4](../reference/pci-dss-v401-scope-for-auth-platform.md#64-req-3鍵管理--重要な解釈) の分析で JWT 署名鍵の Cryptoperiod 明文化推奨
+- 業界事例（Auth0 / Okta）も **90 日周期**が標準
+- Golden JWT 攻撃検知時の緊急ローテ SOP（ADR-060 §C）と整合
+
+#### JWT 署名鍵 Cryptoperiod 詳細
+
+| 項目 | 内容 |
+|---|---|
+| **Cryptoperiod** | **90 日**（新鍵発行、旧鍵は verification のみで 30 日並走）|
+| **アルゴリズム** | ES256（ECC_NIST_P256）|
+| **鍵管理** | KMS Asymmetric CMK `alias/keycloak-jwt-signing` |
+| **Rotation 実行** | Keycloak Admin API（`POST /realms/{realm}/keys/rotate`）+ CronJob 自動化 |
+| **並走期間** | 30 日（旧鍵は verify のみ、sign は新鍵のみ）|
+| **緊急ローテ** | Golden JWT 検知時（ADR-060 §C）は即時実行、並走なし |
+
+#### PCI DSS v4.0.1 との位置付け
+
+**重要な解釈**（[reference/pci-dss-v401-scope-for-auth-platform.md §6.4](../reference/pci-dss-v401-scope-for-auth-platform.md#64-req-3鍵管理--重要な解釈) より）:
+
+> Req 3 is scoped to keys used to protect **stored account data (PAN)**. JWT signing keys fall outside Req 3 unless JWT carries PAN.
+
+- **本基盤 ES256 JWT 署名鍵は Req 3.6/3.7 の literal mandate 対象外の可能性大**（JWT に PAN 含まないため）
+- ただし **"顧客 CDE のセキュリティに影響する鍵" として同等管理が実務上必要**
+- **QSA 事前確認推奨**（analyst interpretation として明示）
+- 90 日 Cryptoperiod は Req 3.7.4 相当の運用として、QSA 対応時に説明可能
+
+#### Key Custodian Agreement（追記）
+
+**Custodian**（鍵管理責任者）に対する要件（PCI DSS Req 3.6.1.4 / 3.7.9 相当）:
+
+| 項目 | 内容 |
+|---|---|
+| **人数** | 最低 2 名（Split Knowledge、Dual Control 準備）|
+| **職務分掌**（SoD）| Key Administrator（作成 / 削除 / Policy 変更）と Key User（Encrypt / Decrypt 実行）を別人物に |
+| **書面同意** | **Key Custodian Agreement 書面**を締結（Key の機密性 / 責任 / 通知義務を明記）|
+| **アクセス記録** | KMS への全 API 呼出を CloudTrail + Audit Acct S3（Object Lock 7 年）に記録 |
+| **年次レビュー** | 半期に一度、Key User リスト + 権限レビュー |
+| **離職時** | Custodian 離職時は Key Policy から即時削除 + 監査記録 |
+
+Key Custodian Agreement テンプレートは Phase 1 内で法務レビュー + 社内 SOP として整備。
+
+#### 90 日 Cryptoperiod 変更の運用インパクト
+
+| 項目 | 前版（年次）| 新版（90 日）|
+|---|---|---|
+| Rotation 頻度 | 年 1 回 | 年 4 回 |
+| 手動作業時間 | 1-2 時間/年 | 15-30 分 × 4 回/年 = 1-2 時間/年（自動化前提）|
+| 並走期間の複雑性 | 30 日 x 1 回/年 | 30 日 x 4 回/年（同時複数鍵は最大 2 世代）|
+| Golden JWT 攻撃時の被害範囲縮小 | 最大 1 年 | **最大 90 日**（1/4）|
+| PCI DSS QSA 対応時の説明容易性 | △ | **✅ 90 日は業界標準として説明容易** |
+| Auth0 / Okta との整合性 | △ | **✅ 一致** |
 
 ### D.4 削除プロセス
 
