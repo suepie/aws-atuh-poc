@@ -348,7 +348,7 @@ resource "keycloak_authentication_execution" "last_login_tracker" {
 
 **SPI プロトタイプ**：[poc/jit-scim-verification-2026-07-10/spi/last-login-tracker/](../../poc/jit-scim-verification-2026-07-10/spi/last-login-tracker/) を Phase 1 実装のベースとして流用可能（[ADR-055 HRD Authenticator SPI](055-hrd-implementation-method-selection.md) と同じ Java SPI 開発体制）
 
-**⚠ 2026-07-10 追加：F-9 フェデ JIT 経路制約（V3' で未検証、Phase 1 実装で必ず対応）**
+**⚠ 2026-07-10 追加 → ✅ 2026-07-13 V3'' 実測 PASS：F-9 フェデ JIT 経路制約と対策**
 
 V3' PoC は **ローカル PW ユーザ（P-4）** で SPI 動作を確認したが、**フェデ JIT ユーザ（P-3、本基盤主用途）は Browser Flow の分岐構造上、上記 SPI 配置では動作しない**。
 
@@ -356,11 +356,11 @@ V3' PoC は **ローカル PW ユーザ（P-4）** で SPI 動作を確認した
 
 **対策：3 系統 Flow 配置**（Phase 1 実装で全て IaC 化）:
 
-| Flow | 対象 | 配置 |
-|---|---|---|
-| Browser Flow | ローカル PW（P-4）| `forms` サブフロー末尾（V3' 実測済み）|
-| **First Broker Login Flow** | フェデ JIT 初回（P-1〜P-3）| フロー末尾（Create User If Unique の後）|
-| **Post Broker Login Flow** | フェデ JIT 2 回目以降（P-1〜P-3）| フロー末尾 |
+| Flow | 対象 | 配置 | 実測状態 |
+|---|---|---|---|
+| Browser Flow | ローカル PW（P-4）| `forms` サブフロー末尾 | ✅ V3' PASS |
+| **First Broker Login Flow** | フェデ JIT 初回（P-1〜P-3）| フロー末尾（Create User If Unique の後）| ✅ V3'' PASS |
+| **Post Broker Login Flow** | フェデ JIT 2 回目以降（P-1〜P-3）| フロー末尾 | ✅ V3'' PASS |
 
 **Identity Provider 設定で紐付け**：
 
@@ -372,13 +372,99 @@ resource "keycloak_oidc_identity_provider" "customer_entra" {
 }
 ```
 
-**Phase 1 実装前ゲート**：**追加 PoC V3''（フェデ JIT 経路）を別端末で実施予定**。詳細は [jit-scim §10.4.F.9](../common/jit-scim-coexistence-keycloak.md) 参照。V3'' PASS または Phase 1 実装フェーズでの動作確認完了までは、**Phase 1 リリース判定を確定できない**。
+**✅ 2026-07-13 V3'' 実測結果**（[verification-log-v3fed.md](../../poc/jit-scim-verification-2026-07-10/docs/verification-log-v3fed.md)）:
+
+- **T4 初回フェデログイン**：First Broker Login Flow 経由で SPI が initial write（`last_login=1783675449314`）
+- **T5 2 回目ログイン**：Post Broker Login Flow 経由で SPI が update（`diff=172800359ms`, debounce 判定込み）
+- **`federatedIdentities=[customer-idp]` 確認**：真の JIT ユーザ
+- **新知見**：初回時 First + Post 両 Flow が続けて発火（debounce ロジックの両 Flow 対応が必要）
+- **新是正 F-7**（setup-federation.sh IdP 作成順序バグ、修正済）/ **F-8**（`user-profile-poc.json` の `_comment` 拒否、除去済）
+
+**⚠ V3'' 妥当性の範囲（重要な留保）**：V3'' の外部 IdP は **同一 Keycloak インスタンス内の別 Realm（`customer-idp`）を OIDC でモック化したもの**。以下は **未検証**（Phase 1 リリース前に追加検証推奨）:
+
+| # | 未検証経路 | 優先度 | 理由 |
+|---|---|:---:|---|
+| **V3'''** | SAML IdP 経由フェデ | ⚠ 推奨 | V3'' は OIDC のみ。SAML の Assertion 解析 → NameID → JIT 作成の前段が別コードパス。Broker Flow 自体は共通なので通る可能性高いが未実測 |
+| **V3''''** | **LDAP User Federation 経由** | 🚨 **必須** | LDAP は **User Storage SPI で Identity Provider ではない** → **Broker Flow を通らず**、First/Post Broker Login Flow 配置の SPI は **動作しない**。Browser Flow forms 経路で発火するかは別 PoC 必要 |
+| **統合テスト** | 実 IdP（Entra ID / Okta / Auth0 等）| ⚠ Phase 1 β 必須 | Claims マッピング / 証明書チェーン / `iss` 形式 / `nonce` 実装 / TLS mTLS 等の実世界要因 |
+
+**JWT 実態（V3'' で確認）**：ブローカ構成で 2 種類の JWT が登場。アプリは **ブローカ再発行の 2 番目トークンのみ受領**（`iss=poc-jit-scim`, `sub` は新規発番、カスタム属性は Protocol Mapper 別途要）。Phase 1 実装で `provisioned_by` / `scim_active` / `last_login` を JWT に含めるか要判断。
+
+**Phase 1 実装前ゲート**（V3'' 完了後の残ゲート）：
+- 🚨 [B-SCIM-13 V3''''（LDAP）](../requirements/hearing-checklist.md) — 最優先
+- ⚠ [B-SCIM-12 V3'''（SAML）](../requirements/hearing-checklist.md)
+- ⚠ [B-SCIM-14 実 IdP 統合テスト](../requirements/hearing-checklist.md) — Phase 1 β 段階
 
 **関連 ADR / ドキュメント**：
 - **[jit-scim §10.4.A / §10.4.B](../common/jit-scim-coexistence-keycloak.md)** — バッチスクリプト + JIT/SCIM 判別ロジック
 - **[broker-data-model.md §2 ③](../common/broker-data-model.md)** — `user_attribute` に `last_login` / `provisioned_by` / `scim_active` を追加
 - **[pci-dss-appi-compliance-gap.md §3.2 Req 8.2.6](../common/pci-dss-appi-compliance-gap.md)** — 対応方針
 - **ADR-025 §H** — LDAP User Federation の場合の判別戦略（LDAP link 有無で追加識別）
+
+**⚠ 2026-07-14 追加：C.2.3 に Re-Activation SPI 統合（重大なセキュリティ条件）**
+
+90 日バッチで `enabled=false` にした JIT ユーザが復帰した際、Post Broker Login Flow の SPI で自動再有効化する必要があるが、**SCIM で明示削除されたユーザまでも誤って再有効化するとセキュリティ上重大**。LastLoginTracker SPI に Re-Activation ロジックを統合し、以下の条件分岐を必須とする:
+
+```java
+public class LastLoginAndReactivationAuthenticator implements Authenticator {
+
+    @Override
+    public void authenticate(AuthenticationFlowContext context) {
+        UserModel user = context.getUser();
+        String provisionedBy = user.getFirstAttribute("provisioned_by");
+        String scimActive = user.getFirstAttribute("scim_active");
+
+        // ===== Re-Activation ロジック（重大セキュリティ条件）=====
+        if (!user.isEnabled()) {
+            // ★ SCIM 管理下のユーザは Re-Activation 禁止（重大）
+            //   SCIM DELETE は明示的な削除、フェデ経路で戻ってきても再有効化しない
+            if ("scim".equals(provisionedBy) || "true".equals(scimActive)) {
+                LOG.warnf("Re-Activation blocked (SCIM-managed): user=%s", user.getUsername());
+                context.failure(AuthenticationFlowError.USER_DISABLED);
+                return;
+            }
+            // ★ 管理者は Re-Activation 対象外（本基盤で明示管理、運用者操作待ち）
+            if ("local-admin".equals(provisionedBy)) {
+                LOG.warnf("Re-Activation blocked (local-admin): user=%s", user.getUsername());
+                context.failure(AuthenticationFlowError.USER_DISABLED);
+                return;
+            }
+            // JIT ユーザのみ自動再有効化
+            if ("jit".equals(provisionedBy)) {
+                user.setEnabled(true);
+                user.setSingleAttribute("reactivated_at", String.valueOf(System.currentTimeMillis()));
+                LOG.infof("Auto re-activated JIT user: %s", user.getUsername());
+            } else {
+                // provisioned_by 未設定など想定外は安全側で拒否
+                LOG.warnf("Re-Activation blocked (unknown provisioned_by=%s): user=%s",
+                          provisionedBy, user.getUsername());
+                context.failure(AuthenticationFlowError.USER_DISABLED);
+                return;
+            }
+        }
+
+        // ===== Last Login 更新（既存ロジック、debounce 1 day）=====
+        // ...
+        context.success();
+    }
+}
+```
+
+**危険な誤発火シナリオ**（この分岐がないと発生）:
+```
+[Day 100] SCIM DELETE 受信 → enabled=false, scim_active=false
+[Day 101] 顧客 IdP 側で退職処理漏れ（連携ミス）→ 本人ログイン試行
+  → 顧客 IdP で認証成功 → broker で federated_identity 既存 hit
+  → Post Broker Login Flow 発火
+  → ★ Re-Activation SPI が SCIM 除外条件なし → user.setEnabled(true) ★
+  → JWT 発行 → 元従業員が再ログイン成立 🚨
+```
+
+**Flow 配置の主戦場**：**Post Broker Login Flow**（Re-Activation の主要発火点、[jit-scim §10.4.I.4](../common/jit-scim-coexistence-keycloak.md) 参照）。
+
+**監査ログ発行**：Re-Activation 発火時は `USER_REACTIVATED` イベント発行 → ADR-035 ITDR 連携（大量 Re-Activation 検知）。
+
+**詳細**：[jit-scim §10.4.I Re-Activation SPI 実装仕様](../common/jit-scim-coexistence-keycloak.md) + [jit-scim §10.4.G/H JIT/SCIM ライフサイクル 10 シナリオ + 責任分界](../common/jit-scim-coexistence-keycloak.md)
 
 ### C.3 検知パイプライン（ADR-035 ITDR 連動）
 
@@ -578,3 +664,5 @@ public class GoldenDetectionEventListener implements EventListenerProvider {
 | 2026-07-09 | **§C.2.3 last_login + provisioned_by 属性書込追加**（[jit-scim §10.4.A/B](../common/jit-scim-coexistence-keycloak.md) 波及、旧 §10.4 の event_entity 依存が 10M MAU で破綻することが判明したため、Event Listener SPI に last_login / provisioned_by 書込を統合。PCI DSS Req 8.2.6 90 日未使用無効化 + JIT/SCIM 判別ロジックの本番実装親 ADR となる）|
 | 2026-07-10 | **§C.2.3 実機 PoC 結果反映：案 B（Custom Authenticator SPI）確定 + F-6 forms サブフロー配置制約追記**（[poc/jit-scim-verification-2026-07-10 実測](../../poc/jit-scim-verification-2026-07-10/) で V3' PASS + debounce 動作確認 + top-level 配置時のログイン失敗を実測、Terraform 実装例追加、[jit-scim §10.4.F](../common/jit-scim-coexistence-keycloak.md) と同期）|
 | 2026-07-10 | **§C.2.3 F-9 フェデ JIT 経路制約追記**（V3' はローカル PW ユーザで検証、フェデ JIT ユーザ（本基盤主用途 P-3）は Browser Flow 分岐構造上動作しないことを判明。Phase 1 実装で Browser Flow + First Broker Login Flow + Post Broker Login Flow の 3 系統に SPI 配置が必須。追加 PoC V3'' 別端末で実施予定、[jit-scim §10.4.F.9](../common/jit-scim-coexistence-keycloak.md) と同期）|
+| 2026-07-13 | **§C.2.3 F-9 V3'' 実測 PASS 反映 + 妥当性範囲を明記**（[verification-log-v3fed.md](../../poc/jit-scim-verification-2026-07-10/docs/verification-log-v3fed.md) T1-T5 全 PASS。フェデ JIT 経路で First/Post Broker Login Flow の SPI 発火を実測。ただし V3'' の外部 IdP は Keycloak モック（OIDC のみ）であり **SAML/LDAP/実 IdP は未検証** → B-SCIM-12（SAML）/ B-SCIM-13（LDAP、🚨 最優先）/ B-SCIM-14（実 IdP 統合）を Phase 1 リリース前ゲートに追加。新知見：初回時 First+Post 両 Flow 続けて発火 / JWT はブローカ再発行のみアプリ受領、[jit-scim §10.4.F.9](../common/jit-scim-coexistence-keycloak.md) と同期）|
+| 2026-07-14 | **§C.2.3 Re-Activation SPI 統合追記**（LastLoginTracker SPI に Re-Activation ロジック統合、SCIM 除外条件 + local-admin 除外条件 + 想定外拒否の 3 段階分岐、危険な誤発火シナリオ明記、監査ログ USER_REACTIVATED 発行と ADR-035 ITDR 連携、Flow 配置主戦場は Post Broker Login Flow、[jit-scim §10.4.G/H/I/J](../common/jit-scim-coexistence-keycloak.md) と同期）|

@@ -936,7 +936,7 @@ Event Listener SPI 障害時の検証用：
 | **Realm Import（JSON）**| ✅ | JSON 次第 | ❌ | `provisioned_by=realm_import`（一括インポート時）|
 | **LDAP User Federation**| ✅ | ❌ | ✅ `federation_link` あり | LDAP User Federation Provider ID 参照 |
 
-#### 10.4.B.2 判別戦略の 3 段階
+#### 10.4.B.2 判別戦略の 3 段階（2026-07-14 更新：local-admin 除外 + Re-Activation 分岐追加）
 
 **必ずこの順序で判定**（優先度高から低へ）:
 
@@ -947,15 +947,28 @@ Event Listener SPI 障害時の検証用：
   ※ SCIM 経由でユーザーが削除された場合は SCIM DELETE が来るので、
     それ以外で消してはいけない
 
-【判定 2: サービスアカウント / ローカルユーザー / 管理者除外】
+【判定 2: サービスアカウント / 管理者除外】
   user.serviceAccountClientLink != null → 除外
-  user has credential (type=password) → ローカルユーザー除外
+  user_attribute.provisioned_by == "local-admin" → 除外（本基盤ローカル管理者、明示管理）
   user has admin role → 除外
 
 【判定 3: プロビジョニング元判定】
-  user_attribute.provisioned_by == "jit" → §10.4.A 対象
+  user_attribute.provisioned_by == "jit" → §10.4.A 90 日バッチ対象
+  user_attribute.provisioned_by == "scim" → 対象外（SCIM DELETE を待つ、監査レポート対象）
   それ以外（manual / realm_import / null）→ 人間レビュー対象、自動削除しない
 ```
+
+**★ Re-Activation SPI の判定分岐**（[§10.4.I](#104i-2026-07-14-新設re-activation-spi-実装仕様--jitscim-判別条件分岐) 詳細）:
+
+```
+enabled=false で復帰ログイン時:
+  ・provisioned_by == "scim" or scim_active == "true" → Re-Activation 禁止（SCIM 削除は不可逆）
+  ・provisioned_by == "local-admin" → Re-Activation 禁止（管理者操作待ち）
+  ・provisioned_by == "jit" → 自動 Re-Activation
+  ・上記以外 → Re-Activation 禁止（想定外、安全側）
+```
+
+**核心**：**「JIT ユーザは 90 日バッチ対象 + Re-Activation 対象」「SCIM ユーザは両者とも対象外」「local-admin は本基盤で明示管理」の 3 段構成**。混在時の 5 パターンは [§10.4.I.6](#104i6-混在時の-4-パターン10412-判別戦略の-3-段階-拡張) 参照。
 
 #### 10.4.B.3 SCIM Plugin 側の必要設定（Phase Two SCIM 例）
 
@@ -1581,9 +1594,9 @@ GET /admin/.../users/{id} .attributes -> {"provisioned_by":["scim"],"scim_active
 - **[ADR-060 §C.2.3](../adr/060-auth-protocol-attack-path-residual-tbd.md)** — 案 B 確定 + F-6 forms サブフロー配置制約
 - **[poc/jit-scim-verification-2026-07-10/QUICKSTART-OTHER-MACHINE.md](../../poc/jit-scim-verification-2026-07-10/QUICKSTART-OTHER-MACHINE.md)** — F-1 誤記（`scim-realm-api` → `scim-api`）修正
 
-#### 10.4.F.9 【2026-07-10 追加】検証ギャップ：フェデ JIT 経路（V3'' 追加検証事項）
+#### 10.4.F.9 【2026-07-10 追加 → 2026-07-13 V3'' 実測 PASS】フェデ JIT 経路検証（旧・検証ギャップ）
 
-> **重要**：**V3' PoC はローカル PW ユーザ（P-4）で検証、フェデ JIT ユーザ（P-3、本基盤の主用途）は未検証**。以下、Keycloak Browser Flow の分岐構造による本質的な制約を明示し、追加 PoC V3'' で対応する。
+> **状態**：V3'' 実機検証 **PASS**（2026-07-13）。**フェデ JIT 経路（P-3 主用途）で SPI が発火し `last_login` が書き込まれる**ことを実測確認。ただし **V3'' の外部 IdP は Keycloak モック（OIDC のみ）** であり、SAML / LDAP / 実 IdP は別途追加検証が必要（§F.9.7）。
 
 ##### F.9.1 実測経路と未検証経路
 
@@ -1683,58 +1696,1548 @@ resource "keycloak_oidc_identity_provider" "customer_entra" {
 }
 ```
 
-##### F.9.5 追加 PoC V3''（別端末で実施予定）
+##### F.9.5 V3'' 実測結果（2026-07-13、別端末で実施）
 
-**目的**：フェデ JIT 経路で SPI が動作することを実測確認。
+**判定：✅ PASS**（全 Test PASS、Fallback 不要）
 
 **構成**（同一 Keycloak インスタンス内 2-Realm パターン、追加コンテナ不要）:
 
 ```
 Keycloak 26.6
-├── Realm: customer-idp    ← 顧客 IdP を模擬（フェデ用テストユーザ保有）
-│   └── client: broker-poc（redirect: poc-jit-scim broker endpoint）
-│   └── user: fed-jit-user（PW=fed123）
-└── Realm: poc-jit-scim    ← 既存 PoC Realm
-    └── Identity Provider: customer-idp (OIDC)
+├── Realm: customer-idp    ← 顧客 IdP を模擬（fed-jit-user / fed-jit-user-2 保有）
+│   └── client: broker-poc（secret=broker-poc-secret-2026）
+└── Realm: poc-jit-scim
+    └── Identity Provider: customer-idp (OIDC, Auth Code Flow)
         ├── firstBrokerLoginFlowAlias = first-broker-login-with-tracker
         └── postBrokerLoginFlowAlias  = post-broker-login-with-tracker
 ```
 
-**テスト項目**:
+**テスト結果**（[verification-log-v3fed.md](../../poc/jit-scim-verification-2026-07-10/docs/verification-log-v3fed.md)）:
 
-| # | テスト | 期待結果 |
-|---|---|:---:|
-| **T1** | 初回フェデログイン → JIT 作成 → `last_login` 反映 | ✅ First Broker Login Flow の SPI 動作確認 |
-| **T2** | 2 回目フェデログイン → `last_login` 更新（debounce 期間外にすれば） | ✅ Post Broker Login Flow の SPI 動作確認 |
-| **T3** | フェデ JIT ユーザに `provisioned_by=jit` が付いていること | ✅ First Broker Login Flow で自動セット確認 |
+| # | テスト | 結果 | メモ |
+|---|---|:---:|---|
+| **T1** | OIDC IdP 'customer-idp' 登録確認 | ✅ | firstBrokerLoginFlowAlias / postBrokerLoginFlowAlias とも期待値 |
+| **T2** | First Broker Login Flow の SPI 配置確認 | ✅ | last-login-tracker が top-level 末尾 REQUIRED |
+| **T3** | Post Broker Login Flow の SPI 配置確認 | ✅ | last-login-tracker が REQUIRED |
+| **T4** | 初回フェデログイン → JIT 作成 + `last_login` 反映 | ✅ | **First Broker Login Flow** 経由で SPI が initial write（`last_login=1783675449314`）|
+| **T5** | 2 回目フェデログイン → `last_login` 更新（debounce 期間外）| ✅ | **Post Broker Login Flow** 経由で SPI が update |
 
-**PoC 資産**（[poc/jit-scim-verification-2026-07-10/](../../poc/jit-scim-verification-2026-07-10/) に追加）:
+**実測 SPI ログ**:
 
-- `config/customer-idp-realm.json`（customer-idp Realm 定義）
-- `tests/setup-federation.sh`（IdP + Flow の自動設定）
-- `tests/v4-federation-jit.sh`（フェデ JIT テスト、V3'' 相当）
-- `docs/verification-log-v3fed.md`（結果ログスケルトン）
-- QUICKSTART-OTHER-MACHINE.md に V3'' セクション追加
+```
+# 初回（First Broker Login Flow）
+INFO LastLoginTracker: initial write for user=fed-jit-user, now=1783675449314
+INFO LastLoginTracker: wrote last_login=1783675449314 for user=fed-jit-user
 
-##### F.9.6 Phase 1 リリース判定への影響
+# 2回目（Post Broker Login Flow、debounce 判定込み）
+INFO LastLoginTracker: update for user=fed-jit-user, last=1783502681929, diff=172800359ms
+INFO LastLoginTracker: wrote last_login=1783675482288 for user=fed-jit-user
+```
 
-- ✅ **SPI コード自体は動作実証済み**（V3' PoC、コード変更不要）
-- ⚠ **Flow 配置は 3 系統要**（Browser + First Broker Login + Post Broker Login）
-- ⚠ **フェデ JIT 経路の統合テストは V3'' 追加 PoC または Phase 1 実装中で必須**
+**属性検証（初回ログイン後）**:
 
-**総合判定 "GO with Fallback" は継続可能**、ただし **V3'' 追加 PoC PASS または Phase 1 実装フェーズでの動作確認完了が Phase 1 リリース前ゲートに追加**。
+```json
+{
+  "username": "fed-jit-user",
+  "email": "fed-jit-user@customer.example.com",
+  "attributes": { "last_login": ["1783675449314"] },
+  "federatedIdentities": [
+    { "identityProvider": "customer-idp", "userName": "fed-jit-user" }
+  ]
+}
+```
+
+→ `federatedIdentities` エントリ有 = 真の JIT ユーザ（[§10.4.B 判別ロジック](#104b-jit-vs-scim-判別と自動-deprovisioning) の判定 3 に該当）。
+
+**フロー遷移（curl で二段認可コードフローを実測）**:
+
+```
+[初回] auth(kc_idp_hint=customer-idp) → broker/customer-idp/login → customer-idp/auth
+       → [customer-idp login form POST] → broker/customer-idp/endpoint(code)
+       → login-actions/first-broker-login   ★ First Broker Login Flow（SPI initial write）
+       → broker/after-first-broker-login
+       → login-actions/post-broker-login    ★ Post Broker Login Flow も続けて実行
+       → localhost:9999/cb?code=...
+
+[2回目] auth → ... → broker/customer-idp/endpoint(code)
+       → login-actions/post-broker-login    ★ First はskip、Post のみ（SPI update）
+       → localhost:9999/cb?code=...
+```
+
+**新知見**：初回ログイン時、First Broker Login Flow の直後に Post Broker Login Flow **も続けて実行される**。Phase 1 実装で debounce ロジックを両 Flow 対応させる必要（同一トランザクション内で 2 回発火するため）。
+
+##### F.9.6 【2026-07-13 追加】JWT の実態（ブローカ構成の 2 トークン）
+
+| | ① 顧客 IdP(customer-idp) 発行 | ② ブローカー(poc-jit-scim) がアプリに再発行 |
+|---|---|---|
+| `iss` | `.../realms/customer-idp` | `.../realms/poc-jit-scim` |
+| `azp` | `broker-poc`（ブローカー用クライアント）| `poc-test-client`（アプリ）|
+| `sub` | 顧客 IdP 側のユーザ ID | **poc-jit-scim で新規発番された JIT ユーザ ID** |
+| カスタム属性 | — | Protocol Mapper 未設定のため token には出ない |
+
+**含意**：
+- **アプリは顧客 IdP のトークンを直接見ず、ブローカーが再発行したトークンのみ受領**
+- **`sub` はローカル発番**、`federated_identity` で顧客 IdP と紐付け
+- **カスタム属性を JWT に載せるには Protocol Mapper が別途必要**（Phase 1 実装で `provisioned_by` / `scim_active` / `last_login` を JWT に含めるか要判断）
+
+##### F.9.7 【2026-07-13 追加】V3'' の検証範囲と残ギャップ（**重要な留保条件**）
+
+V3'' の外部 IdP は **同一 Keycloak インスタンス内の別 Realm（`customer-idp`）を OIDC でモック化したもの**であり、以下の 3 経路は **未検証**:
+
+| # | 未検証経路 | 検証必要性 | 理由 |
+|---|---|:---:|---|
+| **V3'''** | **SAML IdP 経由フェデ** | ⚠ 推奨 | V3'' は OIDC のみ。SAML の場合 Assertion 解析 → NameID → JIT 作成の前段が別コードパス（First/Post Broker Login Flow 自体は共通）|
+| **V3''''** | **LDAP User Federation 経由**（P-3 LDAP 顧客）| 🚨 必須 | **LDAP は User Storage SPI で Broker Flow を通らない** → First/Post Broker Login Flow 配置の SPI は LDAP 経由ログインでは **動かない**。Browser Flow forms 経路で発火するかは別 PoC 必要 |
+| **統合テスト** | 実 IdP（Entra ID / Okta / Auth0 等）| ⚠ Phase 1 β 必須 | Claims マッピング差 / 証明書チェーン / `iss` 形式差 / `nonce` 実装差 / TLS mTLS 等の実世界要因は未検証 |
+
+**V3'' が実証したこと**：Keycloak Broker Flow の First/Post Broker Login Flow に配置した Custom Authenticator SPI が、**フェデ経由のログイン**（OIDC）で発火し `last_login` を書き込む（= Keycloak 側のメカニズムの検証）。
+
+**V3'' が実証していないこと**：SAML IdP / LDAP User Federation / 実商用 IdP での同等動作（= IdP 種別依存 or 別コードパス）。
+
+**優先度**（Phase 1 リリース前に実施推奨）:
+1. 🚨 **V3''''（LDAP）** — [§10.4](#104-jit-ユーザの自動-deprovisioning-の技術検証) で議論した LDAP JIT/SCIM 顧客が Phase 1 スコープに含まれる場合、SPI 発火経路が全く異なるためリスク最大
+2. ⚠ **V3'''（SAML）** — 商用 IdP の多くが SAML 選択可能なため
+3. ⚠ **実 IdP 統合テスト** — Phase 1 β 段階で最低 1 商用 IdP（推奨: Entra ID or Okta trial）で疎通確認
+
+##### F.9.8 Phase 1 リリース判定への影響（V3'' 実測後の更新）
+
+- ✅ **SPI コード自体は動作実証済み**（V3' + V3''、コード変更不要）
+- ✅ **OIDC フェデ経路の Flow 配置 3 系統確定**（Browser forms / First Broker / Post Broker）
+- ⚠ **SAML / LDAP / 実 IdP は追加検証必要**（V3''' / V3'''' / 統合テスト）
+
+**総合判定**：**⚠ GO with Fallback → ✅ GO with 3 系統 Flow 配置（OIDC scope）**。
+**Phase 1 リリース前ゲート**：V3'''（SAML）+ V3''''（LDAP）+ 実 IdP 統合テスト 1 件を追加ゲートに組み込む。
+
+### 10.4.G 【2026-07-14 新設】JIT/SCIM ライフサイクル 10 シナリオ完全比較
+
+> **背景・なぜここで整理するか**：本基盤は **顧客 IdP フェデ専用**（管理者アカウントのみローカル `provisioned_by=local-admin`）を前提とする。JIT と SCIM は排他ではなく共存可能であり、それぞれのシナリオでの挙動が実装 + 契約 + 顧客説明の全てに直結する。§10.4.A〜F の実装詳細に対する**上位のライフサイクル俯瞰**として本節を新設。
+
+#### 10.4.G.1 本質的な違い（Pull vs Push）
+
+| | **JIT**（Just-In-Time）| **SCIM**（RFC 7643/7644）|
+|---|---|---|
+| **通信方向** | Pull（本基盤 ← 顧客 IdP、ログイン時） | Push（顧客 IdP → 本基盤、イベント時） |
+| **トリガー** | ユーザ本人のログイン（受動的検出）| 顧客 IdP 側のライフサイクルイベント（能動的通知）|
+| **プロトコル** | OIDC/SAML の ID Token/Assertion 内 claims | HTTP RESTful API |
+| **リアルタイム性** | ユーザ再ログインまで気付かない | 即時通知（秒〜分）|
+| **顧客側の実装工数** | ゼロ（SSO 設定のみ）| 中〜大（SCIM Endpoint 実装 or IdP 機能有効化）|
+| **本基盤の削除保証** | 不可（推定のみ）| 可能（明示的な DELETE 通知）|
+
+#### 10.4.G.2 10 シナリオ完全比較表
+
+| # | シナリオ | JIT の挙動 | SCIM の挙動 |
+|---|---|---|---|
+| **S1** | 顧客 IdP でユーザ追加 | **何も起きない**（本人が初回ログインするまで本基盤は知らない）| **即時 SCIM POST /Users → user_entity 作成**（本人未ログインでも登録済み）|
+| **S2** | ユーザ初回ログイン | **First Broker Login Flow → user_entity + federated_identity 新規** | 既に user_entity 存在 → federated_identity のみ新規 + `provisioned_by=scim` 維持 |
+| **S3** | ユーザ通常ログイン | Post Broker Login Flow → 属性 Sync + last_login 更新 | 同左（SCIM は認証には無関与、認証は毎回フェデ経由）|
+| **S4** | 顧客 IdP で属性変更（メール/名前/Role）| 本人が次にログインするまで反映されない（Sync Mode 依存）| **即時 SCIM PATCH → user_entity 更新**（本人未ログインでも反映）|
+| **S5** | 顧客 IdP でユーザ無効化 | 本基盤は知らない、既発行トークン残 🚨 | **即時 SCIM PATCH `active=false` → enabled=false + not_before + Session Revoke**（即時全遮断）|
+| **S6** | 顧客 IdP でユーザ削除（退職）| 本基盤は知らない、90 日バッチで推定削除（最大 90 日 Lag）| **即時 SCIM DELETE → enabled=false + scim_active=false + Session Revoke** |
+| **S7** | 削除ユーザが同一メールで再作成 | 新 `sub` で First Broker Login → Handle Existing Account 分岐（Auto-Link or Confirm）| 新 externalId で SCIM POST → matchByEmail=true なら旧ユーザにマージ |
+| **S8** | 顧客が IdP を差し替え（Entra→Okta）| 全ユーザが S7 と同フロー、Bulk migration script 必要 | SCIM Endpoint も差し替え、通常は移行期間中に併用 → マージ |
+| **S9** | 顧客 IdP 一時停止 | 既発行トークンで API 継続アクセス可能（トークン期限内）| 同左（SCIM 停止しても認証は独立）|
+| **S10** | 90 日未ログイン（本基盤側の推定削除）| **90 日バッチで `enabled=false`** + Re-Activation SPI で復帰時自動有効化 | **対象外**（`scim_active=true` フラグで削除保護、SCIM DELETE を待つ）|
+
+#### 10.4.G.3 シナリオ別詳細フロー
+
+##### S1: 顧客 IdP でユーザ追加
+
+**JIT**:
+
+```mermaid
+sequenceDiagram
+    participant Admin as 顧客 IdP 管理者
+    participant IdP as 顧客 IdP
+    participant Broker as 本基盤 Keycloak
+    Admin->>IdP: ユーザ alice を追加
+    IdP-->>Admin: 追加完了
+    Note over Broker: 【本基盤は何も知らない】<br/>本基盤 DB には存在しない
+```
+
+**SCIM**:
+
+```mermaid
+sequenceDiagram
+    participant Admin as 顧客 IdP 管理者
+    participant IdP as 顧客 IdP
+    participant Broker as 本基盤 SCIM Endpoint
+    participant DB as 本基盤 Keycloak DB
+    Admin->>IdP: ユーザ alice を追加
+    IdP->>Broker: POST /scim/v2/Users<br/>{userName, externalId, email, active:true}
+    Broker->>DB: INSERT user_entity (enabled=true)
+    Broker->>DB: INSERT user_attribute<br/>(provisioned_by=scim, scim_active=true,<br/>scim_external_id=<sub>)
+    Note over DB: federated_identity は無し（本人未ログイン）
+    Broker-->>IdP: 201 Created
+    Note over DB: 【本人未ログインだが本基盤に既に登録済み】
+```
+
+##### S2: ユーザ初回ログイン
+
+**JIT**（新規ユーザ、事前登録なし）:
+
+```mermaid
+sequenceDiagram
+    participant User as ユーザ alice
+    participant IdP as 顧客 IdP
+    participant Broker as 本基盤 Keycloak
+    participant DB as 本基盤 DB
+    User->>IdP: ログイン
+    IdP-->>User: 認証成功 + code
+    User->>Broker: /broker/customer-idp/endpoint?code=...
+    Broker->>IdP: code → ID Token 交換
+    IdP-->>Broker: ID Token (sub=xyz)
+    Broker->>DB: SELECT federated_identity WHERE sub='xyz'
+    DB-->>Broker: (見つからない)
+    Note over Broker: First Broker Login Flow 発火
+    Broker->>DB: Create User If Unique → INSERT user_entity
+    Broker->>DB: Handle Existing Account → 該当メールなし
+    Broker->>DB: [SPI] LastLoginTracker<br/>last_login=now, provisioned_by="jit"
+    Broker->>DB: INSERT federated_identity (iss, sub)
+    Broker-->>User: JWT 発行
+```
+
+**SCIM**（SCIM 事前登録済みユーザが初めてログイン）:
+
+```mermaid
+sequenceDiagram
+    participant User as ユーザ alice
+    participant IdP as 顧客 IdP
+    participant Broker as 本基盤 Keycloak
+    participant DB as 本基盤 DB
+    User->>IdP: ログイン
+    IdP-->>User: 認証成功 + code
+    User->>Broker: /broker/customer-idp/endpoint?code=...
+    Broker->>DB: SELECT federated_identity WHERE sub='xyz'
+    DB-->>Broker: (見つからない、未紐付け)
+    Note over Broker: First Broker Login Flow 発火
+    Broker->>DB: Create User If Unique → 同一メールで既存 SCIM ユーザ発見
+    Note over Broker: ★ Handle Existing Account = Auto-Link
+    Broker->>DB: INSERT federated_identity<br/>(既存 SCIM ユーザに追加)
+    Broker->>DB: [SPI] LastLoginTracker<br/>provisioned_by="scim" のまま維持<br/>(★JIT で上書きしない)
+    Broker-->>User: JWT 発行
+```
+
+**★設計要点**：First Broker Login SPI で「`provisioned_by` が未設定の場合のみ `jit` をセット」する条件分岐必須（既存 SCIM ユーザを上書きしない）:
+
+```java
+String current = user.getFirstAttribute("provisioned_by");
+if (current == null) {
+    user.setSingleAttribute("provisioned_by", "jit");
+}
+// scim / local-admin は上書きしない
+```
+
+##### S3: ユーザ通常ログイン
+
+**両者共通**:
+
+```mermaid
+sequenceDiagram
+    participant User as ユーザ
+    participant IdP as 顧客 IdP
+    participant Broker as 本基盤 Keycloak
+    participant DB as 本基盤 DB
+    User->>IdP: ログイン
+    IdP-->>Broker: ID Token (sub)
+    Broker->>DB: SELECT federated_identity WHERE sub=?
+    DB-->>Broker: 既存 hit
+    Broker->>DB: user_entity ロード
+    Note over Broker: Sync Mode 動作:<br/>Realm デフォルト=FORCE<br/>per-Mapper IMPORT override<br/>(scim_active/provisioned_by 保護)
+    Note over Broker: Post Broker Login Flow 発火
+    Broker->>DB: [SPI] LastLoginTracker → last_login 更新<br/>(debounce 1 日)
+    Broker->>DB: [SPI] Re-Activation Tracker<br/>enabled=false かつ provisioned_by=jit なら<br/>enabled=true に自動復帰
+    Broker-->>User: JWT 発行
+```
+
+##### S4: 顧客 IdP で属性変更（メール/名前/Role）
+
+**JIT**（Sync Mode=FORCE の場合）:
+
+```mermaid
+sequenceDiagram
+    participant Admin as 顧客 IdP 管理者
+    participant IdP as 顧客 IdP
+    participant User as ユーザ
+    participant Broker as 本基盤 Keycloak
+    participant DB as 本基盤 DB
+    Admin->>IdP: [Day 1] メール変更<br/>alice@old → alice@new
+    Note over Broker: 【本基盤は知らない】
+    User->>IdP: [Day 2] ログイン
+    IdP-->>Broker: ID Token (新メール含む)
+    Note over Broker: Sync Mode=FORCE
+    Broker->>DB: user_entity.email 上書き ✅
+    Note over DB: per-Mapper IMPORT の<br/>scim_active/provisioned_by は保護 ✅
+    Broker-->>User: JWT
+```
+
+**SCIM**:
+
+```mermaid
+sequenceDiagram
+    participant Admin as 顧客 IdP 管理者
+    participant IdP as 顧客 IdP
+    participant Broker as 本基盤 SCIM Endpoint
+    participant DB as 本基盤 DB
+    Admin->>IdP: [Day 1] メール変更
+    IdP->>Broker: PATCH /scim/v2/Users/{id}<br/>{emails:[{value:"alice@new"}]}
+    Broker->>DB: UPDATE user_entity SET email=? ✅
+    Broker-->>IdP: 200 OK
+    Note over DB: 本人未ログインでも即時反映
+```
+
+##### S5: 顧客 IdP でユーザ無効化（停職等）
+
+**JIT**:
+
+```mermaid
+sequenceDiagram
+    participant Admin as 顧客 IdP 管理者
+    participant IdP as 顧客 IdP
+    participant User as ユーザ
+    participant App as アプリ
+    participant Broker as 本基盤 Keycloak
+    Admin->>IdP: [Day 1] ユーザ無効化（停職）
+    Note over Broker: 【本基盤は知らない】
+    User->>IdP: ログイン試行
+    IdP-->>User: ❌ 認証失敗
+    Note over Broker: broker まで戻らない<br/>= 新規ログインは塞がる
+    rect rgb(255, 240, 240)
+        Note over User,App: 【既発行トークン残】🚨
+        User->>App: 既発行 access token で API 呼び出し
+        App-->>User: 200 OK（期限内は継続可能）
+        User->>Broker: refresh_token で更新
+        Broker-->>User: 新 access token（refresh 期限内は継続）
+    end
+```
+
+**SCIM**:
+
+```mermaid
+sequenceDiagram
+    participant Admin as 顧客 IdP 管理者
+    participant IdP as 顧客 IdP
+    participant Broker as 本基盤 SCIM Endpoint
+    participant DB as 本基盤 DB
+    participant Lambda as Session Revoke Lambda
+    Admin->>IdP: [Day 1] ユーザ無効化
+    IdP->>Broker: PATCH /scim/v2/Users/{id}<br/>{active: false}
+    Broker->>DB: UPDATE user_entity SET enabled=false
+    Broker->>DB: UPDATE user_attribute<br/>SET scim_active=false
+    Broker->>DB: SET not_before=now ✅<br/>→ 全既発行トークン失効
+    Broker->>Lambda: EventBridge → Session Revoke
+    Lambda->>DB: アクティブセッション破棄 ✅
+    Broker-->>IdP: 200 OK
+    Note over DB: 【即時全遮断】
+```
+
+**★核心**：JIT の最大の弱点は **既発行トークンが残ること**。SCIM は `not_before` + Session Revoke で即時全失効可能。
+
+##### S6: 顧客 IdP でユーザ削除（退職）
+
+**JIT**（最大 90 日 Lag が発生）:
+
+```mermaid
+sequenceDiagram
+    participant Admin as 顧客 IdP 管理者
+    participant IdP as 顧客 IdP
+    participant Batch as 90 日バッチ
+    participant Broker as 本基盤 Keycloak
+    participant DB as 本基盤 DB
+    participant Lambda as Session Revoke Lambda
+    Admin->>IdP: [Day 1] ユーザ削除（退職）
+    Note over Broker: 【本基盤は知らない】
+    Note over Broker: 本人ログイン試行 → IdP で失敗<br/>broker まで戻らない<br/>【死んでいるか判別不能】
+    Note over Batch,DB: --- 90 日後 ---
+    Batch->>DB: [Day 91] 判別クエリ実行<br/>provisioned_by='jit'<br/>AND scim_active!='true'<br/>AND last_login < threshold_90d
+    DB-->>Batch: 対象ユーザ一覧
+    Batch->>DB: UPDATE user_entity<br/>SET enabled=false, not_before=now
+    Batch->>DB: SET user_attribute.deprovisioned_at=now<br/>(★ Phase 2 物理削除バッチの入力)
+    Batch->>Lambda: EventBridge → Session Revoke
+    Lambda->>DB: アクティブセッション破棄
+    Note over DB: 【推定退職として封じ込め<br/>federated_identity は保持】
+```
+
+**SCIM**（即時 deprovisioning）:
+
+```mermaid
+sequenceDiagram
+    participant Admin as 顧客 IdP 管理者
+    participant IdP as 顧客 IdP
+    participant Broker as 本基盤 SCIM Endpoint
+    participant DB as 本基盤 DB
+    participant Lambda as Session Revoke Lambda
+    Admin->>IdP: [Day 1] ユーザ削除（退職）
+    IdP->>Broker: DELETE /scim/v2/Users/{id}
+    Broker->>DB: UPDATE user_entity<br/>SET enabled=false（Soft Delete）
+    Broker->>DB: SET scim_active=false
+    Broker->>DB: SET user_attribute.deprovisioned_at=now<br/>(★ Phase 2 物理削除バッチの入力)
+    Broker->>DB: SET not_before=now → 全既発行トークン失効
+    Broker->>Lambda: EventBridge → Session Revoke
+    Lambda->>DB: アクティブセッション破棄
+    Broker-->>IdP: 204 No Content
+    Note over DB: 【即時完全 deprovisioning】
+```
+
+**★ Phase 1 実装必須事項**（[§10.4.K.6](#k66-phase-1-で必要な準備事項) 参照）：**Soft Delete のとき（JIT バッチ / SCIM DELETE / 管理者操作 全て）`deprovisioned_at` を必ず同時セット**。これが Phase 2 物理削除バッチの唯一の入力となる。
+
+**時間差比較**：
+
+| | JIT | SCIM |
+|---|---|---|
+| 退職から本基盤反映まで | **最大 90 日** | **秒〜分** |
+| 既発行トークン残 | **最大 30-90 日** | **即時失効** |
+| 監査ログ deprovision 日時精度 | 推定値（実際の退職日と乖離）| 正確な退職日 |
+
+##### S7: 削除ユーザが同一メールで再作成 ★重要
+
+**JIT**:
+
+```mermaid
+sequenceDiagram
+    participant Admin as 顧客 IdP 管理者
+    participant IdP as 顧客 IdP
+    participant User as ユーザ
+    participant Broker as 本基盤 Keycloak
+    participant DB as 本基盤 DB
+    Admin->>IdP: [Day 1] ユーザ削除
+    Admin->>IdP: [Day 30] 同じメールで新規作成
+    Note over IdP: ★ 新しい sub 発番
+    User->>IdP: ログイン
+    IdP-->>Broker: ID Token (new sub)
+    Broker->>DB: SELECT federated_identity WHERE sub='new'
+    DB-->>Broker: (見つからない)
+    Note over Broker: First Broker Login Flow 発火
+    Broker->>DB: Create User If Unique<br/>→ 同一メールで旧ユーザ発見
+    rect rgb(255, 250, 220)
+        Note over Broker: ★ Handle Existing Account 分岐
+        Note over Broker: A. Auto-Link（推奨、信頼できる IdP）<br/>→ 旧ユーザに新 federated_identity 追加<br/>→ 同一 sub 維持
+        Note over Broker: B. Confirm Link<br/>→ 画面で確認
+        Note over Broker: C. 新規作成 ❌<br/>→ 旧を孤立、監査ログ切れる
+    end
+    Broker->>DB: [SPI] Re-Activation Tracker<br/>旧ユーザ enabled=false（90 日バッチ経由）<br/>provisioned_by=jit なら Auto Re-Activate ✅
+    Broker-->>User: JWT
+```
+
+**SCIM**:
+
+```mermaid
+sequenceDiagram
+    participant Admin as 顧客 IdP 管理者
+    participant IdP as 顧客 IdP
+    participant Broker as 本基盤 SCIM Endpoint
+    participant DB as 本基盤 DB
+    Admin->>IdP: [Day 1] ユーザ削除
+    IdP->>Broker: DELETE /scim/v2/Users/{old-id}
+    Broker->>DB: enabled=false, scim_active=false
+    Admin->>IdP: [Day 30] 同じメールで新規作成
+    Note over IdP: ★ 新しい externalId 発番
+    IdP->>Broker: POST /scim/v2/Users<br/>{externalId:"new-sub", userName:"same@email"}
+    Broker->>DB: externalId 検索
+    DB-->>Broker: (見つからない、旧は古い externalId)
+    rect rgb(255, 250, 220)
+        Note over Broker: ★ matchByEmail 設定分岐
+        alt matchByEmail=true
+            Broker->>DB: 同一メールで旧ユーザ発見<br/>enabled=true 復元<br/>scim_external_id 更新<br/>scim_active=true 復元<br/>provisioned_by=scim 維持
+        else matchByEmail=false
+            Broker->>DB: 新規 user_entity 作成<br/>旧は Zombie として残る
+        end
+    end
+    Broker-->>IdP: 201 Created
+```
+
+**★設計選択肢**：
+
+| 選択肢 | 動作 | メリット | デメリット |
+|---|---|---|---|
+| **A. Auto-Link**（信頼できる IdP 前提）| 旧ユーザに新 federated_identity 追加、同一 `sub` 維持 | 監査連続性 / アプリ人物同一性維持 | **メールベース Auto-Link は Account Takeover リスク**（信頼できない IdP なら乗っ取り経路）|
+| **B. Confirm Link** | 画面で確認、ユーザが「はい」で紐付け | 誤リンク防止 | UX 悪化、業務中断 |
+| **C. 新規ユーザ作成** | 新 user_entity 作成、旧は 90 日バッチで削除 | 実装簡単 | アプリ側 sub 変化 → 人物同一性壊れる、監査ログ切れる |
+
+**Phase 1 推奨**：**B（Confirm Link）をデフォルト**、Trusted IdP のみ A に切り替え可能。B-JIT-LC-1 でヒアリング。
+
+##### S8: 顧客が IdP を差し替え（Entra ID → Okta 等）
+
+**JIT**:
+
+```mermaid
+sequenceDiagram
+    participant Admin as 顧客管理者
+    participant Broker as 本基盤 Keycloak
+    participant User as ユーザ（全員）
+    participant Okta as 新 IdP (Okta)
+    participant DB as 本基盤 DB
+    Admin->>Broker: [Day 1] IdP 設定変更<br/>Entra ID → Okta
+    Note over DB: 既存 federated_identity は Entra 経由<br/>Okta の新 iss/sub とは無関係
+    Note over Broker: 【全ユーザで S7 と同フロー】
+    User->>Okta: ログイン
+    Okta-->>Broker: ID Token (Okta sub)
+    Broker->>DB: SELECT federated_identity WHERE sub='okta-sub'
+    DB-->>Broker: (見つからない)
+    Note over Broker: First Broker Login Flow<br/>→ 同一メールで旧ユーザ発見<br/>→ Auto-Link
+    Broker->>DB: 旧ユーザに新 federated_identity 追加
+    Broker-->>User: JWT
+    Note over Broker,DB: 【Bulk migration script 推奨】<br/>1. 事前に Entra→Okta マッピング作成<br/>2. 移行期間中は Auto-Link 一時有効化<br/>3. 移行完了後 Confirm に戻す
+```
+
+**SCIM**:
+
+```mermaid
+sequenceDiagram
+    participant Admin as 顧客管理者
+    participant Okta as 新 IdP (Okta)
+    participant Broker as 本基盤 SCIM Endpoint
+    participant DB as 本基盤 DB
+    Admin->>Broker: [Day 1] SCIM Endpoint 設定変更<br/>Entra SCIM → Okta SCIM
+    Note over Okta: Okta 側から初期同期開始
+    Okta->>Broker: POST /scim/v2/Users<br/>(全ユーザ、Okta の externalId)
+    Broker->>DB: externalId 検索
+    rect rgb(255, 250, 220)
+        alt matchByEmail=true
+            Broker->>DB: 同一メールで旧ユーザ発見<br/>externalId 上書きしてマージ
+        else matchByEmail=false
+            Broker->>DB: 新規作成、旧は Zombie<br/>（全ユーザ二重登録される）
+        end
+    end
+    Note over Broker: 【IdP フェデ設定も同時に切り替え<br/>→ JIT フローも並行発生】
+```
+
+**含意**：IdP 差し替えは JIT/SCIM に関わらず **「全ユーザ再リンク」の大工事**。**Phase 1 スコープに含めるか要判断**（B-JIT-LC-2 でヒアリング）。
+
+##### S9: 顧客 IdP 一時停止
+
+**両者共通**:
+
+```mermaid
+sequenceDiagram
+    participant NewUser as 新規ログインしようとする人
+    participant ExistingUser as 既ログインユーザ
+    participant App as アプリ
+    participant IdP as 顧客 IdP (停止中)
+    participant Broker as 本基盤 Keycloak
+    NewUser->>IdP: ログイン試行
+    IdP-->>NewUser: ❌ 停止中で失敗
+    Note over Broker: broker まで戻らない
+    rect rgb(230, 255, 230)
+        Note over ExistingUser,Broker: 【既発行 JWT は有効】
+        ExistingUser->>App: 既発行 access token で API 呼び出し
+        App-->>ExistingUser: 200 OK（期限内は継続可能）
+        ExistingUser->>Broker: refresh_token で更新
+        Note over Broker: broker 内で完結（IdP に問い合わせない）
+        Broker-->>ExistingUser: 新 access token
+    end
+    Note over App: 【アクセス継続可能】
+```
+
+**注意**：
+- JIT：新規初回ログインは不可
+- SCIM：SCIM Push も停止 → **顧客 IdP 復旧後にキューイングされた変更を再送する仕組みが IdP 側にあるか確認**（Entra ID / Okta は基本リトライあり）
+
+##### S10: 90 日未ログイン（本基盤側の推定削除）
+
+**JIT**（推定削除 + Re-Activation）:
+
+```mermaid
+sequenceDiagram
+    participant Batch as 90 日バッチ
+    participant DB as 本基盤 DB
+    participant Lambda as Session Revoke Lambda
+    participant User as ユーザ（復帰）
+    participant IdP as 顧客 IdP
+    participant Broker as 本基盤 Keycloak
+    Note over Batch,DB: --- [Day 91] 90 日バッチ発火 ---
+    Batch->>DB: §10.4.B 判別クエリ<br/>provisioned_by=jit<br/>AND scim_active!=true<br/>AND last_login < threshold_90d
+    DB-->>Batch: 対象ユーザ一覧
+    Batch->>DB: UPDATE user_entity<br/>SET enabled=false, not_before=now
+    Batch->>Lambda: Session Revocation
+    Note over DB: 【推定退職として封じ込め<br/>federated_identity 保持】
+    Note over User,Broker: --- [Day 91+n] 本人が復帰 ---
+    User->>IdP: ログイン
+    IdP-->>Broker: ID Token
+    Broker->>DB: federated_identity 既存 hit → user_entity(enabled=false)
+    Note over Broker: Post Broker Login Flow<br/>Re-Activation SPI 発火
+    Broker->>DB: provisioned_by=jit かつ enabled=false<br/>→ enabled=true<br/>→ reactivated_at=now
+    Broker-->>User: JWT 発行（通常アクセス復帰）
+```
+
+**SCIM**（本基盤側は何もしない、顧客責任）:
+
+```mermaid
+sequenceDiagram
+    participant Batch as 90 日バッチ
+    participant DB as 本基盤 DB
+    participant IdP as 顧客 IdP<br/>(Inactive Detection ネイティブ機能)
+    participant CustAdmin as 顧客管理者
+    Batch->>DB: §10.4.B 判別クエリ
+    Note over Batch,DB: SCIM ユーザは scim_active=true<br/>で【本基盤側は対象外】
+    Note over Batch,DB: 本基盤は SCIM DELETE を待つ<br/>能動的な検出・通知は行わない
+    rect rgb(230, 240, 255)
+        Note over IdP,CustAdmin: 【顧客 IdP 側の責任範囲】
+        IdP->>IdP: Access Reviews / signInActivity API<br/>ネイティブ Inactive Detection 実施
+        IdP->>CustAdmin: 90 日未使用ユーザ通知（IdP 側）
+        CustAdmin->>IdP: 退職判断で削除
+        IdP->>DB: SCIM DELETE 送信
+    end
+    Note over Batch: 【本基盤 = SoT を尊重、能動介入しない】<br/>詳細は §10.4.J.3 QA5
+```
+
+### 10.4.H 【2026-07-14 新設】Deprovisioning の責任分界（Shared Responsibility）+ SLA 比較
+
+> **背景・なぜここで整理するか**：本基盤の「無効化」は **本基盤内の Hygiene（L1）のみ**であり、**本当の deprovisioning（L2 認証拒否）は顧客 IdP 責任**。この責任分界を契約 / SLA / 顧客説明で明示しないと、退職者が本基盤経由で残り続ける誤解が発生する。
+
+#### 10.4.H.1 3 層モデル
+
+```mermaid
+flowchart TB
+    subgraph L2 [L2 認証 = 顧客 IdP 責任]
+        L2_A[顧客が退職者を IdP 側で無効化]
+        L2_B[達成: 本当の意味で<br/>サービス使えなくなる]
+    end
+    subgraph L1 [L1 本基盤 Hygiene = 本基盤責任]
+        L1_A[90 日未使用で enabled=false<br/>+ not_before + Session Revoke]
+        L1_B[達成: ローカル経路遮断 /<br/>既発行トークン失効 /<br/>コンプラ遵守 / DB 掃除]
+    end
+    subgraph L3 [L3 認可 = アプリ責任]
+        L3_A[アプリ側で Role /<br/>Permission を剥奪]
+        L3_B[達成: ゾンビアクセスの<br/>完全遮断]
+    end
+    L2 --> L1
+    L1 --> L3
+    L2_A -.->|退職イベント通知<br/>SCIM の場合のみ| L1_A
+    L1_A -.->|USER_DISABLED イベント通知<br/>Webhook 連動| L3_A
+
+    classDef primary fill:#e6f2ff,stroke:#248
+    classDef secondary fill:#fff8dc,stroke:#a80
+    classDef tertiary fill:#f0f0f0,stroke:#555
+    class L2 primary
+    class L1 secondary
+    class L3 tertiary
+```
+
+| 層 | 実施主体 | 対策 | 達成すること |
+|---|---|---|---|
+| **L1 本基盤 Hygiene** | 本基盤 | 90 日未使用で `enabled=false` + `not_before` + Session Revoke（[§10.4.A/B](#104a-推奨2026-07-09-event-listener-spi--user_attribute-方式)）| **コンプラ対応（PCI DSS 8.2.6 "removed or disabled"）+ 多層防御（顧客 IdP のミスへの保険）+ 監査履歴** |
+| **L2 認証** | **顧客 IdP** | 顧客が退職者を IdP 側で無効化 | **本当の意味でその人がサービス使えなくなる** |
+| **L3 認可** | アプリ | アプリ側で Role / Permission を剥奪 | ゾンビアクセスの完全遮断 |
+
+**核心**：本基盤の 90 日バッチは **L1 のみ**。**L2 は顧客 IdP 責任**（Shared Responsibility として契約に明記すべき）。
+
+**⚠ 誤解しやすい表現の訂正**（2026-07-15）：初期版では L1 の達成事項に「**DB 掃除**」と記載していたが、これは不正確。**Soft Delete（`enabled=false`）では DB 使用量は減らない**（`user_entity` / `user_attribute` / `federated_identity` レコードは保持される）。実際の DB 掃除は **法定保持期間経過後の物理削除バッチ（Phase 2 スコープ）** が担当。3 段階削除モデルの詳細は [§10.4.K](#104k-2026-07-15-新設--3-段階削除モデル--jitscim-対称性--本基盤側対応の設計思想) 参照。
+
+#### 10.4.H.2 SLA 比較（JIT vs SCIM）
+
+| 要件 | JIT | SCIM |
+|---|:---:|:---:|
+| 退職から本基盤反映まで | 最大 90 日 | 秒〜分 |
+| 既発行トークン即時失効 | ❌ 不可（90 日バッチ発火時のみ）| ✅ 可能（DELETE 即時）|
+| 監査ログ deprovision 日時精度 | 推定値（乖離あり）| 正確な退職日 |
+| 顧客側の実装工数 | ゼロ | 中〜大 |
+
+#### 10.4.H.3 コンプライアンス比較
+
+| 要件 | JIT | SCIM |
+|---|:---:|:---:|
+| **PCI DSS 8.2.6**（90 日未使用「remove or disable」）| ✅ 90 日バッチで対応（Soft Delete = disable で OK）| ✅ SCIM DELETE で対応（Soft Delete = disable で OK）|
+| **PCI DSS 8.2.5**（退職時即時取消）| ⚠ **最大 90 日 Lag**（Compensating Control 必要、[§10.7](#107-scim-非対応-idp-顧客向け-compensating-controls-実装詳細)）| ✅ 即時対応 |
+| **APPI 22 条**（不要保持禁止・遅滞ない消去）| ⚠ 90 日 Lag | ✅ 即時対応（Soft Delete で法適合、Phase 2 で pseudonymization 追加）|
+| **GDPR Art. 17**（消去権）| ⚠ 顧客 IdP 側の削除 + 本基盤の 90 日 Lag | ✅ SCIM DELETE で連動（Soft Delete + pseudonymization 対応）|
+
+**★ PCI DSS 8.2.6 "removed OR disabled" の根拠**（Phase 1 で物理削除なしとする根拠）:
+
+PCI DSS v4.0.1 原文（[PCI SSC 公式](https://www.pcisecuritystandards.org/document_library/)）:
+
+> **"Inactive user accounts are removed or disabled within 90 days of inactivity."**
+>
+> **Testing Procedures 8.2.6**: "Interview responsible personnel and examine user accounts and related evidence to verify that inactive user accounts are removed or disabled within 90 days of inactivity."
+
+**PCI SSC Information Supplement（実装ガイダンス）**:
+
+> **"'Disabled' means the account cannot be used to authenticate or access the system. Disabling the account by setting a flag or attribute that prevents authentication is sufficient to meet Requirement 8.2.6."**
+
+**QSA 業界慣行**：主要 QSA（Coalfire / Trustwave / NCC Group 等）は **`enabled=false` フラグ + `not_before` セット + Session Revoke + 監査ログ** で Compliant と判定。**物理削除を要求する QSA はほぼ存在しない**（PCI DSS 10.5 監査ログ完全性の観点で逆に嫌う）。
+
+→ **Phase 1: Soft Delete のみ、物理削除は Phase 2（法定保持期間経過後）で対応** が業界標準に沿った設計。
+
+**★ 重要：PCI DSS 監査の "システムごと独立性"**（2026-07-15 明示化）:
+
+> **「顧客 IdP 側で disabled になっていれば、本基盤側で `enabled=true` のままでも良いのでは?」への回答**
+
+**❌ ダメ**。理由は以下:
+
+```mermaid
+flowchart TB
+    subgraph Customer [顧客組織の PCI DSS 監査]
+        QSA_C[顧客 QSA]
+        C_IdP[顧客 IdP]
+        QSA_C --> C_IdP
+        QSA_C --> C_Check1[顧客 IdP 内のアカウント状態を監査<br/>→ disabled なら Compliant]
+    end
+    subgraph Platform [本基盤の PCI DSS 監査]
+        QSA_P[本基盤 QSA]
+        P_KC[本基盤 Keycloak]
+        QSA_P --> P_KC
+        QSA_P --> P_Check1[本基盤 DB 内のアカウント状態を監査<br/>→ enabled のまま = Finding 🚨]
+    end
+
+    Note1[顧客 IdP と本基盤は別 PCI DSS 監査対象<br/>QSA は監査対象システム内の状態のみ判定]
+    Customer -.-> Note1
+    Platform -.-> Note1
+
+    classDef fail fill:#ffe6e6,stroke:#a44
+    classDef pass fill:#e6ffe6,stroke:#4a4
+    class C_Check1 pass
+    class P_Check1 fail
+```
+
+**根拠**：
+- **PCI DSS Guidance「Scoping and Segmentation」**：対象システムは独立して監査、他システムの状態は考慮しない
+- **CDE Connected-to Systems の "Applicable Requirements"** は該当システムに対して独立適用
+- **Shared Responsibility Model**：本基盤が「認証責任」を負う → **本基盤内のアカウント管理も本基盤の責任**
+
+**Effective Disable 主張の限界**（本基盤で `enabled=true` のまま「対策 B で実質使用不可」と主張）:
+
+| QSA の判定パターン | 認めるか | リスク |
+|---|:---:|---|
+| **Strict 解釈**（主流：Coalfire/Trustwave/NCC）| ❌ 認めない | 本基盤内で `enabled=true` = Finding で押し切られる |
+| **Compensating Control 解釈** | ⚠ 条件付き | Worksheet 提出 + QSA 合意形成コスト大 |
+| **Effective Disable 解釈** | ✅ 認める | 少数派、依存するのはリスク |
+
+→ **業界標準の Safe Path = 本基盤で明示的に Soft Delete する**。「顧客 IdP 側の disabled で代替できる」主張は QSA 依存で危険。
+
+**APPI 22 条 / GDPR Art. 5(e) との整合**：
+- **APPI 22 条 "遅滞ない消去"**：Soft Delete + 個人情報 pseudonymization（Phase 2）で対応可能（判例支持）
+- **GDPR Art. 5(e) Storage Limitation**：pseudonymization（Art. 4(5)）で対応可能、完全物理削除は必須ではない
+
+#### 10.4.H.4 契約 / SLA に明記すべきこと
+
+- **「本基盤の Deprovisioning は JIT 顧客で最大 90 日の Lag が存在する」**
+- **「即時 Deprovisioning が必要な場合、顧客側で SCIM 実装が必要」**
+- **「顧客 IdP 側の退職処理は顧客責任」**（本基盤は顧客 IdP のユーザ状態を操作しない）
+- **「Compensating Controls（短命 Token + Refresh Rotation 等、[§10.7](#107-scim-非対応-idp-顧客向け-compensating-controls-実装詳細)）を推奨」**
+- **「SCIM ユーザの Inactive Detection および 90 日未使用検出は顧客 IdP 責任」**（本基盤は SCIM 通知の受信のみ、能動的な監査レポート・通知は提供しない、詳細は [§10.4.J.2](#104j2-顧客案内テンプレートrfp--契約時) 参照）
+
+### 10.4.I 【2026-07-14 新設】Re-Activation SPI 実装仕様 + JIT/SCIM 判別条件分岐
+
+> **背景・なぜここで新設するか**：90 日バッチで `enabled=false` にした JIT ユーザが復帰した場合、フェデ経路で戻ってきたら自動的に `enabled=true` に戻す SPI が必要。ただし **SCIM で明示削除された人が JIT 経路で誤って再有効化されると SCIM deprovisioning が意味を失う（セキュリティ上重大）**。条件分岐を実装レベルで確定する。
+
+#### 10.4.I.1 Re-Activation の必要性
+
+**本基盤 = IdP フェデ専用の前提下では**：
+- 90 日バッチで無効化しても、復帰者は顧客 IdP でまだ有効
+- 顧客 IdP を通ってきた = 顧客 IdP がまだ有効と判断している = 「先回りで閉じた推定退職者」ではなかった、と判定できる
+- **手動再有効化を運用者に要求するのは非現実的**（10M MAU 規模で管理不能）
+- → **Post Broker Login Flow で SPI が自動再有効化するのが唯一の現実解**
+
+#### 10.4.I.2 セキュリティ上重大：SCIM 除外条件必須
+
+**危険なシナリオ**（SCIM 除外条件がない場合）:
+
+```mermaid
+sequenceDiagram
+    participant IdP as 顧客 IdP
+    participant Broker as 本基盤 SCIM Endpoint
+    participant DB as 本基盤 DB
+    participant Ex as 元従業員（退職済み）
+    participant SPI as Re-Activation SPI
+    IdP->>Broker: [Day 100] SCIM DELETE
+    Broker->>DB: enabled=false, scim_active=false ✅
+    rect rgb(255, 230, 230)
+        Note over IdP,Ex: [Day 101] 顧客 IdP 側で退職処理漏れ（連携ミス）
+        Ex->>IdP: ログイン試行
+        IdP-->>Ex: 認証成功（IdP 側で削除漏れ）
+        Ex->>Broker: /broker/customer-idp/endpoint?code=...
+        Broker->>DB: federated_identity 既存 hit → user_entity(enabled=false)
+        Note over Broker: Post Broker Login Flow 発火
+        Broker->>SPI: authenticate()
+        Note over SPI: ★★ SCIM 除外条件なし ★★
+        SPI->>DB: user.setEnabled(true) 🚨
+        SPI-->>Broker: success
+        Broker-->>Ex: JWT 発行 🚨
+        Note over Ex: 元従業員が再ログイン成立<br/>= SCIM deprovisioning が意味を失う
+    end
+```
+
+→ **Re-Activation SPI は `provisioned_by=jit` の場合のみ発火**するように条件分岐必須（§10.4.I.3）。
+
+**判定分岐フロー**（実装済み仕様）:
+
+```mermaid
+flowchart TD
+    Start[Post Broker Login Flow 発火]
+    Start --> Q1{user.isEnabled ?}
+    Q1 -->|true=有効| Update[Last Login 更新のみ]
+    Q1 -->|false=無効| Q2{provisioned_by / scim_active 判定}
+    Q2 -->|scim または<br/>scim_active=true| Block1[❌ 拒否<br/>USER_DISABLED]
+    Q2 -->|local-admin| Block2[❌ 拒否<br/>USER_DISABLED]
+    Q2 -->|jit| Reactivate[✅ enabled=true<br/>reactivated_at=now]
+    Q2 -->|上記以外<br/>未設定など| Block3[❌ 拒否<br/>安全側で USER_DISABLED]
+    Reactivate --> Update
+    Update --> End[success → JWT 発行]
+
+    classDef safe fill:#e6ffe6,stroke:#4a4
+    classDef danger fill:#ffe6e6,stroke:#a44
+    class Reactivate,Update,End safe
+    class Block1,Block2,Block3 danger
+```
+
+#### 10.4.I.3 SPI 実装スケルトン（LastLoginTracker と統合）
+
+```java
+public class LastLoginAndReactivationAuthenticator implements Authenticator {
+
+    private static final long DEBOUNCE_MS = 86_400_000L; // 1 day
+    private static final Logger LOG = Logger.getLogger(LastLoginAndReactivationAuthenticator.class);
+
+    @Override
+    public void authenticate(AuthenticationFlowContext context) {
+        UserModel user = context.getUser();
+        String provisionedBy = user.getFirstAttribute("provisioned_by");
+        String scimActive = user.getFirstAttribute("scim_active");
+
+        // ===== Re-Activation ロジック =====
+        if (!user.isEnabled()) {
+            // ★ SCIM 管理下のユーザは Re-Activation 禁止（重大）
+            if ("scim".equals(provisionedBy) || "true".equals(scimActive)) {
+                LOG.warnf("Re-Activation blocked (SCIM-managed): user=%s", user.getUsername());
+                context.failure(AuthenticationFlowError.USER_DISABLED);
+                return;
+            }
+            // ★ 管理者は Re-Activation 対象外（本基盤で明示管理）
+            if ("local-admin".equals(provisionedBy)) {
+                LOG.warnf("Re-Activation blocked (local-admin): user=%s", user.getUsername());
+                context.failure(AuthenticationFlowError.USER_DISABLED);
+                return;
+            }
+            // JIT ユーザのみ自動再有効化
+            if ("jit".equals(provisionedBy)) {
+                user.setEnabled(true);
+                user.setSingleAttribute("reactivated_at", String.valueOf(System.currentTimeMillis()));
+                LOG.infof("Auto re-activated JIT user: %s", user.getUsername());
+            } else {
+                // provisioned_by 未設定など想定外
+                LOG.warnf("Re-Activation blocked (unknown provisioned_by=%s): user=%s",
+                          provisionedBy, user.getUsername());
+                context.failure(AuthenticationFlowError.USER_DISABLED);
+                return;
+            }
+        }
+
+        // ===== Last Login 更新（既存ロジック） =====
+        String lastLoginStr = user.getFirstAttribute("last_login");
+        long now = System.currentTimeMillis();
+        if (lastLoginStr == null) {
+            user.setSingleAttribute("last_login", String.valueOf(now));
+            LOG.infof("Initial write for user=%s, now=%d", user.getUsername(), now);
+        } else {
+            long last = Long.parseLong(lastLoginStr);
+            long diff = now - last;
+            if (diff > DEBOUNCE_MS) {
+                user.setSingleAttribute("last_login", String.valueOf(now));
+                LOG.infof("Update for user=%s, last=%d, diff=%dms", user.getUsername(), last, diff);
+            }
+        }
+
+        context.success();
+    }
+
+    // ... boilerplate（requiresUser=true, configuredFor=true, action=empty）
+}
+```
+
+#### 10.4.I.4 Flow 配置（3 系統、[§10.4.F.9](#1049-2026-07-10-追加--2026-07-13-v3-実測-passフェデ-jit-経路検証旧検証ギャップ) と同じ）
+
+- **Browser Flow forms サブフロー内**（ローカル PW = 管理者のみ、Re-Activation は原則発火せず）
+- **First Broker Login Flow 末尾**（フェデ JIT 初回 = 新規作成、Re-Activation 未発火）
+- **Post Broker Login Flow**（フェデ JIT 2 回目以降 = ★ Re-Activation ここで発火）
+
+**★ 実装優先度**：**Post Broker Login Flow が最重要**（Re-Activation の主戦場）。
+
+#### 10.4.I.5 監査ログ
+
+Re-Activation 発火時は必ず監査ログ発行:
+```
+event.type = "USER_REACTIVATED"
+event.user_id = <user id>
+event.provisioned_by = "jit"
+event.reactivated_at = <timestamp>
+event.days_since_deprovision = <計算値>
+```
+
+これにより **「大量 Re-Activation 発生時の異常検知」**（ADR-035 ITDR）が可能になる。
+
+#### 10.4.I.6 混在時の 4 パターン（[§10.4.B 判別戦略の 3 段階](#1042b2-判別戦略の-3-段階) 拡張）
+
+| Case | ユーザ状態 | provisioned_by | scim_active | 90 日バッチ | Re-Activation |
+|---|---|---|:---:|:---:|:---:|
+| **1** | SCIM 先登録 → 後日 JIT ログイン | `scim`（維持）| `true`（維持）| 対象外 | 対象外 |
+| **2** | JIT 先登録 → 後日 SCIM Push | `jit` → `scim`（更新）| `true`（更新）| 対象外（更新後）| 対象外（更新後）|
+| **3** | JIT のみ | `jit` | 未設定 or `false` | **対象** | **対象** |
+| **4** | SCIM のみ | `scim` | `true` | 対象外 | 対象外 |
+| **5** | 管理者（本基盤ローカル）| `local-admin` | 未設定 | 対象外 | 対象外（管理者操作待ち）|
+
+### 10.4.J 【2026-07-14 新設】JIT/SCIM 選択フローチャート + 顧客案内テンプレート
+
+> **背景・なぜここで新設するか**：営業 / コンサル / 顧客契約時に「JIT で行くか SCIM を採用するか」を判断する共通フォーマットが必要。
+
+#### 10.4.J.1 選択フローチャート
+
+```mermaid
+flowchart TD
+    Q1{顧客のセキュリティ要件}
+    Q1 -->|退職即時取消が必須<br/>PCI DSS 8.2.5 厳格対応<br/>GDPR Art. 17 即時対応| SCIM[SCIM 採用を推奨]
+    Q1 -->|90 日以内の<br/>deprovisioning で許容| JIT[JIT で運用可能]
+    Q1 -->|一部の重要ユーザだけ SCIM<br/>他は JIT| MIX[混在パターン<br/>Case 1/2]
+
+    SCIM --> SCIM_C1[顧客側: SCIM Endpoint 実装<br/>or IdP 機能有効化]
+    SCIM --> SCIM_C2[本基盤側: §10.4.E 代替 A<br/>Admin API + SPI で受信]
+
+    JIT --> JIT_C1[本基盤側: §10.4.A/B/I<br/>バッチ + Re-Activation SPI]
+    JIT --> JIT_C2[Compensating Controls §10.7<br/>PCI DSS リスク軽減]
+
+    MIX --> MIX_C1[判別属性 + Re-Activation 条件分岐<br/>§10.4.I.6]
+    MIX --> MIX_C2[移行手順 Runbook 事前準備<br/>§10.4.J QA-4]
+
+    classDef recommend fill:#e6ffe6,stroke:#4a4
+    classDef caution fill:#fff8dc,stroke:#a80
+    class SCIM recommend
+    class MIX caution
+```
+
+#### 10.4.J.2 顧客案内テンプレート（RFP / 契約時）
+
+> 【本基盤のユーザ Deprovisioning 方針】
+>
+> 本基盤は顧客 IdP 経由のフェデレーション認証を主とし、以下 2 方式で退職者の deprovisioning に対応します:
+>
+> **A. SCIM 方式（即時 deprovisioning）**
+> - 顧客 IdP から本基盤への SCIM プロトコルによる削除通知を受信
+> - 退職から数秒〜数分で本基盤側でも `enabled=false` + 全既発行トークン失効
+> - PCI DSS 8.2.5 / APPI 22 条 / GDPR Art. 17 の即時対応要件に適合
+> - 顧客側で SCIM Endpoint の実装または IdP の SCIM 機能有効化が必要
+>
+> **B. JIT 方式（90 日 Hygiene）**
+> - 顧客 IdP 経由の初回ログイン時に本基盤に自動作成
+> - 顧客 IdP 側の退職処理により、次回以降のログインは顧客 IdP が拒否
+> - 本基盤側で 90 日未ログインのアカウントを自動的に無効化 + 既発行トークン失効
+> - 顧客側の追加実装不要（SSO 設定のみ）
+> - **退職から本基盤反映まで最大 90 日の Lag が存在**
+> - 即時 deprovisioning が業務要件に含まれる場合、Compensating Controls（短命 Token + Refresh Rotation）または SCIM 方式への切り替えを推奨
+>
+> **C. 混在方式**
+> - 一部の重要ユーザ（例: 管理者・特権アクセス）は SCIM、一般ユーザは JIT
+> - 本基盤側で判別属性により両者を区別
+>
+> **【責任分界】**
+> - 本基盤側：SCIM 通知の受信・反映、JIT ユーザの 90 日 Hygiene、既発行トークン失効、監査ログ発行
+> - 顧客 IdP 側：退職者の即時無効化（認証拒否）、**SCIM ユーザの Inactive Detection および 90 日未使用検出**
+> - アプリ側：Role / Permission の剥奪（認可制御）
+>
+> **【SCIM ユーザの Inactive Detection および Deprovisioning 責任】**（2026-07-15 明示化）
+> - 本基盤は SCIM 通知（POST/PATCH/DELETE）の受信および即時反映のみを行います
+> - **90 日未使用ユーザの検出および削除判断は、顧客 IdP 側の責任範囲です**
+> - 顧客 IdP の Inactive Detection ネイティブ機能を使用してください:
+>   - Microsoft Entra ID: Access Reviews / `signInActivity` API
+>   - Okta: Inactive Users Report / Automated Deprovisioning
+>   - Google Workspace: Admin Console + Cloud Identity Premium
+>   - OneLogin: Inactive Users Report
+>   - Ping Identity: User Data Deprovisioning
+> - **本基盤側では SCIM ユーザに対する能動的な削除・レポート生成・通知は行いません**
+> - 顧客 IdP に Inactive Detection 機能がない場合は Phase 1 β 段階でご相談いただき、**Professional Services にて個別対応**を検討します
+>
+> **【本基盤の "90 日" ≠ 全体の "90 日"】**（重要な注意）
+> - 本基盤の 90 日バッチは「本基盤経由サービス」の 90 日未ログインを検出するもので、**「組織全体で 90 日未使用」を意味しません**
+> - 例：本基盤経由 SaaS を使わない部署の従業員は本基盤で未ログイン扱いですが、他 SaaS を毎日使う現役社員かもしれません
+> - 退職判定は必ず **顧客 IdP 全体のアクティビティ**（Entra Access Reviews / Okta signInActivity 等）で行ってください
+>
+> 詳細は [ADR-025 SCIM の位置づけと本基盤の受信スタンス](../adr/025-scim-positioning-and-receive-stance.md) をご参照ください。
+
+#### 10.4.J.3 想定 QA
+
+| 質問 | 回答 |
+|---|---|
+| **Q1: JIT の 90 日 Lag は法規制違反にならないか？** | PCI DSS 8.2.5 は "即時取消" 要件だが、Compensating Controls（短命 Token 15 分 + Refresh Rotation）で実効的リスクを軽減可能。厳格対応が必要な場合は SCIM 採用推奨。|
+| **Q2: SCIM は必須か？** | 必須ではない。PCI DSS 対象外の業務システムなら JIT で十分。金融 / 医療 / 決済系は SCIM 推奨。|
+| **Q3: 顧客が SCIM を実装する工数は？** | Entra ID / Okta / OneLogin 等の主要 IdP は SCIM Provisioning を GUI 設定のみで有効化可能（工数ゼロ）。独自 IdP の場合は 2-4 週間の実装工数。|
+| **Q4: 混在パターンで移行手順は？** | JIT → SCIM 移行時、既存 JIT ユーザに `scim_active=true` を bulk update するスクリプトを提供。移行期間中は Auto-Link を有効化。|
+| **Q5: 90 日バッチで削除されたユーザが復帰したら？** | Post Broker Login Flow の Re-Activation SPI が自動的に `enabled=true` に戻す。運用者操作不要、業務中断なし。|
+| **Q6: SCIM ユーザの 90 日未使用対応は本基盤側で行うか？** | ❌ **行いません**。SCIM ユーザの Inactive Detection および削除判断は **顧客 IdP 責任**（[§10.4.J.2 責任分界](#104j2-顧客案内テンプレートrfp--契約時)）。顧客 IdP のネイティブ機能（Entra Access Reviews / Okta Inactive Users 等）を使用してください。本基盤は SCIM DELETE 受信のみ。理由：SoT 尊重（SCIM RFC 7644）+ 業界標準（Auth0/Okta/Ping/Entra すべて IGA 層に委譲）+ 本基盤の "90 日" ≠ 全体の "90 日" で誤検知リスク大 |
+| **Q7: 本基盤で物理削除（DELETE）は行うか？** | ❌ **Phase 1 では行いません**。Soft Delete（`enabled=false`）のみ。理由：**PCI DSS 8.2.6 は "removed or disabled" と明示**（SSC Information Supplement で `enabled=false` フラグで十分と明示）+ **PCI DSS 10.5 監査ログ完全性要件**（物理削除は逆に嫌う）+ **業界標準**（Auth0/Okta/Entra 全て Soft Delete + Recycle Bin モデル）。Phase 2 で法定保持期間経過後の物理削除バッチを検討（[§10.4.K 3 段階削除モデル](#104k-2026-07-15-新設--3-段階削除モデル--jitscim-対称性--本基盤側対応の設計思想)）|
+| **Q8: 誤って物理削除された場合、アプリ側で別 ID を持つ必要があるか？** | ❌ **不要**（`sub` 主 ID が業界標準）。理由：`sub` を主 ID として使うのが OIDC Core 1.0 §5.7 準拠 + Auth0/Okta/Salesforce/Slack 等の業界主流。**フェールセーフは本基盤側の 4 層ガードレール**（Terraform 権限制限 + SCIM Hard Delete 無効化 + 監査ログ検知 + Aurora PITR）で担保、詳細は [§10.5 4 層ガードレール](#105-keycloak-db-保持削除マトリクス実装詳細)。**重要アプリのみ Layer 2 マッピングテーブルを持つ**選択肢はあるが、全アプリ強制は不要 |
+| **Q9: 90 日バッチで DB は減るか？** | ❌ **減りません**（Soft Delete のため）。`user_entity` / `user_attribute` / `federated_identity` レコードは保持されます。実際の DB 掃除は **法定保持期間経過後の物理削除バッチ（Phase 2）** が担当。10M MAU × 退職率 20% × 3 年保持 で数 GB 蓄積の想定（Aurora 運用上は許容範囲）|
+
+### 10.4.K 【2026-07-15 新設】3 段階削除モデル + JIT/SCIM 対称性 + 本基盤側対応の設計思想
+
+> **背景・なぜここで新設するか**：§10.4.A〜J の実装詳細議論を通じて、以下 3 点が明確化された:
+> 1. **90 日バッチの目的**は「DB 掃除」ではなく「コンプラ + 多層防御 + 監査履歴」
+> 2. **JIT と SCIM で最終防波堤の設計は非対称**（JIT には必要、SCIM には不要）
+> 3. **削除は 3 段階モデル**（対策 B → Soft Delete → 物理削除）で、Phase 1 は前 2 段階のみ
+>
+> これらを Phase 1 実装ガイド + 契約時の設計思想として一つの節に集約する。
+
+#### 10.4.K.1 3 段階削除モデル
+
+```mermaid
+flowchart TB
+    subgraph L1 [第 1 段階：認証遮断 - 対策 B §10.7]
+        L1_A[短命 Access Token + Refresh Token Rotation]
+        L1_B[退職後 数分〜4h で認証遮断]
+        L1_C[効果: 実質的なアクセス継続時間の短縮]
+    end
+    subgraph L2 [第 2 段階：Soft Delete - 対策 A §10.4.A/B / SCIM DELETE §10.4.G-S6]
+        L2_A[enabled=false + not_before + Session Revoke]
+        L2_B[JIT: 90 日バッチ / SCIM: 即時通知]
+        L2_C[効果: PCI DSS 8.2.6 対応 + 多層防御 + 監査履歴]
+        L2_D[⚠ DB は減らない、Zombie として残存]
+    end
+    subgraph L3 [第 3 段階：物理削除 - Phase 2 スコープ]
+        L3_A[法定保持期間経過後 3-5 年後]
+        L3_B[DELETE FROM user_entity + 監査ログアーカイブ]
+        L3_C[効果: DB 実質減 + APPI/GDPR 完全対応]
+        L3_D[⚠ Phase 1 スコープ外、別 ADR で扱う]
+    end
+    L1 --> L2
+    L2 --> L3
+
+    classDef p1 fill:#e6ffe6,stroke:#4a4
+    classDef p2 fill:#fff8dc,stroke:#a80
+    classDef p3 fill:#f0f0f0,stroke:#555
+    class L1 p1
+    class L2 p2
+    class L3 p3
+```
+
+**Phase 1 スコープ**：第 1 段階 + 第 2 段階（**対策 B の短命セッション + Soft Delete のみ**）
+**Phase 2 スコープ**：第 3 段階（物理削除バッチ + pseudonymization バッチ、別 ADR）
+
+#### 10.4.K.2 対策 A / 対策 B の補完関係
+
+**核心**：対策 A（90 日バッチ）と対策 B（短命セッション）は **別々の問題を対処、両方揃って初めて JIT の弱点をカバー**。
+
+```mermaid
+flowchart LR
+    Problem[JIT の弱点<br/>「顧客 IdP で退職しても<br/>本基盤に通知が来ない」]
+    Problem --> ProbA[退職者の継続アクセス<br/>= 既発行トークンで最大 90 日]
+    Problem --> ProbB[DB に Zombie 残存<br/>+ コンプラ違反]
+    ProbA --> CtrlB[対策 B: 短命セッション §10.7<br/>実質 Lag ≤ 4h]
+    ProbB --> CtrlA[対策 A: 90 日バッチ §10.4.A/B<br/>enabled=false + 多層防御 + 監査]
+    CtrlA --> Cover[両方揃って<br/>PCI DSS 8.2.5 + 8.2.6 両方カバー]
+    CtrlB --> Cover
+
+    classDef problem fill:#ffe6e6,stroke:#a44
+    classDef control fill:#e6f2ff,stroke:#248
+    classDef result fill:#e6ffe6,stroke:#4a4
+    class Problem,ProbA,ProbB problem
+    class CtrlA,CtrlB control
+    class Cover result
+```
+
+| 問題 | 対策 A（90 日バッチ）| 対策 B（短命セッション）|
+|---|:---:|:---:|
+| DB Zombie 残存 | ✅ 対応（Soft Delete）| ❌ 効果なし |
+| PCI DSS 8.2.6（90 日未使用）| ✅ 主対策 | ❌ 効果なし |
+| PCI DSS 8.2.5（退職時即時）| ⚠ 最大 90 日 Lag | ✅ 主対策 |
+| 既発行トークンの失効 | ⚠ バッチ発火時のみ | ✅ 自動失効 |
+| 退職直後のアクセス遮断 | ❌ 効果なし | ✅ 主対策 |
+| 監査履歴の証拠 | ✅ | ⚠ |
+
+#### 10.4.K.3 JIT と SCIM の最終防波堤設計の非対称性
+
+**核心**：JIT には本基盤側の 90 日バッチが必須、**SCIM には本基盤側の能動対応は不要**（SoT 尊重）。
+
+| 対応 | JIT | SCIM |
+|---|:---:|:---:|
+| **本基盤の 90 日バッチ（Soft Delete）** | ✅ **必須**（唯一の砦）| ❌ **実装しない**（SoT 尊重）|
+| **本基盤の連携健全性監視（Health Check）** | 不要（そもそも連携がない）| ✅ **必要**（IdP 連携異常検知）|
+| **顧客 IdP 側の Inactive Detection** | 不要 | ✅ **顧客責任として契約明示**（[§10.4.J.2](#104j2-顧客案内テンプレートrfp--契約時)）|
+
+**JIT 側の 90 日バッチが必須な理由 3 点**:
+1. **他に検出手段が皆無** — 顧客 IdP から通知が来ない
+2. **契約で顧客責任にできない** — JIT 顧客は SCIM 未実装 = 顧客側にも検出機能ない前提
+3. **本基盤側の唯一の砦** — 90 日バッチが唯一の対応
+
+**SCIM 側で 90 日バッチが不要な理由 3 点**:
+1. **SoT 尊重の思想**（SCIM RFC 7644）— Consumer が SoT の指示を無視して勝手に削除は契約違反
+2. **顧客 IdP がネイティブに検出可能** — Entra Access Reviews / Okta Inactive Users Report が業界標準
+3. **契約で明確に切れる** — 「SCIM ユーザの Inactive Detection は顧客 IdP 責任」を SLA に明記可能
+
+#### 10.4.K.4 SCIM 連携健全性監視（Health Check）— SCIM 側の "別次元の対応"
+
+SCIM ユーザに対して 90 日バッチはやらないが、**SCIM 連携自体が健全に動いているか** の監視は必要:
+
+```mermaid
+flowchart TB
+    subgraph Monitor [SCIM Health Check - 連携生存確認]
+        M1[SCIM 通知の直近受信時刻<br/>閾値: 24h 以上通知なし = アラート]
+        M2[SCIM POST/PATCH/DELETE の頻度<br/>ベースライン比 50% 以下 = 異常]
+        M3[SCIM Endpoint HTTP エラー率<br/>閾値: 5% 以上 = アラート]
+        M4[SCIM ユーザ数の急変<br/>1 時間で 10% 以上変動 = 異常]
+    end
+    Monitor --> Notify1[通知: 顧客管理者<br/>連携異常の可能性を通知]
+    Monitor --> Notify2[通知: 本基盤 SRE<br/>受信障害の切り分け]
+
+    classDef monitor fill:#e6f2ff,stroke:#248
+    class M1,M2,M3,M4 monitor
+```
+
+**実装方式**：Grafana Dashboard + Alertmanager（[ADR-053 Observability](../adr/053-observability-strategy.md) と統合）
+
+**「Inactive Detection」との違い**：
+- Inactive Detection = ユーザ個別の未使用検出 → **顧客 IdP 責任**
+- Health Check = SCIM 連携インフラの健全性 → **本基盤責任**
+
+**ヒアリング項目**：[B-SCIM-HC-1](../requirements/hearing-checklist.md) — 顧客ごとの Health Check 閾値カスタマイズ要否
+
+#### 10.4.K.5 Phase 1 実装スコープ整理
+
+| 項目 | 対策 | 対象 | Phase | 実装 |
+|---|---|---|:---:|---|
+| **対策 B**（短命セッション + Refresh Rotation）| L1 認証遮断 | 全顧客 | Phase 1 | [§10.7.1](#1071-案-a-短命-access-token--refresh-token-rotation-の-keycloak-設定) |
+| **90 日バッチ**（JIT のみ）| L2 Soft Delete | JIT 顧客のみ | Phase 1 | [§10.4.A/B](#104a-推奨2026-07-09-event-listener-spi--user_attribute-方式) |
+| **Re-Activation SPI**（JIT のみ）| L2 の復帰対応 | JIT 顧客のみ | Phase 1 | [§10.4.I](#104i-2026-07-14-新設-re-activation-spi-実装仕様--jitscim-判別条件分岐) |
+| **SCIM DELETE 受信 → Soft Delete** | L2 SCIM 側の対応 | SCIM 顧客 | Phase 1 | [§10.4.E 代替 A](#104e-緊急2026-07-09-追加-検証結果と実装方式の見直し) |
+| **SCIM Health Check**（連携監視）| Health Check | SCIM 顧客 | Phase 1 | 新規（Grafana / Alertmanager）|
+| **物理削除バッチ**（法定保持期間後）| L3 物理削除 | 全顧客 | **Phase 2** | 別 ADR |
+| **pseudonymization バッチ**（APPI/GDPR）| L3 の補完 | 全顧客 | **Phase 2** | 別 ADR |
+
+**Phase 1 契約前ゲート**：
+- [B-SCIM-JIT-3](../requirements/hearing-checklist.md) 顧客 IdP の Inactive Detection 機能有無
+- [B-JIT-DEL-1](../requirements/hearing-checklist.md) 法定保持期間の顧客要件
+- [B-JIT-DEL-2](../requirements/hearing-checklist.md) retention_years カスタマイズ（3/5/7 年）
+- [B-SCIM-HC-1](../requirements/hearing-checklist.md) SCIM Health Check 閾値カスタマイズ
+- [B-TENANT-SWITCH-1](../requirements/hearing-checklist.md) SCIM ↔ JIT 切替手順
+- [B-TENANT-EXIT-1](../requirements/hearing-checklist.md) サービス離脱時の削除方針
+
+#### 10.4.K.6 【2026-07-15 新設】Phase 2 物理削除バッチ仕様（Phase 1 で準備必須）
+
+> **背景・なぜここで整理するか**：Phase 1 は物理削除を行わないが、Phase 2 バッチの **入力となる `deprovisioned_at` 属性は Phase 1 実装で必ずセット** しなければならない。Phase 2 バッチの仕様を先に確定させることで、Phase 1 実装時の抜け漏れを防ぐ。
+
+##### K.6.1 対象範囲（JIT / SCIM 両方）
+
+**❗ 誤解の修正**：「SCIM は削除しないなら物理削除もしないのでは?」は誤り。
+
+- **JIT ユーザ**：90 日バッチで Soft Delete → **N 年後に物理削除**
+- **SCIM ユーザ**：SCIM DELETE で Soft Delete → **N 年後に物理削除**
+- **管理者ユーザ**：管理者手動 Soft Delete → **N 年後に物理削除**
+
+**両方が同じフローで物理削除**（違いは Soft Delete のトリガーだけ）。「本基盤で能動検出しない」と「物理削除もしない」は別の話。
+
+##### K.6.2 判定パラメータ（Phase 1 で必ずセット）
+
+**Soft Delete 時に `deprovisioned_at` 属性を必ずセット**:
+
+| ケース | `deprovisioned_at` セット箇所 |
+|---|---|
+| **JIT 90 日バッチ** | [§10.4.A バッチスクリプト](#104a-推奨2026-07-09-event-listener-spi--user_attribute-方式) で `UPDATE user_entity` と同時セット |
+| **SCIM DELETE 受信** | SCIM Plugin / Custom Handler で Soft Delete と同時セット |
+| **管理者手動 disable** | 管理者操作 SPI 内でセット |
+
+**Phase 1 実装での注意**：既存の Soft Delete 実装（§10.4.A / §10.4.G S6）に `deprovisioned_at` セット処理を組み込む必要あり。
+
+##### K.6.3 保持期間（`retention_years`）
+
+**業界標準の根拠**:
+
+| 根拠 | 期間 | 適用シーン |
+|---|:---:|---|
+| **PCI DSS 10.5.1** | 監査ログ 1 年（うち直近 3 ヶ月オンライン即時）| **3 年運用が業界標準** |
+| **SOX**（米国上場金融）| 会計監査ログ 7 年 | 金融 / 上場企業顧客 |
+| **APPI**（日本）| 明確期間なし、"事業目的達成後遅滞なく" | **3-5 年 が通常** |
+| **GDPR**（EU）| 明確期間なし、pseudonymization で対応 | 3-5 年 + pseudonymization |
+| **日本商法** | 帳簿 10 年 | 金融 / 会計特殊業務 |
+| **医療情報保護法** | 5 年 | 医療系顧客 |
+
+**Phase 2 デフォルト設定**：
+- **`default_retention_years = 3`**（PCI DSS 準拠 + APPI 通常運用）
+- **顧客 Realm 属性で override 可能**：`retention_years=5` or `retention_years=7`
+- **ヒアリング項目 B-JIT-DEL-2** で顧客ごとの要件確認
+
+##### K.6.4 物理削除バッチのロジック（Phase 2 実装案）
+
+**判定 SQL**:
+```sql
+SELECT ue.id, ue.username, ua_dep.value AS deprovisioned_at
+FROM user_entity ue
+JOIN user_attribute ua_dep
+  ON ua_dep.user_id = ue.id AND ua_dep.name = 'deprovisioned_at'
+WHERE ue.enabled = false
+  AND CAST(ua_dep.value AS BIGINT) < :threshold_ms;
+-- threshold_ms = now - (retention_years * 365 * 86400 * 1000)
+```
+
+**削除フロー**:
+
+```mermaid
+sequenceDiagram
+    participant Batch as 物理削除バッチ<br/>週次実行
+    participant DB as 本基盤 DB
+    participant S3 as S3 Glacier Deep Archive
+    participant Audit as 監査ログ
+    participant App as アプリ (通知)
+
+    Batch->>DB: SELECT enabled=false<br/>AND deprovisioned_at < threshold
+    DB-->>Batch: 対象ユーザ一覧
+
+    loop 各対象ユーザ
+        Batch->>Audit: 監査ログをアーカイブ準備
+        Batch->>S3: S3 Glacier Deep Archive にアップロード
+        S3-->>Batch: アーカイブ完了
+        Batch->>DB: DELETE FROM user_entity<br/>WHERE id = ?<br/>(FK CASCADE で関連テーブルも削除)
+        Batch->>App: [オプション] 通知 Webhook<br/>USER_PHYSICALLY_DELETED
+    end
+
+    Batch->>Audit: バッチ実行ログ<br/>(削除件数、対象日時範囲)
+
+    classDef primary fill:#e6f2ff,stroke:#248
+    class Batch,S3 primary
+```
+
+##### K.6.5 なぜ `deprovisioned_at` から起算するか（`last_login` からではなく）
+
+**紛らわしいので明示**：
+
+| 属性 | 意味 | 使用先 |
+|---|---|---|
+| `last_login` | 最終ログイン日時 | **Phase 1 90 日バッチの入力**（[§10.4.A/B](#104a-推奨2026-07-09-event-listener-spi--user_attribute-方式)）|
+| `deprovisioned_at` | Soft Delete された日時 | **Phase 2 物理削除バッチの入力**（本節）|
+
+**例**：
+```
+[Day 0] Alice が JIT で作成
+[Day 91] 90 日未ログイン → Soft Delete、deprovisioned_at = Day 91
+[Day 91 + 3年] 物理削除バッチ対象、DELETE 実行
+```
+
+**なぜ `last_login` からではなく `deprovisioned_at` からか**:
+- `last_login` からだと **法的責任開始タイミングと乖離**（Day 91 の disable 時点が実質退職判定）
+- **保持期間は "退職判定" から起算する** のが法規制の標準解釈
+- **PCI DSS 10.5** の監査ログ保持期間も disable された時点からカウント
+
+##### K.6.6 Phase 1 で必要な準備事項
+
+Phase 1 実装で以下を組み込むこと:
+
+| # | 項目 | 対応 |
+|---|---|---|
+| **1** | Soft Delete 時に `deprovisioned_at=now` セット | [§10.4.A バッチ](#104a-推奨2026-07-09-event-listener-spi--user_attribute-方式) + SCIM DELETE Handler + 管理者操作 SPI |
+| **2** | 顧客 Realm 属性 `retention_years` の設定機能 | Terraform + Realm Custom Attributes（デフォルト 3）|
+| **3** | 監査ログ S3 Glacier Deep Archive 連携 | [ADR-053 Observability](../adr/053-observability-strategy.md) 拡張 |
+| **4** | Phase 2 バッチの ADR ドラフト | 別 ADR で扱う（Phase 2 実装フェーズで詳細化）|
+
+### 10.4.L 【2026-07-15 新設】テナントライフサイクル遷移（JIT↔SCIM 切替 + サービス離脱）
+
+> **背景・なぜここで新設するか**：§10.4.G は「1 ユーザのライフサイクル」を扱うが、**テナント / 顧客レベルの遷移**（JIT↔SCIM 切替、サービス離脱）は別次元で整理が必要。Phase 1 実装レビュー + 契約時 SLA で必ず突かれる論点。
+
+#### 10.4.L.1 遷移パターン一覧
+
+| Pattern | シナリオ | 想定ヒアリング |
+|---|---|---|
+| **A. JIT → SCIM 切替** | JIT 顧客が SCIM 導入 | B-SCIM-JIT-2 移行 Runbook |
+| **B. SCIM → JIT 切替** | SCIM 顧客が SCIM 廃止（IdP 変更、コスト削減等）| **B-TENANT-SWITCH-1** 切替手順 |
+| **C. サービス離脱** | 顧客が本基盤解約 | **B-TENANT-EXIT-1** 削除方針 |
+
+#### 10.4.L.2 Pattern A: JIT → SCIM 切替
+
+**概要**：[§10.4.I.6 Case 1/2 と § 10.4.J QA-4](#104i6-混在時の-4-パターン10412-判別戦略の-3-段階-拡張) 参照、B-SCIM-JIT-2 で Runbook 提供済み。
+
+```mermaid
+sequenceDiagram
+    participant Customer as 顧客管理者
+    participant IdP as 顧客 IdP
+    participant Broker as 本基盤
+    participant Script as bulk update スクリプト
+
+    Customer->>IdP: [Day 1] SCIM Provisioning 有効化
+    IdP->>Broker: SCIM POST /Users (初期同期)
+    Broker->>Broker: externalId で検索 → 見つからない
+    Note over Broker: matchByEmail=true で照合
+    Broker->>Broker: 既存 JIT ユーザ発見<br/>externalId 追加
+
+    Customer->>Script: bulk update 実行
+    Script->>Broker: UPDATE user_attribute<br/>SET provisioned_by='scim', scim_active='true'<br/>WHERE user_id IN (SCIM 側で受信済)
+
+    Note over Broker: 移行完了、以降は SCIM 主導
+    Note over Broker: 90 日バッチ対象外 + Re-Activation SPI 対象外
+```
+
+**注意点**：
+- 90 日バッチ + Re-Activation SPI の対象から外れる
+- 顧客 IdP 側の Inactive Detection ネイティブ機能を有効化必須（B-SCIM-JIT-3）
+
+#### 10.4.L.3 Pattern B: SCIM → JIT 切替 ★ 新規
+
+**シナリオ**：SCIM 顧客が SCIM 廃止して JIT のみに戻る
+- 理由：SCIM 実装コスト削減、IdP 変更、Simplify 要求等
+
+**リスク**：
+- 既に退職している SCIM ユーザが Zombie として残る（`scim_active=true` で保護中）
+- SCIM 通知が止まると本基盤側は削除通知を受け取れない
+- **移行時に `scim_active=false` + `provisioned_by=jit` にしないと Zombie 永続化**
+
+**Runbook**：
+
+```mermaid
+sequenceDiagram
+    participant Customer as 顧客管理者
+    participant IdP as 顧客 IdP
+    participant Broker as 本基盤
+    participant Script as 切替スクリプト
+
+    Customer->>Broker: [Day -30] SCIM 廃止申請
+    Note over Broker: 30 日通知期間<br/>顧客に IdP 側 Inactive Detection 移行を促す
+
+    Customer->>Script: [Day 0] 切替スクリプト実行
+    Script->>Broker: UPDATE user_attribute<br/>SET scim_active='false',<br/>provisioned_by='jit'<br/>WHERE provisioned_by='scim'
+    Script->>Broker: last_login 未設定ユーザは<br/>last_login=now でセット<br/>(90 日バッチ即時発火防止)
+
+    Customer->>IdP: SCIM Endpoint 無効化
+
+    Note over Broker: 以降は 90 日バッチ運用 + Re-Activation SPI 対象
+    Note over Broker: 顧客 IdP 側の Inactive Detection<br/>ネイティブ機能に依存
+```
+
+**注意点**：
+- **既に SCIM DELETE で無効化されたユーザ**（enabled=false, scim_active=false）は変更不要
+- **切り替え時点で顧客 IdP 側で退職済みのユーザ**は次回ログイン試行しないので 90 日待たずに残存
+- **顧客側の Inactive Detection ネイティブ機能有効化** を切替前に必ず確認（B-SCIM-JIT-3）
+
+**ヒアリング項目**：**B-TENANT-SWITCH-1**
+
+#### 10.4.L.4 Pattern C: サービス離脱（テナント全削除）★ 新規
+
+**シナリオ**：顧客が本基盤サービスを解約
+
+**対応の複雑性**：
+- 全ユーザ + Realm 設定 + 監査ログの取り扱いが必要
+- GDPR Art. 20 データポータビリティ対応必要
+- 法定保持期間との整合
+
+**推奨フロー（段階的削除）**：
+
+```mermaid
+sequenceDiagram
+    participant Customer as 顧客管理者
+    participant Broker as 本基盤
+    participant Users as 顧客の全ユーザ
+    participant Export as エクスポート機能
+    participant S3 as S3 Archive
+    participant Batch as 物理削除バッチ
+
+    Customer->>Broker: [Day 0] 契約終了通知
+
+    rect rgb(255, 250, 220)
+        Note over Customer,Export: 【Day 0〜30】猶予期間
+        Broker->>Export: ユーザデータエクスポート生成<br/>(GDPR Art. 20 対応)
+        Export-->>Customer: JSON/CSV ダウンロードリンク
+        Customer->>Users: 「サービス解約されます」通知
+    end
+
+    Note over Broker: [Day 30] Realm を disable
+    Users->>Broker: ログイン試行
+    Broker-->>Users: ❌ サービス解約エラー
+
+    Note over Broker: [Day 90] 全ユーザ Soft Delete
+    Broker->>Broker: 全 user_entity に<br/>enabled=false + deprovisioned_at=now
+
+    Note over S3: [Day 90] 監査ログ全アーカイブ
+    Broker->>S3: 監査ログ + Realm 設定 + ユーザメタデータ<br/>S3 Glacier Deep Archive
+
+    Note over Batch: [Day 90 + retention_years] 物理削除
+    Batch->>Broker: Realm 全体 DELETE (FK CASCADE)
+    Broker->>Customer: 物理削除完了証明書発行
+```
+
+**契約 / SLA 明記事項**：
+- **解約後 30 日以内はデータエクスポート可能**（GDPR Art. 20）
+- **解約後 30 日で Realm disable、90 日で全ユーザ Soft Delete + 監査ログアーカイブ**
+- **解約後 N 年（retention_years）で物理削除**
+- **物理削除完了証明書の発行**（顧客のコンプラ対応証拠）
+
+**ユーザ体験**：
+- 既存アプリセッションは徐々に失効
+- Refresh Token 失効で再認証必要 → 本基盤 Realm 無効で拒否
+- 「サービス解約されています」エラー表示
+
+**ヒアリング項目**：**B-TENANT-EXIT-1**
 
 ### 10.5 Keycloak DB 保持・削除マトリクス（実装詳細）
 
-| ケース | 影響テーブル | SQL/API 操作 |
-|---|---|---|
-| **JIT 顧客 IdP 削除** | なし（基盤に通知なし） | - |
-| **JIT 定期バッチ無効化**（**§10.4.A 推奨版**、§10.4 は 10M MAU で破綻）| `user_entity.enabled` = false / `user_attribute` に deprovisioned_at | `UPDATE user_entity SET enabled=false WHERE id=?` |
-| **SCIM DELETE 受信**（デフォルト）| `user_entity.enabled` = false / `user_attribute.scim_deleted` = true | Phase Two SCIM Plugin が自動処理 |
-| **SCIM DELETE + Hard Delete 設定** | `user_entity` 物理削除 + 関連テーブル CASCADE | `DELETE FROM user_entity WHERE id=?`（FK CASCADE）|
-| **管理者手動 Hard Delete** | 同上 | `DELETE /admin/realms/{realm}/users/{id}` |
-| **GDPR Erasure** | 同上 + 監査ログ匿名化 | カスタムスクリプト（個別実装）|
-| **法的保持期間後の自動削除** | 同上 + アーカイブ送信 | バッチ + S3 Glacier Deep Archive |
+**⚠ Phase 1 の基本方針**（2026-07-15 明示化）：**物理削除は原則行わず、Soft Delete のみ**。物理削除は Phase 2 の別 ADR で扱う。
+
+| ケース | Phase 1 実装 | 影響テーブル | SQL/API 操作 |
+|---|:---:|---|---|
+| **JIT 顧客 IdP 削除**（本基盤に通知なし）| Phase 1 | なし（受動対応）| - |
+| **JIT 定期バッチ無効化**（[§10.4.A](#104a-推奨2026-07-09-event-listener-spi--user_attribute-方式)、Soft Delete）| Phase 1 | `user_entity.enabled` = false / `user_attribute` に `deprovisioned_at` | `UPDATE user_entity SET enabled=false WHERE id=?` |
+| **SCIM DELETE 受信**（Phase 1 デフォルト = Soft Delete）| Phase 1 | `user_entity.enabled` = false / `user_attribute.scim_active` = false | Phase Two SCIM Plugin 自動処理 |
+| **~~SCIM DELETE + Hard Delete 設定~~** | ❌ **Phase 1 で禁止**（[§10.5.1 4 層ガードレール](#1051-jit物理削除禁止の根拠--4-層ガードレール)）| — | 実装しない |
+| **~~管理者手動 Hard Delete~~** | ❌ **Phase 1 で禁止** | — | 実装権限なし |
+| **GDPR Erasure**（Phase 1 は pseudonymization で対応、Phase 2 で物理削除）| Phase 1 部分対応 | `user_attribute` に mask 属性追加 | カスタムスクリプト（Phase 2 で ADR 化）|
+| **法的保持期間後の自動削除** | **Phase 2** | `user_entity` 物理削除 + 関連 CASCADE + 監査ログアーカイブ | バッチ + S3 Glacier Deep Archive（別 ADR）|
+
+#### 10.5.1 JIT 物理削除禁止の根拠 + 4 層ガードレール
+
+**なぜ Phase 1 で物理削除を禁止するか**（3 つの根拠）:
+
+##### 根拠 1: JIT ユーザの物理削除は "別ユーザ問題" を生む
+
+```mermaid
+sequenceDiagram
+    participant Admin as 誤操作 or 悪意
+    participant DB as 本基盤 DB
+    participant User as 復帰ユーザ
+    participant IdP as 顧客 IdP
+    participant App as アプリ
+    rect rgb(255, 230, 230)
+        Note over Admin: ❌ 物理削除の場合
+        Admin->>DB: DELETE FROM user_entity WHERE id=?
+        Note over DB: user_entity + federated_identity 消失
+    end
+    User->>IdP: 復帰ログイン
+    IdP-->>DB: ID Token (sub=xyz)
+    Note over DB: federated_identity 見つからない → 新規 JIT
+    DB->>User: 新 user_entity (新 UUID, 新 sub)
+    User->>App: API 呼び出し (新 sub)
+    Note over App: ★ 別ユーザ扱い 🚨<br/>過去データ / Role / 履歴 孤立
+```
+
+- **新 UUID → 新 sub → アプリ側 "別ユーザ"** 扱い
+- **過去の監査ログとの紐付け切れる**（PCI DSS 10.5 違反）
+- **アプリ側 DB でユーザ関連データ孤立**
+
+##### 根拠 2: PCI DSS 8.2.6 は Soft Delete で満たせる
+
+- 原文：「removed **or** disabled」→ **disabled で十分**
+- PCI SSC Information Supplement：「`enabled=false` フラグで十分」
+- 業界 QSA 慣行：Soft Delete が標準（[§10.4.H.3](#104h3-コンプライアンス比較) 参照）
+
+##### 根拠 3: PCI DSS 10.5 監査ログ完全性との矛盾
+
+- **PCI DSS 10.5**：監査ログの完全性維持（変更・削除の防止）
+- 物理削除で監査ログ連携先の `user_entity.id` が消失 → 監査ログの人物特定不能
+- **物理削除は要件間で矛盾を生む**、QSA は逆に嫌う
+
+##### 4 層ガードレール（物理削除を実装レベルで防止）
+
+Phase 1 では以下 4 層で **「そもそも物理削除させない」** ように設計:
+
+```mermaid
+flowchart TB
+    subgraph L1 [Layer 1: Terraform / IaC で権限制限]
+        L1_A[通常運用 Role に delete-users 付与しない]
+        L1_B[emergency Role のみ物理削除可能<br/>Break-Glass Access 必須]
+    end
+    subgraph L2 [Layer 2: SCIM Hard Delete 設定を無効化ロック]
+        L2_A[SCIM Plugin config で hard_delete: false 固定]
+        L2_B[管理者でも設定変更不可]
+    end
+    subgraph L3 [Layer 3: 監査ログで DELETE 操作検知]
+        L3_A[Event Listener SPI で DELETE_ACCOUNT emit]
+        L3_B[SIEM で即時アラート Slack + PagerDuty]
+    end
+    subgraph L4 [Layer 4: Aurora Point-in-Time Recovery]
+        L4_A[5 分単位、35 日保持]
+        L4_B[誤削除発生時: 直前スナップショットから復元]
+        L4_C[同じ UUID = 同じ sub で復元 → アプリ透過]
+    end
+    L1 --> L2
+    L2 --> L3
+    L3 --> L4
+
+    classDef primary fill:#e6f2ff,stroke:#248
+    class L1,L2,L3,L4 primary
+```
+
+**Terraform 実装例**:
+```hcl
+# Layer 1: Keycloak Admin Role に delete-users を付与しない
+resource "keycloak_role" "user_admin_normal" {
+  realm_id    = keycloak_realm.main.id
+  name        = "user-admin-normal"
+  description = "Normal user administration (no DELETE)"
+  # composite_roles は "manage-users" のみ、"delete-users" は含めない
+}
+
+# 緊急対応用（通常時は誰にも付与しない）
+resource "keycloak_role" "user_deleter_emergency" {
+  realm_id    = keycloak_realm.main.id
+  name        = "user-deleter-emergency-only"
+  description = "Physical delete role - Break-Glass Access only"
+}
+```
+
+**SCIM Plugin 設定例**:
+```yaml
+# Phase Two SCIM Plugin / Metatavu keycloak-scim-server
+scim:
+  delete_behavior: "soft_delete_only"      # 物理削除を選択できない
+  hard_delete_setting_locked: true         # 管理者でも変更不可
+```
+
+#### 10.5.2 誤物理削除フェールセーフ（Layer 4 発動時の手順）
+
+**Layer 1-3 のガードレールを突破して物理削除が発生した場合**の 2 段階フェールセーフ:
+
+##### Layer A: 本基盤側 Aurora PITR リカバリ（優先）
+
+```mermaid
+sequenceDiagram
+    participant SIEM
+    participant SRE as 本基盤 SRE
+    participant Aurora as Aurora RDS
+    participant DB as user_entity テーブル
+    SIEM->>SRE: DELETE_ACCOUNT アラート
+    SRE->>Aurora: 直前 PITR スナップショット確認
+    Aurora-->>SRE: 削除前のスナップショット特定
+    SRE->>Aurora: user_entity + user_attribute + federated_identity を復元
+    Aurora->>DB: レコード復元（同一 UUID）
+    Note over DB: sub 変わらず、アプリ透過的に復旧
+```
+
+**メリット**：
+- **アプリ側は何もしなくて良い**（`sub` 復元）
+- 監査ログ連続性維持
+- **通常時はこれで完結**
+
+##### Layer B: アプリ側マッピング（Layer A 失敗時の最終手段）
+
+Layer A も失敗した場合の **最終手段**、**重要アプリのみ推奨**:
+
+```sql
+-- 重要アプリ側 DB（オプション）
+CREATE TABLE user_identity_history (
+    app_user_id UUID PRIMARY KEY,       -- アプリ内不変 ID
+    current_sub VARCHAR(64) NOT NULL,   -- 現在の sub
+    email VARCHAR(255),
+    updated_at TIMESTAMP
+);
+
+-- 通常時: sub = current_sub、変更なし（このテーブルを見ない）
+-- 誤削除リカバリ時: アプリ管理者が email で本人確認 → current_sub を新 sub に更新
+UPDATE user_identity_history SET current_sub = 'new-sub' WHERE email = 'user@example.com';
+```
+
+**ポイント**：
+- **通常時は使わない**（`sub` を直接使う）
+- **フェールセーフ発動時のみ手動更新**
+- **全アプリ強制は不要**（実装コスト・複雑化を回避）
+- **重要アプリのみオプションで実装**
+
+#### 10.5.3 アプリの ID 設計標準（Phase 1 全アプリ推奨）
+
+**業界標準 = `sub` を主 ID として使う**（OpenID Connect Core 1.0 §5.7 準拠）:
+
+| Option | 主 ID | 業界事例 | 適用 |
+|---|---|---|:---:|
+| **A. `sub` を主 ID**（推奨）| Keycloak UUID | Slack, Notion, GitHub, 一般 B2B SaaS | ★全アプリ標準 |
+| B. アプリ独自 ID + email マッピング | `app_user_id` + email | Salesforce, Workday（Enterprise）| 重要アプリのみオプション |
+| C. `email` を主 ID | email | 単純な SaaS | 非推奨（email 変更・Account Takeover 問題）|
+| D. 本基盤永続 ID | Custom Claim | — | 意味なし（物理削除で消える）❌ |
+
+**推奨する現実解**:
+- **通常時**：Option A（`sub` 主 ID）を全アプリ標準に
+- **物理削除防止**：4 層ガードレール（本基盤側で対応）
+- **フェールセーフ Layer A**：Aurora PITR で自動リカバリ（本基盤 SRE Runbook）
+- **フェールセーフ Layer B**：アプリ側マッピング（重要アプリのみオプション）
+
+**→ 全アプリで別 ID を持つ強制は不要、`sub` 主 ID + 本基盤側ガードレールで運用可能**
 
 ### 10.6 PCI DSS v4.0 / APPI 適合性チェックリスト
 

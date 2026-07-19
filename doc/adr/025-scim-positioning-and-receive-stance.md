@@ -1,7 +1,7 @@
 # ADR-025: SCIM 2.0 の位置づけと本基盤の受信スタンス
 
 - **ステータス**: Proposed（要件定義フェーズで Accepted に昇格予定）
-- **日付**: 2026-06-15、**2026-07-08 §H 追記**（顧客 IdP が LDAP(s) の場合の JIT/SCIM 扱い）+ **§H.7.A 認証フロー追加**（§C-7.4.7 SSO ログイン / §C-7.4.8 Full Sync Deprovision）、**2026-07-09 §H.6.3 Transient Password Exposure 追加**（Level 1 vs Level 2 区別 + フェーズ図 + 6 脅威 + 10 緩和策 + 3 規制対応 + 4 方式比較）+ **§H.4.B JIT vs SCIM 判別と自動 deprovisioning 追加**（scim_active + provisioned_by 3 段階戦略、[jit-scim §10.4.A/B](../common/jit-scim-coexistence-keycloak.md) + [ADR-060 §C.2.3](060-auth-protocol-attack-path-residual-tbd.md) 波及）+ **⚠ §I.2 Metatavu keycloak-scim-server の Phase 1 実装前 PoC 検証追記**（[jit-scim §10.4.E 一次資料調査 14 件](../common/jit-scim-coexistence-keycloak.md) 反映、Keycloak 26 対応 / カスタム属性書込 / SPI 統合の 3 点確認必要）、**2026-07-10 §I.2 実機 PoC 結果反映**（[poc/jit-scim-verification-2026-07-10](../../poc/jit-scim-verification-2026-07-10/) V1 PARTIAL / V2 PASS / V3' PASS、**代替 A 確定**：native inbound SCIM 非依存 + Admin API + Custom Authenticator SPI + User Profile で対象属性明示宣言、[jit-scim §10.4.F](../common/jit-scim-coexistence-keycloak.md) と同期）
+- **日付**: 2026-06-15、**2026-07-08 §H 追記**（顧客 IdP が LDAP(s) の場合の JIT/SCIM 扱い）+ **§H.7.A 認証フロー追加**（§C-7.4.7 SSO ログイン / §C-7.4.8 Full Sync Deprovision）、**2026-07-09 §H.6.3 Transient Password Exposure 追加**（Level 1 vs Level 2 区別 + フェーズ図 + 6 脅威 + 10 緩和策 + 3 規制対応 + 4 方式比較）+ **§H.4.B JIT vs SCIM 判別と自動 deprovisioning 追加**（scim_active + provisioned_by 3 段階戦略、[jit-scim §10.4.A/B](../common/jit-scim-coexistence-keycloak.md) + [ADR-060 §C.2.3](060-auth-protocol-attack-path-residual-tbd.md) 波及）+ **⚠ §I.2 Metatavu keycloak-scim-server の Phase 1 実装前 PoC 検証追記**（[jit-scim §10.4.E 一次資料調査 14 件](../common/jit-scim-coexistence-keycloak.md) 反映、Keycloak 26 対応 / カスタム属性書込 / SPI 統合の 3 点確認必要）、**2026-07-10 §I.2 実機 PoC 結果反映**（[poc/jit-scim-verification-2026-07-10](../../poc/jit-scim-verification-2026-07-10/) V1 PARTIAL / V2 PASS / V3' PASS、**代替 A 確定**：native inbound SCIM 非依存 + Admin API + Custom Authenticator SPI + User Profile で対象属性明示宣言、[jit-scim §10.4.F](../common/jit-scim-coexistence-keycloak.md) と同期）、**2026-07-13 §I.2 V3'' 追加実機 PoC 結果反映**（フェデ JIT 経路（P-3 主用途）で SPI 動作を実測 PASS：First/Post Broker Login Flow 3 系統配置確定、F-7/F-8 是正、JWT 実態記録、V3'' の外部 IdP は Keycloak モック OIDC のため SAML/LDAP/実 IdP は追加ゲート [B-SCIM-12/13/14](../requirements/hearing-checklist.md) で対応）、**2026-07-14 §H.4.B 判別ロジック更新**（Case 1-5 混在パターン + local-admin 除外 + Re-Activation SPI 対象条件明示、[jit-scim §10.4.G/H/I/J 新設](../common/jit-scim-coexistence-keycloak.md) と同期。ライフサイクル 10 シナリオ / 責任分界 3 層モデル / Re-Activation SPI SCIM 除外条件 / 顧客案内テンプレートを共通ドキュメントに集約）、**2026-07-15 §H.4.B 責任分界確定**（SCIM ユーザの Inactive Detection および 90 日未使用検出は完全に顧客 IdP 責任、本基盤は能動介入しない。Phase 1 物理削除禁止、Soft Delete のみで PCI DSS 8.2.6 対応、[jit-scim §10.4.K 3 段階削除モデル + §10.5 4 層ガードレール](../common/jit-scim-coexistence-keycloak.md) 新設と同期。SCIM 連携健全性監視 Health Check を "Inactive Detection とは別次元" として明示）、**2026-07-15 追加：PCI DSS 監査のシステムごと独立性明示 + Phase 2 物理削除バッチ仕様 + テナントライフサイクル遷移**（[jit-scim §10.4.H.3 PCI DSS システムごと独立性](../common/jit-scim-coexistence-keycloak.md) 明示 + [§10.4.K.6 Phase 2 物理削除バッチ仕様](../common/jit-scim-coexistence-keycloak.md) 新設（`deprovisioned_at` + `retention_years`、Phase 1 準備必須）+ [§10.4.L テナントライフサイクル遷移](../common/jit-scim-coexistence-keycloak.md) 新設（JIT→SCIM 切替 / SCIM→JIT 切替 / サービス離脱 3 パターン）と同期。hearing 項目 B-JIT-DEL-2 / B-TENANT-SWITCH-1 / B-TENANT-EXIT-1 追加、Phase 1 契約前ゲート 8 項目に拡張）
 - **関連**:
   - [§FR-7.4.0 SCIM の位置づけと本基盤のスタンス](../requirements/proposal/fr/07-user.md#fr-740-scim-の位置づけと本基盤のスタンス)
   - [§FR-2.2.1 JIT プロビジョニング](../requirements/proposal/fr/02-federation.md#321-jit-プロビジョニング--fr-fed-008)
@@ -323,11 +323,15 @@ SCIM の存在意義は「IdP 側で CRUD が起きた瞬間に本基盤に push
 
 ```
 【判定 1】user_attribute.scim_active == "true" → 削除禁止（最強フラグ）
-【判定 2】サービスアカウント / ローカルユーザー / 管理者ロール → 除外
+【判定 2】サービスアカウント / 管理者除外:
+        - user.serviceAccountClientLink != null → 除外
+        - user_attribute.provisioned_by == "local-admin" → 除外（本基盤ローカル管理者）
+        - user has admin role → 除外
 【判定 3】user_attribute.provisioned_by の値で判定:
-        - "jit"           → 90 日未ログインで自動削除対象
-        - "scim"          → 削除禁止（SCIM 管理下）
+        - "jit"           → 90 日未ログインで自動削除対象 + Re-Activation SPI 対象
+        - "scim"          → 削除禁止（SCIM 管理下）+ Re-Activation SPI 対象外
         - "ldap"          → LDAP Sync に委譲（AD 側 Disable で自動反映）
+        - "local-admin"   → 本基盤で明示管理（対象外）
         - "manual" / null → 人間レビュー対象
 ```
 
@@ -337,10 +341,64 @@ SCIM の存在意義は「IdP 側で CRUD が起きた瞬間に本基盤に push
 - そのため **本基盤側での定期バッチは不要**（LDAP Sync が担当）
 - ただし `provisioned_by=ldap` を明示的に付与して、JIT 側の削除バッチが誤って対象化しないよう保護
 
+**混在時の 5 パターン**（2026-07-14 追加、[jit-scim §10.4.I.6](../common/jit-scim-coexistence-keycloak.md) 詳細）:
+
+| Case | ユーザ状態 | provisioned_by | scim_active | 90 日バッチ | Re-Activation |
+|---|---|---|:---:|:---:|:---:|
+| **1** | SCIM 先登録 → 後日 JIT ログイン | `scim`（維持）| `true`（維持）| 対象外 | 対象外 |
+| **2** | JIT 先登録 → 後日 SCIM Push | `jit` → `scim`（更新）| `true`（更新）| 対象外（更新後）| 対象外（更新後）|
+| **3** | JIT のみ | `jit` | 未設定 or `false` | **対象** | **対象** |
+| **4** | SCIM のみ | `scim` | `true` | 対象外 | 対象外 |
+| **5** | 管理者（本基盤ローカル）| `local-admin` | 未設定 | 対象外 | 対象外（管理者操作待ち）|
+
+**★ Re-Activation SPI の重要性**（2026-07-14 追加、[jit-scim §10.4.I](../common/jit-scim-coexistence-keycloak.md) 詳細）:
+- 90 日バッチで無効化された JIT ユーザが復帰した際、Post Broker Login Flow で自動再有効化
+- **SCIM 管理下ユーザ（Case 1/2/4）は Re-Activation 禁止**（SCIM DELETE が明示的な削除なので、フェデ経路の再有効化は本 SCIM の意味を失う → 重大なセキュリティ問題）
+- **本基盤ローカル管理者（Case 5）も対象外**（本基盤で明示管理、運用者判断）
+
 **参照**:
 - **[jit-scim §10.4.A Event Listener SPI 版 バッチスクリプト](../common/jit-scim-coexistence-keycloak.md)** — 10M MAU 対応の本番実装
 - **[jit-scim §10.4.B 判別ロジック 3 段階](../common/jit-scim-coexistence-keycloak.md)** — scim_active + provisioned_by + federated_identity の 3 段階
-- **[ADR-060 §C.2.3](060-auth-protocol-attack-path-residual-tbd.md)** — Event Listener SPI で last_login + provisioned_by を書込
+- **[jit-scim §10.4.G 10 シナリオ完全比較](../common/jit-scim-coexistence-keycloak.md)** — ライフサイクル俯瞰（S1〜S10）
+- **[jit-scim §10.4.H 責任分界 + SLA 比較](../common/jit-scim-coexistence-keycloak.md)** — Shared Responsibility 3 層モデル + **PCI DSS 8.2.6 "removed OR disabled" 根拠**
+- **[jit-scim §10.4.I Re-Activation SPI 実装仕様](../common/jit-scim-coexistence-keycloak.md)** — 条件分岐実装例
+- **[jit-scim §10.4.J JIT/SCIM 選択フロー + 顧客案内テンプレート](../common/jit-scim-coexistence-keycloak.md)** — 営業/契約時に使用
+- **[jit-scim §10.4.K 3 段階削除モデル + 対称性 + Health Check](../common/jit-scim-coexistence-keycloak.md)** — 設計思想集約（Phase 1 実装ガイド）
+- **[jit-scim §10.5 DB 保持・削除マトリクス + 4 層ガードレール](../common/jit-scim-coexistence-keycloak.md)** — 物理削除禁止根拠 + Aurora PITR + アプリ ID 設計標準
+- **[ADR-060 §C.2.3](060-auth-protocol-attack-path-residual-tbd.md)** — Custom Authenticator SPI で last_login + provisioned_by + Re-Activation を書込
+
+**⚠ 2026-07-15 SCIM ユーザの Inactive Detection 責任分界確定**：
+
+**本基盤は SCIM ユーザに対して 90 日未使用検出および削除・レポート生成・通知を能動的に行わない**。SoT（顧客 IdP）を尊重し、Inactive Detection は顧客 IdP のネイティブ機能（Entra Access Reviews / Okta Inactive Users Report / Google Cloud Identity Premium 等）に完全に委譲する。
+
+**根拠**（業界コンセンサス）:
+- SCIM RFC 7644：Consumer は SoT の指示に従う受動的立場
+- NIST SP 800-63B §4.1.4：Credential 失効は Subscriber（SoT）の請求または業務要件による
+- 主要 CIAM 業界標準：Auth0 / Okta / Ping / ForgeRock すべて **CIAM 層で Inactive Detection をやらず IGA 層に委譲**
+- 「本基盤の "90 日" ≠ 全体の "90 日"」の誤検知リスク：本基盤経由 SaaS 未使用でも、他 SaaS を毎日使う現役社員の可能性
+
+**代わりに本基盤が提供するもの**：
+- **SCIM 連携健全性監視（Health Check）**：連携インフラの生存確認（Inactive Detection とは別次元）
+- **契約 / SLA での明示的な責任分界**（[jit-scim §10.4.J.2](../common/jit-scim-coexistence-keycloak.md)）
+- **顧客 IdP にネイティブ機能がない場合の Professional Services 対応**（個別相談）
+
+**⚠ 2026-07-15 物理削除は Phase 1 で行わない方針確定**：
+
+- **Phase 1 実装**: Soft Delete（`enabled=false`）のみ、JIT/SCIM 共通
+- **PCI DSS 8.2.6 の "removed OR disabled" テキストで Soft Delete のみで準拠**（[jit-scim §10.4.H.3](../common/jit-scim-coexistence-keycloak.md) PCI SSC 引用参照）
+- **PCI DSS 監査のシステムごと独立性**：顧客 IdP 側で disabled でも本基盤側で `enabled=true` のままだと Finding、本基盤内で明示的に Soft Delete 必須（[jit-scim §10.4.H.3](../common/jit-scim-coexistence-keycloak.md)）
+- **物理削除は Phase 2 の別 ADR で扱う**（法定保持期間経過後の物理削除 + pseudonymization バッチ、[jit-scim §10.4.K.6](../common/jit-scim-coexistence-keycloak.md) Phase 2 仕様参照）
+- **`deprovisioned_at` セットは Phase 1 実装必須**（Phase 2 バッチの唯一の入力）
+- **`retention_years` は顧客ごとに設定**（デフォルト 3 年 / 顧客要件で 5-7 年、B-JIT-DEL-2）
+- **4 層ガードレール + Aurora PITR + アプリ側 `sub` 主 ID 設計** で誤削除フェールセーフ担保（[jit-scim §10.5](../common/jit-scim-coexistence-keycloak.md)）
+
+**⚠ 2026-07-15 テナントライフサイクル遷移の明確化**（[jit-scim §10.4.L](../common/jit-scim-coexistence-keycloak.md)）：
+
+| Pattern | シナリオ | 対応 |
+|---|---|---|
+| **A. JIT → SCIM 切替** | JIT 顧客が SCIM 導入 | matchByEmail + bulk update Runbook（B-SCIM-JIT-2）|
+| **B. SCIM → JIT 切替** | SCIM 顧客が SCIM 廃止 | 切替スクリプトで scim_active=false + provisioned_by=jit + last_login=now、B-TENANT-SWITCH-1 で事前確認 |
+| **C. サービス離脱** | 顧客解約 | 段階的削除（Day 0-30 猶予 + エクスポート / Day 30 Realm disable / Day 90 全 Soft Delete + アーカイブ / Day 90+retention_years 物理削除 + 完了証明書）、B-TENANT-EXIT-1 |
 
 ### H.5 利用者カテゴリ別の LDAP 適用（§C 拡張）
 
@@ -648,6 +706,37 @@ Changed Users Sync Period: 300 (5min)
 > - `Keycloak バージョン`：**26.6.0 以上必須 + feature `scim-api` 有効化**
 >
 > **反映先**：[jit-scim §10.4.F](../common/jit-scim-coexistence-keycloak.md)、[hearing-checklist.md B-SCIM-7〜10](../requirements/hearing-checklist.md)、[ADR-060 §C.2.3](060-auth-protocol-attack-path-residual-tbd.md) を更新
+
+> **✅ 2026-07-13 V3'' 追加実機 PoC 検証結果 — フェデ JIT 経路（P-3 主用途）で SPI 動作を実測 PASS**
+>
+> V3' はローカル PW ユーザ（P-4）のみ検証していたため、**フェデ JIT ユーザ（P-3、本基盤の主用途）で SPI が動作するか**を V3'' として追加検証（[verification-log-v3fed.md](../../poc/jit-scim-verification-2026-07-10/docs/verification-log-v3fed.md)、別端末で実施）:
+>
+> **判定：✅ PASS**（T1-T5 全 PASS、Fallback 不要）
+>
+> - **T4 初回フェデログイン**：First Broker Login Flow 経由で SPI が initial write（`last_login=1783675449314`）
+> - **T5 2 回目ログイン**：Post Broker Login Flow 経由で SPI が update（debounce 判定込み、`diff=172800359ms`）
+> - `federatedIdentities=[customer-idp]` エントリ確認 = 真の JIT ユーザ（[§H.4.B 判別ロジック](#h4b-jit-vs-scim-判別と自動-deprovisioning2026-07-09-追加) 判定 3 該当）
+> - **新知見**：初回ログイン時 First Broker Login Flow の直後に Post Broker Login Flow **も続けて発火** → debounce ロジックの両 Flow 対応が必要
+> - **新是正 F-7**（setup-federation.sh の IdP 作成→フロー作成順序バグ、修正済）/ **F-8**（`user-profile-poc.json` の `_comment` を UPConfig が拒否、除去済）
+>
+> **Phase 1 実装確定事項（V3'' 追加分）**：
+>
+> - **SPI Flow 配置は 3 系統確定**（Browser forms / First Broker Login / Post Broker Login）
+> - **Terraform IaC 追加 6 リソース**（Flow 2 + Execution 2 + IdP 紐付け 2 属性）
+> - **追加工数見積**：Flow IaC +1d / 実 IdP 統合テスト +1-2d / SPI 拡張（`provisioned_by=jit` 自動セット）+0.5d
+> - **JWT 実態確認**：ブローカ構成で **2 種類の JWT** が登場（① 顧客 IdP 発行 / ② ブローカ再発行）、**アプリは ② のみ受領**（`iss=poc-jit-scim`, `sub` は新規発番）。カスタム属性を JWT に載せるには **Protocol Mapper が別途必要**
+>
+> **⚠ V3'' 妥当性の範囲（重要な留保）**：V3'' の外部 IdP は **同一 Keycloak インスタンス内の別 Realm（`customer-idp`）を OIDC でモック化したもの**。以下は **未検証**（Phase 1 リリース前に追加検証必要）:
+>
+> | # | 未検証経路 | 優先度 | 追加検証 ID |
+> |---|---|:---:|---|
+> | **V3'''** | SAML IdP 経由フェデ | ⚠ | [B-SCIM-12](../requirements/hearing-checklist.md) |
+> | **V3''''** | **LDAP User Federation 経由** | 🚨 最優先 | [B-SCIM-13](../requirements/hearing-checklist.md) |
+> | **統合テスト** | 実 IdP（Entra ID / Okta trial）| ⚠ Phase 1 β | [B-SCIM-14](../requirements/hearing-checklist.md) |
+>
+> **総合判定更新**：**⚠ GO with Fallback → ✅ GO with 3 系統 Flow 配置（OIDC scope）**。SAML/LDAP/実 IdP は追加ゲート。
+>
+> **反映先**：[jit-scim §10.4.F.9](../common/jit-scim-coexistence-keycloak.md) 更新済、[hearing-checklist B-SCIM-11 → ✅ PASS + B-SCIM-12/13/14 新規追加](../requirements/hearing-checklist.md) 済、[ADR-060 §C.2.3 F-9](060-auth-protocol-attack-path-residual-tbd.md) 更新済
 
 ### I.3 Broker の PII 最小化方針（Minimum Storage）
 

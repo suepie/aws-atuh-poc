@@ -110,6 +110,34 @@ INFO LastLoginTracker: wrote last_login=1783675482288 for user=fed-jit-user
 - **Fallback 発動**：不要。
 - **Phase 1 実装への影響**：SPI は **3 系統 Flow 配置**（Browser forms / First Broker / Post Broker）で確定。
 
+### 3.1 【重要】V3'' 検証範囲と残ギャップ
+
+V3'' の **外部 IdP は同一 Keycloak インスタンス内の別 Realm（`customer-idp`）を OIDC でモック化したもの**（[../config/customer-idp-realm.json](../config/customer-idp-realm.json) 参照）。**同一コンテナ・同一 JVM 内の 2-Realm 構成**であり、以下の意味を持つ:
+
+**V3'' が実証したこと**（妥当な範囲）:
+
+| 論点 | 妥当性 | 理由 |
+|---|:---:|---|
+| SPI が First/Post Broker Login Flow で発火 | ✅ 妥当 | Broker Flow は IdP 実装に依存しない共通 Java コードパス（`IdentityBrokerService` → `AuthenticationProcessor`）|
+| `federated_identity` テーブルへの紐付け | ✅ 妥当 | UserModel 側の処理、IdP 種別非依存 |
+| JIT ユーザ作成タイミング | ✅ 妥当 | Broker Flow のライフサイクル依存 |
+| debounce ロジック動作 | ✅ 妥当 | SPI 内のローカル計算 |
+| JWT 再発行の 2 トークンモデル | ✅ 妥当 | Keycloak のブローカ設計そのもの |
+
+**V3'' が実証していないこと**（未検証、Phase 1 リリース前に追加検証必要）:
+
+| # | 未検証経路 | 優先度 | 別 PoC ID | 理由 |
+|---|---|:---:|---|---|
+| **V3'''** | SAML IdP 経由フェデ | ⚠ 推奨 | [B-SCIM-12](../../../doc/requirements/hearing-checklist.md) | V3'' は OIDC のみ。SAML の Assertion 解析 → NameID → JIT 作成の前段は別コードパス（First/Post Broker Login Flow 自体は共通なので通る可能性高いが未実測）|
+| **V3''''** | **LDAP User Federation 経由** | 🚨 **最優先** | [B-SCIM-13](../../../doc/requirements/hearing-checklist.md) | **LDAP は User Storage SPI で Identity Provider ではない** → Broker Flow を通らず、First/Post Broker Login Flow 配置の SPI は **動作しない**。Browser Flow forms 経路で発火するかは別 PoC 必要 |
+| **統合テスト** | 実 IdP（Entra ID / Okta trial 等）| ⚠ Phase 1 β 必須 | [B-SCIM-14](../../../doc/requirements/hearing-checklist.md) | Claims マッピング / 証明書チェーン / `iss` 形式 / `nonce` 実装 / TLS mTLS 等の実世界要因は未検証 |
+
+**総合結論**（妥当性の位置づけ）:
+
+- ✅ **「Keycloak Broker Flow の SPI 発火メカニズム」の検証としては十分**（IdP 種別非依存の共通コードパスなので、モック IdP でも実証可能）
+- ⚠ **「本番相当の商用 IdP や LDAP 顧客でも同様に動く」の証明としては不十分**（IdP 種別依存 or 別コードパスの経路は未実測）
+- 🚨 **LDAP 顧客が Phase 1 スコープに含まれる場合、B-SCIM-13 V3'''' の実施が最優先**（Broker Flow を通らないため既存 SPI 配置が動かないことが確実）
+
 ---
 
 ## 4. Phase 1 実装計画への影響
@@ -139,11 +167,12 @@ INFO LastLoginTracker: wrote last_login=1783675482288 for user=fed-jit-user
 
 ---
 
-## 5. 既存ドキュメントへの反映（TODO）
+## 5. 既存ドキュメントへの反映（2026-07-13 完了）
 
-- [ ] [jit-scim §10.4.F.9](../../../doc/common/jit-scim-coexistence-keycloak.md) の V3'' 検証結果反映（TBD → PASS）
-- [ ] [hearing-checklist B-SCIM-11](../../../doc/requirements/hearing-checklist.md) の状態 ⏳ → ✅ PASS
-- [ ] [ADR-060 §C.2.3 F-9](../../../doc/adr/060-auth-protocol-attack-path-residual-tbd.md) に V3'' 実測結果追記
+- [x] [jit-scim §10.4.F.9](../../../doc/common/jit-scim-coexistence-keycloak.md) の V3'' 検証結果反映（TBD → ✅ PASS）+ §F.9.5〜F.9.8 新設（V3'' 実測結果 / JWT 実態 / 検証範囲と残ギャップ / Phase 1 リリース判定）
+- [x] [hearing-checklist B-SCIM-11](../../../doc/requirements/hearing-checklist.md) の状態 ⏳ → ✅ PASS + **B-SCIM-12/13/14 新規追加**（SAML / LDAP / 実 IdP 統合の追加ゲート）
+- [x] [ADR-060 §C.2.3 F-9](../../../doc/adr/060-auth-protocol-attack-path-residual-tbd.md) に V3'' 実測結果追記 + 妥当性範囲明記
+- [x] [ADR-025 §I.2](../../../doc/adr/025-scim-positioning-and-receive-stance.md) に V3'' 結果反映（P-3 主用途 PASS、SAML/LDAP/実 IdP は追加ゲート）+ ヘッダの変更履歴に 2026-07-13 追記
 - [x] 新是正 F-7 / F-8 を [additional-poc-findings.md](additional-poc-findings.md) に追記
 
 ---
