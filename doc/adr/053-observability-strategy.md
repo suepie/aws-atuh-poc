@@ -1,7 +1,7 @@
 # ADR-053: Observability Strategy（OpenTelemetry + SLO + Distributed Tracing + Dashboards）
 
-- **ステータス**: Proposed（要件定義フェーズで Accepted に昇格予定）
-- **日付**: 2026-06-23
+- **ステータス**: Proposed（要件定義フェーズで Accepted に昇格予定）— **2026-07-24 付記: Accepted 昇格可（U9 確定による）**
+- **日付**: 2026-06-23 作成、**2026-07-24 更新（基本設計 Wave 3 [U9](../basic-design/09-operations-observability-design.md) 実装確定を反映 — 下記注記参照）**
 - **関連**:
   - [ADR-033 Keycloak 2-tier アーキテクチャ](033-keycloak-2tier-broker-idp-architecture.md)
   - [ADR-035 ITDR](035-identity-threat-detection-response.md)
@@ -12,6 +12,13 @@
   - [ADR-052 Multi-tenant Isolation + Rate Limiting](052-multi-tenant-isolation-rate-limiting.md)
   - [§NFR-6 運用](../requirements/proposal/nfr/06-operations.md)
   - **[ADR-060 認証プロトコル攻撃経路 残 TBD 対応 §A](060-auth-protocol-attack-path-residual-tbd.md)** — Log scrubbing（SAMLResponse / Authorization Code / Access Token / Refresh Token マスキング）実装要件、Fluent Bit + Lambda + 監査スキャン（2026-07-08 追記）
+
+---
+
+> **2026-07-24 注記（基本設計 Wave 3 確定）**: 実装確定は **[U9 §9.2〜9.3](../basic-design/09-operations-observability-design.md)** 参照。
+> 1. **Collector = ROSA infra Pool 配置**（本文 §A.2 の「Cross-Acct OTel Collector = ECS Fargate」記述は読み替え）
+> 2. **ログ階層 = CloudWatch 90 日 → S3 Object Lock 7 年**（U7 D-U7-13。本文の「Hot 3 ヶ月 / OpenSearch Warm 1 年 / S3 Glacier Cold 6 年」記述から変更）
+> 3. 本文の **EKS 表記（§A.1 図 / §D ログ経路等）は ROSA HCP に読み替え**（[ADR-056](056-rosa-adoption-decision.md)）
 
 ---
 

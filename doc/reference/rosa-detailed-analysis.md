@@ -208,11 +208,17 @@ ROSA の総コスト = ① ROSA Service Fee + ② AWS Infrastructure Fee + ③ H
 
 ### ROSA + RHBK サブスクリプション
 
+> **2026-07-23 訂正（確定）**: [KB 7044244](https://access.redhat.com/articles/7044244) により **RHBK エンタイトルメントは OCP サブスクリプションに含まれ、ROSA/ARO/OSD ユーザーにも有効 = ROSA 採用時に RHBK 別途サブスクは不要**と確定（[basic-design/research/rosa-hcp-adoption-research.md](../basic-design/research/rosa-hcp-adoption-research.md)）。ROSA では RHBK は「customer installed software」扱い（Red Hat がサポート、運用は顧客）。旧記述「別途必要 / 可能性が高い」は履歴として下に残す。
+
+<details><summary>旧記述（2024 調査時点、2026-07-23 訂正済み）</summary>
+
 ROSA 上で RHBK を動かす場合、**RHBK サブスクリプション**が **別途必要**:
 - 本リポの [rhbk-support-and-pricing.md §5](rhbk-support-and-pricing.md) 参照
 - Red Hat Runtimes Standard 4 vCPU 1y 契約: 要見積もり（リセラ表示あり）
 - ただし [KB 7044244](https://access.redhat.com/articles/7044244) に「**RHBK 使用コアは OCP サブスクの総コアにカウント可能**」とあり、**ROSA を採用すれば RHBK 別途サブスク不要 or 大幅減**になる可能性が高い
 - → リセラに照会が必須（[rhbk-vendor-inquiry.md Q8](../requirements/rhbk-vendor-inquiry.md) で確認項目あり）
+
+</details>
 
 ### 3 年 TCO 比較（参考）
 
@@ -220,10 +226,10 @@ ROSA 上で RHBK を動かす場合、**RHBK サブスクリプション**が **
 |---|---|
 | 現 PoC: ECS Fargate + RDS | 約 $6,800 |
 | EC2 RHEL + RHBK サブスク + Aurora | 約 $20,000 - $30,000（サブスク含む）|
-| **ROSA HCP 3y RI + Aurora** | **約 $25,000**（RHBK サブスク統合の場合）|
-| **ROSA HCP 3y RI + Aurora + RHBK 別途** | **約 $30,000 - $45,000**（サブスク別途の場合）|
+| **ROSA HCP 3y RI + Aurora** | **約 $25,000**（RHBK サブスク内包 — 2026-07-23 確定）|
+| ~~ROSA HCP 3y RI + Aurora + RHBK 別途~~ | ~~約 $30,000 - $45,000~~（**2026-07-23 訂正: 本行は不要。RHBK は ROSA 内包のため「サブスク別途」のケースは存在しない**）|
 
-→ ROSA + RHBK 統合サブスクが認められれば EC2 + RHBK と TCO 同等、認められない場合は最も高い選択肢に。
+→ ~~ROSA + RHBK 統合サブスクが認められれば~~ **（2026-07-23 確定）** ROSA HCP の 3y TCO は EC2 + RHBK と同等圏（約 $25,000）で、フルマネージド + SLA 99.95% が付く。
 
 ---
 
@@ -269,10 +275,10 @@ ROSA の責任分界（Red Hat / AWS / 顧客）:
 | us-west-2 (Oregon) | ✅ | ✅ |
 | eu-west-1 (Ireland) | ✅ | ✅ |
 | **ap-northeast-1 (東京)** | ✅ | ✅（2024 GA 後対応）|
-| **ap-northeast-3 (大阪)** | 🟡 確認要 | 🟡 確認要 |
+| **ap-northeast-3 (大阪)** | ✅（**2026-07-23 確認済み**、[AWS 公式表](https://docs.aws.amazon.com/general/latest/gr/rosa.html)） | ✅（同左） |
 | ap-southeast-1/2 (Singapore/Sydney) | ✅ | ✅ |
 
-→ **本基盤の東京は対応**。Osaka DR を ROSA で実現するには別途確認必要。
+→ **本基盤の東京・大阪とも対応（2026-07-23 解消）**。東京 + 大阪の ROSA HCP 対称 DR 構成が成立。残: 大阪側の採用予定インスタンスタイプ在庫 + vCPU クォータの実確認のみ。
 
 ### Multi-AZ 構成
 
@@ -288,7 +294,7 @@ ROSA は AWS マネージドサービスとネイティブ統合:
 
 | AWS サービス | ROSA との連携 |
 |---|---|
-| **RDS / Aurora** | 認証情報を OpenShift Secret で管理、PrivateLink 経由可 |
+| **RDS / Aurora** | 認証情報を OpenShift Secret で管理。**接続は SG 直接続（2026-07-23 訂正: HCP でも worker は顧客 VPC 内で稼働するため PrivateLink は不要。PrivateLink は control plane ↔ worker 間の話）** |
 | **S3** | OpenShift Storage 経由 / アプリ直接アクセス |
 | **EFS** | OpenShift Storage Class として利用可 |
 | **IAM** | STS-based ROSA Roles（クラスタごとに別 IAM Role）|

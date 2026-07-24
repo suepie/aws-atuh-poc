@@ -706,6 +706,8 @@ email 非保有 + 顧客独自 ID 対応では **Keycloak が運用摩擦小**:
 | 識別子マッピング | 旧 user_id を Layer B `external_id` として保持 + JWT `legacy_user_id` クレーム |
 | 混在顧客対応 | Keycloak Organizations + Organization メンバー（IdP 紐付け有 / 無）|
 
+> **2026-07-24 注記**: JWT `legacy_user_id` クレームは **[U10 D-U10-12](../../../basic-design/10-integration-migration-design.md) で廃止**、旧 ID の参照は **idmap API（`GET /idmap/{sub}`）** へ一本化（P-10 Stage 1 最小クレームと整合。[ADR-019](../../../adr/019-existing-system-migration.md) 参照）。
+
 #### 主要な裏どり（詳細は ADR-019）
 
 - **Keycloak ネイティブ対応 PW ハッシュ**: PBKDF2 + Argon2（25+ デフォルト）。**bcrypt は plugin / Custom SPI 必要**

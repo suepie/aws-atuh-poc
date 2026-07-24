@@ -1157,6 +1157,546 @@ IdP は RS256 (RSA) で署名 → RP は IdP 公開鍵で検証
 
 ---
 
+## 13. 【2026-07-23 新設】API 認可の実態 — Session Model vs Token Model の根本差
+
+> **背景・なぜここで新設するか**：§4 でセッション / ログアウト / トークン寿命を簡単に触れたが、**"SAML では API 呼び出しにどう認可を渡すか" の実装ギャップ**が現代のモダンアーキテクチャ選定に決定的な影響を与える。契約 / 実装レビュー時に必ず突かれる論点なので詳細フローで整理。
+
+### 13.1 よくある誤解の訂正
+
+**誤解**：「SAML では API 呼び出し毎に Assertion を送る必要がある」
+**正確**：**Assertion は認証時に 1 回だけ送信、以降 SP のセッション Cookie で管理**
+
+だが、**API 認可の標準プロトコルが SAML に存在しない** ため、以下 4 選択肢のいずれかを SP 独自実装する必要が生じる:
+
+| 選択肢 | 内容 | 問題 |
+|---|---|---|
+| **A. SP プロキシ** | SP がプロキシとして API を代理呼び出し | モノリシック前提、分散不可 |
+| **B. 独自 API Key** | SAML 認証後、SP が API Key 発行 | 標準なし、SP ごと独自実装 |
+| **C. 独自 JWT 発行** | SP が独自 JWT を発行 | **実質 OIDC を再発明**、標準不適合 |
+| **D. Assertion 毎回送信** | Assertion をキャッシュして毎回送信 | HTTP ヘッダ 8KB 制限超過、GET 不可、業界事例皆無 |
+
+### 13.2 SAML の完全フロー（API 呼び出し含む）
+
+```mermaid
+sequenceDiagram
+    participant User as ユーザ (Browser)
+    participant SP as Web SP (アプリ)
+    participant IdP as SAML IdP
+    participant API as バックエンド API
+
+    Note over User,IdP: 【Phase 1: 初回アクセス + SAML SSO】
+    User->>SP: [1] GET /home
+    SP->>User: [2] 302 Redirect + SAML AuthnRequest
+    User->>IdP: [3] GET /saml/auth?SAMLRequest=...
+    IdP->>User: [4] ログイン画面
+    User->>IdP: [5] POST 認証情報
+    IdP->>User: [6] HTML form with SAML Response<br/>(action=SP ACS URL)
+    Note over User: JavaScript が自動 POST 送信
+    User->>SP: [7] POST /saml/acs<br/>SAMLResponse=<XML Assertion>
+    SP->>SP: [8] Assertion 検証<br/>(XML Signature, audience, notBefore/notOnOrAfter)
+    SP->>SP: [9] ★セッション作成<br/>SESSION_ID = uuid()
+    SP-->>User: [10] Set-Cookie: JSESSIONID=abc123<br/>+ Redirect to /home
+
+    Note over User,API: 【Phase 2: 通常のアプリ操作】
+    User->>SP: [11] GET /home<br/>Cookie: JSESSIONID=abc123
+    SP->>SP: [12] Session 検索、ユーザ特定
+    SP->>User: [13] HTML レスポンス
+
+    Note over User,API: 【Phase 3: API 呼び出し 標準なし】
+    User->>SP: [14] GET /api/users<br/>Cookie: JSESSIONID=abc123
+    rect rgb(255, 240, 220)
+        Note over SP,API: ★★ API 認可の標準的な方法が存在しない ★★
+        SP->>API: [15] どう認可情報を渡すか?<br/>(SAML には標準がない)
+        Note over SP,API: 選択肢:<br/>(a) SP がプロキシしてサーバ側で処理<br/>(b) 独自 API Key 発行<br/>(c) 独自 JWT 発行 (自作)<br/>(d) SAML Assertion をキャッシュして再送 (稀)
+    end
+    API-->>SP: レスポンス
+    SP-->>User: レスポンス
+```
+
+### 13.3 OIDC の完全フロー（API 呼び出し + マイクロサービス連鎖）
+
+```mermaid
+sequenceDiagram
+    participant User as ユーザ (SPA)
+    participant SPA as SPA アプリ
+    participant IdP as OIDC IdP
+    participant API as バックエンド API
+    participant Micro as 別マイクロサービス
+
+    Note over User,IdP: 【Phase 1: 初回アクセス + OIDC SSO】
+    User->>SPA: [1] アクセス
+    SPA->>IdP: [2] Authorization Request<br/>(code_challenge, state, scope)
+    IdP->>User: [3] ログイン画面
+    User->>IdP: [4] 認証情報
+    IdP->>SPA: [5] Redirect + code
+    SPA->>IdP: [6] Token Exchange<br/>(code + code_verifier)
+    IdP->>SPA: [7] ID Token + Access Token + Refresh Token
+    Note over SPA: ★ SPA が Token を保持
+
+    Note over User,API: 【Phase 2: 通常のアプリ操作】
+    Note over SPA: ID Token でユーザ属性表示
+
+    Note over User,API: 【Phase 3: API 呼び出し 標準的】
+    SPA->>API: [8] GET /api/users<br/>Authorization: Bearer eyJhbGc...
+    rect rgb(220, 255, 220)
+        Note over API: ★★ 標準的な JWT 検証で完結 ★★
+        API->>API: [9] JWT 署名検証 (JWKS URI)
+        API->>API: [10] Claims 抽出 (sub, scopes, exp, aud)
+        API->>API: [11] スコープに基づく認可
+    end
+
+    Note over API,Micro: 【Phase 4: マイクロサービス連鎖】
+    API->>Micro: [12] Bearer eyJ... (同じ Access Token pass-through)
+    Micro->>Micro: [13] 独立して JWT 検証
+    Micro-->>API: レスポンス
+    API-->>SPA: レスポンス
+
+    Note over User,IdP: 【Phase 5: Silent Refresh】
+    SPA->>IdP: [14] POST /token grant_type=refresh_token
+    IdP->>SPA: [15] 新 Access Token + 新 Refresh Token
+    Note over SPA: ユーザ操作不要
+```
+
+### 13.4 OIDC の 3 トークン Model（役割分離）
+
+| Token 種類 | 用途 | 形式 | 寿命 | 送信方法 |
+|---|---|---|---|---|
+| **ID Token** | ユーザ属性表示（"誰がログインした"）| JWT | 5-60 min | Client 内保持 |
+| **Access Token** | API 認可（"何ができる"）| JWT | 5-15 min（推奨）| `Authorization: Bearer` |
+| **Refresh Token** | Token 更新 | opaque or JWT | 30-90 days | POST /token |
+
+**核心**：**3 種類で役割分離** → 個別に寿命 / スコープ / 保管方法を最適化可能。**SAML には Access Token 相当の概念自体がない**。
+
+### 13.5 サイズと HTTP プロトコル制約
+
+| 項目 | SAML Assertion | OIDC Access Token (JWT) |
+|---|---|---|
+| **フォーマット** | XML | JSON (Base64URL) |
+| **サイズ** | 5-10 KB | 400-800 バイト |
+| **HTTP ヘッダに収まるか**（8 KB 制限）| ❌ 収まらない | ✅ 余裕 |
+| **GET リクエストで送信可能か** | ❌ 不可（Body に載せる必要）| ✅ 可能 |
+| **パース** | XML DOM 操作（SPA 困難）| JSON.parse（全言語標準）|
+| **署名検証コスト** | XML Signature（重い、canonicalization 必要）| JWT Signature（軽い）|
+| **キャッシュ性** | Signature 検証済みか毎回判定 | 期限内なら再検証不要 |
+
+### 13.6 API Gateway / マイクロサービス基盤の対応状況（2026 年）
+
+| 基盤 | JWT/OIDC 標準対応 | SAML 対応 |
+|---|:---:|:---:|
+| **AWS API Gateway** | ✅ | ❌ |
+| **Azure API Management** | ✅ | ⚠ 限定 |
+| **Google Cloud Endpoints** | ✅ | ❌ |
+| **Kong** | ✅ 標準 plugin | ❌ サードパーティ限定 |
+| **Envoy** | ✅ JWT Authn Filter | ❌ |
+| **Istio** | ✅ RequestAuthentication | ❌ |
+| **NGINX Plus** | ✅ | ⚠ 限定 |
+| **Linkerd** | ✅ | ❌ |
+
+→ **モダン API Gateway / マイクロサービス基盤の 99% は JWT/OIDC 前提**。SAML は想定されていない。
+
+### 13.7 過去の "SAML API 認可統一" 試みの失敗
+
+| 試み | 内容 | 結果 |
+|---|---|:---:|
+| **WS-Trust**（2005）| SAML Token を SOAP で運ぶ、エンタープライズ SOA 遺物 | ❌ モダン REST に不向き、業界消滅 |
+| **SAML Bearer Grant**（RFC 7522）| SAML Assertion を OAuth 2.0 の Grant として使う | ⚠ **結局 Access Token 発行** → OAuth/JWT に統合 |
+| **SAML ECP Profile** | Enhanced Client/Proxy でブラウザ以外対応を試みる | ❌ 実装複雑、業界普及せず |
+
+**核心**：**SAML 単体では API 層まで貫通する認可統一は成立しない**。試みても最終的に OAuth/JWT に変換される。
+
+### 13.8 §13 まとめ
+
+**SAML と OIDC の "API 認可" の実態差**：
+
+| 観点 | SAML | OIDC |
+|---|:---:|:---:|
+| Assertion / Token 送信頻度 | 認証時 1 回 | 認証時 1 回（Access Token は API 毎）|
+| API 認可の標準 | ❌ **存在しない**、SP 独自実装 | ✅ Bearer Token（RFC 6750）|
+| セッション管理 | SP 独自 Cookie | Client が Token 保持、Stateless |
+| マイクロサービス Token Propagation | ❌ 不可 | ✅ 同じ Access Token を pass-through |
+| API Gateway 統合 | ❌ | ✅ 標準 |
+| モバイル / SPA 対応 | ❌ | ✅ |
+| Refresh 標準 | ❌ | ✅ Refresh Token + Rotation |
+
+---
+
+## 14. 【2026-07-23 新設】Logout フロー — SLO vs RP-Initiated vs Back-Channel
+
+> **背景・なぜここで新設するか**：SAML の Single Logout（SLO）と OIDC のログアウト機構は設計 / 実装複雑度が大きく異なり、**ログアウトはセキュリティ運用（退職者遮断、Session 汚染対策）の根幹**。契約 SLA + 実装レビュー時の判断に直結。
+
+### 14.1 SAML SLO（Single Logout）フロー
+
+**Front-Channel SLO**（Browser 仲介）:
+
+```mermaid
+sequenceDiagram
+    participant User as ユーザ (Browser)
+    participant SP1 as SP1 (SN)
+    participant IdP as IdP
+    participant SP2 as SP2 (Salesforce)
+    participant SP3 as SP3 (Workday)
+
+    User->>SP1: ログアウトクリック
+    SP1->>User: LogoutRequest → Redirect to IdP
+    User->>IdP: GET /saml/logout?SAMLRequest=...
+    Note over IdP: 全 SP セッション把握、順次ログアウト依頼
+    IdP->>User: Redirect → SP2
+    User->>SP2: LogoutRequest
+    SP2->>SP2: Session 削除
+    SP2->>User: LogoutResponse → Redirect to IdP
+    User->>IdP: LogoutResponse 受信
+    IdP->>User: Redirect → SP3
+    User->>SP3: LogoutRequest
+    SP3->>SP3: Session 削除
+    SP3->>User: LogoutResponse → Redirect to IdP
+    User->>IdP: LogoutResponse 受信
+    Note over IdP: 全 SP ログアウト完了確認
+    IdP->>User: 元 SP1 に Redirect
+```
+
+**問題点**：
+- **Browser が仲介必須** → ユーザが途中でウィンドウ閉じると SLO 中断
+- **各 SP のログアウトに失敗すると全体失敗**
+- **タイムアウトエラー / ブラウザ制約で成功率 60-80% 程度**（業界実測）
+- **iframe 経由の Front-Channel Logout も選択肢だが 3rd Party Cookie ブロックで失敗**（2024 年以降）
+
+**Back-Channel SLO**（Server-to-Server）:
+
+```mermaid
+sequenceDiagram
+    participant User as ユーザ
+    participant SP1 as SP1
+    participant IdP as IdP
+    participant SP2 as SP2
+    participant SP3 as SP3
+
+    User->>SP1: ログアウトクリック
+    SP1->>IdP: Back-Channel LogoutRequest (SOAP)
+    par 並行 Back-Channel Logout
+        IdP->>SP2: Back-Channel LogoutRequest
+        SP2->>SP2: Session 削除
+        SP2-->>IdP: LogoutResponse
+    and
+        IdP->>SP3: Back-Channel LogoutRequest
+        SP3->>SP3: Session 削除
+        SP3-->>IdP: LogoutResponse
+    end
+    IdP-->>SP1: 完了
+    SP1->>User: ログアウト完了画面
+```
+
+**利点 / 制約**：
+- **Browser 非仲介** → 信頼性高い
+- **SOAP over HTTP** で SP 間通信、実装複雑
+- **各 SP が Back-Channel Endpoint を公開する必要**
+- **業界実装事例少**（コスト高、標準化されているが採用率低）
+
+### 14.2 OIDC の 3 種類の Logout
+
+#### 14.2.1 RP-Initiated Logout（RFC 8484 相当）
+
+```mermaid
+sequenceDiagram
+    participant User as ユーザ
+    participant RP as RP (アプリ)
+    participant IdP as OIDC IdP
+
+    User->>RP: ログアウトクリック
+    RP->>User: Redirect to IdP<br/>GET /logout?id_token_hint=...&post_logout_redirect_uri=...
+    User->>IdP: /logout エンドポイント
+    IdP->>IdP: セッション削除
+    IdP->>User: post_logout_redirect_uri へ Redirect
+    User->>RP: 帰還
+    Note over RP: RP 側 Session Cookie 削除
+```
+
+**特徴**：シンプル、標準化、実装容易
+
+#### 14.2.2 Back-Channel Logout（OpenID Connect Back-Channel Logout 1.0）
+
+```mermaid
+sequenceDiagram
+    participant User as ユーザ
+    participant RP1 as RP1
+    participant IdP as OIDC IdP
+    participant RP2 as RP2
+    participant RP3 as RP3
+
+    User->>RP1: ログアウトクリック
+    RP1->>IdP: RP-Initiated Logout
+    IdP->>IdP: セッション削除
+    par 並行 Back-Channel Logout Token 送信
+        IdP->>RP2: POST /backchannel-logout<br/>logout_token=JWT
+        RP2->>RP2: JWT 検証 → Session 削除
+        RP2-->>IdP: 200 OK
+    and
+        IdP->>RP3: POST /backchannel-logout<br/>logout_token=JWT
+        RP3->>RP3: JWT 検証 → Session 削除
+        RP3-->>IdP: 200 OK
+    end
+    IdP-->>RP1: OK
+```
+
+**特徴**：
+- **JWT ベースの logout_token**（軽量、標準）
+- **Browser 非仲介** → 信頼性高い
+- **HTTP POST** で SP 間通信（SOAP でなく）→ 実装容易
+- **OIDC IdP の標準機能**（Keycloak / Auth0 / Okta 全て対応）
+
+#### 14.2.3 Front-Channel Logout（OpenID Connect Front-Channel Logout 1.0）
+
+```mermaid
+sequenceDiagram
+    participant User as ユーザ
+    participant IdP as OIDC IdP
+
+    User->>IdP: ログアウト
+    IdP->>User: HTML with <iframe> tags for each RP
+    Note over User: Browser が iframe 経由で<br/>各 RP の logout URL を叩く
+    User-->>IdP: 全 iframe ロード完了
+    IdP->>User: 完了画面
+```
+
+**特徴**：
+- SAML Front-Channel SLO と同等
+- **3rd Party Cookie ブロックで失敗** → 現代では非推奨
+- Back-Channel Logout が推奨
+
+### 14.3 SAML SLO vs OIDC Back-Channel Logout の実装複雑度
+
+| 項目 | SAML SLO | OIDC Back-Channel Logout |
+|---|---|---|
+| **プロトコル** | SOAP over HTTP | HTTP POST + JWT |
+| **標準化** | SAML 2.0 標準 | OpenID Connect 標準 |
+| **Browser 仲介** | Front-Channel は必須、Back-Channel は不要 | 不要 |
+| **実装複雑度** | 高（SOAP 実装、SP メタデータ交換）| 低（JWT 検証のみ）|
+| **業界採用率** | 20-30%（SLO 実装している SP 少数）| 60-80%（主要 OIDC IdP は標準対応）|
+| **3rd Party Cookie 影響** | Front-Channel は影響大 | 影響なし |
+| **ログアウト成功率** | 60-80%（Front-Channel）| 90%+（Back-Channel）|
+
+→ **OIDC Back-Channel Logout が現代標準**、SAML SLO は複雑で成功率低い。
+
+### 14.4 §14 まとめ
+
+- **SAML SLO は仕様上存在するが業界採用率低い**（60-80% 成功率、実装複雑）
+- **OIDC Back-Channel Logout が現代標準**（90%+ 成功率、JWT ベース、シンプル）
+- **Front-Channel Logout は 3rd Party Cookie ブロックで両方非推奨**（2024 年以降）
+
+---
+
+## 15. 【2026-07-23 新設】Session 管理 + Cross-origin + Token Binding
+
+### 15.1 Session 管理モデルの根本差
+
+| 項目 | SAML | OIDC |
+|---|---|---|
+| **Session 保管場所** | SP サーバ側（DB / Cache）| Client 側（SPA memory / モバイル SecureStorage）|
+| **Session 識別子** | Cookie（domain 制約）| Access Token（domain 非依存）|
+| **Session 共有** | SP 間で共有不可（別 domain 不可）| Access Token で共有可能 |
+| **スケール** | Session Store が単一障害点 | 完全 Stateless、無限スケール |
+| **Silent Renewal** | 困難（iframe 経由）| `prompt=none` で標準対応 |
+
+**核心**：**SAML は SP 側 Session 前提**、**OIDC は Client 側 Token 前提**。設計思想が根本的に違う。
+
+### 15.2 Cross-origin / CORS 対応
+
+**SAML の制約**：
+- Session Cookie は **domain 固定**（Same-Origin Policy）
+- SP1（`sp1.example.com`）と SP2（`sp2.example.com`）で Session 共有不可
+- Cross-domain iframe による Silent SSO 実現困難（3rd Party Cookie ブロック）
+
+**OIDC の対応**：
+- **Access Token は HTTP Authorization ヘッダで送信** → CORS で明示的に許可可能
+- **Cross-Origin Resource Sharing (CORS) 標準サポート**
+- モダン SPA（`spa.example.com`）→ API（`api.example.com`）の cross-origin API 呼び出しが自然に動く
+
+**実装例（OIDC の SPA + Cross-Origin API）**：
+
+```javascript
+// SPA (spa.example.com) から API (api.example.com) 呼び出し
+fetch('https://api.example.com/users', {
+  headers: {
+    'Authorization': `Bearer ${accessToken}`,
+    'Content-Type': 'application/json'
+  }
+})
+// API 側 CORS 設定:
+// Access-Control-Allow-Origin: https://spa.example.com
+// Access-Control-Allow-Headers: Authorization, Content-Type
+```
+
+**SAML で同じことをすると**：SAML Assertion を JavaScript から扱う必要 → XML DOM 操作 + XML Signature 検証 = SPA では実質不可能。
+
+### 15.3 Token Binding — セキュリティ強化オプション（OIDC 独占）
+
+#### 15.3.1 DPoP（RFC 9449、Demonstration of Proof of Possession）
+
+**目的**：Access Token 盗難時のリプレイ攻撃を防ぐ
+
+```
+[通常の Bearer Token]
+  Authorization: Bearer eyJhbGc...
+  → Token を持っている人なら誰でも使える（Stolen Token = 完全な鍵）
+
+[DPoP Bound Token]
+  Authorization: DPoP eyJhbGc...
+  DPoP: eyJhbGciOiJFUzI1NiIsInR5cCI6ImRwb3Arand0Iiwia... (proof JWT)
+  → Client が保持する秘密鍵で proof JWT を毎回生成
+  → Token を盗んでも proof が作れないので使えない
+```
+
+**適用**：SPA / モバイル / Public Client で有効。
+
+#### 15.3.2 mTLS Bound Token（RFC 8705）
+
+**目的**：Access Token を発行時の Client 証明書に紐付け
+
+```
+[Token 発行時]
+  Client が mTLS で Token Endpoint にアクセス
+  IdP が Client 証明書のハッシュを Token に含める (cnf.x5t#S256)
+
+[API 呼び出し時]
+  Client が同じ mTLS 証明書で API に接続
+  API が Token 内の cnf.x5t#S256 と接続証明書ハッシュを照合
+  → 一致しないと拒否
+```
+
+**適用**：Server-to-Server（B2B API）で有効。
+
+#### 15.3.3 SAML に相当機能はあるか
+
+**❌ SAML には Token Binding 概念自体がない**。SAML Assertion 自体を "所有証明" として使う設計思想。近い機能:
+- **Holder-of-Key Subject Confirmation Method**：Assertion に受信者の公開鍵を埋め込む（SAML 2.0 標準）
+- しかし業界実装事例は極めて少ない
+
+→ **モダンセキュリティ強化オプションは OIDC 一択**。
+
+### 15.4 モバイルアプリ対応
+
+| 項目 | SAML | OIDC |
+|---|:---:|:---:|
+| **モバイル SDK** | ❌ 事実上なし | ✅ AppAuth-iOS/Android（公式）|
+| **Custom URL Scheme** | ❌ 想定外 | ✅ 標準対応 |
+| **App-to-App SSO** | ❌ | ✅ Universal Links / App Links |
+| **Biometric 連携** | ❌ | ✅ WebAuthn / FIDO2 統合可能 |
+| **Refresh Token** | ❌ 概念なし | ✅ SecureStorage 保管 |
+| **Offline Token** | ❌ | ✅ `offline_access` scope |
+
+**モバイル前提システム = OIDC 一択**。
+
+### 15.5 §15 まとめ
+
+**セキュリティ / スケーラビリティ / モダン UX 観点で OIDC が構造的に優位**:
+
+- Session vs Token モデル → OIDC は Stateless で無限スケール
+- Cross-origin → OIDC は CORS で自然対応、SAML は Same-Origin 前提
+- Token Binding → OIDC のみ DPoP / mTLS 対応、SAML には概念なし
+- モバイル → OIDC のみ実質的対応、SAML はほぼ不可能
+
+---
+
+## 16. 【2026-07-23 新設】アプリ標準 OIDC 推奨の根拠マトリクス（顧客説明用）
+
+> **背景・なぜここで新設するか**：契約 / 開発ガイドライン / 顧客向け技術説明で **「新規アプリは OIDC で組んでください」の根拠** を体系的に提示する必要がある。§13-15 の技術根拠を "顧客に説明できる形" に集約。
+
+### 16.1 3 大根拠マトリクス（優先順位付き）
+
+| 優先度 | 根拠 | 詳細 | 影響 |
+|---|---|---|---|
+| **★1** | **Public Client 対応**（SPA / モバイル）| SAML は Confidential Client 前提、Public Client 想定なし。OIDC は PKCE で Public Client 標準対応 | **モダンアプリの前提**、SAML は選択肢外 |
+| **★2** | **API 認可の Access Token 標準** | SAML は API 認可の標準プロトコルなし → SP 独自実装。OIDC は Bearer Token（RFC 6750）標準 | **マイクロサービス / API Gateway 必須要件** |
+| **★3** | **エコシステム / DX 圧倒的優位** | 全 API Gateway / マイクロサービス基盤 / モバイル SDK が JWT 前提。SAML 対応は限定的 | **開発 / 保守コスト 100 倍差** |
+
+### 16.2 副次的根拠（強化材料）
+
+| # | 根拠 | 詳細 |
+|---|---|---|
+| ★4 | **セキュリティ強化オプション** | DPoP (RFC 9449) / mTLS Bound Token (RFC 8705) / PKCE (RFC 7636) は OIDC 独占 |
+| ★5 | **Cross-origin 対応** | SPA + 別 domain API を CORS で自然対応、SAML は Same-Origin 制約 |
+| ★6 | **Silent Renewal** | `prompt=none` で標準対応、SAML は iframe 経由で 3rd Party Cookie ブロック影響大 |
+| ★7 | **Logout の信頼性** | OIDC Back-Channel Logout 成功率 90%+、SAML SLO は 60-80% |
+| ★8 | **Refresh Token 標準** | Access Token 短命化 + Rotation + Reuse Detection で退職即時遮断（Compensating Control）|
+| ★9 | **Modern IdP 主流** | Entra / Okta / Google / Auth0 全て OIDC 主推奨 |
+| ★10 | **API Gateway 対応 99%** | AWS / Kong / Envoy / Istio 全て JWT/OIDC 標準対応 |
+
+### 16.3 SAML を選択すべき場合の限定シーン
+
+**新規アプリで SAML を選ぶべきケース**：**ほぼない**。ただし以下は SAML 選択継続:
+
+| シーン | 理由 |
+|---|---|
+| **既存エンタープライズ SP 統合**（ServiceNow / Salesforce / Workday 等）| SP 側が SAML 前提、業界標準 |
+| **オンプレ既存 SAML アプリ** | レガシー統合、大規模改修不可 |
+| **顧客側の SAML SSO ポリシー厳格な業界**（一部の官公庁）| 契約上の要件 |
+
+→ **業務 SP は SAML、新規アプリは OIDC** の使い分けが業界標準。
+
+### 16.4 顧客説明用 3 分プレゼンテーション
+
+**Slide 1: 結論**
+> **「新規アプリは OIDC 標準」**
+> - モダンアプリの構造的前提（SPA / モバイル / API）
+> - SAML は 2005 年の Web SSO 用、モダンアーキテクチャ対応不可
+
+**Slide 2: 最大の理由 = Public Client 対応**
+> **「SAML は SPA / モバイルで使えない」**
+> - SAML は Confidential Client 前提、Public Client 想定外
+> - OIDC は PKCE で Public Client 標準対応
+> - モダンアプリの 80% は SPA / モバイル → OIDC 必須
+
+**Slide 3: API 認可の標準**
+> **「SAML には API 認可の標準がない」**
+> - SAML Assertion は認証 1 回のみ、API 呼び出しに使えない
+> - SP 独自実装が必要（独自 JWT 発行 = OIDC の再発明）
+> - OIDC は Bearer Token 標準、API Gateway / マイクロサービス全域で貫通
+
+**Slide 4: エコシステム**
+> **「モダン基盤は JWT 前提」**
+> - AWS / Azure / GCP の API Gateway 全て JWT 標準対応
+> - Kong / Envoy / Istio 等の Service Mesh も同様
+> - モバイル SDK も AppAuth 公式、SAML SDK は事実上ない
+
+**Slide 5: セキュリティ強化**
+> **「OIDC は新しい脅威対策が使える」**
+> - DPoP（トークン盗難対策）
+> - mTLS Bound Token（B2B API）
+> - PKCE（Public Client）
+> - Silent Refresh（短命 Token + UX 継続）
+
+### 16.5 「アプリ = OIDC、SP = SAML」使い分けポリシー
+
+| カテゴリ | 対象 | プロトコル | 理由 |
+|---|---|:---:|---|
+| **新規開発アプリ** | 社内新規 SaaS、SPA、モバイルアプリ、Backend API | **OIDC** | 業界標準、モダンアーキテクチャ対応 |
+| **既存 SaaS SP 統合** | ServiceNow / Salesforce / Workday | **SAML** | SP 側が SAML 主推奨、10 年以上の成熟実装 |
+| **顧客 IdP → 本基盤（L1）** | フェデレーション | **SAML or OIDC 両対応** | 顧客 IdP 次第 |
+| **本基盤 → 業務 SP（L2）** | フェデレーション | **SAML デフォルト / OIDC オプション** | SP 側の推奨に従う（[ADR-023](../adr/023-servicenow-sp-integration.md)）|
+| **本基盤 → 新規アプリ** | 認証 + 認可 | **OIDC 標準** | ★本セクション主題 |
+
+### 16.6 契約書 / 開発ガイドラインへの明記事項
+
+> **【アプリ側認証プロトコル標準】**（2026-07-23 明示化）
+>
+> - **新規開発アプリの認証プロトコルは OIDC を標準とする**
+> - **SAML は既存エンタープライズ SP 統合（ServiceNow / Salesforce 等）でのみ使用**
+> - **API 認可は OAuth 2.0 Access Token（JWT）で統一**
+> - **公開クライアント（SPA / モバイル）は PKCE 必須**
+> - **セキュリティ強化オプション**（DPoP / mTLS Bound Token）は Phase 2 で導入検討
+> - **短命 Access Token（15 min 以下）+ Refresh Token Rotation** で退職即時遮断要件対応（[Compensating Control §10.7](jit-scim-coexistence-keycloak.md)）
+
+### 16.7 §16 まとめ
+
+**「新規アプリは OIDC」は好みではなく技術的必然**:
+
+1. **Public Client 対応** — SAML は構造的に不可
+2. **API 認可の標準** — マイクロサービス / API Gateway 必須要件
+3. **エコシステム** — モダン基盤の 99% が JWT 前提
+
+**残る SAML の位置**：**既存エンタープライズ SP 統合の限定用途のみ**。
+
+---
+
 **変更履歴**
 
 | 日付 | 内容 |
@@ -1165,3 +1705,4 @@ IdP は RS256 (RSA) で署名 → RP は IdP 公開鍵で検証
 | 2026-07-06 | **§1.5「分離されていない」の意味と、それが複雑さを生む 7 シナリオ 追加**（実装複雑さ 3 大要因整理 / "非分離" 3 次元定義 / 属性肥大化・委譲不可・セッション更新非対称・スコープ制御不可・Blast Radius・SLO 複雑・Broker パターン の 7 シナリオ深掘り / 20 年前は問題にならなかった理由）|
 | 2026-07-06 | **§7.4 SAML 改ざんの攻撃経路（Attack Path）と防御 追加**（Chain of Custody 5 フェーズ図 / 攻撃経路 11 パターン + フェーズ + 検知難度 + 本基盤防御マッピング / P3 Golden SAML・P8 XSW・P10 IdP-initiated CSRF の 3 経路深掘り / 完全防御可否総まとめ / 残 TBD 3 件（Adaptive Auth 連動 / Device Trust / Log scrubbing）/ OIDC/JWT との対比）|
 | 2026-07-06 | **§7.5 OIDC / OAuth 2.0 攻撃経路（Attack Path）と防御 追加**（Chain of Custody 6 フェーズ図 / 攻撃経路 22 パターン A〜F 分類 + 検知難度 + 本基盤防御マッピング / PKCE と Authorization Code Interception+Injection・Mix-Up Attack RFC 9207・alg confusion 系・Refresh Token 盗難 Rotation の 4 経路深掘り / 完全防御可否総まとめ / 残 TBD 2 件（DPoP/mTLS Bound Token / Log scrubbing）/ SAML との比較マトリクス）|
+| 2026-07-23 | **§13-16 深掘り新設**：§13 API 認可の実態（Session vs Token モデル / 完全フロー mermaid × 2 / 4 選択肢比較 / SAML API 統一化試み失敗史）+ §14 Logout フロー（SAML SLO Front/Back Channel / OIDC RP-Initiated + Back-Channel + Front-Channel Logout / 実装複雑度比較）+ §15 Session 管理 + Cross-origin + Token Binding（DPoP / mTLS / モバイル対応）+ §16 アプリ標準 OIDC 推奨根拠マトリクス（3 大根拠 + 副次 7 + 3 分プレゼン + 「アプリ = OIDC / SP = SAML」使い分けポリシー + 契約書明記事項）|

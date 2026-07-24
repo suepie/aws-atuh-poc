@@ -1,14 +1,18 @@
 # ADR-059: 認証実装漏れ検知 Central Canary アーキテクチャ（Pattern β）
 
 - **ステータス**: Proposed（要件定義フェーズで Accepted 昇格予定）
-- **日付**: 2026-07-06
+- **日付**: 2026-07-06 作成、**2026-07-24 更新（基本設計 Wave 3 [U9 D-U9-16](../basic-design/09-operations-observability-design.md): Canary 実行環境を弊社監査 Acct へ配置変更 + 運用主体 = 弊社 SRE。§M.4 逆転採用）**
 - **関連**:
-  - [ADR-039 ネットワーク監査アカウント設計](039-centralized-network-account-edge-layer.md)（v2 5 アカウント体系 + Origin Protection、本 ADR の配置前提）
+  - [ADR-039 ネットワーク監査アカウント設計](039-centralized-network-account-edge-layer.md)（Origin Protection、本 ADR の配置前提。**2026-07-24: 参照は v3〔6 アカウント体系、NW 監査 Acct = 他組織管理 — P-18〕へ読み替え**）
   - [§C-API-6 §C-6.6 認証実装漏れ検知 5 レイヤー](../api-platform/proposal/common/06-external-api-auth-architecture.md#c-6-6-認証実装漏れの-6-パターン--5-検知レイヤー)（本 ADR は L5 Behavioral の実装詳細）
   - [§C-API-5 §C-5.1 Service Catalog 標準提供物](../api-platform/proposal/common/05-self-service-catalog.md)（App Registry 登録の起点）
   - [ADR-057 CSRF 対策の責任分界](057-csrf-protection-responsibility-boundary.md)（Cookie 認証時のテスト観点）
   - [ADR-051 Multi-Region DR / Failover](051-multi-region-dr-failover.md)（Multilocation Canary の DR 併設）
   - [ADR-053 Observability Strategy](053-observability-strategy.md)（CloudWatch Metrics namespace 整合）
+
+---
+
+> **⚠ 2026-07-24 配置変更（[U9 D-U9-16](../basic-design/09-operations-observability-design.md)）**: **P-18 により NW 監査 Acct は他組織管理**となり、Pattern β の配置根拠（NW 監査チームの業務延長）が消滅。**Canary 実行環境は弊社監査 Acct へ配置変更、運用主体は弊社 SRE**（U9 D-U9-16）。方式（App Registry / OpenAPI Registry / Hybrid 検証 / Multi Checks Blueprint）は不変。本文の「ネットワーク監査 Acct」「Network 監査チーム」表記は **弊社監査 Acct / 弊社 SRE** に読み替え（§M.4 の 2026-07-24 逆転注記参照）。
 
 ---
 
@@ -76,6 +80,8 @@
 ---
 
 ## A. 5 アカウント体系での配置と全体像
+
+> **2026-07-24 読み替え（U9 D-U9-16 / ADR-039 v3）**: 本節の図・本文は **旧 5 アカウント体系** で記述。現行は **6 アカウント体系**（**Auth Acct → Broker Acct** に改称）へ読み替え。あわせて「🟣 ネットワーク監査 Acct」内の **Canary 系リソース（App Registry / OpenAPI Registry / Central Canary / Secrets Manager `canary/central/*` / Alert Router）は弊社監査 Acct に配置**（CloudFront / WAF / Lambda@Edge は NW 監査 Acct のまま — 他組織管理）。
 
 ### A.1 配置図
 
@@ -221,6 +227,8 @@ Resources:
 ---
 
 ## C. Cross-Account 要件
+
+> **2026-07-24 読み替え（U9 D-U9-16）**: 下表の Cross-Acct 宛先「ネットワーク監査 Acct」は **弊社監査 Acct** に読み替え（Registry / OpenAPI Registry / Test Client Secrets の配置先変更に伴う。OAuth central client の発行元は Auth Acct → **Broker Acct**）。要件構造（2 種類の書込みパス + Public URL 完結）は不変。
 
 Pattern β 採用時の Cross-Acct 要件は **2 種類のみ**（Registry + OpenAPI Registry 書込み）、その他は Public URL 経由で完結:
 
@@ -570,11 +578,15 @@ Alert Router Lambda が App Registry の `alertRouting` フィールドを参照
 
 ### M.3 Central Canary in Auth Acct
 
+> **2026-07-24 注記（U9 D-U9-16）**: Auth Acct（現 Broker Acct、[ADR-039 v3](039-centralized-network-account-edge-layer.md) 6 アカウント体系）への配置却下は**引き続き有効**（SoD 違反の理由は不変）。ただし NW 監査 Acct 配置の前提が P-18 で消滅したため、採用先は **§M.4 の弊社監査 Acct** へ変更。
+
 **却下**。理由:
 - Auth Acct は認証機能責務、canary は監視責務、SoD 違反
 - ADR-039 v2 の Network / Auth Acct 分離思想と不整合
 
 ### M.4 Central Canary in 監査 Acct（Compliance）
+
+> **🔄 2026-07-24 逆転（U9 D-U9-16）**: **却下理由は「NW 監査 Acct = 自管理」前提時代のもの。P-18（NW 監査 Acct 他組織管理化）で前提が消滅したため、本 M.4 案を採用**。Canary 実行環境 = 弊社監査 Acct、運用主体 = 弊社 SRE。方式（App Registry / OpenAPI Registry / Hybrid 検証 / Multi Checks Blueprint）は Pattern β のまま不変。
 
 **却下**。理由:
 - 監査 Acct は監査ログ集約 + Organizations 責務、canary の active probe は責務違い
@@ -583,6 +595,8 @@ Alert Router Lambda が App Registry の `alertRouting` フィールドを参照
 ---
 
 ## N. Implementation Roadmap
+
+> **2026-07-24 注記（U9 D-U9-16）**: 各 Phase の構築先は弊社監査 Acct に読み替え。**Phase 2a（ap-northeast-3 大阪 replica）は [U9](../basic-design/09-operations-observability-design.md) の Phase 2 と整合させる**（DR 併走監視の採否は U9 Phase 2 計画に従う）。
 
 | Phase | 内容 | 期間 |
 |---|---|---|

@@ -1,12 +1,14 @@
 # ADR-021: Post-login Landing UX（Pre/Post 設計判断 + サービス選択画面 + Sorry）
 
 - **ステータス**: Proposed（要件定義フェーズで Accepted に昇格予定）
-- **日付**: 2026-06-12
+- **日付**: 2026-06-12、**2026-07-23 更新**（基本設計 U4 確定: Landing のサービス表示判定をエンタイトルメント API 照会に確定、D-U4-06）
 - **関連**:
   - [§FR-4.3 ログイン後のランディング UX](../requirements/proposal/fr/04-sso.md#fr-43-ログイン後のランディング-uxlaunchpad--sorry--deep-link--fr-sso-008)
   - [ADR-022 AWS edge Sorry 制御パターン](022-aws-edge-sorry-control.md)
   - [ADR-018 ユーザー識別子戦略](018-user-identifier-3layer-emailless.md)
   - 関連 Claude 内部メモリ: `project_mixed_login_landing_ux.md`
+
+> **⚠ 2026-07-23 基本設計 U4 確定（[04-auth-ux-design.md](../basic-design/04-auth-ux-design.md) D-U4-06）**: Landing のサービス表示判定は「JWT roles / tenant_id フィルタ」ではなく**エンタイトルメント API（管理画面 Backend `GET /api/me/apps`）照会**で行う。本基盤は業務 / launchpad Client に roles を発行しない（U2 §2.5.4 認可ハイブリッド C）ため、本 ADR §E の JWT 判定案は**不成立と確定**。Pattern 1（filter 表示）自体は維持。B-627 回答による Pattern 2 転換時も判定情報源は同 API。
 
 ---
 
@@ -41,6 +43,10 @@
 ### 3. サービス選択画面 は **別 SPA 構築**が業界標準
 
 Keycloak アカウント設定画面 は補助、本格 サービス選択画面 は別 SPA。
+
+### 4. サービス表示判定はエンタイトルメント API 照会（2026-07-23 U4 確定）
+
+サービス選択画面のタイル表示判定は **エンタイトルメント API（管理画面 Backend `GET /api/me/apps`）照会**で行う（[04-auth-ux-design.md](../basic-design/04-auth-ux-design.md) D-U4-06）。本基盤は業務 / launchpad Client に roles を発行しない（U2 §2.5.4 認可ハイブリッド C）ため「JWT roles / tenant_id フィルタ」案は不成立。Pattern 1（filter 表示）は維持し、B-627 回答で Pattern 2 に転換する場合も判定情報源は同 API。
 
 ---
 
@@ -178,6 +184,8 @@ flowchart TB
 | **本基盤の採用方針** | ⚠ 補助的 | ✅ **業界標準として別 SPA 構築** |
 
 ### entitled apps の判定根拠
+
+> **⚠ 2026-07-23 U4 確定により以下の JWT 判定案は不成立**（D-U4-06）: 本基盤は業務 / launchpad Client に roles を発行しないため、判定は**エンタイトルメント API（`GET /api/me/apps`）照会**で行う（冒頭注記 / Decision §4 参照）。以下の図は旧検討案として保持。
 
 ```mermaid
 flowchart LR

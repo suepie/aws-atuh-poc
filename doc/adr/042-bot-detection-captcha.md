@@ -1,7 +1,7 @@
 # ADR-042: Bot Detection / CAPTCHA 設計（Credential Stuffing 対策の多層防御）
 
 - **ステータス**: Proposed（要件定義フェーズで Accepted に昇格予定）
-- **日付**: 2026-06-23 作成、2026-06-24 Turnstile を Phase 2 オプション化
+- **日付**: 2026-06-23 作成、2026-06-24 Turnstile を Phase 2 オプション化、**2026-07-23 基本設計 U7 反映（前倒しトリガー追加 + G-PCI-WAF ゲート）**
 
 ---
 
@@ -28,6 +28,11 @@
 > - 攻撃実態を半年〜1 年運用後に評価、必要なら Phase 2 で追加
 >
 > **本 ADR の §B（L1 WAF）/ §D（Account Enumeration）/ §E（コスト試算）/ §F（監査ログ統合）/ §G（規制対応マッピング）はそのまま Phase 1 採用**。**§C（Cloudflare Turnstile + Keycloak SPI）は Phase 2 候補**として残置。
+
+> **2026-07-23 基本設計 U7 反映（[07-security-compliance-design.md](../basic-design/07-security-compliance-design.md) D-U7-17）**:
+> - Turnstile 前倒しトリガーに「**REQ-IN-01（WAF Bot Control / ATP 要求）が他組織に受け入れられない場合**」を追加（従来の「Low-and-Slow 分散等の攻撃観測時」に加えて）。
+> - 自管理最低線 = KC Brute Force + Enumeration 対策 + ITDR（U7 §7.8）。
+> - **REQ-IN-01 明細合意なしの PCI 対応顧客契約は禁止（G-PCI-WAF ゲート）**。
 
 ---
 

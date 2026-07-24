@@ -1,7 +1,7 @@
 # ADR-048: データポータビリティ + データ主体権利対応（GDPR Art.15-20 / APPI 第 28-34 条）
 
 - **ステータス**: Proposed（要件定義フェーズで Accepted に昇格予定）
-- **日付**: 2026-06-23
+- **日付**: 2026-06-23 作成、**2026-07-24 更新（基本設計 Wave 3 [U10 §10.5](../basic-design/10-integration-migration-design.md): Phase 1 Erasure = Soft Delete + 仮名化、エクスポート/削除は手動運用 — §C 注記参照）**
 - **関連**:
   - [ADR-037 Shared Responsibility Model + 軽量 IGA](037-shared-responsibility-and-lightweight-iga.md)
   - [ADR-038 ユーザ管理画面](038-tenant-admin-portal.md)
@@ -245,6 +245,8 @@ flowchart LR
 ---
 
 ## C. 削除戦略（Right to Erasure）
+
+> **2026-07-24 注記（[U10 §10.5](../basic-design/10-integration-migration-design.md)）**: **Phase 1 の Erasure = Soft Delete + 仮名化**（U3 D3-09 の 3 段階削除モデル優先 — Phase 1 は物理削除を行わない）。**エクスポート / 削除は手動運用、API 化（§D DSAR Workflow Backend 等）は Phase 2**。
 
 ### C.1 3 段階削除モデル
 

@@ -1,7 +1,18 @@
 # ADR-039: ネットワーク監査アカウント設計（アプリごと独立 CloudFront/WAF + 5 アカウント体系）
 
 - **ステータス**: Proposed（要件定義フェーズで Accepted に昇格予定）
-- **日付**: 2026-06-23 作成、**2026-06-24 全面書き直し（v2、設計方針大幅変更）**、**2026-07-08 §F.1.A LDAP Egress 経路追記**
+- **日付**: 2026-06-23 作成、**2026-06-24 全面書き直し（v2、設計方針大幅変更）**、**2026-07-08 §F.1.A LDAP Egress 経路追記**、**2026-07-23 v3 責任分界改訂（ネットワーク監査 Acct = 他組織管理と判明、P-18）**
+
+> **2026-07-23 v3 責任分界の改訂（P-18、最重要）**: インターネットの Inbound（CloudFront + WAF + ALB または NLB + Network Firewall）と Outbound（Network Firewall、ドメインフィルタ）を持つネットワーク監査アカウントは**他組織の管理**であり、我々の管理外と判明（ユーザー指示）。これに伴い:
+> 1. **本 ADR のネットワーク監査 Acct 内の設定（CloudFront/WAF ルール、Network Firewall ポリシー、Shield、/admin WAF Deny 等）は「我々が実装するもの」から「先方への要求仕様」に位置づけを変更する。** 基本設計 U6 では「要求仕様書」と「自アカウント内設計」を分離して起こす（[00-basic-design-plan.md](../basic-design/00-basic-design-plan.md) P-18）
+> 2. **/admin 保護（§E）**: WAF 全 IP Deny は要求仕様となり我々は保証できないため、**自管理側の ALB Listener Rule 403 + Internal 経路限定が実質的な生命線**。Keycloak の Admin Console 専用ホスト名分離（`hostname-admin`）の採用を基本設計 U6 で検討
+> 3. **新リスク — Egress 許可申請と IdP 追加リードタイムの衝突**: Outbound がドメイン許可制のため、顧客 IdP（1000+ 想定、P-16）の token/JWKS エンドポイントへのフェデレーション Egress は IdP 追加ごとに先方への許可申請が必要になり得る。「IdP 追加リードタイム < 1 営業日」（§NFR-3）と衝突する恐れ → 申請 SLA の合意 or 認証基盤向け事前一括許可方式の交渉が基本設計 U6/U9 の論点
+> 4. Inbound に **NLB + Network Firewall 経路**の可能性が追加された（従来は CloudFront+WAF+ALB のみ想定）。NLB の場合の TLS 終端位置と WAF 適用範囲の整理が U6 論点
+>
+> **（2026-07-23 追記、基本設計 Wave 1 確定）**:
+> 1. **アカウント体系は Broker Acct / IdP-KC Acct 分割により 6 アカウント体系へ**（[U6 D-U6-01](../basic-design/06-infra-network-design.md)。本文の 5 アカウント体系記述は旧前提）
+> 2. **他組織への要求仕様は REQ-IN-01〜08 / REQ-OUT-01〜04 として [U6 §6.7](../basic-design/06-infra-network-design.md) で体系化済み**（上記 1. の「要求仕様書」分離の実施結果）
+> 3. **§E の `hostname-admin` は「検討」→ 採用確定**（[U6 D-U6-11](../basic-design/06-infra-network-design.md)、3 層防御の L3）
 - **関連**:
   - [ADR-011 認証基盤前段ネットワーク設計](011-auth-frontend-network-design.md)（更新あり）
   - [ADR-013 CloudFront + WAF による IP 制限の置き換え戦略](013-cloudfront-waf-ip-restriction.md)（更新あり）
@@ -334,6 +345,8 @@ resource "aws_route53_record" "app_a_alias" {
 ---
 
 ## E. /admin パス保護方針（追記）
+
+> ⚠ **2026-07-23（v3）**: 下表の CloudFront-Auth WAF 行は他組織管理のため**要求仕様**扱い。我々が保証できる防御線は ALB Listener Rule + Internal 経路限定であり、`hostname-admin` によるホスト名分離を U6 で検討（冒頭 v3 注記参照）。
 
 ### E.1 KC ネイティブ `/admin` パス（Keycloak Admin Console）の保護
 

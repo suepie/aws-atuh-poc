@@ -20,7 +20,7 @@
 | [014](014-auth-patterns-scope.md) | 共有認証基盤が対応する認証パターンの範囲 | Proposed | 2026-04-24 |
 | [015](015-rhbk-validation-deferred.md) | PoC では RHBK 検証を実施せず本番設計フェーズへ先送り | Proposed | 2026-04-24 |
 | [016](016-cognito-feature-tier-selection.md) | Cognito 機能ティア（Lite / Essentials / Plus）の機能マトリクスと選定基準 | Proposed | 2026-05-13 |
-| [017](017-multitenant-l2-single-realm.md) | マルチテナント L2（単一 Pool/Realm + 複数 IdP）採用根拠 | Proposed | 2026-06-11 |
+| [017](017-multitenant-l2-single-realm.md) | マルチテナント L2（単一 Pool/Realm + 複数 IdP）採用根拠（**2026-07-23 更新: 1000+ IdP 条件付き成立・必須対策 7 点・PoC P-1〜P-7 を Consequences に追記**） | Proposed | 2026-06-11 / 2026-07-23 |
 | [018](018-user-identifier-3layer-emailless.md) | ユーザー識別子 3 階層戦略（メール非保有 + 顧客独自 ID 対応） | Proposed | 2026-06-12 |
 | [019](019-existing-system-migration.md) | 既存システムからの移行戦略（並走 + User Storage SPI キャッシュ移行） | Proposed | 2026-06-12 |
 | [020](020-hrd-hint-keys-mixed-login.md) | HRD ヒントキー戦略 + フェデ/ローカル混在 Identifier-First | Proposed | 2026-06-12 |
@@ -36,15 +36,15 @@
 | [030](030-minimal-jwt-claim-design.md) | 最小 JWT クレーム設計と接続元アプリ表現 | Proposed | 2026-06-15 |
 | [031](031-amr-saml-mfa-evaluation.md) | amr / SAML AuthnContext MFA 評価の統合方針 | Proposed | 2026-06-15 |
 | [032](032-ciam-platform-cost-comparison-10m-mau.md) | 10M MAU 規模における CIAM プラットフォーム選定 — Keycloak / Cognito / Entra External ID / Auth0/Okta コスト比較 | Proposed | 2026-06-12 |
-| [033](033-keycloak-2tier-broker-idp-architecture.md) | Keycloak 2-tier アーキテクチャ（Broker Keycloak + IdP Keycloak） | Proposed | 2026-06-15 |
+| [033](033-keycloak-2tier-broker-idp-architecture.md) | Keycloak 2-tier アーキテクチャ（Broker Keycloak + IdP Keycloak）（**2026-07-23 更新: IdP-KC 別 AWS アカウント配置 + ROSA HCP 2 クラスタ凍結 + シャーディング拡張パス**） | Proposed | 2026-06-15 / 2026-07-23 |
 | [034](034-adaptive-authentication.md) | Adaptive Authentication（Risk-based 認証）の設計 | Proposed | 2026-06-18 |
 | [035](035-identity-threat-detection-response.md) | Identity Threat Detection and Response (ITDR) 設計 | Proposed | 2026-06-18 |
 | [036](036-customer-audit-support.md) | Customer Audit Support（縮小：監査ログ保管 + 都度メール対応のみ。Trust Center / Customer Portal はスコープアウト、2026-06-24）| **Scope Reduced** | 2026-06-18 |
 | [037](037-shared-responsibility-and-lightweight-iga.md) | IdP Keycloak の Shared Responsibility Model と軽量 IGA 設計 | Proposed | 2026-06-18 |
 | [038](038-tenant-admin-portal.md) | ユーザ管理画面（顧客テナント管理者向け Admin UI） | Proposed | 2026-06-18 |
-| [039](039-centralized-network-account-edge-layer.md) | **ネットワーク監査アカウント設計（v2、アプリごと独立 CloudFront/WAF + 5 アカウント体系、2026-06-24 全面書き直し）** | Proposed | 2026-06-23 |
+| [039](039-centralized-network-account-edge-layer.md) | **ネットワーク監査アカウント設計（v2、アプリごと独立 CloudFront/WAF + 5 アカウント体系 / v3 2026-07-23: ネットワーク監査 Acct = 他組織管理と判明、当該設定は要求仕様化 + Egress 許可申請リスク追記）** | Proposed | 2026-06-23 / 2026-07-23 |
 | [040](040-pam-jit-admin-privilege-management.md) | PAM / JIT 管理者権限管理 | **Out of Scope**（2026-06-24 — 本基盤対象外、運用体制側で別途検討。代わりに /admin パス保護方針を ADR-039/013 に追記）| 2026-06-23 |
-| [041](041-workload-identity-spiffe.md) | Workload Identity 設計（SPIFFE/SPIRE + AWS IAM Roles for Service Accounts） | Proposed | 2026-06-23 |
+| [041](041-workload-identity-spiffe.md) | Workload Identity 設計（SPIFFE/SPIRE + IRSA）（**2026-07-23 更新: ROSA 転換で EKS Pod Identity → ROSA pod identity webhook + IRSA 方式へ**） | Proposed | 2026-06-23 / 2026-07-23 |
 | [042](042-bot-detection-captcha.md) | Bot Detection / CAPTCHA 設計（Credential Stuffing 対策の多層防御） | Proposed | 2026-06-23 |
 | [043](043-accessibility-wcag-2-2-aa.md) | アクセシビリティ設計（WCAG 2.2 AA + JIS X 8341-3 準拠） | Proposed | 2026-06-23 |
 | [044](044-tabletop-exercise-incident-drill.md) | Tabletop Exercise / セキュリティインシデント訓練設計 | Proposed | 2026-06-23 |
@@ -54,12 +54,12 @@
 | [048](048-data-portability-subject-rights.md) | データポータビリティ + データ主体権利対応（GDPR Art.15-20 / APPI 第 28-34 条） | Proposed | 2026-06-23 |
 | [049](049-vendor-risk-management-tprm.md) | Vendor Risk Management / TPRM（Third-Party Risk Management） | Proposed | 2026-06-23 |
 | [050](050-mobile-sdk-native-auth.md) | モバイルアプリ認証設計（AppAuth PKCE + WebAuthn Platform + Push 通知 MFA） | Proposed | 2026-06-23 |
-| [051](051-multi-region-dr-failover.md) | Multi-Region DR / Failover 詳細設計（Aurora Global + KMS MRK + Keycloak Realm Replication） | Proposed | 2026-06-23 |
+| [051](051-multi-region-dr-failover.md) | Multi-Region DR / Failover 詳細設計（Aurora Global + KMS MRK + Keycloak Realm Replication）（**2026-07-23 更新: 大阪 ROSA HCP 対応確認 → 東京+大阪対称構成成立、multi-cluster v2 追記**） | Proposed | 2026-06-23 / 2026-07-23 |
 | [052](052-multi-tenant-isolation-rate-limiting.md) | 認証 API への Rate Limit（旧マルチテナント Isolation、2026-06-24 スコープ縮小：認証 API のみ、その他は API プラットフォーム側）| **Scope Reduced** | 2026-06-23 |
 | [053](053-observability-strategy.md) | Observability Strategy（OpenTelemetry + SLO + Distributed Tracing + Dashboards） | Proposed | 2026-06-23 |
 | [054](054-id-integration-strategy.md) | **ID 統合戦略（現状調査 + 人事 DB を SoT + マッピング DB + 3 段階移行プロセス + メアド不可対応）** | Proposed | 2026-06-24 |
-| [055](055-hrd-implementation-method-selection.md) | **HRD 実装方式選定（Phase 1 採用確定 = 方式 A: Custom Authenticator SPI、Java、社内開発 / Phase 2 候補 = 方式 C: URL + CloudFront Function 併用 / §A.6 §A.7 で EKS vs ROSA Classic vs HCP の CI/CD・バージョン追従併記）** | **Accepted (Phase 1)** | 2026-06-25 |
-| [056](056-rosa-adoption-decision.md) | **ROSA (Red Hat OpenShift Service on AWS) 採用判断**（Default 不採用 = Upstream OSS + ECS Fargate 維持、FIPS/HIPAA/10M MAU/Red Hat 統合サブスク条件付きで再評価。詳細 input は [rosa-detailed-analysis.md](../reference/rosa-detailed-analysis.md)） | Proposed | 2026-06-25 |
+| [055](055-hrd-implementation-method-selection.md) | **HRD 実装方式選定（Phase 1 採用確定 = 方式 A: Custom Authenticator SPI、Java、社内開発 / Phase 2 候補 = 方式 C: URL + CloudFront Function 併用 / §A.6 §A.7 の CI/CD は 2026-07-23 に ROSA HCP + RHBK Operator で確定、EKS 列は参考格下げ）** | **Accepted (Phase 1)** | 2026-06-25 |
+| [056](056-rosa-adoption-decision.md) | **ROSA 採用判断（2026-07-23 Decision 逆転: ROSA HCP + RHBK Operator 採用。RHBK サブスク不要判明・大阪対応済み・別 Acct 2 クラスタ。採用条件 3 点充足まで条件付き。旧 Default 不採用は履歴保存**） | **Accepted（条件付き）** | 2026-06-25 / 2026-07-23 |
 | [057](057-csrf-protection-responsibility-boundary.md) | **CSRF 対策の責任分界と実装パターン**（L1 認証基盤 UI = Keycloak 標準機能で完結 / L2 OAuth・OIDC・SAML 認可フロー = `state` + PKCE + `RelayState` を RP ガイドで必須化 / L3 アプリ API = Bearer JWT + CORS + SameSite Lax で原則 CSRF 免疫、Cookie セッション時は Double Submit or Synchronizer） | Proposed | 2026-07-06 |
 | [058](058-auth-platform-alternatives-comparison.md) | **認証プラットフォーム 代替アーキテクチャ 6 パターン比較検討**（Auth0/Entra External ID/Cognito Multi-Pool/Cognito Single-Pool/Keycloak Multi-Realm/FusionAuth・Ping-ForgeRock を体系的に評価、2 系統独立調査で現状 Keycloak Single Realm + Organizations 維持を再確認、FusionAuth を Phase 2 商用サポート代替候補として提案） | Accepted | 2026-07-02 |
 | [059](059-central-auth-check-canary-architecture.md) | **認証実装漏れ検知 Central Canary アーキテクチャ (Pattern β)**（ネットワーク監査 Acct 集約、App Registry + OpenAPI Registry で全アプリ自動追随、Deploy 漏れ構造的ゼロ、Puppeteer 16.1 単一 canary + Multi Checks 併用、Monolith Cookie / Private API + TGW / Multilocation Phase 2、runtime `syn-nodejs-puppeteer-7.0` 誤記の修正必要） | Proposed | 2026-07-06 |

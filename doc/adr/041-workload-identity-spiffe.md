@@ -1,7 +1,14 @@
 # ADR-041: Workload Identity 設計（SPIFFE/SPIRE + AWS IAM Roles for Service Accounts）
 
 - **ステータス**: Proposed（要件定義フェーズで Accepted に昇格予定）
-- **日付**: 2026-06-23
+- **日付**: 2026-06-23 作成、**2026-07-23 更新（ROSA HCP 転換に伴い EKS Pod Identity → ROSA pod identity webhook + IRSA 方式へ差し替え + 基本設計 U7 反映）**
+
+> **2026-07-23 実行基盤転換に伴う改訂（[ADR-056](056-rosa-adoption-decision.md) 逆転）**: 実行基盤が EKS → **ROSA HCP** に変更された。**EKS Pod Identity（EKS Auth API + agent 方式）は EKS 専用機能で ROSA には存在しない**。ROSA での Pod → AWS リソースアクセスは、**クラスタ作成時に自動構成される AWS IAM OIDC プロバイダ + 標準組込の pod identity webhook による IRSA 方式**（ServiceAccount に IAM Role ARN をアノテーション → Pod にトークン(1h ローテーション)がマウント → AWS SDK が `AssumeRoleWithWebIdentity`）を採用する。[Red Hat 公式手順](https://docs.redhat.com/en/documentation/red_hat_openshift_service_on_aws/4/html/authentication_and_authorization/assuming-an-aws-iam-role-for-a-service-account)。
+> - 本文中の「EKS Pod Identity（Phase 1）」「`aws_eks_pod_identity_association`（§C.2 Terraform 例）」は「**OIDC プロバイダ信頼ポリシー付き IAM Role + SA アノテーション**」に読み替え
+> - **2 段階 STS チェーン（App Acct Role → Auth Acct Role、§C.3）、Keycloak Federated Identity Credentials、SPIFFE/SPIRE Phase 2 候補の位置づけは全て維持**
+> - Cross-account は [Red Hat Cloud Experts: Cross-account Access using Custom OIDC Provider](https://cloud.redhat.com/experts/rosa/cross-account-access-openid-connect/) パターンを参照
+> - 詳細調査: [basic-design/research/rosa-hcp-adoption-research.md](../basic-design/research/rosa-hcp-adoption-research.md)
+> - **2026-07-23 基本設計 U7 反映**: IRSA Role 規約（命名 / 1 SA = 1 Role / sub 完全一致 / クラスタ間相互信頼禁止）と Federated Identity Credentials の適用範囲は **[U7 §7.5](../basic-design/07-security-compliance-design.md) が実装 SSOT**（D-U7-09/10）。private_key_jwt 昇格 = Phase 2 開始時一括、Phase 1 は client_secret_post + Secrets Manager 90 日ローテ + 2 世代並走
 - **関連**:
   - [ADR-040 PAM / JIT 管理者権限管理](040-pam-jit-admin-privilege-management.md)
   - [ADR-033 Keycloak 2-tier アーキテクチャ](033-keycloak-2tier-broker-idp-architecture.md)
@@ -186,7 +193,7 @@ sequenceDiagram
 
 ---
 
-## C. AWS リソースアクセス：EKS Pod Identity
+## C. AWS リソースアクセス：Pod → AWS（旧 EKS Pod Identity — 2026-07-23 以降は冒頭注記の ROSA IRSA 方式に読み替え）
 
 ### C.1 IRSA → Pod Identity 移行
 

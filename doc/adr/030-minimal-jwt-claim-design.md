@@ -1,7 +1,7 @@
 # ADR-030: 最小 JWT クレーム設計と接続元アプリ表現
 
-- **ステータス**: Proposed（要件定義フェーズで Accepted に昇格予定）
-- **日付**: 2026-06-15
+- **ステータス**: Proposed（要件定義フェーズで Accepted に昇格予定。**2026-07-23 U5 §5.1.1 確定により Accepted 昇格可（要件定義完了時）**）
+- **日付**: 2026-06-15、**2026-07-23 更新**（基本設計 Wave 1: `sid` を **Stage 1.5（セッション系）** として既定発行に追加、U2 §2.5.1。**同日 Wave 2: U5 §5.1.1 で `sid` 既定発行を最終確定**）
 - **関連**:
   - [§FR-6.1.A 最小クレーム設計と接続元アプリ表現](../requirements/proposal/fr/06-authz.md#fr-61a-最小クレーム設計と接続元アプリ表現)
   - [ADR-018 ユーザー識別子 3 階層戦略](018-user-identifier-3layer-emailless.md)
@@ -125,6 +125,8 @@ flowchart LR
 ```
 
 **サイズ目安: 約 300 byte**（base64 後）。Cookie / Authorization ヘッダで余裕。
+
+> **2026-07-23 更新（U2 §2.5.1 → U5 §5.1.1 で最終確定）**: **U5 §5.1.1（2026-07-23）で確定: `sid` は Stage 1.5 として全アプリ Client 既定発行。Back-Channel Logout（コア層 Must）とセット採用**（[05-token-session-authz-design.md](../basic-design/05-token-session-authz-design.md)）。ただし Stage 1 の 7 クレームには含めず **Stage 1.5（セッション系）** として位置づける。`preferred_username` は既定非発行、`provisioned_by` 等のライフサイクル属性は **JWT 非搭載原則**を維持。
 
 ### Stage 2: 認可・監査強化
 

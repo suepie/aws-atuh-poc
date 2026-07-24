@@ -1,10 +1,12 @@
 # ADR-017: マルチテナント L2（単一 Pool/Realm + 複数 IdP）採用根拠
 
 - **ステータス**: Proposed（要件定義フェーズで Accepted に昇格予定）
-- **日付**: 2026-06-11
+- **日付**: 2026-06-11 作成、**2026-07-23 更新（単一 Realm 側の限界と 1000+ IdP 条件付き成立を Consequences に追記、P-16）**
 - **関連**:
   - [§FR-2.3.A アーキテクチャ判断](../requirements/proposal/fr/02-federation.md#fr-23a-アーキテクチャ判断単一-poolrealm--複数-idp-を採用)
   - [ADR-006](006-cognito-vs-keycloak-cost-breakeven.md)（Cognito vs Keycloak コスト損益分岐）
+  - [keycloak-1000idp-scalability-research.md](../basic-design/research/keycloak-1000idp-scalability-research.md)（1000+ IdP スケーラビリティ調査、2026-07-23）
+  - [ADR-055 HRD 実装方式](055-hrd-implementation-method-selection.md)（IdP 一覧非表示 = 性能成立の必須条件に格上げ、下記 Consequences 参照）
   - 関連 Claude 内部メモリ: `project_multitenant_l2_rationale.md`
 
 ---
@@ -76,7 +78,7 @@
 | 100 社 | IdP 設定 100 件、Realm 1 件 | **Realm 100 件 + IdP 設定 100 件**、設定変更 × 100 |
 | 1,000 社 | IdP 設定 1,000 件、Realm 1 件 | **Realm 1,000 件**、Admin Console 重い、メトリクス爆発 |
 
-→ A 案では「Realm 数 = 1 で固定」のため、**追加コストは IdP エントリの増加のみ**。設定変更・監視・キャッシュは Realm 数に依存しないため、顧客数増でも運用負荷は緩やかに上昇するだけ。
+→ A 案では「Realm 数 = 1 で固定」のため、**追加コストは IdP エントリの増加のみ**。設定変更・監視・キャッシュは Realm 数に依存しないため、顧客数増でも運用負荷は緩やかに上昇するだけ。（2026-07-23 補強: **IdP エントリ増加自体が 1000 超では検証対象**。公式実測・正の運用実例が存在しないため PoC で実証する。[keycloak-1000idp-scalability-research.md](../basic-design/research/keycloak-1000idp-scalability-research.md) 参照）
 
 ## D. Broker パターンの効果実証（WJAETS-2025 論文）
 
@@ -118,6 +120,23 @@
 
 - データ物理分離が必要な規制顧客向けに B 案を例外的に運用する必要
 - 論理分離の正しさを顧客に説明する負担（[§FR-2.3.A.1 § FR-2.3.A.2](../requirements/proposal/fr/02-federation.md#fr-23a1-何が分離共有されているか--論理分離の実態顧客が必ず聞く論点) で対応）
+
+### 単一 Realm 側の限界と 1000+ IdP 条件付き成立（2026-07-23 追記、P-16）
+
+本 ADR はマルチ Realm 側の劣化を定量化して A 案を選定したが、逆方向（単一 Realm に IdP を 1000+ 詰む）にも限界史がある。一次資料調査（[keycloak-1000idp-scalability-research.md](../basic-design/research/keycloak-1000idp-scalability-research.md)）の要点:
+
+- **Keycloak 26.0（2024-10）で「1K IdPs / Realm」目標の構造改修が完了**（Epic keycloak#30084: realm 表現から IdP 除去 / realm cache eager load 廃止 / IdP 専用キャッシュ `IdentityProviderStorageProvider` 導入）。改修前は 4000 IdP で Admin Console 30 秒 / realm JSON 30MB の実害報告あり（Discussion #8608）
+- ただし **1000 IdP の公式ベンチ実測・正の運用実例は未公開**（keycloak-benchmark#382 Open）。10K IdP は未実装の将来目標（keycloak#45293 Open）
+- → 判定: **条件付き成立（要 PoC）**。必須対策 7 点:
+  1. Keycloak 26.0+ 必須・バージョン固定 + 昇格前検証（26.5.4 の多 Realm O(N²) リグレッション #46605 の前例）
+  2. **ログイン画面・アカウントコンソールに IdP 一覧を出さない設計の維持**（[ADR-055](055-hrd-implementation-method-selection.md) の HRD SPI は UX 選好ではなく**性能成立の必須条件**）
+  3. IdP は必ず Organization 紐付けで登録（非 org のグローバル IdP を増やさない）
+  4. realm 全体 export/import・realm representation を扱う運用の禁止（IdP 単位 API のみ）
+  5. Terraform state 分割 or テナント追加のオンボーディング API 化（単一 state で 5,000-8,000 リソースは不成立）
+  6. Infinispan IdP キャッシュのサイジング明示設計
+  7. IdP 系 Admin API / first-broker-login p99 を IdP 数の関数として継続監視
+- PoC 実測項目 P-1〜P-7（100/500/1000/2000 IdP での投入・ログイン p99・Admin Console・キャッシュ・アップグレード試験）は research 参照
+- 1000 社を大きく超える場合の拡張パス: [ADR-033](033-keycloak-2tier-broker-idp-architecture.md) の IdP-KC シャーディング（例: 500 IdP/クラスタ）で Broker KC の IdP 数を圧縮
 
 ### B 案を例外的に採用する条件
 

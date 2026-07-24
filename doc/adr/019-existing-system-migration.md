@@ -1,7 +1,7 @@
 # ADR-019: 既存システムからの移行戦略（並走 + User Storage SPI キャッシュ移行）
 
 - **ステータス**: Proposed（要件定義フェーズで Accepted に昇格予定）
-- **日付**: 2026-06-12
+- **日付**: 2026-06-12 作成、**2026-07-24 更新（`legacy_user_id` クレーム廃止確定 — [U10 D-U10-12](../basic-design/10-integration-migration-design.md)、idmap API 参照へ一本化）**
 - **関連**:
   - [§FR-1.2.0.E 既存システムからの混在モデル移行戦略](../requirements/proposal/fr/01-auth.md#fr-120e-既存システムからの混在モデル移行戦略ローカル--フェデ併存からの集約)
   - [ADR-018 ユーザー識別子 3 階層戦略](018-user-identifier-3layer-emailless.md)
@@ -37,7 +37,7 @@
 | **サインアップ機能** | **β. 共通基盤集約**（Keycloak Hosted UI + Custom Approval Authenticator） |
 | **並走期間** | **3〜6 ヶ月**（休眠ユーザーは半年で 90% カバー）|
 | **切替単位** | **アプリ単位**（リスク低分散）|
-| **識別子マッピング** | 旧 user_id を Layer B `external_id` として保持、JWT に `legacy_user_id` クレーム発行 |
+| **識別子マッピング** | 旧 user_id を Layer B `external_id` として保持、JWT に `legacy_user_id` クレーム発行 → **2026-07-24 廃止確定（[U10 D-U10-12](../basic-design/10-integration-migration-design.md)）: 旧 ID の参照は JWT クレームでなく idmap API（`GET /idmap/{sub}`）へ一本化**（P-10 Stage 1 最小クレームと整合）|
 | **混在顧客対応** | Keycloak Organizations + Organization メンバー（IdP 紐付け有 / 無）で統合 |
 | **ロールバック単位** | アプリ単位（DNS / config 切替で 1 時間以内）|
 
@@ -156,7 +156,7 @@ flowchart TB
 | 持ち方 | 場所 | 用途 |
 |---|---|---|
 | **マッピング表（DB / KVS）**| 専用 service or 共通基盤の custom attribute | 旧 user_id を `external_id` カスタム属性として Layer B に保持 |
-| **JWT クレーム** | `legacy_user_id` クレーム発行 | 旧 ID を必要とするアプリ向け |
+| **JWT クレーム** | `legacy_user_id` クレーム発行 — **2026-07-24 廃止確定（[U10 D-U10-12](../basic-design/10-integration-migration-design.md)）: 旧 ID の参照は JWT クレームでなく idmap API（`GET /idmap/{sub}`）へ一本化**（P-10 Stage 1 最小クレームと整合）| 旧 ID を必要とするアプリ向け → idmap API 照会に置換 |
 | **アプリ側 lookup** | 各アプリの user_id 列に both 値を保持 | アプリ DB 移行を伴う場合のみ |
 
 ### 切替単位の選択

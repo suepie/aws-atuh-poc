@@ -1,7 +1,7 @@
 # ADR-045: 鍵管理戦略集約（KMS CMK 使い分け + 暗号化境界の統一）
 
 - **ステータス**: Proposed（要件定義フェーズで Accepted に昇格予定）
-- **日付**: 2026-06-23
+- **日付**: 2026-06-23 作成、**2026-07-23 更新（基本設計 U7 反映: JWT 署名鍵 Realm Key 方式確定ほか — 下記注記参照）**
 - **関連**:
   - [ADR-033 Keycloak 2-tier アーキテクチャ](033-keycloak-2tier-broker-idp-architecture.md)
   - [ADR-035 ITDR](035-identity-threat-detection-response.md)
@@ -12,6 +12,12 @@
   - [§NFR-4.1 暗号化・鍵管理](../requirements/proposal/nfr/04-security.md)
   - [§NFR-7 コンプライアンス](../requirements/proposal/nfr/07-compliance.md)
   - **[ADR-060 認証プロトコル攻撃経路 残 TBD 対応 §C](060-auth-protocol-attack-path-residual-tbd.md)** — Golden SAML/JWT 検知時の緊急鍵ローテ SOP 追加要件（2026-07-08 追記）
+
+> **2026-07-23 基本設計 U7 反映（[07-security-compliance-design.md](../basic-design/07-security-compliance-design.md)）**:
+> 1. **JWT 署名鍵は Keycloak Realm Key 方式で確定**（Aurora 保管 + `broker-aurora-mrk` による at-rest 暗号化、90 日 Cryptoperiod + 30 日並走、[U7 D-U7-03](../basic-design/07-security-compliance-design.md)）。`alias/keycloak-jwt-signing` は予約のみ・Phase 1 未作成。KMS 署名 SPI は Phase 2 再評価（金融 / FAPI トリガー）。
+> 2. Auth Platform Acct は Broker Acct / IdP-KC Acct に分割（6 アカウント体系）。alias 体系は U7 §7.1.1 の写像表が実装 SSOT。
+> 3. Network Acct 系 alias（`network-shared` / `cloudfront-logs` / `waf-logs` / `lambda-edge-config`）は **P-18 により他組織管轄 → 弊社 alias 体系から削除し REQ（要求仕様）側で管理**。
+> 4. Key Custodian「CISO 部門」は「Security Lead + Infra Lead（D-U7-02 の 2 名 SoD）」に読み替え。
 
 ---
 
@@ -180,7 +186,7 @@ flowchart TB
 | `alias/auth-s3` | SPA bundle / 共通 S3 | SYMMETRIC_DEFAULT |
 | `alias/auth-secrets` | Secrets Manager（共通）| SYMMETRIC_DEFAULT |
 | `alias/auth-lambda-env` | Lambda 環境変数 | SYMMETRIC_DEFAULT |
-| `alias/keycloak-jwt-signing` | **JWT 署名鍵**（Keycloak Realm 鍵）| **ECC_NIST_P256（ES256）** |
+| `alias/keycloak-jwt-signing` | **JWT 署名鍵**（Keycloak Realm 鍵）（2026-07-23 改訂: Realm Key 方式に変更、本 alias は予約のみ・Phase 1 未作成 — 冒頭注記参照）| **ECC_NIST_P256（ES256）** |
 | `alias/keycloak-jwt-encryption` | JWT 暗号化（必要時）| RSA_2048 |
 | `alias/scim-tokens` | SCIM Bearer Token 暗号化 | SYMMETRIC_DEFAULT |
 
@@ -229,7 +235,7 @@ flowchart TB
 
 | データ種別 | 機密度 | 配置 | 暗号化 | 鍵 |
 |---|---|---|---|---|
-| **JWT 署名鍵**（private）| 最高 | KMS のみ（取り出し不可）| KMS 内部 | `keycloak-jwt-signing` |
+| **JWT 署名鍵**（private）| 最高 | KMS のみ（取り出し不可）（2026-07-23 改訂: Realm Key 方式に変更 — 冒頭注記参照。Aurora 保管 + `broker-aurora-mrk` at-rest 暗号化）| KMS 内部 | `keycloak-jwt-signing` |
 | **JWT トークン**（発行後）| 高 | クライアント側 | 不要（署名のみ）| — |
 | **ユーザーパスワードハッシュ** | 高 | Aurora | TDE + at-rest | `auth-aurora` |
 | **個人情報（メール等）** | 高 | Aurora | TDE + at-rest | `auth-aurora` or `tenant-X` |
@@ -329,7 +335,7 @@ flowchart LR
 | 鍵種別 | ローテーション | 詳細 |
 |---|---|---|
 | KMS Symmetric CMK | **年次自動**（KMS 機能）| Re-encrypt 不要、旧鍵は復号化のみで保持 |
-| **KMS Asymmetric CMK（JWT 署名鍵、ES256）**| **手動、90 日 Cryptoperiod**（**2026-07-15 短縮**）| Keycloak の Rotation 機能で旧鍵を 30 日並走、詳細は §D.4 参照 |
+| **KMS Asymmetric CMK（JWT 署名鍵、ES256）**（2026-07-23 改訂: Realm Key 方式に変更 — 冒頭注記参照）| **手動、90 日 Cryptoperiod**（**2026-07-15 短縮**）| Keycloak の Rotation 機能で旧鍵を 30 日並走、詳細は §D.4 参照 |
 | アプリケーション層 DEK | 90 日 | Envelope Encryption、KMS で DEK 暗号化 |
 | TLS 証明書（ACM）| 自動 | Public 証明書は自動更新 |
 | API キー / Bearer Token | 90 日（強制）| ユーザ管理画面 で警告 |
@@ -350,7 +356,7 @@ flowchart LR
 |---|---|
 | **Cryptoperiod** | **90 日**（新鍵発行、旧鍵は verification のみで 30 日並走）|
 | **アルゴリズム** | ES256（ECC_NIST_P256）|
-| **鍵管理** | KMS Asymmetric CMK `alias/keycloak-jwt-signing` |
+| **鍵管理** | KMS Asymmetric CMK `alias/keycloak-jwt-signing`（2026-07-23 改訂: Realm Key 方式に変更 — 冒頭注記参照）|
 | **Rotation 実行** | Keycloak Admin API（`POST /realms/{realm}/keys/rotate`）+ CronJob 自動化 |
 | **並走期間** | 30 日（旧鍵は verify のみ、sign は新鍵のみ）|
 | **緊急ローテ** | Golden JWT 検知時（ADR-060 §C）は即時実行、並走なし |

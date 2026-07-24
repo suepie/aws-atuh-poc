@@ -1,7 +1,7 @@
 # ADR-038: ユーザ管理画面（顧客テナント管理者向け Admin UI）
 
 - **ステータス**: Proposed（要件定義フェーズで Accepted に昇格予定）
-- **日付**: 2026-06-18 作成、**2026-06-24 認可スコープ C 案ハイブリッド確定**、**2026-06-29 Organization 管理を Phase 1 必須機能に追加（ADR-055 連動）**
+- **日付**: 2026-06-18 作成、**2026-06-24 認可スコープ C 案ハイブリッド確定**、**2026-06-29 Organization 管理を Phase 1 必須機能に追加（ADR-055 連動）**、**2026-07-24 更新（基本設計 Wave 3 [U10 D-U10-08](../basic-design/10-integration-migration-design.md): API 実装確定 = `idm-api` v1 + ロードマップ一部前倒し + URL `/idm/v1` 正規化 — 下記注記参照）**
 - **関連**:
   - [ADR-037 Shared Responsibility Model + 軽量 IGA](037-shared-responsibility-and-lightweight-iga.md)
   - [ADR-033 Keycloak 2-tier アーキテクチャ](033-keycloak-2tier-broker-idp-architecture.md)
@@ -49,6 +49,14 @@
 > - **B 案 集中認可**（詳細権限まで認証基盤集約、Salesforce パターン）→ JWT 膨張 + アプリ独自要件追加で認証基盤改修頻発、アプリ独立性低い
 >
 > **詳細は本 ADR §X 認可スコープ（2026-06-24 追加）参照**。
+
+---
+
+> **⚠ 2026-07-24 実装確定（基本設計 Wave 3 [U10 D-U10-08](../basic-design/10-integration-migration-design.md)）**:
+>
+> 1. **API 実装確定 = `idm-api` v1**（単一 OpenAPI × 2 デプロイ、U10 D-U10-08）。**本文の JWT `apps` / `roles` 例は D-U4-06 / U10 で上書き** — エンタイトルメントは JWT に載せず **API 照会**で解決。
+> 2. **§H 段階的構築パス（ロードマップ）は U10 D-U10-08 で一部前倒し**：**MFA リセット・`/org/idps`（IdP 接続管理）を Phase 1 に含む**（[U4 §4.3.3](../basic-design/04-auth-ux-design.md) の要求が根拠。旧 Phase 2 / Phase 4 配置を上書き）。
+> 3. **§G 配置 URL は `/idm/v1` に正規化**（旧 `api.basis.example.com/admin/*` 表記を読み替え）。
 
 ---
 

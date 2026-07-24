@@ -1,7 +1,7 @@
 # ADR-055: HRD 実装方式選定（Custom Authenticator SPI / SPA 主導 kc_idp_hint / URL + Edge）
 
 - **ステータス**: **Phase 1 採用確定 = 方式 A 改訂版**（**ハイフン区切り識別子 `<tenant>-<userid>` + 薄い Custom Authenticator SPI + Keycloak Organizations 内部データ、外部 DB なし**）（2026-06-25 SPI 方針確定 / 2026-06-29 識別子形式 + Keycloak 内データ確定）/ Phase 2 候補：方式 C 併用
-- **日付**: 2026-06-25 作成、2026-06-25 SPI 方式確定、**2026-06-29 識別子設計 × HRD 実装方式 3-way 比較完了、薄い SPI + Organizations 内データ確定**
+- **日付**: 2026-06-25 作成、2026-06-25 SPI 方式確定、**2026-06-29 識別子設計 × HRD 実装方式 3-way 比較完了、薄い SPI + Organizations 内データ確定**、**2026-07-23 格上げ（基本設計 Wave 1: HRD SPI = 1000+ IdP 性能成立の必須条件 + U2 §2.3.3 確定値反映）**、**2026-07-24 更新（CI/CD ツールチェーン確定 = GitHub Actions + OIDC / OpenShift GitOps / ECR — [U9 D-U9-12](../basic-design/09-operations-observability-design.md) + §A.7 の stale な EKS Fargate 前提文を ROSA HCP + RHBK Operator（ADR-056 逆転）へ差替）**
 - **関連**:
   - [ADR-056 ROSA 採用判断](056-rosa-adoption-decision.md)（**実行基盤次第で CI/CD ツールチェーン変化、§A.6 / §A.7 で併記**）
   - [ADR-020 HRD ヒントキー戦略 + フェデ/ローカル混在 Identifier-First](020-hrd-hint-keys-mixed-login.md)（**戦略レイヤ、本 ADR の上位**）
@@ -75,6 +75,15 @@
 - **Phase 2 候補（フォールバック）**: 方式 C（URL + Edge）併用
   - 大口顧客（規制業種 / カスタムブランディング要望）のみ顧客別 URL 提供
 - **Phase 2 拡張候補**: 方式 A SPI 内に regex / IP ベース / 時刻ベース ルーティング追加（顧客要件発生時）
+
+### 2026-07-23 格上げ（基本設計 Wave 1）: HRD SPI = 1000+ IdP 性能成立の必須条件
+
+> **2026-07-23 格上げ**: HRD SPI（IdP 一覧非表示）は UX 選好ではなく **1000+ IdP の性能成立の必須条件**（keycloak#45293 未解決のため。[research](../basic-design/research/keycloak-1000idp-scalability-research.md)、ADR-017 Consequences と整合）。
+>
+> **U2 §2.3.3 確定値**（[02-keycloak-logical-design.md](../basic-design/02-keycloak-logical-design.md)）:
+> - 識別子 D 案 + メールドメイン A 案のハイブリッド
+> - `hrd_mode` は Organization attribute で保持
+> - 解決結果が複数 IdP の場合は先頭 1 件自動選択ではなく **attempted() 降格 → Organization セレクターに委譲**
 
 ### 識別子設計 × HRD 実装方式 3-way 比較（2026-06-29 追加、Phase 1 採用判断の根拠）
 
@@ -288,6 +297,10 @@ kc.sh start
 
 ### A.6 実装基盤別の CI/CD 差分（2026-06-25 追加、ROSA 採用判断連動）
 
+> **2026-07-23 確定**: [ADR-056](056-rosa-adoption-decision.md) の Decision 逆転により実行基盤 = **ROSA HCP** で確定（暫定前提 P-01）。下表は **ROSA HCP 列を正**とし、EKS 列は不採用となった代替（参考）として残す。デプロイは **RHBK Operator（OperatorHub、追加サブスク不要）** 経由の `Keycloak` CR。**残 TBD**: RHBK 26.4 × upstream 26.x の Custom SPI 互換確認（本 §A.7 の年 1-2 回追従前提の実証、[research](../basic-design/research/rosa-hcp-adoption-research.md) 残 TBD ③）。
+>
+> **2026-07-24 確定**: 本基盤の CI/CD は **GitHub Actions + OIDC / OpenShift GitOps / ECR**（[U9 D-U9-12](../basic-design/09-operations-observability-design.md)。[ADR-046](046-supply-chain-security.md) SLSA 資産・ECR クロスリージョン DR・zero-egress ミラーとの整合が根拠）。下表・下図の **Tekton / Quay 列は不採用の代替**として保持。
+
 実行基盤（EKS / ROSA Classic / ROSA HCP）次第で Custom SPI の CI/CD ツールチェーンが変化。**Java + Maven + Custom Container Image + Registry + Deploy の基本フローは共通**だが、ツール選定が異なる。
 
 | 観点 | **EKS Fargate（現状想定）** | **ROSA Classic** | **ROSA HCP** |
@@ -374,7 +387,7 @@ sequenceDiagram
 
 → **HCP は OpenShift Control Plane アップグレードを Red Hat に委譲できるため、Keycloak/SPI の動作確認に集中可能**。Classic では Control Plane も顧客側でアップグレードする必要があり、運用負荷が高い。
 
-→ **本基盤 Phase 1 では EKS Fargate + Upstream OSS Keycloak 想定**（ADR-056 で確定）、**ROSA + RHBK は FIPS / HIPAA / 10M MAU / Red Hat 統合サブスクの条件付きで再評価**。実行基盤が変わると CI/CD ツールチェーン（GitHub Actions → Tekton）と バージョン追従頻度（年 4-6 → 年 1-2）が変化することに注意。
+→ **本基盤 Phase 1 = ROSA HCP + RHBK Operator**（[ADR-056](056-rosa-adoption-decision.md) 2026-07-23 逆転、P-01。2026-07-24 差替: 旧「EKS Fargate + Upstream OSS Keycloak 想定」は stale）。バージョン追従頻度は RHBK の**年 1-2 回**が正。CI/CD ツールチェーンは **GitHub Actions + OIDC / OpenShift GitOps / ECR**（U9 D-U9-12、§A.6 の 2026-07-24 確定注記参照）。
 
 ### A.8 マッピング格納場所の選択肢比較（2026-06-29 追加、採用検討の経緯）
 

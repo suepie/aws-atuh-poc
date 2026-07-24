@@ -1,7 +1,7 @@
 # ADR-023: ServiceNow SP 連携設計（SSO + プロビジョニング方向の選択）
 
 - **ステータス**: Proposed（要件定義フェーズで Accepted に昇格予定）
-- **日付**: 2026-06-15
+- **日付**: 2026-06-15 作成、**2026-07-24 更新（基本設計 Wave 3 [U10 §10.1](../basic-design/10-integration-migration-design.md) 是正: 第 1 Matching 属性 = `employee_number` / roles Phase 1 非送出 / SP-initiated のみ / Case 1-6 — §F・§L.8 注記参照）**
 - **関連**:
   - [§FR-2.4 外部 SP（SaaS）連携 — ServiceNow ケース](../requirements/proposal/fr/02-federation.md#fr-24-外部-spsaas連携--servicenow-ケース)
   - [§FR-7.4.10 発信プロビジョニング（基盤 → ServiceNow 等）](../requirements/proposal/fr/07-user.md#fr-7410-発信プロビジョニング基盤--servicenow-等)
@@ -241,6 +241,11 @@ sequenceDiagram
 ---
 
 ## F. Keycloak での実装パス
+
+> **⚠ 2026-07-24 是正（[U10 §10.1](../basic-design/10-integration-migration-design.md)）**:
+>
+> 1. **属性リスト是正** — **第 1 Matching 属性は `employee_number`（external_id 生値）**、**roles は Phase 1 非送出**（本節・§L の旧 user_name / email / roles 送出例を上書き）。
+> 2. 本節の **「SP-initiated / IdP-initiated 両方検証」「IdP-initiated SSO テスト」は SP-initiated のみ**へ是正（IdP-initiated は拒否方針 — [ADR-057 §E.2](057-csrf-protection-responsibility-boundary.md) 整合）。
 
 ### SSO 部分
 
@@ -1095,6 +1100,12 @@ flowchart LR
 
 ### L.8 パターン ② の Phase 1 実装スコープ
 
+> **⚠ 2026-07-24 是正（[U10 §10.1](../basic-design/10-integration-migration-design.md)）**:
+>
+> 1. **属性リスト是正** — 第 1 Matching 属性は **`employee_number`（external_id 生値）**、**roles は Phase 1 非送出**（本節および §L.7 の SAML Response 例「user_name, email, roles」を上書き）。
+> 2. **IdP-initiated は検証対象外**（SP-initiated のみ — [ADR-057 §E.2](057-csrf-protection-responsibility-boundary.md) 整合、§F 注記参照）。
+> 3. **Case 1-5 → Case 1-6**（U3 D3-04 の 6 値体系。§L.7 の jit-scim §10.4.I.6 参照も 6 値体系で読み替え）。
+
 **本基盤側**（Phase 1 実装確定事項）:
 - L1 SCIM 受信 Endpoint（Admin API 経由 + Custom Authenticator SPI、[§10.4.E 代替 A](../common/jit-scim-coexistence-keycloak.md)）
 - SAML Client（L2 用、SN 向け）
@@ -1108,6 +1119,82 @@ flowchart LR
 - Attribute Mapping（SAML Attribute → sys_user フィールド）
 
 **L2 SCIM Push は Phase 1 スコープ外**（パターン ④ 該当顧客のみ Phase 2 で検討）。
+
+### L.9 【2026-07-23 追加】SN で SAML を選択する理由の再確認（アプリ標準 OIDC との使い分け）
+
+> **背景**：アプリ側は OIDC 標準（[saml-vs-oidc-comparison.md §16](../common/saml-vs-oidc-comparison.md)）で進めるが、SN L2 は SAML を維持する。**"SP は SAML、アプリは OIDC" の使い分けポリシー** の根拠を明示。
+
+**SN L2 で SAML 継続する理由**：
+
+| 理由 | 詳細 |
+|---|---|
+| **SN 側 SAML JIT の圧倒的成熟度** | 10 年以上の成熟実装、`User Provisioning Enabled=Yes` の 1 項目設定で自動作成 |
+| **業界標準**（92%）| Gartner 調査、Okta / Entra / Ping の SN 統合テンプレート全て SAML |
+| **SN 管理者スキル** | 顧客側 SN 管理者の 90% が SAML SSO 経験あり、OIDC は 5% 以下 |
+| **SN OIDC は事例極少** | Tokyo (2022) 以降サポートだが実装例限定的、トラブル時切り分け困難 |
+
+**アプリ側 OIDC 標準の理由**：
+
+| 理由 | 詳細 | 参照 |
+|---|---|---|
+| **Public Client 対応** | SPA / モバイル / API 認可、SAML は構造的不可 | [§16.1](../common/saml-vs-oidc-comparison.md) |
+| **API 認可の Bearer Token 標準** | マイクロサービス / API Gateway 必須要件 | [§13](../common/saml-vs-oidc-comparison.md) |
+| **エコシステム / DX** | 全 API Gateway / マイクロサービス基盤が JWT 前提 | [§16.2](../common/saml-vs-oidc-comparison.md) |
+
+**使い分けポリシー明示**：
+
+| カテゴリ | プロトコル | 理由 |
+|---|:---:|---|
+| **本基盤 → 業務 SP（SN / Salesforce / Workday 等）L2** | **SAML デフォルト** | SP 側成熟度 + 業界標準 |
+| **本基盤 → 新規開発アプリ** | **OIDC 標準** | Public Client + API 認可 + エコシステム |
+| **顧客 IdP → 本基盤 L1** | SAML or OIDC 両対応 | 顧客 IdP 次第 |
+
+**含意**：**「本基盤は全アプリを OIDC 化すべき」ではない**。SN 側のような **既存エンタープライズ SP は SAML を維持**、**新規アプリのみ OIDC 標準** の "使い分け" が業界標準。
+
+### L.10 【2026-07-23 追加】L2 = SAML でも API 認可は OIDC で貫通させる設計
+
+**核心**：SN は SAML で認証するが、**本基盤 → 業務アプリ → API の連鎖では OIDC / JWT を使う**。両者は共存可能。
+
+```mermaid
+flowchart LR
+    subgraph L3 [Layer 3: 顧客 IdP]
+        IdP[Entra ID / Okta<br/>SAML or OIDC]
+    end
+    subgraph L2 [Layer 2: 本基盤 Keycloak]
+        Broker[中間ブローカー]
+    end
+    subgraph L1a [Layer 1a: 既存 SP = SAML]
+        SN[ServiceNow]
+        SF[Salesforce]
+    end
+    subgraph L1b [Layer 1b: 新規アプリ = OIDC]
+        SPA[SPA]
+        Mobile[モバイル]
+        API[Backend API]
+        Micro[マイクロサービス]
+    end
+
+    IdP -->|SAML or OIDC| Broker
+    Broker -->|SAML Response| SN
+    Broker -->|SAML Response| SF
+    Broker -->|OIDC ID Token +<br/>Access Token| SPA
+    Broker -->|OIDC ID Token +<br/>Access Token| Mobile
+    SPA -->|Bearer JWT| API
+    Mobile -->|Bearer JWT| API
+    API -->|Bearer JWT<br/>pass-through| Micro
+
+    classDef broker fill:#e3f2fd,stroke:#248
+    classDef legacy fill:#fff8dc,stroke:#a80
+    classDef modern fill:#e6ffe6,stroke:#4a4
+    class Broker broker
+    class L1a legacy
+    class L1b modern
+```
+
+**含意**：
+- **既存 SP（SN 等）**：SAML で完結、API 認可は SP 内部で独自実装（SN 内部の話）
+- **新規アプリ**：OIDC で認証 + Bearer JWT で API 貫通
+- **本基盤は両プロトコル対応** = Keycloak の標準機能でカバー
 
 ---
 

@@ -1,12 +1,19 @@
 # ADR-035: Identity Threat Detection and Response (ITDR) 設計
 
 - **ステータス**: Proposed（要件定義フェーズで Accepted に昇格予定）
-- **日付**: 2026-06-18
+- **日付**: 2026-06-18 作成、**2026-07-23 更新（基本設計 U7 実装確定を反映 — 下記注記参照）**
 - **関連**:
   - [§NFR-4 セキュリティ](../requirements/nfr/04-security.md)
   - [ADR-034 Adaptive Authentication](034-adaptive-authentication.md)（連動）
   - [common/scim-operations.md §5](../common/scim-operations.md)（SCIM 非対応 IdP 顧客への ITDR 投資パターン B）
   - **[ADR-060 認証プロトコル攻撃経路 残 TBD 対応 §C](060-auth-protocol-attack-path-residual-tbd.md)** — Golden SAML/JWT 検知パイプライン（Event Listener SPI → EventBridge → Risk Engine）拡張要件（2026-07-08 追記）
+
+> **2026-07-23 基本設計 U7 実装確定（[07-security-compliance-design.md](../basic-design/07-security-compliance-design.md) D-U7-04〜06）**:
+> - **Phase 1 検知範囲** = Compromised Credentials（HIBP k-Anonymity・fail-open）+ Brute Force（+ Spraying 横断）。
+> - **Phase 1a = 検知通知のみ → FP < 5% で 1b の L2/L3 自動化**。
+> - Risk Engine / DynamoDB は **Broker Acct 一元集約**、IdP-KC からは EventBridge PutEvents（クロスアカウント第 6 経路、[U6 D-U6-02](../basic-design/06-infra-network-design.md)）。
+> - L4 手順は [U5 §5.4.3](../basic-design/05-token-session-authz-design.md) と接続・手動承認。
+> - DR フェイルオーバー / Game Day ウィンドウ中は G-2/G-3 を通知のみへ自動降格 + Brute Force 感度引上げ（U7 §7.2.3）。
 
 ---
 

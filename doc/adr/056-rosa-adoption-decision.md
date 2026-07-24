@@ -1,7 +1,7 @@
 # ADR-056: ROSA (Red Hat OpenShift Service on AWS) 採用判断
 
-- **ステータス**: Proposed（要件定義フェーズでヒアリング結果を踏まえ Accepted / Rejected に確定予定）
-- **日付**: 2026-06-25
+- **ステータス**: **Accepted（条件付き）** — 2026-07-23 改訂。ユーザー方針指示（暫定前提 P-01、変更可能性あり）により **ROSA HCP + RHBK Operator 採用**へ Decision を逆転。下記「採用条件 3 点」充足までは条件付き
+- **日付**: 2026-06-25 作成、**2026-07-23 Decision 逆転改訂（ROSA HCP 採用 / 大阪 TBD 解消 / RHBK サブスク内包判明）**
 - **関連**:
   - **[reference/rosa-detailed-analysis.md](../reference/rosa-detailed-analysis.md)** — **本 ADR の input source（詳細事実集約）**
   - **[ADR-055 HRD 実装方式選定 §A.6 / §A.7](055-hrd-implementation-method-selection.md)**（2026-06-25 追加） — **Custom Authenticator SPI の CI/CD・バージョン追従が ROSA Classic / HCP / EKS 採用次第で変化**（EKS = GitHub Actions + ECR + Helm + 年 4-6 回追従 / ROSA = Tekton + Quay.io + rhbk-operator + 年 1-2 回追従）。本 ADR で実行基盤が確定したら ADR-055 §A.6 / §A.7 の該当パターンを採用
@@ -60,7 +60,31 @@ ROSA の概要・アーキテクチャ・価格・SLA・本基盤での移行考
 
 ## Decision
 
-### 採用方針（Proposed）
+### 採用方針（2026-07-23 改訂版）: ROSA HCP + RHBK Operator を採用
+
+2026-07-23 のユーザー方針指示（実行基盤 = ROSA 想定、暫定前提 P-01・変更可能性あり）と同日の一次資料調査（**[basic-design/research/rosa-hcp-adoption-research.md](../basic-design/research/rosa-hcp-adoption-research.md)**）に基づき、Decision を逆転する:
+
+| 項目 | 決定 | 根拠（2026-07-23 調査） |
+|---|---|---|
+| **形態** | **ROSA HCP**（Classic は対象外） | Red Hat が Classic の新規クラスタ作成に期限を公式化（[lifecycle update](https://access.redhat.com/articles/7087075)）。HCP: SLA 99.95%、Red Hat SRE 運用、STS 必須 |
+| **リージョン** | **東京 + 大阪の ROSA HCP 対称構成** | ap-northeast-3 は HCP/Classic とも対応済み（[AWS 公式表](https://docs.aws.amazon.com/general/latest/gr/rosa.html) 2026-07-23 確認）。**旧版の「大阪対応要確認」TBD は解消** |
+| **Keycloak** | **RHBK Operator（OperatorHub）** | **RHBK エンタイトルメントは ROSA に内包され追加サブスク不要**（[KB 7044244](https://access.redhat.com/articles/7044244)）。ROSA + Upstream KC は費用を払いつつコミュニティサポートの非合理構成 |
+| **クラスタトポロジ** | **別アカウント 2 クラスタ（Broker Acct / IdP-KC Acct、ROSA HCP × 2）** | 2026-07-23 ユーザー凍結（[ADR-033](033-keycloak-2tier-broker-idp-architecture.md) P-17 注記）。増分 +約 $500/月 + DR 側は許容し権限分界・障害隔離を優先 |
+| **サポート責任分界** | ROSA インフラ = Red Hat SRE / RHBK 運用 = 弊社（Red Hat サポート付き）/ **Custom SPI = 弊社責任** | [KB 7033107](https://access.redhat.com/articles/7033107)（RHBK は ROSA 両方式でサポート対象、Aurora PostgreSQL 15-17 は multi-site HA サポート DB） |
+| **DB/キャッシュ** | Aurora PostgreSQL（顧客 VPC 内、SG 直接続）+ jdbc-ping | KC 26.1 で jdbc-ping デフォルト化。keycloak-benchmark 公式が「ROSA クロスサイト + Aurora」を手順化（ADR-051 と整合） |
+
+**採用条件（Accepted 完全昇格の前提、未充足の間は条件付き）**:
+1. PCI DSS / APPI 追加要件（下記「採用時のコンプライアンス追加要件」: etcd 非流入設計 + ガードレール L1-L5 + Red Hat AOC/DPA）の整備計画承認
+2. 3 年契約見積の取得（worker ROSA fee 55% 引はコンソール未対応、AWS パートナーチーム経由）
+3. Stage A Terraform 書き換え（6-8 週間）の工数承認
+
+**残 TBD**: ① 大阪側インスタンス在庫・vCPU クォータ実確認 ② HCP cluster fee（$182.5/月/クラスタ）の契約割引有無 ③ RHBK 26.4 × upstream 26.x の Custom SPI 互換実証（[ADR-055 §A.6/A.7](055-hrd-implementation-method-selection.md)） ④ multi-cluster v2（外部 Infinispan 不要）の RHBK サポート版数確認
+
+**波及改訂**: ADR-041（EKS Pod Identity → ROSA pod identity webhook + IRSA 方式）/ ADR-055 §A.6-A.7（ROSA パターン確定）/ ADR-051（大阪成立）/ rosa-detailed-analysis.md（TCO の RHBK サブスク行・PrivateLink 記述の訂正）
+
+---
+
+### 旧 Decision（2026-06-25〜2026-07-23、履歴として保存）
 
 **本基盤の現状要件では ROSA 採用の必然性が薄く、Default は採用しない**。
 
@@ -291,7 +315,7 @@ ROSA HCP モデル特有のコンプライアンス影響を整理:
 - ROSA HCP は **2024 年 GA**、Red Hat 公式が新規推奨
 - 月額目安 (3y RI、Keycloak HA 想定): **約 $590-690/月**
 - 現 PoC ECS Fargate ($190/月) の **3-4 倍コスト**
-- ap-northeast-1 (東京) 対応済、ap-northeast-3 (大阪) は要確認
+- ap-northeast-1 (東京) 対応済、ap-northeast-3 (大阪) は要確認（2026-07-23 解消済み — Decision 参照。本行は履歴）
 - SLA 99.95%（Red Hat SRE 運用）
 - RHBK は ROSA で第一級サポート対象 ([KB 7033107](https://access.redhat.com/articles/7033107))
 - 移行工数 **6-8 週間**（Stage A Terraform 全面書き換え必要）

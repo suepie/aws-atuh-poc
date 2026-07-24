@@ -178,6 +178,8 @@ distributions.
 
 ### 4.5 ECS / ECS Fargate のサポート可否（**確定不可領域**）
 
+> **2026-07-23 追記**: 実行基盤が **ROSA HCP に転換**（[ADR-056 改訂](../adr/056-rosa-adoption-decision.md)）したため本節の ECS サポート可否論点は実質クローズ。あわせて **RHBK エンタイトルメントは ROSA に内包（追加サブスク不要）**と確定 — [KB 7044244](https://access.redhat.com/articles/7044244): RHBK は Runtimes / Application Foundations / **OCP サブスク**に含まれ、ROSA/ARO/OSD ユーザーにも有効。RHBK は ROSA 上で「customer installed software」（Red Hat サポート、運用は顧客）。[KB 7033107](https://access.redhat.com/articles/7033107) で ROSA Classic/HCP 両方式がサポート対象、Aurora PostgreSQL 15-17 が multi-site HA サポート DB（詳細: [basic-design/research/rosa-hcp-adoption-research.md](../basic-design/research/rosa-hcp-adoption-research.md)）。
+
 | 観点 | 状況 |
 |---|---|
 | KB 7033107（Supported Configurations） | OpenShift / RHEL / 3rd-party K8s（KB 別記）のみ列挙。**ECS の記述なし** |

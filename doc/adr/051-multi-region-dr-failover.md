@@ -1,11 +1,19 @@
-# ADR-051: Multi-Region DR / Failover 詳細設計（Aurora Global + KMS MRK + Keycloak Realm Replication）
+# ADR-051: Multi-Region DR / Failover 詳細設計（Aurora Global + KMS MRK + IaC 再適用（Git SSOT））
 
 - **ステータス**: Proposed（要件定義フェーズで Accepted に昇格予定）
-- **日付**: 2026-06-23
+- **日付**: 2026-06-23 作成、**2026-07-23 更新（ROSA HCP 転換: 大阪対称構成の成立確認 + multi-cluster v2 追記 + 基本設計 [U8](../basic-design/08-availability-dr-design.md) §8.8 に基づく正式改訂: Realm Export 全廃 → 復元 2 経路（IaC 再適用 + Aurora Global DB）/ パイロットライト（KC Scale 0）/ Tier 1 Phase 2 化 / コスト ROSA 実額化）**、**2026-07-24 更新（基本設計 Wave 3 [U9](../basic-design/09-operations-observability-design.md) 確定: テナント層 IaC 再生手段を「keycloak-config-cli / オンボーディング API」併記から自作オンボーディング API による Admin API 差分適用に一本化 — U9 D-U9-10）**
+
+> **2026-07-23 実行基盤転換に伴う追記（[ADR-056](056-rosa-adoption-decision.md) 逆転）**:
+> - **大阪（ap-northeast-3）は ROSA HCP 対応済み**（AWS 公式リージョン表 2026-07-23 確認）→ **東京 + 大阪の ROSA HCP 対称 DR 構成が成立**。本文の実行基盤記述（EKS/ECS 前提箇所）は ROSA HCP に読み替え。残 TBD: 大阪側インスタンス在庫・vCPU クォータの実確認
+> - **Keycloak 26.1 以降 `jdbc-ping` がデフォルト**（multicast 不要、ノードディスカバリは KC DB 経由）。**multi-cluster v2 で外部 Infinispan 要件が撤廃**され、同期レプリケーション DB を single source of truth とする構成に簡素化。**RHBK 26.4 HA Guide は Aurora PostgreSQL 15/16/17 を multi-site HA サポート DB に明記**し、keycloak-benchmark 公式が「ROSA クロスサイト + Aurora」を手順化 — 本 ADR の Aurora Global DB 方針と方向一致（RHBK での multi-cluster v2 サポート版数確認は残 TBD）
+> - 詳細: [basic-design/research/rosa-hcp-adoption-research.md](../basic-design/research/rosa-hcp-adoption-research.md)
+> - ✅ **基本設計 [U8](../basic-design/08-availability-dr-design.md) で正式改訂済み（2026-07-23）**：「Realm Export 日次自動 → S3 → DR Import」戦略は 1000+ IdP 環境で不成立（[U2 §2.7.4](../basic-design/02-keycloak-logical-design.md) で realm 全体 export/import を全面禁止 — keycloak#14851 / 30MB representation 前例）のため**全廃**し、復元 2 経路 = **構成 = IaC 再適用（Git SSOT: Terraform 基盤層 + テナント層再生。テナント層は 2026-07-24 に自作オンボーディング API による Admin API 差分適用に一本化〔keycloak-config-cli は K-1〔realm representation 禁止〕と原理衝突のため不採用 — [U9 D-U9-10](../basic-design/09-operations-observability-design.md)〕）+ データ = Aurora Global DB** へ差し替えた（本文 Decision / §A.2 / §C / §E / §G / §H 反映済み。設計根拠は U8 D-U8-05〜13）
 - **関連**:
+  - **[basic-design/08 可用性・DR 設計（U8）](../basic-design/08-availability-dr-design.md)** — 本 ADR 正式改訂（2026-07-23）の設計根拠（D-U8-05〜13。手順・数値・成立性検証の SSOT）
+  - [basic-design/06 インフラ・ネットワーク設計（U6）§6.8.2](../basic-design/06-infra-network-design.md) — 物理配置の前提（大阪側 PrivateLink 複製等）
   - [ADR-033 Keycloak 2-tier アーキテクチャ](033-keycloak-2tier-broker-idp-architecture.md)
   - [ADR-039 中央集約 Network 専用アカウント](039-centralized-network-account-edge-layer.md)
-  - [ADR-040 PAM / JIT 管理者権限管理](040-pam-jit-admin-privilege-management.md)
+  - [ADR-040 PAM / JIT 管理者権限管理](040-pam-jit-admin-privilege-management.md) — **2026-07-23 Accepted 復帰（Phase 1 α/β）。DR 発動承認・Break-Glass は ADR-040 §C/§H + [U7 §7.6](../basic-design/07-security-compliance-design.md) 参照**
   - [ADR-044 Tabletop Exercise（Game Day 連動）](044-tabletop-exercise-incident-drill.md)
   - [ADR-045 鍵管理戦略集約（Multi-Region Key）](045-cryptographic-key-management-strategy.md)
   - [ADR-049 Vendor Risk Management（DORA 連動）](049-vendor-risk-management-tprm.md)
@@ -68,25 +76,25 @@
 
 ### 採用方針
 
-**「Active-Passive Warm Standby + Region 単位 Failover + 自動化 80% + 手動承認 20%」**を採用。RTO 1 時間 / RPO 1 分を標準目標、規制業種顧客向けには Tier 1（RTO 30 分 / RPO 1 分）オプション提供。
+**「Active-Passive パイロットライト（インフラ Warm + KC Scale 0）+ Region 単位 Failover + 自動化 80% + 手動承認 20%」**を採用。RTO 1 時間 / RPO 1 分を標準目標。**Tier 1（RTO 30 分）は Phase 2 検討（Phase 1 は提供しない、[U8 §8.4.4](../basic-design/08-availability-dr-design.md) — パイロットライトでは不成立）**。（2026-07-23 改訂: 旧「Warm Standby（KC Scale 1）」は Aurora Global Secondary が read-only で Keycloak が起動できないため不成立 — U8 D-U8-07）
 
 | 項目 | 採用方針 |
 |---|---|
 | **プライマリ Region** | **ap-northeast-1（東京）** |
 | **DR Region** | **ap-northeast-3（大阪）** |
-| **Failover モデル** | **Active-Passive Warm Standby**（Active-Active は Split-Brain リスク、運用負荷大）|
-| **RTO 標準** | **1 時間**（一般顧客）/ **30 分**（規制業種、Tier 1 オプション）|
+| **Failover モデル** | **Active-Passive パイロットライト（インフラ Warm + KC Scale 0）**（Active-Active は Split-Brain リスク、運用負荷大。旧 Warm Standby（KC Scale 1）は Aurora Secondary read-only 制約で不成立 — U8 D-U8-07）|
+| **RTO 標準** | **1 時間**（一般顧客）/ Tier 1（30 分）は **Phase 2 検討**（Phase 1 は提供しない、U8 §8.4.4）|
 | **RPO 標準** | **1 分**（Aurora Global Database / DynamoDB Global Tables 採用）|
 | **MTPD** | 4 時間（業界標準）|
 | **Aurora** | **Aurora Global Database 必須**（Broker DB / IdP-KC DB 両方）|
 | **DynamoDB** | **Global Tables**（ITDR / Adaptive Auth / Tenant Admin Audit / DSAR Requests）|
-| **S3** | **Cross-Region Replication**（監査ログ / SPA bundle / エラー / 案内画面 SPA / Export 一時保管）|
+| **S3** | **Cross-Region Replication**（監査ログ / SPA bundle / エラー / 案内画面 SPA / DSAR Export 一時保管。**Realm Export 一時保管は廃止** — U8 D-U8-06）|
 | **KMS** | **Multi-Region Keys (MRK)**（[ADR-045](045-cryptographic-key-management-strategy.md)）|
-| **Keycloak** | **EKS 両 Region 配置、DR Region は Warm Standby（Scale 1 → Failover 時 Scale Up）** |
-| **Realm 設定** | **GitOps + Realm Export 日次自動 → S3 → DR Region Import**（変更頻度低、十分）|
+| **Keycloak** | **ROSA HCP 東西対称配置、DR はパイロットライト（インフラ Warm + KC CR replicas=0 — Aurora Secondary read-only のため KC は起動不能）**（U8 D-U8-07 / D-U8-11）|
+| **Realm 設定** | **Aurora Global DB（realm 構成は DB に一体複製、リージョン障害時は Promote のみで復元完了）+ IaC 再適用（論理破壊時: PITR 主 + 差分再生。基盤層 Terraform + テナント層は自作オンボーディング API による Admin API 差分適用に一本化〔keycloak-config-cli は K-1〔realm representation 禁止〕と原理衝突のため不採用 — U9 D-U9-10、2026-07-24 確定〕）。Realm Export は全用途で禁止**（U2 §2.7.4 / U8 D-U8-06）|
 | **CloudFront** | **Multi-Origin Failover**（自動）+ 全 Acct 共通 |
 | **Route 53** | **Health Check + Failover Routing**（DNS TTL 30 秒）|
-| **EKS / Lambda / Step Functions** | **両 Region に IaC で配置**、DR Region は Replica 設定 |
+| **ROSA HCP / Lambda / Step Functions** | **両 Region に IaC で配置**、DR Region は最小構成（U8 §8.6.1）|
 | **Failover 自動化** | **Tier 0/1 障害は自動**（CloudFront Origin Failover / Route 53）/ **データ層は手動承認**（Split-Brain 防止）|
 | **Failback** | **手動承認必須**、データ整合性確認後 |
 | **DR 訓練** | **半期 Game Day**（[ADR-044](044-tabletop-exercise-incident-drill.md) S-07 シナリオ）|
@@ -99,7 +107,7 @@
 
 | 顧客 Tier | RTO | RPO | 適用条件 |
 |---|---|---|---|
-| **Tier 1 Premium**（規制業種）| **30 分** | **1 分** | 金融 / 医療 / 公的機関 / DORA 適用顧客 |
+| **Tier 1 Premium**（規制業種）| **30 分** | **1 分** | 金融 / 医療 / 公的機関 / DORA 適用顧客。**Phase 1 は提供しない（パイロットライトでは不成立、Hot Standby 別方式検討要 — Phase 2、U8 §8.4.4）** |
 | **Tier 2 Standard**（一般 B2B）| **1 時間** | **1 分** | デフォルト |
 | **Tier 3 Best Effort**（小規模）| **4 時間** | **15 分** | 試験運用 / PoC 顧客 |
 
@@ -108,9 +116,9 @@
 | 障害種別 | 影響範囲 | Failover 手段 | RTO | RPO |
 |---|---|---|---|---|
 | **単一 AZ 障害** | 1 AZ | Multi-AZ 自動 | < 1 分 | 0 |
-| **EKS Cluster 障害** | Pod 全停止 | Auto-scaling 復旧 | 5-15 分 | 0 |
+| **ROSA HCP クラスタ障害** | Pod 全停止 | Machine Pool 自動置換 + jdbc-ping 再編 | 5-15 分 | 0 |
 | **Aurora Primary 障害** | DB 書込不可 | Aurora Multi-AZ Failover | < 1 分 | 0 |
-| **Keycloak Realm 破損** | 認証不可 | Realm Export Restore + 手動 | 30 分 - 2 時間 | 24 時間（日次 Export）|
+| **Keycloak Realm 破損**（論理破壊）| 認証不可 | **Aurora PITR + 差分 IaC 再生**（手動承認、U8 §8.3.1 経路 2）| 1 - 2 時間 | **5 分（PITR 粒度。旧 24 時間から大幅改善**、2026-07-23 改訂）|
 | **Region 完全障害** | 全停止 | DR Region Failover（手動承認）| 30 分 - 1 時間 | < 1 分 |
 | **CloudFront 障害**（[ADR-039](039-centralized-network-account-edge-layer.md)）| 全 Inbound 停止 | Origin Failover / DNS Failover | 5-15 分 | 0 |
 | **KMS Region 障害** | 暗号化操作不可 | MRK Cross-Region | < 1 分 | 0 |
@@ -268,61 +276,48 @@ resource "aws_s3_bucket_replication_configuration" "audit_logs" {
 
 ---
 
-## C. Keycloak Realm Replication
+## C. Keycloak 構成・データの復元戦略（2026-07-23 U8 正式改訂）
 
-### C.1 戦略選定
+> **本節は基本設計 [U8 §8.2.2 / §8.3 / §8.5](../basic-design/08-availability-dr-design.md) で全面改訂された**。旧「GitOps + Realm Export 日次自動 → S3 → DR Import」は 1000+ IdP 環境で不成立（realm representation 30MB 級、keycloak#14851。U2 §2.7.4 で realm 全体 export/import は全用途禁止）のため**全廃**。以下は決定 + 要約であり、手順・数値の詳細は U8 が SSOT。
+
+### C.1 戦略選定（改訂後）
 
 | 案 | 評価 | 採否 |
 |---|---|---|
-| **A. Active-Active**（両 Region で同時 Live、Aurora Global で同期）| データ整合性課題、Split-Brain リスク大 | ❌ |
-| **B. Active-Passive + Aurora Global**（本 ADR）| RTO 30 分 - 1 時間、業界標準 | ✅ 採用 |
-| **C. Keycloak External-Site Replication**（Keycloak ネイティブ Cross-DC）| 設計複雑、運用負荷大、適用例少ない | ❌ |
-| **D. DB 同期のみ、Realm Export なし** | Realm 設定変更追跡困難 | ❌ |
+| **A. Active-Active**（両 Region で同時 Live、Aurora Global で同期）| データ整合性課題、Split-Brain リスク大 + 東阪レイテンシは公式要件（<10ms）上限で保証不能 | ❌ |
+| **B. Active-Passive + Aurora Global + Realm Export 日次**（旧採用案）| Realm Export が 1000+ IdP で不成立（U2 §2.7.4 全面禁止）| ❌ **廃止（2026-07-23）** |
+| **C. Keycloak External-Site Replication**（Keycloak ネイティブ Cross-DC）| 設計複雑、運用負荷大、適用例少ない。multi-cluster v2 の簡素化（外部 Infinispan 撤廃）に逆行 | ❌ |
+| **D. DB 同期のみ、IaC なし** | 論理破壊（Realm 誤削除・不正変更）時の復元経路がない | ❌ |
+| **E. Aurora Global 一体復元 + IaC 再適用（Git SSOT）**（U8）| realm 構成は DB に一体複製 → リージョン障害は Promote のみ。論理破壊は PITR + 差分 IaC 再生 | ✅ **採用（U8 D-U8-06）** |
 
-### C.2 Realm 設定 + データの DR
+### C.2 復元 2 経路（決定要約 — 詳細は [U8 §8.3](../basic-design/08-availability-dr-design.md)）
 
-| 項目 | 同期方式 | 頻度 | RPO |
-|---|---|---|---|
-| **User データ**（IdP-KC ユーザー全件）| **Aurora Global Database** | リアルタイム | < 1 分 |
-| **Realm 設定**（Clients / IdP / Authentication Flow 等）| **GitOps**（Realm Export → S3 → DR Import）+ Terraform で IaC | 日次 / 変更時即時 | 24 時間 |
-| **JWT 署名鍵 / 暗号化鍵** | **KMS MRK**（[ADR-045](045-cryptographic-key-management-strategy.md)）| リアルタイム | 0 |
-| **Session データ**（Infinispan）| **失効許容**（再ログイン要求）| — | — |
+**Keycloak の realm 構成（Clients / IdP / Flow / Org）はすべて DB に格納されるため、Aurora Global DB がユーザデータと構成データを一体で複製する** — この事実が旧 Realm Export 戦略を不要にする中核:
 
-### C.3 Realm 設定の GitOps（IaC）
+| 復元経路 | 対象障害 | 手段 | 構成の SSOT | RPO |
+|---|---|---|---|---|
+| **経路 1: リージョン障害** | 東京全損・Aurora Primary 到達不能 | **Aurora Global DB Promote のみ**（大阪 KC は昇格後の DB を読むだけ、構成再投入は一切不要）| Aurora（= Git と一致していることをドリフト検知で担保、U8 §8.3.2）| < 1 分 |
+| **経路 2: 論理破壊** | Realm 誤削除・構成破損・ランサムウェア・不正変更 | **(a) Aurora PITR**（粒度 5 分 / 保持 35 日）で破壊直前へ巻き戻し + **(b) 差分（破壊時刻以降の正当変更）のみ IaC 再適用で再生** | **Git**（Terraform + テナント宣言ファイル）| **5 分**（旧 24 時間から大幅改善）|
 
-```hcl
-# Terraform + keycloak provider（Phase Two 等）
-resource "keycloak_realm" "customer_acme" {
-  realm                   = "acme"
-  display_name            = "Acme Corporation"
-  login_with_email_allowed = true
-  registration_allowed    = false
-  remember_me             = false
-  # ... 全 Realm 設定を IaC 化
-}
+### C.3 IaC の 2 層構成（旧「keycloak provider で全 Realm IaC 化」は削除）
 
-resource "keycloak_oidc_identity_provider" "acme_entra" {
-  realm             = keycloak_realm.customer_acme.realm
-  alias             = "acme-entra"
-  provider_id       = "oidc"
-  authorization_url = "https://login.microsoftonline.com/tenant-id/oauth2/v2.0/authorize"
-  # ...
-}
-```
+- **基盤層 = Terraform**（Realm 設定 / Flow / SPI 配備 / 共通 Scope、単一 state）
+- **テナント層 = 自作オンボーディング API による Admin API 差分適用に一本化**（テナント単位宣言ファイル。keycloak-config-cli は K-1〔realm representation 禁止〕と原理衝突のため不採用 — [U9 D-U9-10](../basic-design/09-operations-observability-design.md)、2026-07-24 確定）— 該当テナントのみ再生
+- 「全 1000+ IdP を Git から一括再生」は行わない（Admin API 負荷 + 時間の点で非現実的）。**PITR 主・IaC 再生は差分限定**（U8 §8.3.1）
+- 成立条件 = Git ⇔ 稼働 KC のドリフト検知（日次 CI、Break-Glass 直接変更は事後 Git 反映必須 — U8 §8.3.2）
 
-両 Region で同一 Terraform State で適用 → Realm 設定が両 Region 一致。
+### C.4 Session データの DR 戦略（→ [U8 §8.5](../basic-design/08-availability-dr-design.md)）
 
-### C.4 Session データの DR 戦略
-
-Keycloak の Infinispan Session キャッシュは Region 間同期しない。Failover 時:
-- **Access Token / Refresh Token は失効許容**（顧客は再ログイン）
-- **WebAuthn Resident Key は永続**（Aurora 経由で DR Region でも有効）
-- **TOTP Secret は永続**（同上）
-- → 「再ログインのみで業務再開可能」と顧客に説明
+**リージョンフェイルオーバー時、全ユーザーは再認証となることを製品仕様として明文化**（U8 D-U8-10）:
+- **Access Token / Refresh Token / SSO セッションは失効許容**（KC 26 Persistent user sessions による継続は保証しないアップサイド）
+- **WebAuthn Resident Key / TOTP Secret は永続**（Aurora 経由で DR Region でも有効）
+- → 「再ログインのみで業務再開可能」（フェデユーザーは顧客 IdP セッションが生きていればパスワード再入力なし）と顧客に説明
 
 ---
 
 ## D. Network Acct（ADR-039）の Failover
+
+> 2026-07-23: 本節以降の図・表の「EKS Keycloak Replicas 6 / Replicas 1 → 6」表記は **ROSA HCP Machine Pool + KC CR replicas（DR 側は replicas=0 → 3+）** に読み替え確定（U8 §8.4.2 / §8.6。図の描き替えは省略）。
 
 ### D.1 CloudFront Multi-Origin Failover
 
@@ -427,10 +422,10 @@ resource "aws_route53_record" "auth_secondary" {
 | Aurora Primary Failover（同 Region 内）| **自動** | RDS Managed |
 | CloudFront Origin Failover（同 Acct）| **自動** | CloudFront Managed |
 | Route 53 Health Check Failover | **自動** | DNS レベル |
-| Pod / Container 自動復旧 | **自動** | EKS Managed |
+| Pod / Container 自動復旧 | **自動** | ROSA HCP（Machine Pool 自動置換 + jdbc-ping 再編、Red Hat SRE 管理）|
 | **Aurora Global Promote（Cross-Region）** | **手動承認** | Split-Brain 防止 |
 | **DR Region 全体 Failover** | **手動承認** | 影響範囲大 |
-| **Realm 設定 Restore（破損時）** | **手動承認** | 誤動作 Restore 防止 |
+| **経路 2 発動（PITR + 差分 IaC 再生、論理破壊時）** | **手動承認** | 誤動作 Restore 防止（旧「Realm 設定 Restore」を置換 — U8 D-U8-06）|
 | **Failback**（プライマリ復旧後） | **手動承認** | データ整合性確認後 |
 
 ### E.2 手動承認フロー（Aurora Cross-Region Promote 例）
@@ -463,11 +458,12 @@ sequenceDiagram
 
 | Runbook | 内容 |
 |---|---|
-| **RB-DR-01 Aurora Global Promote** | Step by Step + コマンド + ロールバック手順 |
-| **RB-DR-02 Route 53 Manual Failover** | Health Check Override + TTL 短縮 |
-| **RB-DR-03 EKS DR Region Scale Up** | Replica 1 → 6 + 動作確認 |
-| **RB-DR-04 Keycloak Realm Restore** | Latest Export from S3 + Import + 設定検証 |
-| **RB-DR-05 Failback** | DR → Primary 切戻し（データ整合性確認後）|
+| **RB-DR-00 リージョン障害判定チェックリスト**（2026-07-23 新設）| 判定材料 2 系統以上該当で「リージョン障害」宣言 → 承認プロセスへ（承認 SLA 15 分、U8 §8.4.1）|
+| **RB-DR-01 Aurora Global Promote** | Step by Step + コマンド + ロールバック手順（Broker / IdP-KC 2 系統並行実行）|
+| **RB-DR-02 Route 53 / エッジ切替** | Health Check Override + TTL 短縮 + **他組織エッジのオリジン切替連絡手順（REQ-DR-02、U8 §8.4.5）**（2026-07-23 追加）|
+| **RB-DR-03 ROSA HCP DR Region Scale Up** | Machine Pool 2 → 6 ノード + KC CR replicas 0 → 3+ + 動作確認（旧 EKS Replica 1 → 6 を置換）|
+| **RB-DR-04' PITR + 差分 IaC 再生**（旧 RB-DR-04 Keycloak Realm Restore を置換）| Aurora PITR 巻き戻し + 破壊時刻特定（Admin Events + 監査ログ）+ 差分 IaC 再生（U8 §8.3.1 経路 2）|
+| **RB-DR-05 Failback** | DR → Primary 切戻し（計画 Switchover・RPO 0。**禁止 3 操作を冒頭に明記** — U8 §8.7.1）|
 
 各 Runbook は Git 管理 + 演習で動作検証（[ADR-044](044-tabletop-exercise-incident-drill.md) Game Day）。
 
@@ -480,8 +476,8 @@ sequenceDiagram
 | 演習 | 頻度 | 内容 |
 |---|---|---|
 | **S-07 Region 障害**（[ADR-044](044-tabletop-exercise-incident-drill.md)）| 半期 | Tokyo 完全停止想定、Osaka へ Failover、RTO/RPO 計測 |
-| **S-08 Aurora 破壊**（Ransomware 想定）| 年 1 | Backup Restore + 監査 |
-| **RB-DR-01〜05 Runbook 検証** | 半期 | 各 Runbook が動作可能か検証 |
+| **S-08 Aurora 破壊**（Ransomware 想定）| 年 1 | **PITR + 差分 IaC 再生（RB-DR-04'）** + 監査 |
+| **RB-DR-00〜05 Runbook 検証** | 半期 | 各 Runbook が動作可能か検証（RB-DR-04' 含む）|
 | **Failback 訓練** | 半期 | 切戻し手順の検証 |
 
 ### F.2 評価 KPI
@@ -505,52 +501,50 @@ sequenceDiagram
 | Aurora Storage + Cross-Region | $200 | $280 | +$80 |
 | DynamoDB Global Tables（Replica）| $500 | $750 | +$250 |
 | S3 Cross-Region Replication | $30 | $100 | +$70 |
-| EKS（DR Warm Standby、Replica 1 で待機）| $500 | $700 | +$200 |
+| ROSA HCP 4 クラスタ（東京 Broker/IdP-KC 2 + 大阪パイロットライト 2）（2026-07-23 改訂: EKS 行を置換）| ≈ $1,430 | **≈ $2,032** | +$602 |
 | Route 53 Health Check | $0 | $20 | +$20 |
 | Lambda + Step Functions（両 Region 配置）| $300 | $400 | +$100 |
 | KMS MRK | $250 | $400 | +$150 |
 | Network Acct 共通 | $500 | $500 | $0 |
-| **合計** | **〜$3,780/月** | **〜$5,150/月** | **+$1,370/月** |
+| **合計** | **〜$4,710/月** | **〜$6,480/月** | **+$1,770/月** |
 
-→ **DR 追加コスト 約 30% 増**（業界標準範囲）。
+- ROSA HCP 実額は **[U6 §6.2.3 v1.2](../basic-design/06-infra-network-design.md) が SSOT**（4 クラスタ ≈ **$2,032/月**、infra Pool 別建て込み。大阪パイロットライト 2 クラスタ ≈ $602/月 込み）。
+- → **DR 追加コスト 約 +38%**（業界標準範囲。旧 EKS 前提の「約 30% 増」から更新）。
 
 ### G.2 規制業種 Tier 1（RTO 30 分）追加コスト
 
-| 項目 | 追加 |
+> **2026-07-23 改訂**: Tier 1 は **Phase 2 検討**（Phase 1 は提供しない）。Hot Standby は **Aurora Global Secondary read-only 制約により「大阪 KC 常時稼働」がそのままでは成立せず方式再検討要**（U8 §8.4.4）。以下の試算は旧 EKS 前提の参考値であり、Phase 2 検討時に再試算する。
+
+| 項目 | 追加（参考値・要再試算）|
 |---|---|
-| EKS DR Region Hot Standby（Replica 6） | +$2,000/月 |
+| DR Region Hot Standby（方式再検討要 — read-only 制約、Phase 2）| +$2,000/月 |
 | Aurora DR Reader 増（× 2）| +$500/月 |
 | **Tier 1 追加合計** | **+$2,500/月** |
 
 ---
 
-## H. RTO/RPO 達成シミュレーション
+## H. RTO/RPO 達成シミュレーション（2026-07-23 U8 改訂）
 
-### H.1 Tokyo 完全障害シナリオ
+> 詳細タイムラインは **[U8 §8.4.2](../basic-design/08-availability-dr-design.md) が SSOT**。旧 40 分想定に対し、KC 起動遅延（JVM + キャッシュ）と**他組織エッジ調整**を織り込んだ worst-case 積み上げに更新。
 
-| 時刻 | イベント | 累計 RTO |
+### H.1 Tokyo 完全障害シナリオ（worst-case 積み上げ・要約）
+
+| 時刻 | トラック | アクション |
 |---|---|---|
-| T+0 | AWS Tokyo Region 完全停止検知 | 0 分 |
-| T+1 分 | CloudFront Health Check Fail → DR Origin に自動 Failover | 1 分（部分復旧 = SPA / 静的）|
-| T+3 分 | PagerDuty Alert → SRE Lead Page | — |
-| T+10 分 | War Room 招集 + CTO 承認取得 | — |
-| T+15 分 | Runbook RB-DR-01 起動：Aurora Global Promote | — |
-| T+16 分 | Aurora Secondary → Primary 昇格完了（< 1 分）| — |
-| T+20 分 | Runbook RB-DR-03 起動：EKS DR Replica Scale Up 1 → 6 | — |
-| T+30 分 | EKS Scale Up 完了 + 動作確認 | — |
-| T+35 分 | Route 53 Manual Failover Override + TTL 短縮 | — |
-| T+40 分 | DNS 伝播完了（TTL 30 秒）| 40 分（**Tier 2 目標 60 分内達成**）|
+| T+0〜3 | 検知 | 外形監視・R53 Health Check 異常 → 複合アラーム確定 → SRE Lead。静的資産（Sorry/SPA）は CloudFront Origin Failover で先行部分復旧 |
+| T+3〜20 | 判断 | RB-DR-00 判定 + War Room 招集 + CTO 承認（承認 SLA 15 分、worst 20 分）|
+| T+20〜25 | A: DB | RB-DR-01: Aurora Global unplanned Managed Failover × 2 系統（Broker / IdP-KC 並行）|
+| T+20〜35 | B: 基盤（A と並行）| RB-DR-03: 大阪 Machine Pool スケールアップ 2 → 6 ノード（HCP ノード供給 12-15 分）|
+| T+25〜38 | A→B 合流 | KC CR replicas 0 → 3+（昇格済み Writer へ接続、イメージは ECR レプリケーション済み・pre-pull）|
+| T+38〜45 | 検証 | ログイン（フェデ/ローカル）、JWKS 応答・kid 一致、token/refresh、Broker→IdP-KC PrivateLink 疎通、`idmap` 参照 |
+| T+45〜50 | DNS/エッジ | RB-DR-02: Route 53 Failover（TTL 30s）+ **他組織エッジのオリジン切替**（事前設定 Origin Group なら自動 / 手動なら REQ-DR-02 SLA ≤ 10 分）|
+| **T+50** | 完了 | 全面切替宣言・顧客通知。**バッファ 10 分** |
 
-→ Tier 2 RTO 1 時間目標は十分達成可能。
+→ **Tier 2 RTO 1h は「条件付き成立」**（worst 50 分 + バッファ 10 分）。成立条件 5 点: ①承認 T+20 まで完了 ②大阪 EC2 在庫・vCPU クォータ事前確保（G-OSAKA）③ECR 東西レプリケーション + pre-pull ④**他組織エッジ切替が自動 or SLA ≤ 10 分（REQ-DR-01〜03）** ⑤PrivateLink 大阪側事前複製 — いずれか欠落で不成立（U8 §8.4.3 D-U8-09）。
 
-### H.2 Tier 1 Hot Standby なら
+### H.2 Tier 1（RTO 30 分）は Phase 1 では不成立
 
-| 時刻 | イベント | 累計 RTO |
-|---|---|---|
-| T+0 | 障害検知 | 0 |
-| T+10 分 | 承認 + Runbook | — |
-| T+15 分 | Aurora Promote + Route 53 Failover | — |
-| T+25 分 | DNS 伝播完了 | **25 分（Tier 1 目標 30 分内達成）**|
+積み上げ上、T+20 承認 + T+35 ノード供給の時点で 30 分を超過する。Tier 1 は Hot Standby 必須だが Aurora Secondary read-only 制約により別方式検討が必要 → **Phase 2 検討**（規制業種顧客の契約要求発生時、U8 §8.4.4）。旧「Hot Standby なら 25 分達成」試算は削除。
 
 ---
 
@@ -559,10 +553,10 @@ sequenceDiagram
 | 案 | 評価 | 採否 |
 |---|---|---|
 | **A. Multi-AZ のみ、DR なし** | Region 障害で全停止、規制違反 | ❌ |
-| **B. Active-Active Multi-Region** | Split-Brain リスク大、運用負荷大 | ❌ |
-| **C. Active-Passive Warm Standby + Aurora Global**（本 ADR）| 業界標準、RTO/RPO 達成 | ✅ 採用 |
-| **D. Pilot Light（最小 Standby）** | RTO 数時間、Tier 2 目標未達 | ❌ |
-| **E. Hot Standby 常時 6 Replicas** | コスト 2 倍、Tier 1 のみ採用 | △ Tier 1 オプション |
+| **B. Active-Active Multi-Region** | Split-Brain リスク大、運用負荷大、東阪レイテンシ保証不能 | ❌ |
+| **C. Active-Passive パイロットライト（インフラ Warm + KC Scale 0）+ Aurora Global**（本 ADR、2026-07-23 改訂。旧 Warm Standby（KC Scale 1）は read-only 制約で不成立）| RTO 1h 条件付き成立（§H）、業界標準 | ✅ 採用 |
+| **D. Pilot Light（インフラも都度構築する最小 Standby）** | RTO 数時間、Tier 2 目標未達（本 ADR の「パイロットライト」= インフラ Warm + KC Scale 0 とは別物 — U8 D-U8-07）| ❌ |
+| **E. Hot Standby（大阪 KC 常時稼働）** | コスト 2 倍 + Aurora Secondary read-only 制約で方式再検討要 | △ Tier 1 向け Phase 2 検討 |
 | **F. Cross-Cloud DR（AWS + GCP）** | 運用負荷膨大、Lock-in 緩和効果限定 | ❌ |
 | **G. Backup-only Restore** | RPO 数時間、Tier 2 目標未達 | ❌ |
 
@@ -573,19 +567,20 @@ sequenceDiagram
 ### Positive
 
 - **SOC 2 A1.2 / PCI DSS §12.10 / ISO 22301 / DORA を 1 つの設計で同時充足**
-- **Tier 2 RTO 1 時間 / RPO 1 分**（標準）+ **Tier 1 RTO 30 分**（規制業種オプション）
+- **Tier 2 RTO 1 時間（条件付き成立）/ RPO 1 分**（標準。Tier 1 は Phase 2 検討）
 - **Aurora Global Database + DynamoDB Global Tables + S3 CRR + KMS MRK**で完全 Cross-Region
 - **CloudFront Multi-Origin Failover** + **Route 53 Failover** で自動化 80%
-- Realm 設定 GitOps + Realm Export 日次自動で**設定変更も両 Region 同期**
-- DR 訓練（半期 Game Day）で**Runbook 実効性検証**
+- **realm 構成も Aurora Global で RPO < 1 分同期**（Realm Export 廃止で運用負荷減 + Git SSOT ドリフト検知で整合性担保 — 2026-07-23 改訂）
+- **論理破壊時 RPO 5 分**（PITR 粒度。旧 Realm Export 前提の 24 時間から大幅改善）
+- DR 訓練（Game Day 年 2 回）で**Runbook 実効性検証**
 
 ### Negative
 
-- **DR 追加コスト 約 30% 増**（月 +$1,370）
-- Tier 1 Hot Standby は更に +$2,500/月
+- **DR 追加コスト 約 +38% 増**（月 +$1,770、ROSA 実額ベース — 2026-07-23 更新）
+- Tier 1 は Phase 2 検討（Hot Standby 方式再検討 + コスト再試算要）
 - **Active-Active 不採用**で書込競合の不安定さは回避するが、DR 切替に手動承認必要
-- **Failback の運用負荷**（プライマリ復旧後のデータ整合性確認）
-- Keycloak Realm Export RPO 24 時間（設定変更分のみ、ユーザーデータは Aurora で RPO 1 分）
+- **Failback の運用負荷**（プライマリ復旧後のデータ整合性確認 + 禁止 3 操作の統制）
+- **DR 切替最終段（エッジ）が他組織依存**（P-18。REQ-DR-01/02 未合意時は RTO 1h 非保証 → 顧客 SLA 文言修正が必要、U8 O-U8-1 — 2026-07-23 追加）
 
 ### Neutral
 

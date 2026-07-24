@@ -1,23 +1,39 @@
 # ADR-040: PAM / JIT 管理者権限管理（APPI / PCI DSS 準拠）
 
-- **ステータス**: **Out of Scope (Deferred)**（2026-06-24 — 本基盤対象外、弊社運用体制側で別途検討）
-- **日付**: 2026-06-23 作成、2026-06-24 スコープアウト確定
+- **ステータス**: **Accepted**（Phase 1 実装対象、2026-07-23 復活 — 運用要件定義に含めるユーザー要望による）
+- **日付**: 2026-06-23 作成、2026-06-24 スコープアウト、**2026-07-23 スコープ再取込 + Phase 1 α/β 設計確定**
 
 ---
 
-> **⚠ 2026-06-24 スコープ確認結果**
+> **✅ 2026-07-23 スコープ再取込 + Phase 1 α/β 設計確定**
 >
-> 本 ADR は **「弊社運用者の AWS Console / Keycloak ネイティブ Admin Console（`/admin`）へのアクセス管理」** を扱うもので、これは**認証基盤の機能ではなく弊社運用体制側の話**である。ユーザー確認の結果、**本基盤の検討範囲外**として扱う。
+> **経緯**：2026-06-24 に「認証基盤の機能ではなく弊社運用体制側の話」として Out of Scope 判定していたが、**ユーザー要望で運用も要件定義に含めることが確定**（2026-07-23）。**PCI DSS 準拠顧客を Phase 1 β 以降で獲得するために必須の対応**として、Phase 1 実装対象に格上げ。
 >
-> **代わりに本基盤として追加する方針**（[ADR-039](039-centralized-network-account-edge-layer.md) / [ADR-013](013-cloudfront-waf-ip-restriction.md) に追記予定）：
-> - **KC ネイティブ `/admin` パス**は CloudFront + WAF で**外部 IP 全 Deny + Internal（VPN/社内 Network）のみ許可**
-> - 弊社運用者の JIT 昇格 / Session 録画 / Break-Glass 等は**運用体制側で別途検討**（PAM 製品導入の要否含む）
+> **確定した前提条件**（2026-07-23）：
+> - **リリース目標**：約 1 年後（T-12ヶ月から実装開始）
+> - **運用者数**：10 名（3 Lead + 3-4 Ops × 3 系統 + Break-Glass Custodian 2 名）
+> - **採用戦略**：3 Lead 同時採用、内部異動も可能、採用遅延時は初期はユーザ自身が回す
+> - **On-Call**：**Phase 1 α（リリース時）= 業務時間内対応**、**Phase 1 β = 24/7 対応**、契約 SLA に明示
+> - **PAM 製品**：**外部製品予算なし** → AWS ネイティブ（IAM Identity Center + Session Manager）+ Keycloak 標準機能で自作
+> - **AWS IAM Identity Center**：Phase 1 で新規構築（ADR-039 5 アカウント体制と統合）
 >
-> **混同しやすい論点との区別**：
-> - 本 ADR の「ユーザ管理画面 内 JIT 承認（L4）」も**ADR-038 ユーザ管理画面の機能**であって PAM ではない → ADR-038 で必要に応じて実装
-> - 「顧客テナント管理者の破壊的操作の承認フロー」は ADR-038 / §FR-8.5 / §FR-8.6 で扱う
+> **Phase 1 α / β の分離設計**：
+> - **Phase 1 α**（T = リリース時）：業務時間内 SLA + PAM 基本機能全部（Tier 1 + Tier 2）
+> - **Phase 1 β**（T+3〜T+6）：24/7 On-Call + PCI DSS QSA 初回監査対応
+> - **Phase 2**（T+12〜）：Session 完全録画 + 顧客テナント JIT 拡張
 >
-> **本 ADR 以下の内容は参考情報（運用体制側の検討時に活用可能）**として残置するが、要件定義の Accepted 対象外。
+> **Trust Center + 契約 SLA 明示化**：
+> - 「Phase 1 α = 業務時間内対応、Phase 1 β で 24/7 予定」を Trust Center + 契約条項に含める
+> - PCI DSS 準拠顧客獲得は Phase 1 β 段階で開始（契約時期の調整）
+>
+> **旧 Out of Scope 判定の理由と反論**（記録として保持）：
+> - 旧判定：「認証基盤の機能ではなく運用体制側の話」
+> - 反論：運用側 PAM の設計次第で本基盤側にも設計制約が発生（Keycloak Composite Role / `/admin` パス制限 / Audit ログ集約先）+ PCI DSS Req 7.2/8/10 対応の技術的実装は本基盤側で必要 → **本基盤設計要件の一部**
+>
+> **§G〜§I で詳細設計**（2026-07-23 新設）：
+> - §G：1 年ロードマップ + Tier 1/2/3 分類
+> - §H：10 名運用者体制設計（役割 + SoD + 承認フロー）
+> - §I：業務時間対応 SLA + Phase 1 α/β 移行条件
 
 ---
 
@@ -295,6 +311,306 @@ POST /pam/elevate
 | **E. 何もしない**（管理者常時付与）| | ❌ PCI DSS 違反 |
 
 → Phase 1 は **B**、運用規模拡大時に **C/D** 再評価。
+
+---
+
+## G. 【2026-07-23 新設】1 年ロードマップ + Phase 1 実装 10 項目の Tier 分類
+
+> **背景**：Out of Scope 判定を覆して Phase 1 実装対象に格上げ。リリース目標約 1 年後、運用者採用と実装ペースを合わせる必要。10 項目を Tier 1/2/3 に分類 + Sprint 単位のロードマップで進める。
+
+### G.1 1 年ロードマップ（Sprint 単位）
+
+**T = リリース時点、T-12ヶ月 = 現時点** としたロードマップ:
+
+```mermaid
+gantt
+    title PAM Phase 1 実装ロードマップ（1 年）
+    dateFormat  YYYY-MM
+    axisFormat  %Y-%m
+
+    section 設計フェーズ T-12〜T-9
+    要件定義（ADR-040 更新）        :a1, 2026-07, 2M
+    AWS IIC 設計                    :a2, 2026-08, 2M
+    Keycloak Role 設計              :a3, 2026-08, 2M
+
+    section 採用フェーズ T-12〜T-6
+    Lead 3 名同時採用                :b1, 2026-07, 3M
+    Ops 3-4 名採用                  :b2, 2026-10, 3M
+    残り 3-4 名採用                 :b3, 2027-01, 3M
+
+    section 基礎構築 T-9〜T-6
+    AWS IIC 新規構築（P1-02）        :c1, 2026-10, 2M
+    /admin パス制限（P1-01）        :c2, 2026-10, 1M
+    Session Manager（P1-06）        :c3, 2026-11, 1M
+
+    section PAM 機能実装 T-6〜T-3
+    Composite Role（P1-04）         :d1, 2027-01, 2M
+    Approval Workflow（P1-03）       :d2, 2027-01, 2M
+    昇格 API 自作（P1-05）           :d3, 2027-02, 2M
+    Break-Glass 設計（P1-09）        :d4, 2027-02, 2M
+
+    section 検証・監査対応 T-3〜T
+    Access Certification（Pβ-01）    :e1, 2027-04, 2M
+    Break-Glass 訓練初回（Pβ-02）    :e2, 2027-05, 1M
+    Trust Center 更新（P1-10）       :e3, 2027-05, 1M
+    PCI DSS QSA 監査準備             :e4, 2027-06, 2M
+```
+
+### G.2 3 期間の役割分担
+
+| 期間 | フェーズ | 中心タスク | 運用者体制 |
+|---|---|---|---|
+| **T-12〜T-9**（3 ヶ月）| **設計 + Lead 採用** | 要件確定、Lead 3 名採用 | Lead 3 名（設計主導）or ユーザ自身（採用遅延時） |
+| **T-9〜T-3**（6 ヶ月）| **構築 + Ops 採用** | PAM 主要機能実装、Ops 4-5 名採用 | Lead 3 + Ops 3-4 名 |
+| **T-3〜T**（3 ヶ月）| **検証 + 訓練 + 最終採用** | 監査対応、訓練、残り採用 | 10 名フル体制 |
+
+### G.3 Tier 1（絶対必須、リリース必須）
+
+Sprint 開始時から着手、Phase 1 α で全項目リリース:
+
+| # | 項目 | 実装内容 | 実装時期 | 担当 Lead |
+|---|---|---|---|---|
+| **P1-01** | **`/admin` パス IP 制限** | CloudFront + WAF で外部 Deny + 内部（VPN/社内 Network）のみ許可 | T-9〜T-8 | Infra |
+| **P1-08** | **常時 `realm-admin` 付与禁止** | 既存 role assignment cleanup、role → composite role 移行 | T-9 | Auth |
+| **P1-07** | **Keycloak Admin Events → Audit Acct 転送** | ADR-053 と統合、S3 Object Lock で WORM 保管 | T-8〜T-7 | Auth + Security |
+| **P1-04** | **Keycloak Composite Role 設計** | `realm-admin-eligible` / `-active` の 2 状態モデル | T-8〜T-6 | Auth |
+| **P1-09** | **Break-Glass 設計 + FIDO2 手配** | 物理金庫 + YubiKey 2 名分 + 承認プロセス | T-6〜T-4 | Security + Infra |
+| **P1-10** | **Trust Center 更新** | ADR-036 連動、PAM 説明 + Phase 1 α/β 差分明示 | T-4〜T-3 | Security |
+
+### G.4 Tier 2（PCI DSS 対応で必要、リリース必須）
+
+Sprint 中盤から着手、Phase 1 α で全項目リリース:
+
+| # | 項目 | 実装内容 | 実装時期 | 担当 Lead |
+|---|---|---|---|---|
+| **P1-02** | **AWS IAM Identity Center 新規構築** | ADR-039 の 5 アカウント × Permission Set 定義 | T-9〜T-6 | Infra |
+| **P1-03** | **IIC Approval Workflow** | Permission Set 昇格に承認必須化、SoD 担保 | T-6〜T-4 | Infra |
+| **P1-06** | **Session Manager 導入 + CloudWatch Logs** | AWS 標準機能、全操作録画 | T-7〜T-6 | Infra |
+| **P1-05** | **Keycloak Role 昇格 API 自作** | 内部承認ツール + EventBridge Lambda、期限自動失効 | T-6〜T-3 | Auth |
+
+### G.5 Tier 3（Phase 1 α で対応、Phase 1 β バックアップ）
+
+リリース前 3 ヶ月で対応、間に合わない場合 Phase 1 β 送り:
+
+| # | 項目 | 実装内容 | 実装時期 | 判断 |
+|---|---|---|---|---|
+| **Pβ-01** | **半年 Access Certification 自動化** | ユーザ管理画面拡張 + 定期レビュー生成 | T-3〜T | Phase 1 α 対応可 ✅ |
+| **Pβ-02** | **Break-Glass 訓練実施**（初回）| Tabletop Exercise、SOC 2 エビデンス | T-1 | Phase 1 α 対応可 ✅ |
+| **Pβ-04** | **顧客テナント JIT**（ADR-038 拡張）| 破壊的操作 SoD 承認 | T-2〜T | Phase 1 β で判断 ⚠ |
+
+### G.6 Phase 1 β（リリース後 6 ヶ月以内）
+
+**PCI DSS 準拠顧客獲得の契約前ゲート**:
+
+| # | 項目 | 実装時期 | 目的 |
+|---|---|---|---|
+| **Pβ-03** | 24/7 On-Call シフト開始 | T+3〜T+6 | PCI DSS Req 12.10.3 対応 |
+| **Pβ-05** | PCI DSS QSA 初回監査対応 | T+6 | Level 2 SAQ D-SP 取得 |
+| **Pβ-06** | Trust Center Phase 1 β 移行反映 | T+6 | 24/7 対応済み明示 |
+
+### G.7 Phase 2（成熟後、T+12〜）
+
+| # | 項目 | 実装時期 |
+|---|---|---|
+| **P2-01** | Session 完全録画（動画）| T+12 |
+| **P2-02** | HashiCorp Boundary / Teleport 検討 | T+18（運用者 20 名超え時）|
+| **P2-03** | 顧客ごと Audit Acct 分離 | T+18 |
+| **P2-04** | APPI 個人データアクセス記録の高度化 | T+18 |
+
+### G.8 別 ADR / 別文書で扱うもの（真の "運用体制" 領域）
+
+本 ADR のスコープ外、別文書で管理:
+
+- **オンコール体制詳細**（PagerDuty シフト、Escalation Chain）
+- **教育プログラム**（新人 Onboarding、Break-Glass 訓練シナリオ集）
+- **退職者 offboarding**（人事連動プロセス）
+- **物理施設**（Break-Glass 金庫設置場所、FIDO2 バックアップ）
+- **Vendor Escalation**（Keycloak / AWS 側障害時の窓口）
+
+---
+
+## H. 【2026-07-23 新設】10 名運用者体制設計
+
+> **背景**：Phase 1 リリース時 10 名運用者体制で SoD + 業務時間内 24/7 対応可能な役割分担 + 承認フロー設計。3 系統 × 3-4 名 + Break-Glass Custodian 2 名の構成。
+
+### H.1 役割分担（Role Matrix）
+
+**3 系統 × 各 3-4 名で分担、SoD 担保 + 24/7 On-call 準備可能**:
+
+```mermaid
+flowchart TB
+    subgraph Ops [運用者 10 名]
+        subgraph L1[チーム A: Infra/AWS<br/>3-4 名]
+            A1[Infra Lead ×1<br/>AWS SA Pro + IAM 5年+]
+            A2[Infra Ops ×2-3<br/>AWS 実務経験]
+        end
+        subgraph L2[チーム B: Auth/Keycloak<br/>3-4 名]
+            B1[Auth Lead ×1<br/>Keycloak/OIDC 3年+]
+            B2[Auth Ops ×2-3<br/>Java/SPI 開発経験]
+        end
+        subgraph L3[チーム C: Security/Audit<br/>2-3 名]
+            C1[Security Lead ×1<br/>PCI DSS QSA/CISSP相当]
+            C2[Auditor ×1-2<br/>Compliance 実務]
+        end
+    end
+
+    Break[Break-Glass Custodians<br/>×2 名<br/>物理金庫保管]
+    Ops --> Break
+
+    Note1[SoD: 申請者 ≠ 承認者<br/>チーム間クロス承認]
+    Ops --> Note1
+
+    classDef primary fill:#e3f2fd,stroke:#248
+    classDef break fill:#ffcdd2,stroke:#a44
+    class L1,L2,L3 primary
+    class Break break
+```
+
+### H.2 3 Lead の推奨バックグラウンド + 採用戦略
+
+| Lead | 役割 | 推奨バックグラウンド | 採用時期 |
+|---|---|---|---|
+| **Infra Lead** | AWS IIC 設計 + Session Manager + Break-Glass | AWS SA Pro + IAM 実務 5 年+ | T-12（同時採用）|
+| **Auth Lead** | Keycloak Composite Role + 昇格 API 自作 | Keycloak / OIDC 実務 3 年+ | T-12（同時採用）|
+| **Security Lead** | 監査対応 + Access Certification + Trust Center | PCI DSS QSA / CISSP 相当 | T-12（同時採用）|
+
+**採用戦略**（2026-07-23 確定）:
+- **3 名同時採用**を目標
+- **内部異動**も可能（既存社員から Lead 昇格）
+- **採用遅延時**：初期はユーザ自身で回す、6 ヶ月以内に採用完了
+
+### H.3 承認フロー（SoD 担保）
+
+10 名体制での承認 SoD 設計:
+
+| 昇格対象 | 申請者 | 承認者（SoD 必須） | 承認 SLA（Phase 1 α）| 承認 SLA（Phase 1 β）|
+|---|---|---|:---:|:---:|
+| **AWS Infra 権限**（L2）| Infra Ops | 別チーム Lead（Auth or Security）| 業務時間内 4h | 24/7 4h |
+| **Keycloak Realm 権限**（L3）| Auth Ops | 別チーム Lead（Infra or Security）| 業務時間内 4h | 24/7 4h |
+| **顧客テナント破壊操作**（L4）| Auth Ops | Security Lead | 業務時間内 4h | 24/7 4h |
+| **Break-Glass 発動**（L1）| どのチーム | **役員 2 名同時承認** | 業務時間内 15 min | 24/7 15 min |
+| **半年 Access Certification** | Security Lead | 経営層 | 定期作業 | 定期作業 |
+
+**核心**：**Phase 1 α は業務時間内対応が基本**、承認 SLA も業務時間内。緊急時は Break-Glass 発動で対応。
+
+### H.4 On-Call シフト設計（Phase 1 β 移行時）
+
+10 名で 24/7 On-Call を回す場合の一般的パターン:
+
+| パターン | 詳細 | 適用 |
+|---|---|---|
+| **A. 週次ローテーション**（Phase 1 β 推奨）| Primary 1 名 + Secondary 1 名 × 週替わり、10 名で 5 週サイクル | Phase 1 β 以降 |
+| **B. 業務時間内のみ**（Phase 1 α デフォルト）| 平日 9-18 時 のみ、業務時間外は翌営業日 | **Phase 1 α（リリース時）** |
+| **C. Follow the Sun** | 拠点分散時 | Phase 2 グローバル展開時 |
+
+### H.5 採用と実装ペースの整合
+
+| 時期 | 採用 累計 | 実装可能なスコープ | 制約 |
+|---|:---:|---|---|
+| **T-12**（現時点）| 0 名 | 要件定義、ADR 更新 | **ユーザ自身で対応**（採用遅延時） |
+| **T-9** | Lead 3 名 | 設計主導、AWS IIC 構築開始 | Lead が設計 + PoC |
+| **T-6** | 6-7 名 | PAM 機能実装本格化 | Ops が実装、Lead が review |
+| **T-3** | 9-10 名 | 統合テスト、監査対応 | フル体制準備 |
+| **T**（リリース）| **10 名** | 運用開始（業務時間内）| Phase 1 α |
+| **T+6** | 10 名 | 24/7 On-Call 開始 | Phase 1 β |
+
+---
+
+## I. 【2026-07-23 新設】業務時間対応 SLA + Phase 1 α/β 移行条件
+
+> **背景**：Phase 1 α（リリース時）は業務時間内対応、Phase 1 β で 24/7 移行。Trust Center + 契約 SLA に明示化。PCI DSS 準拠顧客獲得は Phase 1 β 段階。
+
+### I.1 Phase 1 α SLA 定義（業務時間内対応）
+
+**業務時間内対応**：
+- 平日 9-18 時（祝日除く、JST）
+- 業務時間外の緊急事態は **Best Effort**（連絡取れる時のみ対応）
+- Break-Glass 発動時のみ業務時間外対応可能（役員承認 + 2 名同時操作）
+
+**Phase 1 α 契約 SLA**：
+
+| 項目 | Phase 1 α | Phase 1 β（T+6 以降）|
+|---|---|---|
+| 通常サポート | 業務時間内 4h 応答 | 24/7 4h 応答 |
+| 緊急障害対応 | 業務時間内 15 min 応答 | 24/7 15 min 応答 |
+| 業務時間外の緊急 | Best Effort（翌営業日）| PagerDuty 起動 |
+| インシデント通知 | メール + Slack | メール + Slack + PagerDuty |
+| 稼働率保証 | 99.9%（業務時間内）| 99.95%（24/7）|
+| Break-Glass 対応 | 業務時間内 15 min（業務時間外は役員承認要）| 24/7 15 min |
+
+### I.2 Phase 1 α/β 移行条件
+
+**Phase 1 β 移行の必要条件**（T+3〜T+6 の間）:
+
+1. **10 名運用者体制の完成**（Ops 全員 Onboarding 完了）
+2. **24/7 On-Call シフトの安定運用**（3 ヶ月以上）
+3. **Break-Glass 訓練実施**（初回）
+4. **監査ログ 6 ヶ月分の蓄積**（PCI DSS QSA 監査エビデンス）
+5. **PagerDuty 導入 + Escalation Chain 確立**
+6. **Runbook 整備**（10-20 種、Sev 別対応手順）
+
+### I.3 業務時間外の Break-Glass 設計（Phase 1 α 制約）
+
+Phase 1 α で業務時間外に緊急事態が発生した場合の対応:
+
+```mermaid
+sequenceDiagram
+    participant Alert as アラート発火
+    participant OnCall as On-Call Lead 1 名<br/>(Best Effort)
+    participant Approver as 役員 2 名
+    participant Vault as 物理金庫<br/>(Custodian 2 名)
+    participant System as 対象システム
+
+    Note over Alert,System: 業務時間外（22 時〜翌 9 時）
+    Alert->>OnCall: PagerDuty 経由 or メール
+    Note over OnCall: 連絡取れる場合のみ対応
+    alt 対応可能
+        OnCall->>Approver: Break-Glass 申請<br/>(業務時間外緊急)
+        Approver->>Vault: 承認 + 開錠指示<br/>(役員 2 名同時)
+        Vault->>OnCall: FIDO2 デバイス + PW
+        OnCall->>System: 応急処置
+        Note over OnCall,System: 全操作録画 + 使用終了報告
+    else 連絡取れない
+        Note over Alert: 翌営業日対応、SLA 内で Best Effort
+    end
+```
+
+**契約明示**：
+> 「Phase 1 α は業務時間内対応が基本、業務時間外の緊急事態は Best Effort（対応時間保証なし）。24/7 保証は Phase 1 β 以降（T+6 以降）で対応開始」
+
+### I.4 顧客セグメント別 Phase 1 α/β 対応
+
+**Phase 1 α（業務時間内）で獲得可能な顧客**:
+
+| 顧客セグメント | Phase 1 α 対応可否 | 理由 |
+|---|:---:|---|
+| **一般 B2B SaaS**（金融外）| ✅ 対応可 | 業務時間内 SLA で満たせる |
+| **社内システム顧客** | ✅ 対応可 | 業務時間内前提 |
+| **中小企業** | ✅ 対応可 | 24/7 不要な業務 |
+| **PCI DSS 準拠顧客**（決済系）| ❌ Phase 1 β 必要 | Req 12.10.3 24/7 IR On-Call 必須 |
+| **金融 / 医療 / 官公庁** | ❌ Phase 1 β 必要 | 24/7 業界標準 |
+| **ヘルスケア / ライフサイエンス** | ⚠ 要相談 | 顧客要件次第 |
+
+### I.5 Trust Center 更新事項
+
+[ADR-036 Customer Audit Support](036-customer-audit-support.md) Trust Center に以下を明示:
+
+> **【本基盤のサポート体制】**（2026-07-23 明示化）
+>
+> - **Phase 1 α**（T = リリース時）：業務時間内対応（平日 9-18 時 JST）
+>   - 通常サポート：業務時間内 4h 応答
+>   - 緊急障害：業務時間内 15 min 応答
+>   - 業務時間外：Best Effort（翌営業日対応）
+>   - Break-Glass：業務時間外は役員承認要
+> - **Phase 1 β**（T+6 以降）：24/7 対応開始
+>   - PagerDuty 起動 + Escalation Chain 確立
+>   - PCI DSS Req 12.10.3 24/7 IR On-Call 要件対応
+>   - PCI DSS 準拠顧客受入開始
+>
+> **【契約時のご案内】**
+> - Phase 1 α 段階で契約されるお客様は業務時間内 SLA が前提となります
+> - PCI DSS 準拠 / 金融 / 医療業界のお客様は Phase 1 β 段階での契約をお勧めします
+> - Phase 1 α → β 移行は 6 ヶ月後を目標、詳細はお問い合わせください
 
 ---
 

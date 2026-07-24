@@ -1,7 +1,7 @@
 # ADR-060: 認証プロトコル攻撃経路 残 TBD 対応（Log scrubbing / Token Binding / Adaptive Auth 連動強化）
 
 - **ステータス**: Proposed（要件定義フェーズで Accepted 昇格予定）
-- **日付**: 2026-07-08
+- **日付**: 2026-07-08 作成、**2026-07-23 更新（基本設計 U7 実装確定を反映 — 変更履歴参照）**、**2026-07-24 更新（Flow 明示宣言の IaC 手段から keycloak-config-cli を除去 → Terraform 基盤層 + オンボーディング API に統一 — [U9 D-U9-10](../basic-design/09-operations-observability-design.md)）**
 - **関連**:
   - [saml-vs-oidc-comparison.md §7.4 SAML 攻撃経路](../common/saml-vs-oidc-comparison.md#74-saml-改ざんの攻撃経路attack-pathと防御)
   - [saml-vs-oidc-comparison.md §7.5 OIDC 攻撃経路](../common/saml-vs-oidc-comparison.md#75-oidc--oauth-20-攻撃経路attack-pathと防御)
@@ -60,6 +60,8 @@
 ---
 
 ## A. Log scrubbing（SAML P11 + OIDC O22 対応）
+
+> **2026-07-23 基本設計 U7 実装確定**: 本節の実装は [U7 §7.3](../basic-design/07-security-compliance-design.md) 参照。マスキング辞書に **M-13 `logout_token`（Back-Channel Logout）/ M-14 Basic 認証ヘッダ** を追加。
 
 ### A.1 対象データ
 
@@ -180,7 +182,7 @@ s/(KEYCLOAK_SESSION|KEYCLOAK_IDENTITY)=[^;\s]+/\1=[REDACTED]/g
 
 | Phase | 対応 | トリガー |
 |---|---|---|
-| **Phase 1（現状）** | **短寿命化のみ**（Access Token 15-30 分 + Refresh Rotation）| — |
+| **Phase 1（現状）** | **短寿命化のみ**（Access Token 30 分（[U5 §5.2.1](../basic-design/05-token-session-authz-design.md) 確定）+ Refresh Rotation）| — |
 | **Phase 2 候補** | **DPoP 導入検討**（SPA + BFF）| ①ADR-057 §I で DPoP 採用可否検討時に前倒し / ②Access Token 漏洩事案発生 / ③金融顧客要件 |
 | **Phase 3 候補** | **mTLS Bound Access Token 併用**（金融/決済顧客）| FAPI 2.0 準拠要件 or B2B API 顧客要件 |
 
@@ -193,7 +195,7 @@ s/(KEYCLOAK_SESSION|KEYCLOAK_IDENTITY)=[^;\s]+/\1=[REDACTED]/g
 ### B.6 Phase 1 の残リスク明示
 
 - **O20 Token Substitution は Phase 1 で完全防御されない**（短寿命化による影響最小化のみ）
-- **顧客説明で明記**：「本基盤は Phase 1 で Access Token 15-30 分 + Refresh Rotation で影響最小化、Phase 2 で DPoP により完全防御予定」
+- **顧客説明で明記**：「本基盤は Phase 1 で Access Token 30 分（[U5 §5.2.1](../basic-design/05-token-session-authz-design.md) 確定）+ Refresh Rotation で影響最小化、Phase 2 で DPoP により完全防御予定」
 
 ### B.7 実装 ADR
 
@@ -227,6 +229,8 @@ s/(KEYCLOAK_SESSION|KEYCLOAK_IDENTITY)=[^;\s]+/\1=[REDACTED]/g
 | **G-4: 異常な地理的 IP + 未知デバイス**| 攻撃者が偽造 token でログイン | GeoIP + Device Fingerprint 統合 |
 | **G-5: JWKS 鍵の異常な使用パターン**| 廃止済 key ID の再登場、または `kid` 未指定 | JWKS ローテ履歴と照合 |
 | **G-6: 認証イベントなしの Access Token 発行**（OIDC 特化）| Authorization Code フローを経由しない発行 | Keycloak Event Listener で監視 |
+
+> **2026-07-23 基本設計 U7 実装確定（[D-U7-08](../basic-design/07-security-compliance-design.md)）**: Phase 1 実装 = **G-2 / G-3（簡易版）/ G-5 / G-6 の 4 シグナル**。統計学習を要する **G-1 / G-4 は Phase 2**。
 
 #### C.2.2 Golden LDAP 系シグナル（L-GD-1〜L-GD-5、2026-07-08 追加）
 
@@ -334,7 +338,7 @@ browser-with-last-login
     └── level1 Last Login Tracker (REQUIRED)   ← ★ ここに配置
 ```
 
-**Phase 1 実装ガイド**：Terraform / keycloak-config-cli で以下を明示宣言:
+**Phase 1 実装ガイド**：**Terraform 基盤層 + オンボーディング API（[U9 D-U9-10](../basic-design/09-operations-observability-design.md)、2026-07-24 更新: keycloak-config-cli は不採用）** で以下を明示宣言:
 
 ```hcl
 resource "keycloak_authentication_execution" "last_login_tracker" {
@@ -495,7 +499,7 @@ EventBridge（[ADR-035 §C-7.3.10](../requirements/proposal/common/07-implementa
 | Risk Score | 対応 |
 |---|---|
 | Low (0-30) | ログのみ |
-| Medium (31-60) | Step-up MFA 要求 |
+| Medium (31-60) | Step-up MFA 要求（2026-07-23: [U7](../basic-design/07-security-compliance-design.md) の L2「強制再認証」定義を正とする）|
 | **High (61-80)** | **Session Revocation + 全 Refresh Token 失効 + ユーザー通知** |
 | **Critical (81-100)** | **SOC 即時通知 + 該当鍵の緊急ローテ発動**（[ADR-045](045-cryptographic-key-management-strategy.md) 連動）|
 
@@ -597,6 +601,8 @@ public class GoldenDetectionEventListener implements EventListenerProvider {
 | Golden 検知 自動遮断タイミング | B-GD-2 | SOC | Phase 1a リリース直後 vs 3 ヶ月チューニング後 |
 | 緊急鍵ローテ SOP | B-GD-3 | SOC / SecOps | 承認体制、実施時間目標 |
 
+> **2026-07-23**: B-GD-1/2/3・B-LOG-1 は [hearing-checklist.md](../requirements/hearing-checklist.md) へ正式登録（別担当実施）。
+
 ---
 
 ## G. 業界事例・裏どり
@@ -639,8 +645,8 @@ public class GoldenDetectionEventListener implements EventListenerProvider {
 ## I. TBD / 要検討
 
 - **B. mTLS Bound Token の CA 運用**：顧客ごとに CA 発行するか、共通 CA から Client Cert 配布か
-- **C. Golden 検知の False Positive 抑制**：初期チューニング期間の運用体制
-- **A. RP 側ログの Scrubbing 要件強制**：顧客に強制すべきか、推奨に留めるか
+- ~~**C. Golden 検知の False Positive 抑制**：初期チューニング期間の運用体制~~ → **2026-07-23 [D-U7-06](../basic-design/07-security-compliance-design.md) でクローズ**（Phase 1a = 検知通知のみ → FP < 5% で 1b 自動化）
+- ~~**A. RP 側ログの Scrubbing 要件強制**：顧客に強制すべきか、推奨に留めるか~~ → **2026-07-23「推奨」で確定**（[U7 §7.3.1](../basic-design/07-security-compliance-design.md)）
 
 ---
 
@@ -666,3 +672,4 @@ public class GoldenDetectionEventListener implements EventListenerProvider {
 | 2026-07-10 | **§C.2.3 F-9 フェデ JIT 経路制約追記**（V3' はローカル PW ユーザで検証、フェデ JIT ユーザ（本基盤主用途 P-3）は Browser Flow 分岐構造上動作しないことを判明。Phase 1 実装で Browser Flow + First Broker Login Flow + Post Broker Login Flow の 3 系統に SPI 配置が必須。追加 PoC V3'' 別端末で実施予定、[jit-scim §10.4.F.9](../common/jit-scim-coexistence-keycloak.md) と同期）|
 | 2026-07-13 | **§C.2.3 F-9 V3'' 実測 PASS 反映 + 妥当性範囲を明記**（[verification-log-v3fed.md](../../poc/jit-scim-verification-2026-07-10/docs/verification-log-v3fed.md) T1-T5 全 PASS。フェデ JIT 経路で First/Post Broker Login Flow の SPI 発火を実測。ただし V3'' の外部 IdP は Keycloak モック（OIDC のみ）であり **SAML/LDAP/実 IdP は未検証** → B-SCIM-12（SAML）/ B-SCIM-13（LDAP、🚨 最優先）/ B-SCIM-14（実 IdP 統合）を Phase 1 リリース前ゲートに追加。新知見：初回時 First+Post 両 Flow 続けて発火 / JWT はブローカ再発行のみアプリ受領、[jit-scim §10.4.F.9](../common/jit-scim-coexistence-keycloak.md) と同期）|
 | 2026-07-14 | **§C.2.3 Re-Activation SPI 統合追記**（LastLoginTracker SPI に Re-Activation ロジック統合、SCIM 除外条件 + local-admin 除外条件 + 想定外拒否の 3 段階分岐、危険な誤発火シナリオ明記、監査ログ USER_REACTIVATED 発行と ADR-035 ITDR 連携、Flow 配置主戦場は Post Broker Login Flow、[jit-scim §10.4.G/H/I/J](../common/jit-scim-coexistence-keycloak.md) と同期）|
+| 2026-07-23 | **基本設計 U7 実装確定を反映**（① §A Log scrubbing 実装は [U7 §7.3](../basic-design/07-security-compliance-design.md) 参照、辞書 M-13 `logout_token` / M-14 Basic 認証ヘッダ追加 ② 「Access Token 15-30 分」表記 2 箇所を「30 分（U5 §5.2.1 確定）」へ ③ §C.2.1 Phase 1 実装 = G-2/G-3（簡易）/G-5/G-6 の 4 シグナル、統計学習系 G-1/G-4 は Phase 2（D-U7-08）④ §I 残課題 A =「推奨」で確定（U7 §7.3.1）/ 残課題 C = D-U7-06 でクローズ ⑤ §C.4 Medium 対応は U7 の L2「強制再認証」定義を正とする ⑥ §F B-GD-1/2/3・B-LOG-1 は hearing-checklist へ正式登録（別担当実施））|

@@ -70,6 +70,55 @@
 
 ---
 
+> **✅ 2026-07-23 追加：Phase 1 α/β サポート体制の明示化**（[ADR-040](040-pam-jit-admin-privilege-management.md) 連動）
+>
+> **背景**：ADR-040 で **Phase 1 α（リリース時）= 業務時間内対応 / Phase 1 β（T+6 以降）= 24/7 対応** の 2 段階サポート体制が確定。Trust Center（都度メール対応でも同等）で顧客に明示する必要。
+>
+> **Trust Center or 顧客説明資料で明示すべき事項**：
+>
+> ```markdown
+> ## 本基盤のサポート体制
+>
+> ### Phase 1 α（リリース時 T）：業務時間内対応
+> - **対応時間**：平日 9-18 時（JST、祝日除く）
+> - **通常サポート**：業務時間内 4h 応答
+> - **緊急障害対応**：業務時間内 15 min 応答
+> - **業務時間外**：Best Effort（翌営業日対応、SLA 保証なし）
+> - **Break-Glass 発動**：業務時間内 15 min、業務時間外は役員承認要
+> - **稼働率保証**：99.9%（業務時間内）
+> - **契約可能顧客セグメント**：一般 B2B SaaS / 社内システム / 中小企業
+>
+> ### Phase 1 β（T+6 以降）：24/7 対応
+> - **対応時間**：24 時間 365 日
+> - **通常サポート**：24/7 4h 応答
+> - **緊急障害対応**：24/7 15 min 応答（PagerDuty 起動）
+> - **Break-Glass 発動**：24/7 15 min
+> - **稼働率保証**：99.95%（24/7）
+> - **契約可能顧客セグメント**：PCI DSS 準拠顧客 / 金融 / 医療 / 官公庁 等（Phase 1 α の顧客セグメントも継続）
+> - **PCI DSS Req 12.10.3 24/7 IR On-Call 要件対応**
+>
+> ### Phase 1 β 移行の 6 つの必要条件
+> 1. 10 名運用者体制の完成（Ops 全員 Onboarding 完了）
+> 2. 24/7 On-Call シフトの安定運用（3 ヶ月以上）
+> 3. Break-Glass 訓練実施（初回）
+> 4. 監査ログ 6 ヶ月分の蓄積
+> 5. PagerDuty 導入 + Escalation Chain 確立
+> 6. Runbook 整備（10-20 種、Sev 別対応手順）
+>
+> ### 契約時のご案内
+> - Phase 1 α 段階で契約されるお客様は業務時間内 SLA が前提となります
+> - **PCI DSS 準拠 / 金融 / 医療業界のお客様は Phase 1 β 段階（T+6 以降）での契約をお勧め**します
+> - Phase 1 α → β 移行は 6 ヶ月後を目標
+> ```
+>
+> **反映先**：
+> - Trust Center（PCI DSS 対応時、B-PCI-7 判定次第）に上記文言掲載
+> - 契約書 SLA 条項に Phase 1 α/β 差分を明記
+> - 都度メール対応時のテンプレートに含める
+> - **B-PAM-1〜4 ヒアリング項目**で顧客ごとに確認（[hearing-checklist](../requirements/hearing-checklist.md)）
+
+---
+
 - **関連**:
   - [§NFR-7 コンプライアンス](../requirements/nfr/07-compliance.md)
   - [common/pci-dss-appi-compliance-gap.md](../common/pci-dss-appi-compliance-gap.md)

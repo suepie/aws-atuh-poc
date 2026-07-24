@@ -1,7 +1,19 @@
 # ADR-033: Keycloak 2-tier アーキテクチャ（Broker Keycloak + IdP Keycloak）
 
 - **ステータス**: Proposed（要件定義フェーズで Accepted に昇格予定）
-- **日付**: 2026-06-15
+- **日付**: 2026-06-15 作成、**2026-07-23 更新（IdP-KC 別 AWS アカウント配置 + ROSA 2 クラスタ凍結 + シャーディング拡張パス、P-16/P-17）+ 基本設計 Wave 1 確定反映（`idpkc-oidc01` 単一共有エントリ / IdP alias 命名規則 / アプリ発 CRUD = 専用 API 層 D3-05 / §G 再試算）**
+
+> **2026-07-23 配置前提の更新（P-17）**: IdP-KC は Broker と**別の AWS アカウント**に構築する（ユーザー指示、変更可能性あり）。同アカウント内に構築するアプリからユーザの登録・削除等を直接実施する想定。これに伴い:
+> - **クラスタトポロジ = 別アカウント 2 クラスタ（ROSA HCP × 2）で凍結**（2026-07-23 ユーザー判断。クラスタ 1 本増分 ≒ +$500/月 + DR 側は許容し、権限分界・障害隔離を優先）
+> - **アプリ → IdP-KC のユーザ CRUD 経路**（Keycloak Admin API 直 / SCIM / 専用 API 層）が新規設計論点 → 基本設計 U3（[00-basic-design-plan.md](../basic-design/00-basic-design-plan.md)）→ **2026-07-23 確定: 3 案比較の結果、専用 API 層（案 C）を採用（[U3 D3-05](../basic-design/03-identity-provisioning-design.md)）— 本論点はクローズ**
+> - Broker ↔ IdP-KC 間はクロスアカウント経路（OIDC federation の HTTPS 経路設計）→ 基本設計 U6
+> - **1000 社超過時の拡張パス**: IdP-KC 側をシャーディング（例: 500 IdP/クラスタ）して Broker KC の IdP 数を圧縮（[keycloak-1000idp-scalability-research.md](../basic-design/research/keycloak-1000idp-scalability-research.md)）
+> - 本文 §G のインフラ規模試算は EKS/同一 Acct 前提の旧記述を含む → **ROSA HCP 前提の再試算は [U6 §6.5](../basic-design/06-infra-network-design.md) で実施済み**
+>
+> **2026-07-23 基本設計 Wave 1 確定の追記**:
+> - **Broker 側の IdP-KC 向け IdP は単一共有 OIDC エントリ `idpkc-oidc01`**（顧客別エントリは不採用、[U2 §2.2.2](../basic-design/02-keycloak-logical-design.md)）
+> - **IdP alias は製品中立の `<orgAlias>-<proto><NN>` 規則**（本文/図の `acme-entra` 例は PoC 時代の表記であり本番規則ではない、[U2 §2.1.4](../basic-design/02-keycloak-logical-design.md)）
+
 - **関連**:
   - [ADR-017 マルチテナント L2（単一 Pool/Realm + 複数 IdP）採用根拠](017-multitenant-l2-single-realm.md)
   - [ADR-028 IdP なし顧客のローカルユーザー管理 — 4 選択肢の比較](028-idpless-customer-local-user-management.md)
