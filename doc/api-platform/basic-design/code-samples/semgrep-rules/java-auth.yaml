@@ -1,0 +1,46 @@
+# java-auth.yaml
+#
+# Java (Spring Boot) アプリコードの認証実装漏れ検出（SA-2 / 04 章 §4.4）
+# 構文は 04 章 §4.4.1 / §C-6.6.6 で検証済み。
+#
+# 収録ルール:
+#   spring-controller-missing-preauthorize  P6  @PreAuthorize / @Secured 欠落
+#
+# 実行:
+#   semgrep ci --config java-auth.yaml
+#   semgrep --config java-auth.yaml path/to/src
+
+rules:
+  # --- P6: Spring Controller の @PreAuthorize / @Secured 欠落 ---------------
+  - id: spring-controller-missing-preauthorize
+    patterns:
+      - pattern-either:
+          - pattern: |
+              @RestController
+              class $CLS {
+                ...
+                @GetMapping(...)
+                public $RT $METHOD(...) { ... }
+              }
+          - pattern: |
+              @RestController
+              class $CLS {
+                ...
+                @PostMapping(...)
+                public $RT $METHOD(...) { ... }
+              }
+      - pattern-not-inside: |
+          @PreAuthorize(...)
+          public $RT $METHOD(...) { ... }
+      - pattern-not-inside: |
+          @Secured(...)
+          public $RT $METHOD(...) { ... }
+    message: >-
+      Controller method is missing @PreAuthorize or @Secured
+      authorization annotation (P6).
+    languages: [java]
+    severity: WARNING
+    metadata:
+      cwe: CWE-306
+      category: security
+      leak-pattern: P6

@@ -1,0 +1,35 @@
+# nodejs-auth.yaml
+#
+# Node.js / TypeScript アプリコードの認証実装漏れ検出（SA-2 / 04 章 §4.4）
+# 構文は 04 章 §4.4.1 / §C-6.6.6 で検証済み。
+#
+# 収録ルール:
+#   express-route-missing-auth  P6  /api/ route に authMiddleware 欠落
+#
+# 実行:
+#   semgrep ci --config nodejs-auth.yaml
+#   semgrep --config nodejs-auth.yaml path/to/src
+
+rules:
+  # --- P6: Express /api/ route の認証 middleware 欠落 -----------------------
+  - id: express-route-missing-auth
+    pattern-either:
+      - pattern: |
+          $APP.get('/api/$PATH', $HANDLER)
+      - pattern: |
+          $APP.post('/api/$PATH', $HANDLER)
+    pattern-not:
+      - pattern: |
+          $APP.get('/api/$PATH', authMiddleware, $HANDLER)
+      - pattern: |
+          $APP.post('/api/$PATH', authMiddleware, $HANDLER)
+    message: >-
+      Express route under /api/ is missing authMiddleware. Register the
+      auth middleware before the handler, e.g.
+      app.get('/api/...', authMiddleware, handler) (P6).
+    languages: [javascript, typescript]
+    severity: ERROR
+    metadata:
+      cwe: CWE-306
+      category: security
+      leak-pattern: P6

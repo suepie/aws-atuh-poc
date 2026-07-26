@@ -1,0 +1,71 @@
+#
+# origin-protection-required.guard
+#
+# Origin Protection ルール（ADR-039 §C-4）
+# 04 章 §4.2.1 標準ルール 3 群「Origin Protection」に対応。
+#
+# Public な API Gateway（EDGE / REGIONAL で公開されるもの）の Resource Policy が、
+# CloudFront 由来トラフィックのみを許可する二重防御を持つことを検証する:
+#
+#   (a) CloudFront Managed Prefix List (aws:SourceIp / VpcSourceIp 相当) 参照、または
+#       aws:UserAgent / X-Origin-Verify Custom Header の検証を Policy 内に持つ
+#   (b) X-Origin-Verify カスタムヘッダの一致条件（CloudFront が付与、直アクセスを弾く）
+#
+# 実行:
+#   cfn-guard validate -r origin-protection-required.guard -d cloudformation/
+#
+# 前提: API GW の RestApi に Policy（Resource Policy）が設定されていること。
+#       Policy 文字列内に prefix list ID と X-Origin-Verify 参照を含む運用とする。
+#
+
+let rest_apis = Resources.*[ Type == 'AWS::ApiGateway::RestApi' ]
+
+#
+# 1) Public API GW は Resource Policy（Policy プロパティ）を必ず持つこと
+#
+rule rest_api_must_have_resource_policy when %rest_apis !empty {
+    %rest_apis.Properties {
+        Policy exists
+        <<Public API GW must define a Resource Policy for origin protection (ADR-039 §C-4)>>
+    }
+}
+
+#
+# 2) Resource Policy は CloudFront Prefix List を参照すること
+#    （CloudFront の管理プレフィックスリスト経由のみ許可）
+#
+rule resource_policy_must_reference_prefix_list
+    when %rest_apis !empty
+         %rest_apis.Properties.Policy exists {
+    %rest_apis.Properties.Policy {
+        this == /aws:SourceIp|SourcePrefixList|pl-/
+        <<Resource Policy must restrict source to CloudFront Managed Prefix List (ADR-039 §C-4)>>
+    }
+}
+
+#
+# 3) Resource Policy は X-Origin-Verify カスタムヘッダの検証を持つこと
+#    （CloudFront が付与する共有シークレットヘッダ。prefix list だけでは
+#     他テナントの CloudFront からのアクセスを弾けないため二重防御が必須）
+#
+rule resource_policy_must_verify_origin_header
+    when %rest_apis !empty
+         %rest_apis.Properties.Policy exists {
+    %rest_apis.Properties.Policy {
+        this == /X-Origin-Verify|x-origin-verify/
+        <<Resource Policy must validate X-Origin-Verify custom header from CloudFront (ADR-039 §C-4)>>
+    }
+}
+
+#
+# 4) Public な ALB の Security Group は origin-facing prefix list のみを許可すること
+#    （§4.2.1: Public ALB SG が origin-facing prefix list のみ）
+#
+let alb_sg_ingress = Resources.*[ Type == 'AWS::EC2::SecurityGroupIngress' ]
+
+rule public_alb_sg_must_use_prefix_list when %alb_sg_ingress !empty {
+    %alb_sg_ingress.Properties {
+        SourcePrefixListId exists
+        <<Public ALB ingress must be restricted to a CloudFront/origin-facing Prefix List, not 0.0.0.0/0 (ADR-039 §C-4)>>
+    }
+}

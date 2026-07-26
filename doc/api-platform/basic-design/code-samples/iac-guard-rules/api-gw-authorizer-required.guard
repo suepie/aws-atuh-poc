@@ -1,0 +1,57 @@
+#
+# api-gw-authorizer-required.guard
+#
+# 認証必須ルール（SA-1 の中核 / §C-API-6 6 漏れパターン P1）
+# 04 章 §4.2.2 で検証済みの構文に準拠。
+#
+#   - API GW Method の AuthorizationType != NONE
+#   - Lambda Function URL の AuthType == AWS_IAM
+#   - ALB Listener の DefaultActions に authenticate-oidc / authenticate-cognito
+#
+# 実行:
+#   cfn-guard validate -r api-gw-authorizer-required.guard -d cloudformation/
+#
+# 例外（/health 等）は本ファイルにコメントで明示し、§4.7 例外承認を経ること。
+#
+
+#
+# 1) API Gateway Method は AuthorizationType が NONE 以外であること
+#
+let api_gw_methods = Resources.*[ Type == 'AWS::ApiGateway::Method' ]
+
+rule api_gw_must_have_authorizer when %api_gw_methods !empty {
+    %api_gw_methods.Properties {
+        AuthorizationType != "NONE"
+        <<API GW Method must have non-NONE AuthorizationType (P1)>>
+    }
+}
+
+#
+# 2) Lambda Function URL は AuthType が AWS_IAM であること
+#    （cdk-nag には Function URL の AuthType を検査するルールが存在しないため
+#     cfn-guard で担保する。04 章 D-G-042）
+#
+let lambda_urls = Resources.*[ Type == 'AWS::Lambda::Url' ]
+
+rule lambda_url_must_have_iam_auth when %lambda_urls !empty {
+    %lambda_urls.Properties {
+        AuthType == "AWS_IAM"
+        <<Lambda Function URL must use AWS_IAM auth, not NONE (P1)>>
+    }
+}
+
+#
+# 3) ALB Listener は認証 action（OIDC / Cognito）を持つこと
+#    （P6: ALB → 直接 Lambda でコードも素通り、を IaC 側で塞ぐ）
+#
+let alb_listeners = Resources.*[ Type == 'AWS::ElasticLoadBalancingV2::Listener' ]
+
+rule alb_must_have_auth_action when %alb_listeners !empty {
+    # DefaultActions のうち「いずれか 1 つ」が認証 action であればよい。
+    # 標準構成は [authenticate-oidc, forward] の 2 段（認証 → 転送）なので、
+    # 全 action に認証型を要求すると forward で誤 FAIL する。
+    # → `some` で「少なくとも 1 つ」を検査する
+    #   （Phase 4 P4-1 のローカル検証で発見・修正、research/phase4-local-verification-results.md）。
+    some %alb_listeners.Properties.DefaultActions[*].Type IN ["authenticate-oidc", "authenticate-cognito"]
+    <<ALB Listener must have at least one authenticate-oidc/authenticate-cognito action (P6)>>
+}

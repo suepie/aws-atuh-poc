@@ -131,6 +131,19 @@ ADR-051 の骨格は維持する（変更するのは復元戦略 §8.3 と待�
 - 経路 2 で「全 1000+ IdP を Git から一括再生」は行わない（Admin API 負荷 + 時間の点で非現実的、U2 §2.7.5 と同根）。**PITR を主、IaC 再生は差分（破壊時刻以降の正当変更）に限定**する。破壊時刻の特定は Admin Events + 監査ログ（監査 Acct S3、改変不能）による。
 - 旧 ADR-051 §A.2「Keycloak Realm 破損 = Realm Export Restore、RPO 24 時間」は「**PITR + 差分 IaC 再生、RPO 5 分（PITR 粒度）**」に置き換わる — RPO が 24h → 5min へ**大幅改善**する点は改訂の副次効果として明記する。
 
+障害の性質による復元経路の分岐を図示する（2026-07-26 図示追加）:
+
+```mermaid
+flowchart TB
+    DET["障害検知・性質判定<br/>(破壊時刻の特定は Admin Events + 監査ログ)"]
+    DET --> Q{"障害の性質は?"}
+    Q -->|"リージョン障害<br/>(東京全損・Aurora Primary 到達不能)"| R1["経路 1: Aurora Global DB Promote のみ<br/>realm 構成もユーザも DB に一体で複製済み"]
+    R1 --> R1E["大阪 KC は昇格後の DB を読むだけ<br/>構成再投入は一切不要<br/>SSOT = Aurora (Git 一致はドリフト検知 §8.3.2 で担保)"]
+    Q -->|"論理破壊<br/>(Realm 誤削除・構成破損・ランサムウェア・不正変更)"| R2A["経路 2-(a): Aurora PITR<br/>破壊直前へ巻き戻し (粒度 5 分 / 保持 35 日)"]
+    R2A --> R2B["経路 2-(b): 差分 IaC 再適用<br/>基盤層 = Terraform / テナント層 = オンボーディングパイプライン<br/>破壊時刻以降の正当変更のみ再生"]
+    R2B --> R2E["全 1000+ IdP の Git 一括再生はしない<br/>SSOT = Git (Terraform + テナント宣言ファイル)"]
+```
+
 ### 8.3.2 決定 D-U8-07: 整合性検証 = IaC ドリフト検知（Git ⇔ 稼働 KC の突合）
 
 経路 1 が成立する条件は「Aurora の中身 = Git の宣言」が常時保たれていることである。手当てを設計制約にする:
@@ -175,6 +188,33 @@ ADR-051 §E.1 の区分を維持しつつ、判断を早めるため**リージ�
 | T+38〜45 | 検証 | 合格基準チェック: ログイン成功（フェデ/ローカル各 1）、JWKS 応答・kid 一致、token/refresh、Broker→IdP-KC PrivateLink 疎通（大阪側複製済み、U6 §6.8.2）、`idmap` 参照 | 7 min |
 | T+45〜50 | DNS/エッジ | RB-DR-02: Route 53 Failover（弊社管理レコード、TTL 30s）+ **他組織エッジのオリジン切替**（事前設定 Origin Group なら自動 / 手動なら REQ-DR-01 の SLA 内） | 5 min |
 | **T+50** | 完了 | 全面切替宣言・顧客通知。**バッファ 10 分** | — |
+
+上表の時系列と並行トラック（A: DB / B: 基盤）をシーケンスで図示する（2026-07-26 図示追加）:
+
+```mermaid
+sequenceDiagram
+    participant Mon as 外形監視
+    participant SRE as SRE/IR Lead
+    participant CTO as CTO
+    participant DB as Aurora Global
+    participant OSK as 大阪 ROSA/KC
+    participant Edge as R53/他組織エッジ
+
+    Note over Mon: T+0 障害発生 (R53 Health Check 3 回 × 10s 異常)
+    Mon->>SRE: T+3 複合アラーム確定 → PagerDuty
+    SRE->>SRE: T+3〜10 RB-DR-00 判定チェックリスト<br/>(ITDR 抑制/強化フラグ切替を含む) + War Room 招集
+    SRE->>CTO: リージョン障害宣言・承認起案
+    CTO-->>SRE: T+10〜20 手動承認 (手動 20% 部分。SLA 15 分 / worst 20 分)
+    par トラック A: DB
+        SRE->>DB: T+20〜25 RB-DR-01 unplanned Managed Failover<br/>(Secondary detach & promote) × 2 系統並行
+    and トラック B: 基盤 (A と並行)
+        SRE->>OSK: T+20〜35 RB-DR-03 Machine Pool 2→6 ノード<br/>(HCP ノード供給 12-15 分)
+    end
+    SRE->>OSK: T+25〜38 KC Scale 0→3+ (昇格済み Writer へ接続、<br/>jdbc-ping 登録、JVM 起動 + キャッシュ初期ロード)
+    SRE->>OSK: T+38〜45 検証 (ログイン / JWKS・kid 一致 /<br/>token・refresh / PrivateLink 疎通 / idmap 参照)
+    SRE->>Edge: T+45〜50 RB-DR-02 R53 Failover (TTL 30s)<br/>+ 他組織エッジのオリジン切替 (REQ-DR-01/02)
+    Note over Mon,Edge: T+50 全面切替宣言・顧客通知。バッファ 10 分 → RTO 1h (条件付き成立 §8.4.3)
+```
 
 補足: 静的資産（Sorry/SPA）は CloudFront Origin Failover により T+数分で先行復旧（部分復旧）。ADR-051 §H.1 の 40 分想定に対し、本書は KC 起動遅延（JVM + キャッシュ）と他組織エッジ調整を織り込んで 50 分とした。
 
@@ -261,6 +301,31 @@ U6 §6.2.3 のコスト前提（cluster fee + 最小 worker）を構成として
 | Internal ALB / PrivateLink / VPC Endpoint 群 | **事前作成・常時稼働**（Region 内リソースのため東京と別個に作成済み、U6 §6.8.2） | そのまま利用 |
 | Secrets / KMS | Secrets Manager マルチリージョンレプリカ（**複製先暗号鍵は大阪側 Regional CMK — U7 D-U7-01 のとおり Secrets 系 CMK は MRK 化しない**）+ Aurora/監査ログ系のみ KMS MRK レプリカ（U7 §7.1.1 の MRK 対象表参照） | そのまま利用 |
 | DynamoDB / S3 | Global Tables / CRR で受動同期 | そのまま利用 |
+
+パイロットライトの平時 / Failover 時の状態遷移を対比で図示する（2026-07-26 図示追加）:
+
+```mermaid
+flowchart LR
+    subgraph NORM["平時 (パイロットライト = インフラ Warm + KC Scale 0)"]
+        N1["ROSA HCP × 2 クラスタ稼働<br/>infra Pool c7g.large × 2 ノードのみ<br/>(Operator 群・監視エージェント)"]
+        N2["KC 専用 Pool min 0<br/>(labeled/tainted、事前定義済み)"]
+        N3["KC CR replicas=0<br/>(Aurora Secondary read-only のため起動不能)<br/>KC イメージは pre-pull 済み"]
+        N4["Aurora Global Secondary<br/>Reader × 1 / 系統 (Warm)"]
+        N5["Internal ALB / PrivateLink / VPCE 群<br/>事前作成・常時稼働"]
+    end
+    subgraph FO["Failover 時"]
+        F1["infra Pool 継続稼働"]
+        F2["KC Pool 0 → 6+ ノード<br/>(c7g.xlarge/2xlarge)"]
+        F3["KC CR replicas 0 → 3+<br/>(東京と同一 CR、差分は Kustomize overlay 1 点<br/>= 大阪 Aurora エンドポイント)"]
+        F4["Promote → Writer<br/>+ Reader 増設 (事後)"]
+        F5["そのまま利用"]
+    end
+    N1 --> F1
+    N2 --> F2
+    N3 --> F3
+    N4 --> F4
+    N5 --> F5
+```
 
 ### 8.6.2 平時の同期対象（「大阪が腐らない」ための定常運用）
 
@@ -384,3 +449,4 @@ keycloak-dr-aurora-sync §5.5 の手順を正式化する（大阪 Primary 継�
 - 2026-07-23: 初版（Wave 2 起草）。Baseline v1 準拠。Realm Export 戦略の全廃と復元 2 経路への再設計（ADR-051 改訂案 §8.8 として提示）、パイロットライト KC Scale 0 修正、RTO 1h 条件付き成立（5 条件）の積み上げ検証、REQ-DR-01〜05 要求仕様新設。
 - 2026-07-23 (v1.1): Wave 2 整合性レビュー反映 — §8.8 #11 を ADR-040 参照**維持**（Accepted 復帰注記）へ差替 + #12 追加（ADR-051 Decision 冒頭文・表の Warm Standby → パイロットライト修正、H-2/M-1/M-10）、コスト参照を U6 §6.2.3 ≈ $2,032/月へ修正（M-1）、KMS MRK 記述の精密化（Secrets 系は Regional、§8.6.1/§8.2.2、M-2）、O-U8-9 新設（ITDR DynamoDB 大阪側方式 + Break-Glass 実体、U7 O-U7-7 合同、M-3）、RB-DR-00 に ITDR 抑制/強化フラグ切替を追記（M-4）、REQ-DR-01 対象ドメインに launchpad 追加（M-9）、G-EDGE-DR ゲート採番付記（M-11）、大阪側 Aggregator・マスキング経路の平時配備を追記（L-2）。
 - 2026-07-24 (v1.2): Wave 3 最終レビュー反映 — §8.3.1 経路 2 のテナント層再生エンジンを「Admin API / keycloak-config-cli」併記から**自作オンボーディング API による Admin API 差分適用に一本化**（keycloak-config-cli 不採用、U9 D-U9-10 / H-1）、基盤層「単一 state」に分割の最終形 = U9 D-U9-09 を注記（L-7）。
+- 2026-07-26 (v1.3): 可読性向上 — mermaid 図 3 点追加（§8.3.1 復元 2 経路の分岐図 / §8.4.2 フェイルオーバータイムラインのシーケンス図 / §8.6.1 パイロットライト平時・Failover 時の状態対比図）。設計内容の変更なし。

@@ -46,7 +46,7 @@ P-06（単一 Realm + Organizations）/ P-07（γ）/ P-08（識別子 `<tenant>
 | D-U4-01 | ログイン UX = **Identifier-First 2 段階**（識別子画面 → IdP or PW）。IdP 一覧・IdP ボタンは**恒久的に非表示** | §4.1 |
 | D-U4-02 | HRD 失敗時は**応答同一化 + 書式ヒント表示 + PW フォーム降格**、複数 IdP は Organization セレクター委譲（U2 attempted() 降格と整合） | §4.1.3 |
 | D-U4-03 | ブランディング = **パターン A（基盤統一テーマ 1 本）**。テナント別ロゴ/色は Phase 1 不採用（テキスト確認表示まで）、A' 移行条件を明文化 | §4.2 |
-| D-U4-04 | MFA UX = 4 ケース（A スキップ / B WebAuthn / C TOTP / D 管理者 PW+WebAuthn）+ **初回ログイン時エンロール強制** + Recovery Codes 標準発行 | §4.3 |
+| D-U4-04 | MFA UX（**2026-07-26 改訂**）= 外部フェデ P-3 は**検証・記録のみ（補完撤去、PCI リスク明示の上の方針決定）**/ B WebAuthn・C TOTP は **IdP-KC 収容ユーザのみ** / D 管理者 PW+WebAuthn + エンロール強制・Recovery Codes は IdP-KC・管理者のみ | §4.3 |
 | D-U4-05 | ステップアップ再認証は**専用文言画面**（「再ログイン」と言わない）、AAL2 max_age=900s / AAL3 max_age=300s（U5 §5.9.1 で確定） | §4.3.4 |
 | D-U4-06 | Landing = **Pattern 1（許可サービスのみ filter 表示）+ 申請可能セクション**。判定根拠は JWT roles ではなく**管理画面 Backend のエンタイトルメント API**（暫定、B-627） | §4.4 |
 | D-U4-07 | Sorry = **基盤側 Sorry SPA（Landing SPA 同居 `/sorry`）を主実装**。エッジ 403→302 集約（ADR-022 パターン ii）は P-18 により**他組織への要求仕様（REQ-IN-07 詳細化）に降格**、RP 側 redirect を標準規約化 | §4.5 |
@@ -67,9 +67,10 @@ flowchart TB
     S1["画面 1: 識別子入力<br/>『会社コード-ユーザーID または メールアドレス』<br/>※ IdP 一覧なし(P-16)・PW 欄なし"]
     HRD{"HRD 解決<br/>(U2 §2.3.3)"}
     Sel["画面 1b: Organization セレクター<br/>(同一 Org 複数 IdP 時のみ、v26 標準)"]
-    IdP["顧客 IdP / IdP-KC<br/>ログイン画面(管轄外/2-tier)"]
+    IdP["顧客 IdP / IdP-KC ログイン画面<br/>(管轄外/2-tier。ケース B/C の MFA は<br/>IdP-KC 画面内で実施、§4.3)"]
     S2["画面 2: パスワード入力<br/>(HRD 降格時のみ = 実質管理者)"]
-    MFA["MFA 画面群 (§4.3)<br/>ケース B/C/D のみ"]
+    Rec["mfa_indicator 記録のみ<br/>(基盤側の追加画面なし、D-U4-04 改訂)"]
+    D["ケース D: WebAuthn 必須<br/>(管理者、§4.3)"]
     Land["着地 (§4.4)<br/>redirect_uri 優先 / 既定 = Landing"]
 
     Entry --> Hint
@@ -80,14 +81,15 @@ flowchart TB
     HRD -->|"A 案: alice@acme.com →<br/>Org domain 解決"| IdP
     HRD -->|複数 IdP リンク| Sel --> IdP
     HRD -->|"解決不能 / @なしハイフンなし"| S2
-    IdP -->|assertion| MFA
-    S2 --> MFA
-    MFA --> Land
+    IdP -->|assertion| Rec --> Land
+    S2 --> D --> Land
 
     style S1 fill:#fff3e0
     style S2 fill:#ffebee
     style Sel fill:#fff3e0
 ```
+
+> （2026-07-26 図修正）D-U4-04 改訂を反映: 旧図の「MFA 画面群（ケース B/C/D）」ノードを撤去。フェデ後の基盤側追加画面はなし（`mfa_indicator` 記録のみ）、ケース B/C は IdP-KC 収容ユーザ限定で IdP-KC ログイン画面内、ケース D は管理者ローカル経路のみ（§4.3.1）。
 
 - **根拠**: ADR-020（Identifier-First は Notion / Dropbox / Microsoft 365 の業界標準。全案の最終フォールバック B = IdP セレクターは、本基盤では**テナント限定セレクター**に縮小して採用）、ADR-055（識別子 D 案 + メール A 案ハイブリッド、U2 §2.3.3 確定値）、U2 §2.7.2（IdP 一覧非表示 = 性能必須条件。realm 全 IdP を出す「グローバルセレクター」は禁止であり、セレクターを出せるのは HRD で Org が確定した後のテナント限定文脈のみ）。
 - **画面 1 の入力欄は 1 つ**: 識別子と email を同一フィールドで受ける（HRD SPI が `@`/ハイフンで判別、U2 §2.4.2）。フィールドラベルとプレースホルダは `hrd_mode` Org attribute（`identifier`/`email`/`both`）に依存しない共通文言とする（画面 1 表示時点ではテナント未確定のため。文言例: 「ID（例: acme-001234）またはメールアドレス」）。
@@ -163,47 +165,47 @@ Keycloak は Client 単位 Theme Override に上限がないため（ADR-024 §G
 
 ### 4.3.1 4 ケースの画面遷移（§FR-3.4.0.B 対応）
 
-**採用（D-U4-04）**: §FR-3.4.0.B の 4 ケースを画面遷移に写像する。判定は `mfa_indicator` 正規化属性（ADR-031 / U2 §2.4.4、fail-safe: 不在 = 未済）による。
+**採用（D-U4-04、2026-07-26 改訂）**: §FR-3.4.0.B の 4 ケースのうち、**外部フェデユーザ（P-3）への基盤側 MFA 補完（旧ケース B/C）を撤去**する — **MFA の実施は顧客 IdP の責任**とし、基盤は `mfa_indicator` の**検証・記録のみ**行う（ブロック・補完・追加画面なし。ユーザー方針決定 2026-07-26。**⚠ IdP が MFA を実施しない PCI 対応顧客では PCI DSS Req 8.4.2 を充足できないリスクをステークホルダーへ明示済み** — 担保は契約条項 + amr 記録の監査証跡、hearing **B-MFA-PCI-1**）。
+
+改訂後の画面遷移: ケース A'（P-3 全員）= 追加画面なし（mfa_indicator を記録のみ）/ ケース B/C = **IdP-KC 収容ユーザにのみ適用**（WebAuthn 優先 / TOTP 代替 — 実施場所は IdP-KC のログイン画面）/ ケース D = 管理者 PW + WebAuthn 必須（不変）。エンロール強制（§4.3.2）は IdP-KC ユーザと管理者のみ。判定は `mfa_indicator` 正規化属性（ADR-031 / U2 §2.4.4、fail-safe の帰結を「補完」から「記録 + 監視」へ変更）による。
 
 ```mermaid
 flowchart TB
-    Fed["フェデ認証完了<br/>(顧客 IdP / IdP-KC)"]
+    ExtFed["外部フェデ認証完了<br/>(顧客 IdP、P-3 全員)"]
+    KCFed["IdP-KC 収容ユーザのログイン<br/>(IdP-KC 画面内)"]
     Local["ローカル PW 認証完了<br/>(管理者のみ)"]
-    Q1{"mfa_indicator に<br/>MFA 系値あり?"}
-    Q2{"基盤側クレデンシャル<br/>登録済み?"}
-    A["ケース A: 追加画面ゼロ<br/>→ 着地"]
+    A["ケース A': 追加画面なし<br/>mfa_indicator を記録 + 監視のみ<br/>(MFA 系値なしでもブロック・補完しない)"]
+    Q2{"IdP-KC 側クレデンシャル<br/>登録済み?"}
     Enroll["エンロール画面 (§4.3.2)<br/>WebAuthn 優先 / TOTP 代替"]
     B["ケース B: WebAuthn 認証画面<br/>(生体/キー、~3 秒)"]
     C["ケース C: TOTP 入力画面<br/>(6 桁、autocomplete=one-time-code)"]
     D["ケース D: WebAuthn 認証画面<br/>(管理者、必須)"]
+    A2["着地"]
 
-    Fed --> Q1
-    Q1 -->|あり| A
-    Q1 -->|なし/不在| Q2
-    Q2 -->|未登録| Enroll
-    Q2 -->|WebAuthn 登録済| B
-    Q2 -->|TOTP のみ登録| C
-    Local --> D
-    B --> A2["着地"]
-    C --> A2
-    D --> A2
-    Enroll --> A2
+    ExtFed --> A --> A2
+    KCFed --> Q2
+    Q2 -->|未登録| Enroll --> A2
+    Q2 -->|WebAuthn 登録済| B --> A2
+    Q2 -->|TOTP のみ登録| C --> A2
+    Local --> D --> A2
 
     style A fill:#e8f5e9
     style Enroll fill:#fff3e0
     style D fill:#ffebee
 ```
 
+> （2026-07-26 図修正）D-U4-04 改訂を反映: 旧図では外部フェデユーザも `mfa_indicator` 未済時に基盤側エンロール / ケース B/C へ分岐していたが、改訂後は外部フェデ P-3 = 記録・監視のみ（補完・追加画面なし）。ケース B/C・エンロール強制は IdP-KC 収容ユーザ限定（実施場所は IdP-KC のログイン画面）、ケース D は不変。
+
 | ケース | 対象 | 基盤側追加画面 | UX 上の要点 |
 |:-:|---|---|---|
-| **A** | P-3・顧客 IdP MFA 済（想定 70%） | **ゼロ** | 二重 MFA 回避（ADR-024 §D アンチパターン 1 の防止）が本基盤の中核 UX 価値。画面には何も出ない = 設計成功の状態 |
-| **B** | P-3・IdP MFA 未済 + WebAuthn 可（25%） | WebAuthn 認証 1 画面 | プラットフォーム認証器（Touch ID / Windows Hello / パスキー）優先。画面に「所属組織の設定では追加確認が必要です」の説明 1 行（「基盤が勝手に足した」という顧客クレームの予防、§FR-3.4.5 のメッセージと整合） |
-| **C** | P-3・WebAuthn 不可（〜5%） | TOTP 入力 1 画面 | `autocomplete="one-time-code"`、入力 6 桁自動送信はしない（誤送信によるロックアウト防止・A11y 2.2.1） |
-| **D** | 管理者ローカル（P-1 / IdP なしテナント管理者、〜2%） | PW → WebAuthn 必須 | TOTP への緩和は不可（攻撃の主要標的、§FR-3.4.5）。Break Glass はランブック管理の別手順（U7/U9）で本 UX の対象外 |
+| **A'** | **P-3（外部フェデ）全員 — IdP の MFA 実施有無を問わない**（2026-07-26 改訂） | **ゼロ**（`mfa_indicator` を記録・監視のみ。未済でもブロック・補完しない — 担保は契約 B-MFA-PCI-1） | 二重 MFA 回避（ADR-024 §D アンチパターン 1 の防止）が本基盤の中核 UX 価値。画面には何も出ない = 設計成功の状態 |
+| **B** | **IdP-KC 収容ユーザ**（非 IdP テナント）・WebAuthn 可（2026-07-26 改訂: P-3 から変更） | WebAuthn 認証 1 画面（**実施場所 = IdP-KC のログイン画面**） | プラットフォーム認証器（Touch ID / Windows Hello / パスキー）優先 |
+| **C** | **IdP-KC 収容ユーザ**・WebAuthn 不可（同上） | TOTP 入力 1 画面（IdP-KC 画面内） | `autocomplete="one-time-code"`、入力 6 桁自動送信はしない（誤送信によるロックアウト防止・A11y 2.2.1） |
+| **D** | 管理者ローカル（P-1 / IdP なしテナント管理者） | PW → WebAuthn 必須 | TOTP への緩和は不可（攻撃の主要標的、§FR-3.4.5）。Break Glass はランブック管理の別手順（U7/U9）で本 UX の対象外 |
 
-- **根拠**: §FR-3.4.0.A/B（案 3 信頼レベル評価方式 + 4 ケース完全整理）、ADR-031（fail-safe）、ADR-026 A 案（不足分を基盤が補完、拒否しない）、U2 §2.3.1（管理者 WebAuthn 必須）/ §2.3.4。
+- **根拠**: D-U4-04 2026-07-26 改訂（外部フェデの補完撤去 — MFA 実施 = 顧客 IdP 責任 + 契約担保）、ADR-031（fail-safe の帰結 = 記録 + 監視へ変更）、U2 §2.3.1（管理者 WebAuthn 必須）/ §2.3.4。旧 4 ケース（A 70% / B 25% / C 5% / D 2% — §FR-3.4.0.B 案 3）は歴史的検討として §FR-3.4 側に保持。
 - **代替案**: ケース B/C の説明文言を出さない — 「IdP で認証したのにまた聞かれた」問い合わせが確実に発生するため不採用。SMS OTP — §FR-3.4.6 で不採用確定（NIST 非推奨・PII）。
-- **未決事項**: Trust Device（30 日 MFA スキップ、§FR-3.4.6 Should）の採否と対象ケース（B/C のみ、D は対象外とする案）— ヒアリング後に確定。ケース C の対象判定（「WebAuthn 不可」の検出方法: ユーザ自己申告のフォールバックリンク方式を暫定採用、User-Agent 判定は不採用）。
+- **未決事項**: Trust Device（30 日 MFA スキップ、§FR-3.4.6 Should）の採否と対象ケース（B/C〔= IdP-KC 収容ユーザ〕のみ、D は対象外とする案）— ヒアリング後に確定。ケース C の対象判定（「WebAuthn 不可」の検出方法: ユーザ自己申告のフォールバックリンク方式を暫定採用、User-Agent 判定は不採用）。
 
 ### 4.3.2 エンロールフロー（初回登録 UX）
 
@@ -247,7 +249,7 @@ flowchart TB
 画面遷移の要点:
 
 1. **コンテキスト維持**: 再認証完了後は元の操作画面に `redirect_uri` で戻る（OIDC 標準動作）。アプリ側には「ステップアップ要求時に操作コンテキストを保持して再開する」責務があり、U5 RP 実装ガイドに規約化する。
-2. **フェデユーザの AAL3**: 顧客 IdP が AAL3 相当を出せない場合、基盤側 WebAuthn で補完（ADR-026 A 案）。この場合ケース A ユーザでも基盤側 WebAuthn エンロール（§4.3.2）が**初回ステップアップ時に**発生する。画面に「この操作には、所属組織のサインインに加えて本基盤での確認が必要です」の説明を出す。
+2. **フェデユーザの AAL3**: ~~基盤側 WebAuthn で補完~~ → **2026-07-26 改訂: 外部フェデユーザはステップアップ対象外**（基盤側 MFA 手段を持たないため。ステップアップの適用範囲 = 管理者層 + IdP-KC 収容ユーザ、U2 §2.3.4）。外部フェデユーザに AAL3 相当操作が必要なテナントが現れた場合は「挙動検証済み IdP に限る per-IdP `acr_values`/`prompt` 転送解禁」を Phase 2 オプションとして設計追加する（GAP-4 の例外扱い）。
 3. **max_age 超過時**: 「最後の確認から時間が経過しました」文言で再認証（ADR-026 §C。「セッション切れ」と言わない — 認証エラーではないため）。
 4. **文言原則**: 「再ログイン」「ログインし直してください」という表現は全ステップアップ画面で禁止（ADR-024 §D の「2 回ログイン」誤解と PW 再入力の無駄を誘発するため。ADR-021 Sorry アンチパターンと同系統）。
 
@@ -308,6 +310,8 @@ flowchart TB
 
 **採用（暫定、B-627 依存）**: launchpad の表示判定は **JWT roles の直読ではなく、管理画面 Backend（ADR-038）のエンタイトルメント照会 API** `GET /api/me/apps`（自身の AT で呼出、応答 = 利用可能/申請可能サービスのリスト）を用いる。
 
+> **2026-07-24 拡張（U3 §3.8 / AZB 決定）**: 本 API は **`GET /api/me/context`** に拡張する（apps + 組織コンテキスト〔部門/上長/役職等〕+ 機能ロール割当を 1 応答で返す統合射影の読取。`/api/me/apps` は context の apps 部分と同値のエイリアスとして残置可）。**フェデ系・非 IdP 系を問わず全テナント共通契約**（AZB-5 — 源の違いは基盤が吸収）。読取元は Broker Acct の統合射影（U3 D3-16、Keycloak 非経由）。
+
 - **根拠**: U2 §2.5.4 で **業務アプリ Client には roles Mapper を付けない**（ハイブリッド C: 細粒度認可はアプリ / 管理画面 Backend DB 側）ことが確定しており、launchpad が自 token の roles を見る方式（ADR-021 §E の JWT 案）は**本基盤のクレーム設計では成立しない**。エンタイトルメントの SSOT を管理画面 Backend DB に一元化することで、アプリ追加時の更新箇所が 1 箇所（App Registry / ADR-059 と接続余地）になる。
 - **代替案**: (a) launchpad Client にのみ realm role Mapper を付け JWT 判定 — 「管理系 Client に限り roles 発行」の U2 決定とは整合するが、表示制御のためにロール体系を二重管理することになり不採用。(b) Keycloak Admin API 直叩き — SPA からの Admin API 到達は権限面で不可。
 - **未決事項**: B-627（判定根拠）の正式回答で本節を確定。API スキーマ（サービスカタログ項目: 名称 / 説明 / URL / アイコン / requestable / 申請先）は U10（ADR-038 API 仕様）で定義し、本書はフィールド要件のみ引き渡す。テナント別ブランディング（B-624）は Phase 1 不採用（§4.2 と同基準）。
@@ -325,6 +329,25 @@ flowchart TB
 | **主実装** | **基盤側 Sorry SPA**: launchpad SPA 内ルート `/sorry`（同一 codebase・同一配信）。クエリ `?app=<id>&reason=<code>` を受けてガイダンス表示 | 弊社（自管理） | **Phase 1 必須** |
 | **主経路** | **RP（アプリ）側 redirect**: アプリが認可失敗（403）を検知したら `https://launchpad.<domain>/sorry?app=...&reason=...` へ redirect する規約を **U5 RP 実装ガイドの標準要件**とする（SPA/BFF で数行） | 各アプリ | Phase 1 必須 |
 | **追加層（要求仕様）** | **エッジ 403→302 集約**（ADR-022 パターン ii: CloudFront + Lambda@Edge origin-response）: P-18 により CloudFront/Lambda@Edge は**他組織管理の監査 Acct 内**にあり、我々は実装を保証できない。U6 の要求仕様体系（06-infra-network-design.md §6.7.1 **REQ-IN-07**）の**詳細化別紙**として要求する | 他組織 | あれば良い層。**受諾されても RP 側 redirect 規約は廃止しない**（二重化） |
+
+主経路（RP redirect）と追加層（エッジ集約）の関係を図示する（2026-07-26 図示追加）:
+
+```mermaid
+sequenceDiagram
+    participant U as ユーザ
+    participant RP as アプリ(RP)
+    participant SP as Sorry SPA
+    participant BE as 管理画面 Backend
+    U->>RP: 認証成功済みでアクセス
+    RP->>RP: 認可判定 → 403 (権限なし)
+    RP-->>U: 302 /sorry?app=id&reason=code<br/>(主経路: U5 RP 実装ガイド標準規約)
+    U->>SP: GET /sorry?app=&reason=
+    SP->>BE: app のカタログ名解決 + requestable 照会
+    SP-->>U: ガイダンス表示<br/>(申請 / launchpad へ戻る / サポート窓口)
+    Note over U,RP: 追加層 (REQ-IN-07 要求仕様): エッジ CloudFront (他組織管理) が<br/>403 + X-Sorry-Reason を 302 /sorry へ集約。<br/>受諾されても RP 側 redirect 規約は廃止しない (二重化)
+```
+
+> 凡例: `reason` は固定コード辞書のみ受理（自由文不可）、未解決 `app` は表示省略（§4.5.2）。
 
 - **根拠**: ADR-022 は「CloudFront + Lambda@Edge をアプリごとに自管理配置」（ADR-039 v2 前提）で推奨度 ★5 としたが、その前提が P-18 で崩れた（Lambda@Edge は CloudFront と同一アカウント必須 = 他組織アカウント内実装になる）。**実装も変更 SLA も保証できない層に UX の本道を置けない**ため、ADR-022 のパターン選定自体は維持しつつ、配置主体の変更に伴い「エッジ = 要求仕様・追加層」「自管理 = 主実装」に責務を再配分する。U6 §6.7.1 REQ-IN-07 が既に「詳細は U4/ADR-022 の要求として別紙」と placeholder を置いており、本節がその別紙の内容を確定する。
 - **要求仕様（REQ-IN-07 別紙、U6 へ引き渡し）**: (1) 対象 = 各アプリ CloudFront の origin-response、(2) 動作 = `403` かつ `X-Sorry-Reason` ヘッダあり → `302 /sorry?app=&reason=`（ADR-022 §B の実装例）、(3) Sorry SPA origin（弊社側）への追加ビヘイビア、(4) Lambda@Edge 変更のリードタイム SLA。回答（可否・SLA）は U6 の REQ 管理表に追記。
@@ -442,3 +465,4 @@ flowchart TB
 - 2026-07-23: 初版（Wave 2 起草）。Baseline v1（P-01〜P-18）前提。Identifier-First 2 段階 + IdP 一覧恒久非表示（D-U4-01）/ HRD フォールバック応答同一化（D-U4-02）/ ブランディング パターン A（D-U4-03）/ MFA 4 ケース UX + エンロール強制（D-U4-04）/ ステップアップ再認証 UX（D-U4-05）/ Landing Pattern 1 + エンタイトルメント API 判定（D-U4-06）/ Sorry 基盤側 SPA 主実装 + エッジ要求仕様化（D-U4-07）/ WCAG 2.2 AA + axe-core CI（D-U4-08）を決定。
 - 2026-07-23 (v1.1): Wave 2 整合性レビュー反映 — D-U4-05 の max_age 注記を「U5 §5.9.1 で確定」へ更新（M-7、該当 3 箇所）、launchpad Client 記述を「U2 Client テンプレート（U5 §5.9.2 で追加依頼済み）」へ修正（L-3）、§4.3.3 にクレデンシャルリセット = U7 §7.6.1 L4 経路の注記追加（L-6）、§4.7.4 の SPA 配信 REQ に REQ-IN-11 予約採番を付記（M-9）。
 - 2026-07-24 (v1.2): Wave 3 最終レビュー反映 — §4.6.3 の axe-core CI 同居先を「SPI ビルドパイプラインと同じ Tekton」から U9 の CI（GitHub Actions、U9 D-U9-12 で Tekton 不採用確定）へ修正（H-4）。
+- 2026-07-26 (v1.3): D-U4-04 改訂（外部フェデ P-3 = `mfa_indicator` 記録のみ・補完なし、ケース B/C = IdP-KC 収容ユーザ限定）に合わせ §4.1.1 / §4.3.1 の既存 mermaid 図を修正。§4.5.1 に Sorry 誘導シーケンス図を追加。決定内容の変更なし（図の整合 + 図示のみ）。

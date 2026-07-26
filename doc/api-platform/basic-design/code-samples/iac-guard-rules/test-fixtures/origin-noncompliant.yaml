@@ -1,0 +1,9 @@
+Resources:
+  BadApi:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: bad
+  BadSgIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      CidrIp: 0.0.0.0/0

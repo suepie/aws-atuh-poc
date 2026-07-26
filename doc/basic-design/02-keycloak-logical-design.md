@@ -146,6 +146,48 @@ P-01（ROSA HCP + RHBK）/ P-02（10M MAU）/ P-06（L2 単一 Realm + Organizat
 - **根拠**: JIT 突合キーは `tenant_id + persistent sub`（§FR-1.2.0.D / §FR-2.2.1.A）。email は補助。`tenant_id` は IdP-KC 側 Org（= 同一 alias）から供給されるため両クラスタで値が一致する。
 - **未決事項**: IdP-KC ユーザの roles を Broker に伝播するか（Phase 1 は伝播しない。認可はアプリ/管理画面 DB 側 — ADR-038 ハイブリッド C と整合）。
 
+§2.1〜§2.2 で決定した Realm / Organization / IdP / Client の対応関係を 1 枚に図示する（2026-07-26 図示追加）:
+
+```mermaid
+flowchart LR
+    subgraph BK["Broker KC : Realm broker"]
+        BO1["Org acme<br/>(IdP あり顧客)"]
+        BO2["Org delta<br/>(IdP なし顧客)"]
+        BI1["IdP acme-oidc01<br/>(顧客 IdP ごと・Org 紐付け必須)"]
+        BI2["IdP idpkc-oidc01<br/>(IdP なし顧客共通の単一エントリ)"]
+        BC["アプリ Client 群<br/>(Stage 1 クレーム発行、§2.5)"]
+        BO1 ---|"Org 紐付け"| BI1
+        BO2 ---|"Org 紐付け"| BI2
+    end
+    subgraph IK["IdP-KC : Realm idp"]
+        IO1["Org delta<br/>(IdP なし顧客のみ・同一 alias)"]
+        IC["Client broker-rp<br/>(Confidential / Standard Flow のみ)"]
+        IS["Client Scope broker-federation<br/>(tenant_id / preferred_username /<br/>amr / email)"]
+        IC ---|"Default Scope"| IS
+    end
+    EXT["顧客 IdP<br/>(Entra / Okta 等)"]
+    BI1 -->|"OIDC / SAML フェデレーション"| EXT
+    BI2 -->|"OIDC Authorization Code<br/>(redirect URI 完全一致 1 本)"| IC
+    BO2 -.->|"同一 alias で突合"| IO1
+```
+
+> 凡例: 実線 = 認証・登録関係、点線 = alias 突合（IdP なし顧客は両クラスタに同一 alias で Org を作成、§2.1.3）。図は代表例（acme = IdP あり、delta = IdP なし）のみ示す。
+
+### 2.2.5 2-tier 間のセッション・ログアウト・再認証の整合（2026-07-24 追加、[02a](02a-broker-idpkc-federation.md) GAP-1〜5 の解消）
+
+**採用**:
+
+| # | 項目 | 決定 | GAP |
+|---|------|------|-----|
+| 1 | **ログアウト連鎖** | `idpkc-oidc01` に `backchannelSupported=true` を設定し、**Broker のログアウト（L2/L4/管理者強制/ITDR L4）時に IdP-KC セッションも常時破棄**する（顧客 IdP と異なり自社基盤のため越境問題なし — U5 §5.5.1 例外行と対）。⚠ 検証: `storeToken=false` 下での logout 時 `id_token_hint` 取り回し（Keycloak はセッションノートに ID Token を保持するはずだが実機確認）→ **G-SPI-Compat の検証項目に追加** | GAP-1 |
+| 2 | **IdP-KC 側 Realm セッション TTL** | Realm `idp` の SSO Session Idle / Max を **Broker Realm と同値（Idle 1h / Max 24h）**に固定（IaC で両 Realm 共通変数化し、独立変更を構造的に防ぐ）。P-09 絶対 24h は 2 層合成で担保 | GAP-2 |
+| 3 | **ステップアップ（AAL3）の転送** | Broker の Step-up Flow（§2.3.4）で対象ユーザの認証元が `idpkc-oidc01` の場合、**IdP-KC へ `acr_values="3"` + `prompt=login` を付けて再リダイレクト**し、IdP-KC 側 Browser Flow の LoA Condition が WebAuthn（AAL3）を実行 → `amr` で返し mfa_indicator Mapper（FORCE）が Broker 側 acr 判定に反映する。IdP-KC 側にも ACR-to-LoA マッピング（"1"/"2"/"3"、Broker §2.3.4 と同一値体系）を定義する | GAP-3 |
+| 4 | **`prompt=login` / `max_age` の転送方針** | Broker が受けた `prompt=login` / `max_age` / `acr_values` は、認証元が `idpkc-oidc01` のユーザに対しては **IdP-KC へ転送する**（Keycloak の IdP 設定は既定で全て転送しないため、`forwardParameters` 相当の設定/SPI 対応を明示。L4 不信任オプション §FR-4.2 の成立条件）。**外部顧客 IdP へは転送しない**（挙動が IdP 依存で保証できないため、外部 IdP ユーザの再認証強制は Broker 側 max_age 評価で代替） | GAP-4 |
+| 5 | **`login_hint` の書式契約** | Broker → IdP-KC へ渡す値は **`<userid>`（tenant プレフィックス除去後）のみ**とし、IdP-KC 側 Identifier-First は「`<userid>` 単独」を正、「`<tenant>-<userid>` 完全形」を**受理して除去する寛容受理**とする（誤設定・ブックマーク経由でもループしない）。この契約を両クラスタのログイン SPI の入出力仕様（§2.4）に明記 | GAP-5 |
+
+- **根拠**: [02a §3/§7](02a-broker-idpkc-federation.md)（セッション二重構造の分析とギャップ検出）。
+- **未決事項**: #1 の実機確認（G-SPI-Compat 追加分）、#3 の IdP-KC 側 Flow 詳細（§2.3.4 の Step-up Flow 定義を IdP-KC Realm にも複製するか簡略版とするか — **PoC P-2 の測定シナリオに含めて確定**）。
+
 ---
 
 ## 2.3 Authentication Flow 設計（5 系統）
@@ -211,6 +253,28 @@ post-broker-std（Post Broker Login Flow）
 | `alice@acme.com`（@あり） | HRD SPI は attempted() で降格 → Organization Identity-First Login（v26 標準）が domain → Org → IdP 解決 | IdP 複数リンク時はテナント限定セレクター（hrd-implementation §4 パターン B、v26 自動動作） |
 | 解決不能（Org なし / IdP リンクなし） | フォールバック | Username Password Form へ降格（= 管理者ローカルのみ通過し得る。一般ユーザは認証失敗で終端） |
 
+上表の判定を時系列のフローチャートとして図示する（2026-07-26 図示追加）:
+
+```mermaid
+flowchart TB
+    IN["画面 1 の入力値"] --> Q1{"@ を含む?"}
+    Q1 -->|"はい (email 形式)"| A1["HRD SPI は attempted() 降格<br/>Organization Identity-First (v26 標準) が<br/>domain から Org を解決"]
+    Q1 -->|"いいえ"| Q2{"ハイフンを含む?"}
+    Q2 -->|"いいえ"| FB["フォールバック:<br/>Username Password Form へ降格<br/>(管理者ローカルのみ通過し得る)"]
+    Q2 -->|"はい"| P["最初のハイフンで parse<br/>→ tenant / userid"]
+    P --> Q3{"getByAlias(tenant)<br/>で Org 解決?"}
+    Q3 -->|"不在"| FB
+    Q3 -->|"あり"| Q4{"Org リンク IdP は?"}
+    Q4 -->|"1 件"| GO["kc_idp_hint AuthNote 設定<br/>+ login_hint=userid 転送<br/>→ Identity Provider Redirector が IdP へ 302"]
+    Q4 -->|"複数"| SEL["attempted() 降格 →<br/>テナント限定 Organization セレクター<br/>→ 選択 IdP へ 302"]
+    Q4 -->|"リンクなし"| FB
+    A1 --> Q5{"domain → Org → IdP<br/>解決?"}
+    Q5 -->|"解決"| GO2["IdP へ 302<br/>(複数リンク時はテナント限定セレクター)"]
+    Q5 -->|"不能"| FB
+```
+
+> 凡例: HRD SPI は常に fail-open（§2.4.2）— 図中の全フォールバックはエラー終端ではなく後続 Authenticator への降格。
+
 - **HRD モード制御**: Org attribute `hrd_mode`（`identifier` / `email` / `both`、既定 `both`）で顧客ごとの受入経路を宣言（U4 の画面文言と連動）。
 - **根拠**: ADR-055（P3: ハイフン区切り + 薄い SPI + Organizations 内部データ、外部 DB なし）、ADR-020（ヒントキー戦略）、§FR-1.2.0.D。**HRD による IdP 一覧非表示は UX 選好ではなく 1000+ IdP の性能成立条件**（§2.7.2、research 必須対策 2）。
 - **代替案**: 方式 C（顧客別 URL + CloudFront Function）は Phase 2 の大口顧客オプション（ADR-055 §F）。方式 B（SPA 主導 kc_idp_hint）はポータル・ディープリンク限定の補助（Universal Login 原則維持）。
@@ -218,13 +282,19 @@ post-broker-std（Post Broker Login Flow）
 
 ### 2.3.4 系統④: ステップアップ認証（acr / LoA）
 
+> **2026-07-26 追記 — 対応要否は未決（アプリ側回答待ち、hearing B-APP-STEPUP-1）だが「どちらでも対応できる」フックを Phase 1 に用意する**:
+> 1. **基盤側（コストほぼゼロ、Phase 1 実施）**: ACR-to-LoA マッピング（"1"/"2"/"3"）の Realm 定義 / Optional Client Scope `acr-step-up`（U5 §5.1.2 — 付与しなければ既定トークンに影響なし）/ 本 Flow の分岐実装（管理者 WebAuthn は PCI 上どのみち必須のため AAL3 手段は常設）/ IdP-KC への acr_values 転送仕様（§2.2.5 #3）
+> 2. **アプリ側に今求めるのは 1 点のみ**: 認可リクエストの組み立てを 1 箇所に集約しておく（将来 `acr_values`/`max_age` パラメータを 1 行足せる構造）。重い操作 API への acr 検査は必要になった時に追加
+> 3. **適用範囲**: 管理者層 + IdP-KC 収容ユーザ。外部フェデユーザは対象外（Phase 2 の per-IdP 転送解禁オプション、U4 §4.3 改訂注記）
+> → 要否が「不要」となっても無駄になるのは Flow 分岐のみ（管理系画面では U7 L4 JIT 承認で使用するため完全な無駄にはならない）。
+
 **採用**: Keycloak 標準の **ACR to LoA Mapping + Conditional - Level of Authentication** を使用（ADR-026）:
 
 | 設定 | 値 |
 |---|---|
 | Realm ACR-to-LoA | `acr "1"`→LoA1（AAL1）/ `acr "2"`→LoA2（AAL2）/ `acr "3"`→LoA3（AAL3） |
 | Step-up Flow | `browser-std` の forms 配下に LoA Conditional サブフローを追加: LoA2 = WebAuthn/OTP、LoA3 = WebAuthn（Phishing-resistant のみ、パスキー/セキュリティキー） |
-| フェデユーザの充足判定 | IdP の MFA 主張は **`mfa_indicator` 正規化属性**（§2.4.4）で評価。`mfa_indicator` に MFA 系値なし = 未済（fail-safe、ADR-031）→ **本基盤側でステップアップ MFA を補完**（拒否ではなく補完、ADR-026 A 案） |
+| フェデユーザの充足判定 | IdP の MFA 主張は **`mfa_indicator` 正規化属性**（§2.4.4）で評価。`mfa_indicator` に MFA 系値なし = 未済（fail-safe、ADR-031）。**2026-07-26 改訂: 外部フェデユーザは補完せず記録・監視のみ（ステップアップ対象外 — 適用範囲は管理者層 + IdP-KC 収容ユーザに限定、U4 D-U4-04 改訂 / ADR-031 注記）** |
 | `auth_time` 制約 | 高セキュ操作 `max_age=900`、AAL3 は `max_age=300`（ADR-026 §H。最終値は U5 の TTL 体系と同時確定） |
 
 - **根拠**: ADR-026（A 案採用: 本基盤が不足分を補う）、RFC 9470、NIST SP 800-63B Rev4。アプリは `acr_values` 宣言のみで全 IdP の方言差を吸収できる。
@@ -251,6 +321,31 @@ post-broker-std（Post Broker Login Flow）
 | ② | **HRD Authenticator** | Authenticator | Browser `forms` 先頭 | ADR-055 確定（実装 1-1.5 週） |
 | ③ | **Event Listener（Golden 検知 emit 専用）** | EventListener | （Flow 外） | ADR-060 §C.3。**属性書込は行わない** |
 | ④ | **mfa_indicator 正規化** | Identity Provider Mapper | 各 IdP の Mapper として | §2.4.4（標準 Mapper で不足する場合のみ Custom） |
+
+3 JAR・4 機能と配置先の対応を図示する（2026-07-26 図示追加）:
+
+```mermaid
+flowchart LR
+    subgraph JARS["Custom SPI 3 JAR"]
+        S1["SPI ① JIT 制御 Authenticator<br/>(LastLogin + Re-Activation 統合)"]
+        S2["SPI ② HRD Authenticator"]
+        S3["SPI ③ Event Listener<br/>(Golden 検知 emit 専用・属性書込なし)"]
+    end
+    S4["④ mfa_indicator 正規化<br/>(第一選択 = 標準 IdP Mapper、<br/>不足時のみ Custom)"]
+    F1["browser-std<br/>forms サブフロー"]
+    F2["first-broker-std"]
+    F3["post-broker-std"]
+    F4["Flow 外<br/>(イベント購読)"]
+    F5["各 IdP の Mapper 定義<br/>(syncMode=FORCE)"]
+    S2 -->|"先頭 (REQUIRED)"| F1
+    S1 -->|"末尾 (REQUIRED)"| F1
+    S1 -->|"末尾 (REQUIRED)"| F2
+    S1 --> F3
+    S3 --> F4
+    S4 --> F5
+```
+
+> 凡例: SPI ① から出る 3 本の矢印が「3 系統 Flow 配置」（PoC V3'/V3'' PASS、§2.3 冒頭の全系統共通制約）。
 
 - **根拠**: SPI の数を絞るのは RHBK バージョン追従コスト（年 1-2 回の互換確認、ADR-055 §A.7）を面積で抑えるため。①③ の分離は Keycloak Issue #14942（Event Listener からの属性書込不可）による確定事項。
 - **共通未決事項（G-SPI-Compat）**: **RHBK 26.4 × upstream 26.x での全 Custom SPI 互換確認は未実施（TBD）**。PoC は upstream 26.6 で実施しており、RHBK ビルドでの `AuthenticationFlowContext` / `OrganizationProvider` API 互換・Operator Custom Image での動作を Phase 1 実装前ゲートとする（Baseline §1.5）。
@@ -334,6 +429,7 @@ Broker 内部 username は `<orgAlias>-<userid>`（Username Template Importer �
 
 **採用**:
 - **roles**: Phase 1 は**ハイブリッド C**（Phase 5 設計確認で確定）— JWT には基盤ロールを**管理系 Client（テナント管理画面等）に限り** `oidc-usermodel-realm-role-mapper` で発行し、業務アプリの細粒度認可はアプリ側 DB / 管理画面 Backend で管理。業務アプリ Client には roles Mapper を付けない（Stage 3 は必要時のみ、ADR-030）。
+  - **2026-07-24 補強（U3 §3.8 D3-14）**: 粗粒度認可（エンタイトルメント + 組織コンテキスト + 機能ロール割当の器）の **SSOT = ADR-038 Backend DB**、配信 = `/api/me/context`（API pull）。**Keycloak の groups/roles を業務認可の authoring に使わない**（単一 Realm × 1000+ テナントでの肥大回避・JWT 非搭載方針・アプリの Admin API 結合回避）。KC は認証 + `tenant_id`（+ 組織属性の**保管**、D3-15）に専念。
 - **syncMode 既定**: IdP レベル既定 = **`IMPORT`**。Mapper 単位 override は §2.4.4（`mfa_indicator`=FORCE）のみ許可し、**`scim_active` / `provisioned_by` / `last_login` を IdP Mapper の対象にすることを禁止**（SCIM/SPI 書込値の上書き事故防止。PoC V2 で per-Mapper syncMode の動作を実測確認済み）。
 - **根拠**: [jit-scim §10.4.F.4](../common/jit-scim-coexistence-keycloak.md)、ADR-033 §G.3（Minimum Storage L2: Import 属性を絞る）。
 - **未決事項**: 顧客 IdP の groups クレーム → 基盤ロール自動付与（Advanced Claim to Role）は Phase 1 では使わない方針だが、B-604 系ヒアリングの結果次第で再評価（U3）。
@@ -495,6 +591,9 @@ Broker 内部 username は `<orgAlias>-<userid>`（Username Template Importer �
 ---
 
 ## 改訂履歴
+
+- 2026-07-26 (v1.4): 可読性向上のため mermaid 図 3 点を追加（§2.2.4 Realm/Org/IdP/Client 構成対応図 / §2.3.3 HRD 解決フローチャート / §2.4 SPI 3 JAR・4 機能配置図）。決定内容の変更なし（図示のみ）。
+- 2026-07-24 (v1.3): **§2.2.5 新設 — 2-tier セッション・ログアウト・再認証の整合（02a GAP-1〜5 解消）**: idpkc-oidc01 の logout 連鎖既定 ON（backchannelSupported）/ IdP-KC Realm TTL を Broker 同値に固定（IaC 共通変数化）/ AAL3 の acr_values+prompt=login 転送仕様 / prompt・max_age は IdP-KC のみ転送（外部 IdP は Broker 側 max_age 評価で代替）/ login_hint 書式契約（<userid> 正 + 完全形寛容受理）。G-SPI-Compat に storeToken=false × logout id_token_hint 検証を追加。
 
 - 2026-07-23: 初版（Wave 1 起草）。Baseline v1（P-01〜P-18）前提。Realm/Org 命名規則・2-tier 論理設定・Flow 5 系統・Custom SPI 4 種・Protocol Mapper（Stage 1 + tenant/aud/roles C）・User Profile 明示宣言・1000+ IdP 必須対策 7 点の制約化・PoC ゲート（G-IdP-Scale P-1〜P-7 / G-SPI-Compat）を定義。
 - 2026-07-23 (v1.1): Wave 2 整合性レビュー反映（L-8、U7/U5 引き渡しの受け皿）— §2.3.1 に Composite Role 2 状態（`<role>-eligible`/`<role>-active`、ADR-040/U7 §7.6）の両 Realm Role 設計包含 + PW ポリシー length(12)・WebAuthn Policy 具体値の U7 §7.7.2 参照注記を追加、§2.3.5 の HIBP 照会を「PW 変更時 + ローカル PW ログイン成功時」（U7 §7.2.2）に拡張、§2.5.1 の `sid` 保留注記を「U5 §5.1.1 で確定済み（既定発行）」へ更新。

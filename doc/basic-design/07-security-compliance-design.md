@@ -75,6 +75,34 @@ U6 §6.0.2 の生命線原則をセキュリティ面でも適用する: **B 部
 | `alias/broker-s3` / `alias/idpkc-s3` | L2 | 各 | 各 Acct S3（SPA bundle / 一時領域） | SYMMETRIC | ❌ |
 | `alias/tenant-<alias>-mrk` | L3 | Broker | 大規模・規制業種テナントのみ（B-KMS-3 確認後） | SYMMETRIC | ✅ |
 
+上表の CMK がどのアカウントに属し MRK か Regional かの写像を図示する（2026-07-26 図示追加）:
+
+```mermaid
+flowchart TB
+    subgraph AUDIT["監査 Acct"]
+        A1["L1 alias/audit-logs-mrk — MRK<br/>（全 Acct 監査ログ S3 + OpenSearch）"]
+        A2["L1 alias/org-cloudtrail-mrk — MRK<br/>（CloudTrail Organization Trail）"]
+    end
+    subgraph BROKER["Broker Acct"]
+        B0["L1 alias/broker-breakglass — Regional<br/>（DR 側は大阪 Acct 内で別鍵 + 物理金庫）"]
+        B1["L2 alias/broker-aurora-mrk — MRK<br/>（Broker KC Aurora Global DB）"]
+        B2["L2 alias/broker-idmap-mrk — MRK<br/>（同居中は broker-aurora-mrk に統合可）"]
+        B3["L2 alias/broker-itdr — Regional<br/>（ITDR DynamoDB、DR 方式は U8）"]
+        B4["L2 alias/broker-secrets / broker-s3<br/>— Regional"]
+        B5["L3 alias/tenant-*-mrk — MRK<br/>（規制業種テナントのみ・B-KMS-3 待ち）"]
+    end
+    subgraph IDPKC["IdP-KC Acct"]
+        I1["L2 alias/idpkc-aurora-mrk — MRK<br/>（PW ハッシュ保有 Aurora）"]
+        I2["L2 alias/idpkc-secrets / idpkc-s3<br/>— Regional"]
+    end
+    subgraph OTHER["他組織 Acct（NW 監査 / NW）"]
+        X["CMK 共有ゼロ<br/>（P-18、D-U6-02 #4）"]
+    end
+
+    BROKER -.->|"書込 Role の Encrypt 系のみ<br/>Key Policy でクロスアカウント許可"| A1
+    IDPKC -.->|"同左（IdP-KC 侵害時も Broker 側<br/>CMK へは到達不能 = ブラスト半径分離）"| A1
+```
+
 - **根拠**: ADR-045 §A（3 階層）、P-17（Acct 分割 = ブラスト半径分離。**IdP-KC 侵害時に Broker 側 CMK へ到達できない**ことを D-U6-02「Broker↔IdP-KC 間 IAM Role なし」と併せて構造保証）、ADR-051/P-05（Aurora Global DB は MRK 必須）。
 - **代替**: ① 全鍵 MRK 化 — Break-Glass / Secrets 系は Region 内完結が望ましく（漏洩時の影響を東京に限定）不採用。② 旧 ADR-045 の Auth Acct 単一配置維持 — P-17 と矛盾するため不採用。
 - **未決**: L3 テナント別 CMK の対象顧客（B-KMS-3 ヒアリング待ち、Phase 1 は L2 共通で開始）。
@@ -175,6 +203,40 @@ U6 §6.0.2 の生命線原則をセキュリティ面でも適用する: **B 部
 - **代替**: リリース時から全自動遮断 — 初期ベースライン不在で FP 多発が確実、不採用。
 - **未決**: Phase 1b 移行判定の合否基準精緻化（B-GD-2）。
 
+§7.2 全体（パイプライン D-U7-04 / 対応レベル D-U7-05 / 段階活性化 D-U7-06）を Acct 境界・Phase 1a/1b 分岐込みで図示する（2026-07-26 図示追加）:
+
+```mermaid
+flowchart TB
+    subgraph IDPKC["IdP-KC Acct"]
+        SPI2["Event Listener SPI（IdP-KC KC）<br/>emit 専任・ローカル PW ログインが主戦場"]
+        BF2["KC 標準 Brute Force<br/>（ローカル lockout は IdP-KC 内完結<br/>= Admin API 逆流経路なし）"]
+    end
+    subgraph BROKER["Broker Acct（一元集約）"]
+        SPI1["Event Listener SPI（Broker KC）<br/>emit 専任（属性書込 SPI と JAR 分離）"]
+        EB["EventBridge itdr-bus"]
+        RE["Risk Engine Lambda<br/>（HIBP k-Anonymity / Spraying 横断検知 /<br/>スコアリング）"]
+        DDB["DynamoDB（履歴・Risk Score）<br/>broker-itdr CMK"]
+        SNS["SNS → Slack<br/>（Phase 1 β: PagerDuty）"]
+        ACT["Response Action<br/>→ Broker KC Admin API"]
+    end
+    subgraph AUDIT["監査 Acct"]
+        S3["CloudWatch Logs（SoR）→ S3<br/>（§7.7.1 Object Lock）"]
+    end
+
+    SPI1 --> EB
+    SPI2 -->|"クロスアカウント PutEvents のみ<br/>（第 6 経路・U6 差分要求）"| EB
+    EB --> RE
+    RE --> DDB
+    RE --> S3
+    RE --> LV{"リスクスコア帯（ADR-060 §C.4）<br/>Low / Medium / High / Critical"}
+    LV -->|"L1: 記録 + 通知"| SNS
+    LV -->|"L2 / L3"| GATE{"段階活性化<br/>（D-U7-06）"}
+    GATE -->|"Phase 1a（〜+3 ヶ月）: 検知・通知のみ<br/>例外 = HIBP ヒット時 PW 変更強制"| SNS
+    GATE -->|"Phase 1b（FP 率 5% 未満を実測後）:<br/>自動アクション有効化"| ACT
+    LV -->|"L4 Critical（Phase 1 は手動承認必須）"| L4["on-call 判断 → U5 §5.4.3 手順<br/>not-before push + 全セッション削除<br/>+ 30 分監視窓"]
+    L4 --> ACT
+```
+
 ---
 
 ## 7.3 Log scrubbing（ADR-060 §A の実装確定)
@@ -204,6 +266,38 @@ U6 §6.0.2 の生命線原則をセキュリティ面でも適用する: **B 部
 | M-14 | Basic 認証 | `Authorization: Basic …`（client_secret_post 移行前の残存対策） |
 
 **監査スキャン**: OpenSearch 定期クエリ（`Bearer eyJ` / `SAMLResponse=` / `code=` / `logout_token=`）を**週 1** 実行（U9 で Dashboard 化）。検出時 SOP: ①該当トークンの強制 Revocation + 対象ユーザ再認証（U5 §5.4）②マスク漏れパターンを辞書に追加 → IaC PR ③件数を CloudWatch Metrics（`log_scrubbing_leak_count`、目標 0）。マスク処理件数もメトリクス化し、**突然のゼロ件はパイプライン故障のアラート条件**とする（マスク失敗 = 平文流出の予兆）。
+
+収集段マスク（主）+ 保存後スキャン（漏れ検知）の 2 段構えパイプラインを図示する（2026-07-26 図示追加）:
+
+```mermaid
+flowchart LR
+    subgraph ROSA["ROSA クラスタ（Broker / IdP-KC 各）"]
+        KC["Keycloak Pod stdout<br/>（KC Pool・taint あり）"]
+        FB["Fluent Bit DaemonSet<br/>（全ノード collector・KC Pool taint への<br/>toleration 必須）"]
+        AGG["Fluent Bit Aggregator<br/>（infra Pool 配置・マスキング Filter 集中<br/>辞書 M-1〜14）"]
+    end
+    ALB["Internal ALB access log → S3"]
+    CWL["CloudWatch Logs<br/>（Lambda / SCIM Facade / API 層）"]
+    LMB["マスキング Lambda"]
+    CW["CloudWatch Logs（マスク済み・90 日）"]
+    subgraph AUDIT["監査 Acct"]
+        S3["S3 Object Lock 7 年<br/>（audit-logs-mrk）"]
+        OS["OpenSearch"]
+        SCAN["週次監査スキャン<br/>（Bearer eyJ / SAMLResponse= /<br/>code= / logout_token=）"]
+    end
+    CF["CloudFront access log<br/>（他組織管理）"]
+
+    KC --> FB --> AGG
+    AGG --> CW
+    AGG --> S3
+    ALB -->|"S3 → EventBridge"| LMB
+    CWL -->|"Subscription Filter"| LMB
+    LMB --> OS
+    LMB --> S3
+    OS --> SCAN
+    SCAN -->|"検出時 SOP: 強制 Revocation +<br/>辞書追加 IaC PR + leak_count メトリクス"| AGG
+    CF -.->|"REQ-IN-10（B 部要求）:<br/>query string 記録最小化 /<br/>弊社側到達後マスク"| S3
+```
 
 - **根拠**: ADR-060 §A（SAML P11 + OIDC O22 対応、収集段が全ソース横断で統一可能）、U5 §5.1.4 C-6（トークンペイロードのログ非出力）と同一線。
 - **代替**: Keycloak 書込前マスクのみ — KC 内部実装依存で網羅不能（ADR-060 §A.4）、補助に留める。OpenShift Cluster Logging（Vector）への乗り換え — マスキング Filter 資産（ADR-060 §A.7 の Fluent Bit 設定・PoC 資産）流用と upstream 情報量を優先し Phase 1 は Fluent Bit。運用中に Operator 管理の利点が上回れば U9 で再評価。
@@ -366,6 +460,7 @@ U6 §6.0.2 の生命線原則をセキュリティ面でも適用する: **B 部
 
 - Recovery Codes 標準発行 + リセットは管理者 JIT 承認経路のみ（D-U4-04 / §7.6 L4)。Keycloak WebAuthn Policy（attestation / user verification 要件）の具体値は U2 Realm 設定へ引き渡し。
 - **根拠**: PCI Req 8.4.2 / 8.5.1（replay 耐性）、NIST SP 800-63B Rev 4、gap doc 最大ギャップ #2。全アクセス MFA 必須化により Req 8.3.9（PW 90 日変更）を適用外化（gap doc Q4 の推奨解）。
+- **2026-07-26 改訂（MFA 実施主体の変更）**: 外部フェデユーザ（P-3）への**基盤側 MFA 補完を撤去**（U4 D-U4-04 改訂）。「全アクセス MFA 必須」の実施構造は **P-3 = 顧客 IdP が実施（契約条項で必須化）+ 基盤は `mfa_indicator` 記録・監視・監査証跡 / P-1・P-2・IdP-KC 収容 = 基盤（従来どおり技術的強制）**となる。**⚠ リスク明示（ステークホルダー伝達済み・方針決定）**: 顧客 IdP が MFA を実施しない場合、当該テナントについて Req 8.4.2 は技術的に充足されない。PCI 対応スコープ顧客との契約では「IdP 側 MFA 実施 + amr 送出」を必須条項とし（**契約前ゲート B-MFA-PCI-1**）、amr 記録（mfa_indicator=false 率の監視・アラート = ITDR 連携）を契約遵守の検知手段 + QSA 向け証跡とする。Req 8.3.9 適用外化ロジックは「MFA が実施されている前提」に依存するため、B-MFA-PCI-1 未合意の PCI 顧客では成立しない点も同ゲートで管理。
 - **代替**: 全ユーザ WebAuthn 強制 — P-4 のデバイス環境が保証できず UX 阻害。管理系必須 + 一般推奨の 2 段が業界標準。
 - **未決**: B-PCI 系ヒアリング（顧客側の MFA 種別要求）。
 
@@ -382,6 +477,22 @@ U6 §6.0.2 の生命線原則をセキュリティ面でも適用する: **B 部
 | ⑤ 顧客通知 | 影響テナントへ通知（契約の 12.9.2 系条項・インシデント通知条項に従う）。委託元（顧客）経由の本人対応整理 | 契約 SLA（Phase 1 α: メール + Slack、ADR-040 §I.1） |
 | ⑥ **確報** | PPC へ確定内容報告 | **30 日以内（不正アクセス起因 = 60 日以内）** |
 | ⑦ 事後 | AAR + 再発防止 + 監査 Acct へ記録（7 年）+ Trust 説明資料更新 | 30 日以内 |
+
+上表 7 ステップの時系列と分岐（③ は並行実施）を図示する（2026-07-26 図示追加）:
+
+```mermaid
+flowchart TB
+    S1["① 検知（即時）<br/>ITDR §7.2 / Golden 検知 §7.4 /<br/>Log scrubbing 監査スキャン §7.3 / 外部通報"] --> ESC["Security Lead へエスカレーション<br/>（ITDR L3/L4 発火時は本 SOP 起動判定を必須化）"]
+    ESC --> S2{"② トリアージ（検知から 24h 以内）<br/>規則 7 条 4 類型判定<br/>不正アクセス起因 = 1 件でも報告対象"}
+    ESC --> S3["③ 封じ込め（即時・②と並行）<br/>U5 §5.4 の粒度（個別 / テナント / L4 全体）<br/>+ 必要時 §7.1.3 緊急鍵ローテ"]
+    S2 -->|"報告対象"| S4["④ 速報: PPC 報告フォーム<br/>知った時点から 3〜5 日"]
+    S2 -->|"対象外"| REC["記録のみ"]
+    S4 --> S5["⑤ 顧客通知<br/>契約の 12.9.2 系条項・インシデント通知条項<br/>（Phase 1 α: メール + Slack）"]
+    S5 --> S6["⑥ 確報: PPC へ確定内容報告<br/>30 日以内（不正アクセス起因 = 60 日以内）"]
+    S6 --> S7["⑦ 事後（30 日以内）<br/>AAR + 再発防止 + 監査 Acct 記録 7 年<br/>+ Trust 説明資料更新"]
+    S3 --> S7
+    REC --> S7
+```
 
 - 体制: Phase 1 α は業務時間内（検知〜速報 3-5 日は業務時間対応でも達成可能な設計とするが、**重大インシデントの初動のみ Break-Glass 経路で時間外対応可**）。Phase 1 β で 24/7 On-Call に載せ替え（gap doc Q10 への回答）。
 - **根拠**: APPI 法 26 + 規則 7・8 条 verbatim（[gap doc §4.5](../common/pci-dss-appi-compliance-gap.md)）、最大ギャップ #3。
@@ -475,7 +586,7 @@ U6 §6.0.2 の生命線原則をセキュリティ面でも適用する: **B 部
 | D-U7-11 | PAM 4 層の写像確定: IIC = 6 Acct 読み替え + Broker/IdP-KC 同時昇格排他、Composite Role 2 状態を両 Realm（U2 引き渡し）、Break-Glass は自管理 3 Acct のみ | §7.6.1 |
 | D-U7-12 | /admin = D-U6-11 3 層で P1-01 を読み替え、特権経路 = IIC→SSM→内部ホスト名、監査ログ集約先 = 監査 Acct 一元（WORM 7 年）、B-PAM-1〜4 ゲート参照 | §7.6.2 |
 | D-U7-13 | 監査ログ = CW 90 日（即時 3 ヶ月充足）+ Firehose → S3 **Object Lock Compliance 7 年** + Athena、全ソース scrubbing 通過後保存 | §7.7.1 |
-| D-U7-14 | Phishing-resistant MFA = **WebAuthn を P-1/P-2 必須**（D-U4-04 整合）、P-3 は mfa_indicator + 契約責任分界、MFA 必須化で Req 8.3.9 適用外化 | §7.7.2 |
+| D-U7-14 | Phishing-resistant MFA = **WebAuthn を P-1/P-2 必須**、P-3 = **IdP 実施 + 基盤は記録のみ（2026-07-26 改訂、補完撤去。PCI 8.4.2 リスク明示 → 契約ゲート B-MFA-PCI-1）**、Req 8.3.9 適用外化は同ゲート依存 | §7.7.2 |
 | D-U7-15 | 漏えい報告 SOP 7 ステップ（速報 3-5 日 / 確報 30・60 日、規則 7 条 4 類型判定表、ITDR L3/L4 と接続）+ Red Hat DPA = Phase 1 契約前ゲート | §7.7.3-4 |
 | D-U7-16 | zero-egress 案 B を**セキュリティ観点で採用推奨**（ECR ミラー = サプライチェーン単一検証点 + Egress 統制単純化）、最終決定は U6 O-10 | §7.7.5 |
 | D-U7-17 | Bot/DDoS 分離 = WAF Bot Control/ATP/Rate Limit は要求仕様（REQ-IN-01 明細 + REQ-OUT-05 ログ共有）、自管理最低線 = KC Brute Force + Enumeration 対策 + ITDR。REQ-IN-01 不成立のまま PCI 顧客契約禁止 | §7.8.1 |
@@ -512,6 +623,8 @@ U6 §6.0.2 の生命線原則をセキュリティ面でも適用する: **B 部
 ---
 
 ## 改訂履歴
+
+- 2026-07-26 (v1.2): 可読性向上のための図示追加（本文の決定内容の変更なし） — §7.1.1 KMS 3 階層 CMK × アカウント配置写像図（MRK / Regional 区別）、§7.2.3 ITDR パイプライン全体フロー（第 6 経路 PutEvents / L1〜L4 / Phase 1a→1b 段階活性化分岐）、§7.3.1 Log scrubbing 2 段構えパイプライン図、§7.7.3 漏えい報告 SOP 7 ステップフロー図。
 
 - 2026-07-23: 初版（Wave 2 起草）。Baseline v1（P-03/P-17/P-18）準拠。KMS 3 階層の 6 Acct 写像 + Realm Key 90 日 Cryptoperiod（D-U7-01〜03）、ITDR Phase 1（HIBP + Brute Force、Broker 集約、段階活性化、D-U7-04〜06）、Log scrubbing（infra Pool Aggregator + 辞書 M-1〜14、D-U7-07）、Golden 検知 Phase 1 = 4 シグナル（D-U7-08）、Workload Identity（IRSA 規約 + FedID + **private_key_jwt = Phase 2 昇格確定**、D-U7-09〜10）、**ADR-040 復活の取込**（6 Acct 読み替え + /admin 3 層整合 + 監査 Acct 一元、D-U7-11〜12）、PCI ギャップ 3 点 + APPI（Object Lock 7 年 / WebAuthn 必須範囲 / 漏えい SOP / Red Hat DPA ゲート / **zero-egress セキュリティ推奨**、D-U7-13〜16）、Bot/DDoS 分離 + Argon2id 確定（D-U7-17〜18）を決定。
 - 2026-07-23 (v1.1): Wave 2 整合性レビュー反映 — §7.2.3 に DR/Game Day ウィンドウの G-2/G-3 自動降格 + Brute Force 感度引上げを追加（M-4）、§7.2.2 HIBP Egress を送信元スコープ拡張（IdP-KC KC Pod CIDR）+ zero-egress 非代替の明記へ拡張（M-5）、§7.5.2 の管理画面 Backend（Broker Acct）/ 専用 API 層（IdP-KC Acct）を 2 行に分割（M-6）、G-PCI-WAF / G-DPA のゲート採番付記（M-11、U1 §1.5 登録）、Event Listener emit セットに REVOKE_GRANT / LOGOUT 系追加（L-1、U5 §5.9.2 受領）、Fluent Bit DaemonSet の KC Pool taint toleration 必須を明記（L-2）。

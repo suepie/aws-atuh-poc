@@ -13,6 +13,7 @@
 | # | ファイル | 単元 | 主な決定 |
 |---|---------|------|---------|
 | 02 | [02-keycloak-logical-design.md](02-keycloak-logical-design.md) | U2 Keycloak 論理 | Realm/Organizations 構成・2-tier 間フェデ(idpkc-oidc01)・Flow 5 系統・SPI 3 JAR 4 機能・Protocol Mapper・User Profile(SSOT=U3 D3-01)・1000+ IdP 制約 7 点 |
+| 02a | [02a-broker-idpkc-federation.md](02a-broker-idpkc-federation.md) | U2/U6 付属 | **Broker⇄IdP-KC 間通信の深掘り**: 決定サマリ・E2E シーケンス(基本設計版)・セッション二重構造・障害モード・**GAP-1〜5(ログアウト連鎖/セッション TTL/AAL3 伝播 等)** |
 | 03 | [03-identity-provisioning-design.md](03-identity-provisioning-design.md) | U3 ID・プロビジョニング | 3 階層識別子 + idmap DB・プロビ 6 経路(provisioned_by 6 値)・アプリ発 CRUD=専用 API 層(D3-05)・**SCIM 自作 Facade(D3-11)**・S1-S10 + 3 段階削除・契約前ゲート追跡 |
 | 04 | [04-auth-ux-design.md](04-auth-ux-design.md) | U4 認証体験・UX | Identifier-First ログイン(IdP 一覧非表示)・ブランディング A・MFA 4 ケース UX・Landing Pattern 1(判定=エンタイトルメント API)・**Sorry=基盤側 SPA 主実装**・A11y |
 | 05 | [05-token-session-authz-design.md](05-token-session-authz-design.md) | U5 トークン・認可 | クレーム辞書(Stage 1 + **sid 確定**)・TTL 最終(AT 30 分)・Token Exchange Pattern 2/3・Revocation/ITDR L4 連携・**Back-Channel Logout 採用**・RP 実装ガイド(§5.6.6 Sorry 規約含む)・idm:* スコープ |
@@ -27,6 +28,7 @@
 
 - [research/rosa-hcp-adoption-research.md](research/rosa-hcp-adoption-research.md) — ROSA HCP 採用調査(HCP 一択 / 大阪対応 / RHBK サブスク内包 / IRSA / コスト)+ ADR-056 改訂骨子
 - [research/keycloak-1000idp-scalability-research.md](research/keycloak-1000idp-scalability-research.md) — 1000+ IdP 条件付き成立(必須対策 7 点 + PoC P-1〜P-7)
+- [research/idp-kc-user-mgmt-authz-boundary-notes.md](research/idp-kc-user-mgmt-authz-boundary-notes.md) — 統合ユーザ管理の認可境界(AZB-1〜5 / 射影 RC-1〜4 / SCIM 単一受け口。→ U3 §3.8 D3-14〜16 に正式反映、訂正 2 点付き)
 - [research/rosa-hcp-machine-pool-egress-notes.md](research/rosa-hcp-machine-pool-egress-notes.md) — ユーザー検討: HCP Infra Node 不在 / Machine Pool 役割分離 / zero-egress / Aurora プール等値化
 
 ## 運用ルール

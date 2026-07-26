@@ -1,0 +1,108 @@
+{
+  "globalSettings": {
+    "stepTimeout": 30000,
+    "userAgent": "CloudWatch-Synthetics-AuthCheck/1.0"
+  },
+  "variables": {
+    "baseUrl": "https://expense.example.com",
+    "tokenUrl": "https://auth.example.com/realms/broker/protocol/openid-connect/token"
+  },
+  "steps": {
+    "1": {
+      "stepName": "expense-users-negative",
+      "checkerType": "HTTP",
+      "url": "${baseUrl}/api/users",
+      "httpMethod": "GET",
+      "authentication": {
+        "type": "NONE"
+      },
+      "assertions": [
+        {
+          "type": "STATUS_CODE",
+          "operator": "IN_RANGE",
+          "rangeMin": 401,
+          "rangeMax": 403
+        }
+      ]
+    },
+    "2": {
+      "stepName": "expense-users-positive",
+      "checkerType": "HTTP",
+      "url": "${baseUrl}/api/users",
+      "httpMethod": "GET",
+      "authentication": {
+        "type": "OAUTH_CLIENT_CREDENTIALS",
+        "tokenUrl": "${tokenUrl}",
+        "clientId": "${AWS_SECRET:canary-central-readonly:client_id}",
+        "clientSecret": "${AWS_SECRET:canary-central-readonly:client_secret}",
+        "scope": "auth-check:read",
+        "tokenApiAuth": ["REQUEST_BODY"],
+        "tokenCacheTtl": 3000
+      },
+      "assertions": [
+        {
+          "type": "STATUS_CODE",
+          "operator": "EQUALS",
+          "value": 200
+        },
+        {
+          "type": "HEADER",
+          "headerName": "Content-Type",
+          "operator": "CONTAINS",
+          "value": "application/json"
+        }
+      ]
+    },
+    "3": {
+      "stepName": "expense-health-public",
+      "checkerType": "HTTP",
+      "url": "${baseUrl}/health",
+      "httpMethod": "GET",
+      "authentication": {
+        "type": "NONE"
+      },
+      "assertions": [
+        {
+          "type": "STATUS_CODE",
+          "operator": "EQUALS",
+          "value": 200
+        }
+      ]
+    },
+    "4": {
+      "stepName": "expense-reports-negative",
+      "checkerType": "HTTP",
+      "url": "${baseUrl}/api/reports",
+      "httpMethod": "GET",
+      "authentication": {
+        "type": "NONE"
+      },
+      "assertions": [
+        {
+          "type": "STATUS_CODE",
+          "operator": "IN_RANGE",
+          "rangeMin": 401,
+          "rangeMax": 403
+        }
+      ]
+    },
+    "5": {
+      "stepName": "expense-reports-positive-apikey",
+      "checkerType": "HTTP",
+      "url": "${baseUrl}/api/reports",
+      "httpMethod": "GET",
+      "authentication": {
+        "type": "API_KEY",
+        "apiKey": "${AWS_SECRET:canary-central-apikey:api_key}",
+        "headerName": "X-API-Key"
+      },
+      "assertions": [
+        {
+          "type": "STATUS_CODE",
+          "operator": "EQUALS",
+          "value": 200
+        }
+      ]
+    }
+  }
+}

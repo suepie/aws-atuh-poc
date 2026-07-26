@@ -1,0 +1,93 @@
+#
+# required-tags.guard
+#
+# 必須 Cost Allocation Tag ルール（03 章 BL-1 / §3.2.1）
+# 04 章 §4.2.1 標準ルール 3 群「必須タグ」に対応。
+#
+# 全リソースに以下 4 タグ（kebab-case）を必須とする:
+#
+#   app-id       app- 前缀 + 小文字英数ハイフン（例: app-checkout）
+#   env          prod / stg / dev の列挙値のみ
+#   cost-center  cc- 前缀 + 部門コード（例: cc-ec）
+#   owner        責任チーム連絡先（メール DL 推奨、例: team-checkout@example.com）
+#
+# タグキーは大文字小文字を区別する（03 章 §3.2.1 注記）。kebab-case で固定。
+#
+# 実行:
+#   cfn-guard validate -r required-tags.guard -d cloudformation/
+#
+# 対象: Tags プロパティ（Key/Value のリスト形式）を持つリソース全般。
+#
+
+#
+# 1) 4 タグキーがすべて存在すること
+#
+rule required_tag_keys_present {
+    Resources.*[
+        Type == /^AWS::/
+        Properties.Tags exists
+    ].Properties.Tags[*].Key {
+        this IN ["app-id", "env", "cost-center", "owner", "exposure", "tenant"]
+        <<Tag keys must be kebab-case standard keys (app-id / env / cost-center / owner) — 03 章 BL-1>>
+    }
+}
+
+#
+# 2) app-id は app- 前缀 + 小文字英数ハイフン
+#
+rule app_id_value_format {
+    let app_id_tags = Resources.*[
+        Type == /^AWS::/
+        Properties.Tags exists
+    ].Properties.Tags[ Key == "app-id" ]
+
+    when %app_id_tags !empty {
+        %app_id_tags.Value == /^app-[a-z0-9-]+$/
+        <<app-id must match app-<kebab> (e.g. app-checkout) — 03 章 §3.2.1>>
+    }
+}
+
+#
+# 3) env は prod / stg / dev の列挙値のみ
+#
+rule env_value_enum {
+    let env_tags = Resources.*[
+        Type == /^AWS::/
+        Properties.Tags exists
+    ].Properties.Tags[ Key == "env" ]
+
+    when %env_tags !empty {
+        %env_tags.Value IN ["prod", "stg", "dev"]
+        <<env must be one of prod / stg / dev — 03 章 §3.2.1>>
+    }
+}
+
+#
+# 4) cost-center は cc- 前缀
+#
+rule cost_center_value_format {
+    let cc_tags = Resources.*[
+        Type == /^AWS::/
+        Properties.Tags exists
+    ].Properties.Tags[ Key == "cost-center" ]
+
+    when %cc_tags !empty {
+        %cc_tags.Value == /^cc-[a-z0-9-]+$/
+        <<cost-center must match cc-<code> (e.g. cc-ec) — 03 章 §3.2.1>>
+    }
+}
+
+#
+# 5) owner は連絡先文字列（空でないこと。メール DL 推奨）
+#
+rule owner_value_present {
+    let owner_tags = Resources.*[
+        Type == /^AWS::/
+        Properties.Tags exists
+    ].Properties.Tags[ Key == "owner" ]
+
+    when %owner_tags !empty {
+        %owner_tags.Value != ""
+        <<owner must be a non-empty contact (email DL recommended) — 03 章 §3.2.1>>
+    }
+}

@@ -69,7 +69,7 @@ ADR-039 の 5 アカウント体系を Broker/IdP-KC 分割で **6 アカウン�
 |--------|------|---------|
 | **G-IdP-Scale** | 1000/2000 IdP 実測 PoC P-1〜P-7([research](research/keycloak-1000idp-scalability-research.md)) | U2 |
 | G-SPI-Compat | RHBK 26.4 × upstream 26.x Custom SPI 互換(HRD/Re-Activation) | U2 |
-| G-SCIM | SCIM Facade の SCIM 2.0 準拠検証(Entra/Okta SCIM Validator + D1/D2 E2E + Soft Delete 写像 + deprovisioned_at セット確認。U3 §3.7.2 で再定義。旧 Metatavu 3 点は Metatavu 採用判断時のみ) | U3 |
+| G-SCIM | SCIM Facade の SCIM 2.0 準拠検証(Entra/Okta SCIM Validator + D1/D2 E2E + Soft Delete 写像 + deprovisioned_at セット確認。U3 §3.7.2 で再定義。旧 Metatavu 3 点は Metatavu 採用判断時のみ)。**2026-07-24 拡張(U3 §3.8)**: ① スケール次元(500/1000 テナント externalId 検索 p99 / バルク 5 万件中の他テナント遅延 / Writer 流量制御下 Aurora 負荷 — G-IdP-Scale と同一データセット併走)② 非 IdP E2E(D1 SCIM→EventBridge→統合射影→初回ログイン sub バックフィル + 読取 p99) | U3 |
 | G-LDAP | B-SCIM-13(LDAP 経路、🚨最優先) | U3 |
 | G-OSAKA | 大阪インスタンス在庫・vCPU クォータ実確認 | U6 |
 | G-EGRESS | 他組織との Egress 許可申請 SLA 合意(1000+ IdP 前提): **②専用ルールグループ + ③更新委任の方式 or ①都度申請 SLA ≤ 4 営業時間の合意。未合意なら §NFR-3 リードタイム改訂へエスカレーション**(U6 §6.7.3 D-U6-13、運用面の裏付けは U9 §9.7.1) | U6/U9 |

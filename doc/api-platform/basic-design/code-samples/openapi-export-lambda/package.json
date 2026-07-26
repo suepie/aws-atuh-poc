@@ -1,0 +1,20 @@
+{
+  "name": "openapi-export-lambda",
+  "version": "1.0.0",
+  "description": "Central Auth Check Canary (ADR-059) - OpenAPI Export Custom Resource. API GW get-export(oas30/yaml) → Cross-Acct で ネットワーク監査 Acct の S3(OpenAPI Registry) に Put する。",
+  "main": "index.js",
+  "type": "commonjs",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "lint": "node --check index.js"
+  },
+  "dependencies": {
+    "@aws-sdk/client-api-gateway": "^3.600.0",
+    "@aws-sdk/client-s3": "^3.600.0",
+    "@aws-sdk/client-sts": "^3.600.0"
+  },
+  "license": "UNLICENSED",
+  "private": true
+}

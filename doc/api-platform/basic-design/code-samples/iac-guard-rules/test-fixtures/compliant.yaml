@@ -1,0 +1,36 @@
+# 準拠 CloudFormation（api-gw-authorizer-required.guard で PASS するべき）
+# Phase 4 P4-1 検証用フィクスチャ
+Resources:
+  # OK: AuthorizationType=COGNITO_USER_POOLS（認証あり）
+  GoodMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      HttpMethod: GET
+      AuthorizationType: COGNITO_USER_POOLS
+      AuthorizerId: !Ref SomeAuthorizer
+      ResourceId: !Ref SomeResource
+      RestApiId: !Ref SomeApi
+
+  # OK: Lambda Function URL が AuthType=AWS_IAM
+  GoodFunctionUrl:
+    Type: AWS::Lambda::Url
+    Properties:
+      AuthType: AWS_IAM
+      TargetFunctionArn: !Ref SomeFunction
+
+  # OK: ALB Listener に authenticate-oidc action がある
+  GoodListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      Port: 443
+      Protocol: HTTPS
+      DefaultActions:
+        - Type: authenticate-oidc
+          AuthenticateOidcConfig:
+            Issuer: https://auth.example.com
+            AuthorizationEndpoint: https://auth.example.com/authorize
+            TokenEndpoint: https://auth.example.com/token
+            UserInfoEndpoint: https://auth.example.com/userinfo
+            ClientId: canary-probe
+        - Type: forward
+          TargetGroupArn: !Ref SomeTargetGroup

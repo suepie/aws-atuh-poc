@@ -1,0 +1,9 @@
+Resources:
+  GoodBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      Tags:
+        - {Key: app-id, Value: app-checkout}
+        - {Key: env, Value: prod}
+        - {Key: cost-center, Value: cc-ec}
+        - {Key: owner, Value: team-checkout@example.com}

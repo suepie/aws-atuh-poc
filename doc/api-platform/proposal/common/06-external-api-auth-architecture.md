@@ -707,10 +707,13 @@ const app = new App();
 const stack = new MyApiStack(app, 'MyApiStack');
 
 Aspects.of(stack).add(new AwsSolutionsChecks({ verbose: true }));
-// cdk-nag は以下を自動検出:
-//  - APIG4: API GW Method の Authorization 設定
-//  - LMB5: Lambda Function URL の AuthType=NONE
-//  - ELB7: ALB の Access logging
+// cdk-nag は以下を自動検出（ルール ID は公式 RULES.md 実在確認済み、2026-07）:
+//  - AwsSolutions-APIG4: API が authorization を実装しているか（認証必須）
+//  - AwsSolutions-APIG3: REST API stage が WAFv2 web ACL に関連付いているか
+//  - AwsSolutions-APIG1/APIG6: access logging / CloudWatch logging
+//  - AwsSolutions-ELB2: ALB の access logs（※「ELB7」は存在しない）
+// ⚠ Lambda Function URL の AuthType を検査する cdk-nag ルールは存在しない
+//   （cdk-nag に LMB prefix はなく Lambda は L1 のみ）→ AuthType 検査は cfn-guard で担保
 ```
 
 **CI 統合（GitHub Actions）**：

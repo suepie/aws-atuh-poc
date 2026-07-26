@@ -136,6 +136,25 @@ P-08（3 階層識別子、`sub` = Layer A UUID）/ P-09（AT 30 分 / RT 30 日
 - **根拠**: §FR-5.2（AAL2 絶対 24h が正）、ADR-050（モバイルは System Browser + PKCE。長期セッション要件は SDK 設計時に再評価）。
 - **U1 への申し送り**: Baseline P-09 の表記を「RT 30 日（設定上限。Phase 1 実効は SSO セッション従属 = 最大 24h、offline_access 無効）」へ精密化することを推奨（本書が根拠）。
 
+§5.2.1/§5.2.2 の TTL 体系（AT 30 分 / RT = SSO 従属 / アイドル 1h / 絶対 24h）の構造を図示する（2026-07-26 図示追加）:
+
+```mermaid
+flowchart TB
+    LOGIN["ログイン成功<br/>（SSO セッション開始 t=0）"] --> SSO
+
+    subgraph SSO["SSO セッション（Keycloak 側・状態あり = 失効の起点）"]
+        IDLE["アイドルタイムアウト 1h<br/>（Refresh 等の活動で毎回リセット）"]
+        MAX["絶対タイムアウト 24h<br/>（t=0 起点・延長不可 = 防御線、NIST AAL2）"]
+    end
+
+    SSO -->|"従属（セッション消滅 = RT 即死）"| RT["Refresh Token<br/>Rotation 有効（Refresh 毎に更新）<br/>Reuse Detection（再利用 = ファミリー全停止）<br/>実効寿命 = 最大 24h（『RT 30 日』は設定上限の意）"]
+    RT -->|"Refresh 成功ごとに新規発行"| AT["Access Token 30 分<br/>Stateless JWT — 失効操作後も<br/>ゾンビ窓 ≤30 分（§5.2.4）"]
+    SSO -.->|"offline_access は Phase 1 無効<br/>（絶対 24h の骨抜き防止）"| OFF["Offline Token（30 日級・モバイル常時ログイン）<br/>Phase 2 以降・アプリ単位個別審査"]
+
+    style AT fill:#fff3e0,stroke:#e65100
+    style OFF fill:#eeeeee,stroke:#9e9e9e,stroke-dasharray: 5 5
+```
+
 ### 5.2.3 テナント別 TTL 短縮オプション（5-15 分）の設定方式
 
 **採用**: 規制業種テナント向けの AT 短縮（5-15 分、ADR-025 §I.5）は **Keycloak 標準の Client 単位 Access Token Lifespan override（Advanced Settings）** で実現する。
@@ -215,6 +234,25 @@ flowchart TD
 - **未決事項**: ① `act` クレーム付与（Delegation）の V2 実測 → Phase 2 ゲート（§5.9）。② IdP-KC 側での TE は**提供しない**（TE は Broker の責務。IdP-KC はアプリ向けトークンを発行しない、ADR-033）。
 - **U2 への反映**: 交換対象 Client の定義・`aud-*` scope 付与ルールを §2.2.3/§2.5 に追加（U2 §2.8.3 フィードバック事項）。
 
+Pattern 2（audience 縮小）の交換フロー全体（§5.3.1〜§5.3.3 の設定を統合）をシーケンスで図示する（2026-07-26 図示追加）:
+
+```mermaid
+sequenceDiagram
+    participant FE as フロント（azp=app-web）
+    participant SA as サービス A（Confidential Client）
+    participant KC as Broker KC（Token Endpoint）
+    participant API as 下流 API（aud=expense-api）
+
+    FE->>SA: ユーザ AT で呼出（aud=service-a）
+    Note over SA: aud 跨ぎの素通し転送は禁止（§5.3.1）
+    SA->>KC: Token Exchange 要求（V2）<br/>subject_token=元 AT / audience=expense-api / scope 縮小
+    KC->>KC: 検証: Client 個別有効化 + aud-* scope ホワイトリスト<br/>要求 scope ⊆ 元 AT scope（拡張要求は拒否）
+    KC-->>SA: 交換後 AT（aud=expense-api / TTL 15 分 / RT なし）<br/>Stage 1 + sid 維持・sub=元ユーザ・azp=サービス A
+    KC->>KC: TOKEN_EXCHANGE 監査イベント記録<br/>（subject / requester client / audience / scope）
+    SA->>API: 交換後 AT で呼出
+    API->>API: aud / azp / tenant_id 検証（§5.6.3 の 6 点）
+```
+
 ---
 
 ## 5.4 Revocation・強制ログアウト
@@ -237,6 +275,7 @@ flowchart TD
 | 全体（緊急） | §5.4.3 の ITDR L4 手順 | 基盤 on-call のみ（権限は U7/U9 で規定） |
 
 - セッション削除は Keycloak の Back-Channel Logout 送信を伴うため、**強制ログアウト = L4 伝播込み**で動作する（採用理由の一つ。§5.5.4）。
+- **非 IdP（mode A）削除の ① はこの API と同一**（2026-07-24 追記）: U3 D3-17 の両側同期削除は「shadow `enabled=false` + `users/{id}/logout`」を第 1 手とする（発行済み AT の残存 ≤30 分は Z 系ゾンビ窓の受容範囲内）。
 - 全操作を監査ログ必須（操作者 / 対象 / 理由コード / 粒度）。パスワード変更時の全セッション無効化は**自動切断（推奨動作）**をデフォルトとする（§FR-5.3 C）。
 
 ### 5.4.3 ITDR L4 連動（全 Token Revoke）
@@ -247,6 +286,30 @@ flowchart TD
 2. **対象範囲の全セッション削除**: RT 即死 + L4 Back-Channel Logout 一斉送信。
 3. **限界の明示**: ローカル署名検証のみの RP には not-before が伝播しないため、**AT 残寿命 ≤30 分のゾンビ窓が残る**（§5.2.4 Z-4）。Phase 3 の API GW Introspection 導入までは、L4 発火 Runbook に「30 分間の追加監視（対象 `sub`/`azp` の API アクセスを WAF/ログで監視・遮断）」を含める（Runbook 化は U9、検知側は U7）。
 4. 発火判定・自動化の閾値（自動 revoke vs 手動承認）は ADR-035/060 §C の Risk Engine 設計（U7）に従う。本書は**実行 API 面の確定のみ**: not-before push = Admin API `push-revocation`、セッション削除 = §5.4.2 と同一 API。
+
+§5.4 全体（Revocation 3 粒度と ITDR L4 の関係・共通の効果と残余リスク）を図示する（2026-07-26 図示追加）:
+
+```mermaid
+flowchart TB
+    subgraph TRIG["起点"]
+        RPU["RP / ユーザ<br/>（ログアウト時 §5.4.1）"]
+        ADM["管理者<br/>（管理画面 Backend 経由・3 層スコープ）"]
+        ITDR["ITDR L4 発火（重大侵害）<br/>基盤 on-call のみ・§5.4.3"]
+    end
+
+    RPU --> REV["RT Revocation（RFC 7009 revoke）<br/>保持 RT を revoke してから破棄"]
+    ADM --> U1["個別ユーザ強制ログアウト<br/>users/id/logout = 全セッション削除"]
+    ADM --> TEN["テナント単位一括 logout<br/>（冪等・再開可能なジョブ）"]
+    ITDR --> L4["not-before push（push-revocation）<br/>+ 対象範囲の全セッション削除"]
+
+    U1 --> EFF["RT 即死 + L4 Back-Channel Logout<br/>が対象 RP へ発火（§5.5.4）"]
+    TEN --> EFF
+    L4 --> EFF
+    L4 --> NB["not-before: Introspection / Refresh /<br/>userinfo は即時拒否"]
+
+    EFF --> ZW["残余: ローカル検証 RP の AT ゾンビ窓 ≤30 分<br/>（§5.2.4 Z-3/Z-4）— L4 時は Runbook で<br/>30 分間の追加監視（U9）"]
+    style ZW fill:#fff3e0,stroke:#e65100
+```
 
 ---
 
@@ -260,12 +323,41 @@ flowchart TD
 |---|---|---|---|
 | **L1 ローカル** | **Must** | アプリ Cookie / トークンストア破棄 + **保持 RT の revoke（§5.4.1）** | アプリ（ガイド提供） |
 | **L2 RP-Initiated Logout** | **Must** | OIDC RP-Initiated Logout。`id_token_hint` 必須 + `post_logout_redirect_uri` は Client に完全一致登録（ワイルドカード禁止）。Logout CSRF 対策として確認画面なし遷移には `id_token_hint` 必須（ADR-057 A.2 B） | 基盤 + アプリ |
-| **L3 フェデ連動（顧客 IdP セッション破棄）** | **既定 OFF・テナントオプション** | Broker の IdP 単位設定で顧客 IdP への logout 連鎖を有効化可能 | 基盤（テナント設定） |
+| **L3 フェデ連動（顧客 IdP セッション破棄）** | **既定 OFF・テナントオプション**。**例外: `idpkc-oidc01`（自社 IdP-KC）は既定 ON**（2026-07-24、[02a GAP-1](02a-broker-idpkc-federation.md)） | Broker の IdP 単位設定で顧客 IdP への logout 連鎖を有効化可能。IdP-KC へは `backchannelSupported=true` で常時連鎖 | 基盤（テナント設定） |
 | **L4 Back-Channel Logout** | **Must（コア層 OIDC アプリ標準）** | §5.5.4 | 基盤（送信）+ アプリ（受信実装） |
 | L4 Front-Channel Logout | **不採用** | — | 3rd party cookie ブロックで信頼性低（saml-vs-oidc §14.2.3） |
 
 - **L3 を既定 OFF とする根拠**: 顧客 IdP（Entra/Okta）のセッションは顧客社内の**他システム SSO も担っており**、本基盤起点の破棄は顧客側 UX・運用への越境となる。責任分界（L1-L3 モデル、jit-scim §10.4.H）上も顧客 IdP セッションは顧客責任。シェア端末・厳格コンプラ等でテナントが明示要求した場合のみ有効化する（hearing B-APP-OIDC-3 / §FR-5.1 TBD A）。
-- 既定のログアウト到達範囲 = **L1 + L2 + L4**（本基盤 SSO 圏の全 RP を同期切断、顧客 IdP セッションは維持）。
+- **`idpkc-oidc01` を例外的に既定 ON とする根拠**（2026-07-24 追加、02a GAP-1）: IdP-KC は**自社基盤であり「顧客側 SSO への越境」問題が存在しない**。OFF のままだと L2 ログアウト後も IdP-KC セッションが残り、`idp.` 経由の**無操作再ログインが可能**になる（共有端末で実害、P-09 絶対 24h の骨抜き）。実装は idpkc-oidc01 の `backchannelSupported=true`。**`storeToken=false` と logout 時 id_token_hint の両立は実機確認**（U2 §2.2.5 → G-SPI-Compat に追加）。
+- **2 層セッション TTL の整合**（同上、02a GAP-2）: IdP-KC 側 Realm の SSO Idle/Max は **Broker と同値（1h / 24h）以下**とする（U2 §2.2.5）。P-09 の絶対 24h は 2 層の合成で成立するため、IdP-KC 側の独立延長を禁止。
+- 既定のログアウト到達範囲 = **L1 + L2 + L4 + IdP-KC 連鎖**（本基盤 SSO 圏の全 RP + 自社 IdP-KC を同期切断、顧客 IdP セッションは維持）。
+
+既定到達範囲でのログアウト伝播（L2 起点 → SSO 破棄 → L4 並行送信 + IdP-KC 連鎖）をシーケンスで図示する（2026-07-26 図示追加）:
+
+```mermaid
+sequenceDiagram
+    participant User as ユーザ（ブラウザ）
+    participant RP1 as アプリ A（起点 RP）
+    participant KC as Broker KC
+    participant RP2 as 他 RP（BFF/SSR）
+    participant IDPKC as IdP-KC（idpkc-oidc01）
+    participant CIDP as 顧客 IdP（Entra/Okta）
+
+    User->>RP1: ログアウト操作
+    RP1->>KC: 保持 RT を revoke（§5.4.1）
+    RP1->>RP1: L1 ローカルセッション破棄
+    RP1->>KC: L2 RP-Initiated Logout（id_token_hint 必須）
+    KC->>KC: SSO セッション破棄（RT 全滅）
+    par L4 Back-Channel Logout（Must・並行送信）
+        KC->>RP2: POST logout_token（sid 入り・§5.5.4）
+        RP2->>RP2: 検証後 sid でローカルセッション破棄 → 2xx
+    and IdP-KC 連鎖（L3 例外・既定 ON）
+        KC->>IDPKC: Back-Channel Logout（backchannelSupported=true）
+        IDPKC->>IDPKC: IdP-KC セッション破棄<br/>（idp. 経由の無操作再ログインを防止）
+    end
+    Note over KC,CIDP: L3 顧客 IdP への連鎖は既定 OFF（テナントオプション）<br/>顧客 IdP セッションは維持 = 顧客責任領域
+    KC-->>User: post_logout_redirect_uri へ帰還（完全一致登録のみ）
+```
 
 ### 5.5.2 SAML SP（ServiceNow）側の扱い
 
@@ -374,6 +466,8 @@ Back-Channel Logout はサーバ間 POST のため、**バックエンドを持�
 | `idm:users:deactivate` | Soft Delete（`enabled=false` + `deprovisioned_at` セット） | 同居アプリ / 管理画面 |
 | `idm:users:reactivate` | アプリ経由 reactivate（SPI ① は `provisioned_by=app` を拒否するため**この API が唯一の再有効化経路**、U2 §2.4.1） | 同居アプリ（審査制） |
 | `idm:idmap:read` / `idm:idmap:write` | 多システム ID マッピング参照 / 更新（U3 §3.1 idmap） | 同居アプリ / 移行バッチ |
+| `idm:context:read`（2026-07-24 追加） | 統合コンテキスト射影の参照（CC 経路 — アプリバックエンドがユーザ AT なしで他ユーザの組織コンテキストを読む場合。自ユーザ分は `/api/me/context` をユーザ AT で呼び **CC スコープ不要**、§5.8.2 の分離維持） | 同居アプリ / 業務アプリ Backend |
+| `idm:assignments:write`（2026-07-24 追加） | 機能ロール割当（opaque per-app 文字列の器、U3 D3-14）の authoring | 管理画面（標準）/ 承認済みアプリ |
 | `idm:sessions:revoke` | 強制ログアウト（§5.4.2 の API 面） | 管理画面 / 運用ツール |
 | `idm:orgs:read` | Org / テナントメタ参照 | 管理画面 |
 
@@ -441,6 +535,10 @@ Back-Channel Logout はサーバ間 POST のため、**バックエンドを持�
 ---
 
 ## 改訂履歴
+
+- 2026-07-26 (v1.3): 可読性向上のための図示追加（本文の決定内容の変更なし） — §5.2.2 TTL 体系構造図（RT = SSO 従属 / 絶対 24h 防御線）、§5.3.3 Token Exchange Pattern 2 シーケンス、§5.4.3 Revocation 3 粒度 × ITDR L4 関係図、§5.5.1 ログアウト伝播シーケンス（L2 → L4 + IdP-KC 連鎖）。
+
+- 2026-07-24 (v1.2): **02a GAP-1/2 反映** — L3 に idpkc-oidc01 例外（既定 ON、自社基盤のため越境問題なし。OFF だと共有端末で無操作再ログイン可）、2 層セッション TTL 整合（IdP-KC は Broker 同値以下、P-09 絶対 24h は 2 層合成で担保）、既定到達範囲を「L1+L2+L4+IdP-KC 連鎖」に更新。
 
 - 2026-07-23: 初版（Wave 2 起草）。`sid` 既定発行 + Back-Channel Logout 採用を確定（ADR-030 宙吊り解消）、クレーム辞書正式版（Stage 1+1.5 / 昇格規約 / `ext_` 規約 / PII チェックリスト C-1〜C-7）、TTL 最終値（AT 30 分 / RT=SSO 従属・offline 無効 / テナント短縮 = Client override 方式）とゾンビ窓 Z-1〜Z-5、Token Exchange V2 の Pattern 2/3 限定採用 + audience 短名規約、Revocation 3 粒度 + ITDR L4 手順、ログアウト 4 レイヤー採用範囲（L3 既定 OFF / SN SLO オプション）、RP 実装ガイド骨子、専用 API 層 `idm:*` CC スコープ設計を定義。
 - 2026-07-23 (v1.1): Wave 2 整合性レビュー反映 — §5.6.6 新設（403→Sorry 誘導の RP 必須規約、U4 受け皿 / H-1）+ `launchpad-spa` Client テンプレート追加依頼（§5.9.2）、max_age 確定（AAL2=900s / AAL3=300s、§5.9.1 #2 / M-7）、`/api/me/*` ユーザ AT 経路の明示（§5.8 / M-8）、参照修正（U3 §3.7.4 #4 / jit-scim §10.4.L / L-3）、Memory 保管の意図的厳格化注記（L-4）。

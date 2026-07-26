@@ -1,0 +1,28 @@
+# 非準拠 CloudFormation（api-gw-authorizer-required.guard で FAIL するべき）
+# Phase 4 P4-1 検証用フィクスチャ
+Resources:
+  # NG: AuthorizationType=NONE（認証なし）
+  BadMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      HttpMethod: GET
+      AuthorizationType: NONE
+      ResourceId: !Ref SomeResource
+      RestApiId: !Ref SomeApi
+
+  # NG: Lambda Function URL が AuthType=NONE
+  BadFunctionUrl:
+    Type: AWS::Lambda::Url
+    Properties:
+      AuthType: NONE
+      TargetFunctionArn: !Ref SomeFunction
+
+  # NG: ALB Listener に認証 action がない（forward のみ）
+  BadListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      Port: 443
+      Protocol: HTTPS
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref SomeTargetGroup

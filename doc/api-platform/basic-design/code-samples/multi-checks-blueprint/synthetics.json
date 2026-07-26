@@ -1,0 +1,6 @@
+{
+  "_comment": "Multi Checks では synthetics.json は任意。存在する場合は blueprint-config.json と同じ ZIP に同梱される（公式スキーマページ記載）。ただし本ファイルの内部フィールドスキーマは AWS 公式ドキュメントに明示されていないため、canary 名 / schedule / runtime / ExecutionRoleArn / 環境変数は本サンプルでは create-canary.sh の CreateCanary API パラメータ側で与える方針とする。DEBUG ログのみ公式に文書化された環境変数 CW_SYNTHETICS_LOG_LEVEL を示す。",
+  "environmentVariables": {
+    "CW_SYNTHETICS_LOG_LEVEL": "INFO"
+  }
+}

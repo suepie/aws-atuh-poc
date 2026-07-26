@@ -27,6 +27,8 @@
 
 「**amr 不送出 = MFA していない**」とみなし、安全側で基盤側 MFA を補完する **fail-safe 設計**を採用（Microsoft Entra B2B / Auth0 / Okta 等の業界主流と同じ）。
 
+> **2026-07-26 改訂（基本設計 U4 D-U4-04）**: 「不送出 = 未済とみなす」の判定は維持するが、**外部フェデユーザ（P-3）に対する帰結を「基盤側 MFA 補完」から「`mfa_indicator=false` の記録 + 監視・アラート（ITDR）+ 契約担保（B-MFA-PCI-1）」へ変更**（ブロック・補完なし）。基盤側補完が働くのは IdP-KC 収容ユーザ・管理者層のみ。mfa_indicator 正規化 Mapper（ホワイトリスト評価）自体は全経路で維持 — 監査証跡・契約違反検知の基盤となる。
+
 ### OIDC + SAML 統合評価：統一 User Attribute (`mfa_indicator`) への正規化
 
 Identity Provider Mapper で 3 種類のクレーム/属性を **統一 User Attribute (`mfa_indicator`)** に正規化し、Conditional Authenticator は単一属性のみ評価する設計を採用。

@@ -250,7 +250,8 @@ Tier ごとに CPU プロファイルが 10-30 倍異なる（Broker = JWT/SAML 
 - 根拠 3: HCP worker は自アカウント VPC 内にあり（research #8）、IdP-KC 側 Private Ingress の NLB を Endpoint Service 化する構成は AWS 標準パターン。
 - 実装: IdP-KC Acct の Ingress NLB → VPC Endpoint Service（`acceptance_required = true`、許可 Principal = Broker Acct のみ）→ Broker Acct に Interface Endpoint → PHZ `idp.basis.example.com` を Endpoint に Alias。TLS は IdP-KC 側 Ingress で終端（証明書は IdP-KC Acct ACM/cert-manager）。
 - 補足: 将来 IdP-KC シャーディング（P-16 超過時の拡張パス、ADR-033 更新注記）でも Endpoint Service を追加するだけで Broker 側設計は不変。
-- **アプリ → IdP-KC のユーザ CRUD 経路（P-17）は IdP-KC Acct 内で完結**（同居アプリ → **専用 API 層（ADR-038 Backend 同基盤、IdP-KC Acct 内配置）** → IdP-KC Admin API。U3 D3-05 確定。Admin API 直・SCIM 経由は不採用）。本書はネットワーク面で「IdP-KC Acct の VPC 内経路のみ・クロスアカウント CRUD 経路は設けない」ことのみ確定する。
+- **アプリ → IdP-KC のユーザ CRUD 経路（P-17）は IdP-KC Acct 内で完結**（同居アプリ → **専用 API 層（ADR-038 Backend 同基盤、IdP-KC Acct 内配置）** → IdP-KC Admin API。U3 D3-05 確定。Admin API 直・SCIM 経由は不採用）。本書はネットワーク面で「**アプリ発 CRUD については** IdP-KC Acct の VPC 内経路のみ・クロスアカウント CRUD 経路は設けない」ことを確定する（2026-07-24 文言精密化 — 下記の管理画面経路と区別）。
+- **管理画面発の非 IdP ユーザ CRUD（mode A、2026-07-24 追加 — [U3 D3-17](03-identity-provisioning-design.md)）**: Broker Acct の idm-api（管理画面 Backend）が **既存 PrivateLink（D-U6-06 単方向）経由で IdP-KC 側 idm-api（専用 API 層と同一デプロイ）を呼び**、Admin API 書込は従来どおり IdP-KC クラスタ内で完結する（**Admin API を PrivateLink へ直接露出しない** — D-U6-11 / 06a §A.2.1b 維持）。削除は「① Broker shadow 無効化（ローカル）→ ② PrivateLink 経由 IdP-KC Soft Delete」の同期 2 コール。**O-12（新規）**: Endpoint Service の NLB に idm-api 内部ルート（内部ホスト名 or 専用リスナー）を追加する実装形 + 認証（Broker idm-api → IdP-KC idm-api のサービス間認可、U5 §5.8 CC スコープ）の確定。
 - **2-tier クライアント認証**: PrivateLink 閉域経路が成立するため Phase 1 は `client_secret_post` を許容。`private_key_jwt` / mTLS への昇格は U7 の Secrets ローテーション設計と同時に判断（Phase 2 開始まで）— U2 未決 #4 への回答。
 
 ---

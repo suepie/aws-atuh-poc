@@ -96,6 +96,29 @@ Wave 1/2 で本基盤の**内部機構**（U2 Keycloak 論理 / U3 プロビジ�
 | `user_name` と Layer B の対応 | SN `user_name` = 本基盤 `username`（`<tenant>-<userid>`）で新規 JIT は統一。既存ユーザの `user_name` が別体系の場合は matching field 側（employee_number）で吸収し `user_name` は触らない | ADR-023 §C / §J-5 |
 | `idmap` への登録 | SN 連携テナントは `idmap.id_mapping` に `system_code='servicenow'` / `system_user_id=<user_name>` を登録（SCIM Facade / 移行バッチ / API 層経由、U3 D3-03 の 3 経路限定に準拠）。監査横断（ADR-054 の目的 3）に使用 |
 
+SSO ログインと sys_user リンク / JIT 作成の流れ（§10.1.1〜10.1.3 の統合）をシーケンスで図示する（2026-07-26 図示追加）:
+
+```mermaid
+sequenceDiagram
+    participant U as ユーザ
+    participant SN as ServiceNow
+    participant BR as Broker KC
+    participant IdP as 顧客 IdP
+
+    U->>SN: SN アクセス (未認証)
+    SN->>BR: SAML AuthnRequest (SP-initiated のみ。<br/>IdP-Initiated SSO は無効 = ADR-057 §E.2)
+    BR->>IdP: L1 認証 (フェデ経路。L1 の Case 1-6 混在は<br/>ブローカーが吸収し SN には現れない = ADR-023 §L.7)
+    IdP-->>BR: 認証結果
+    BR-->>U: SAML Response (CL-SN-01: Sign Assertions/Documents ON、RSA-SHA256)<br/>NameID = username 全体 + employee_number = external_id 生値
+    U->>SN: HTTP-POST Binding でブラウザ経由配送<br/>(Broker → SN のサーバ間 Egress は SSO では発生しない)
+    alt matching field (employee_number) 一致
+        SN->>SN: 既存 sys_user にリンク<br/>(sys_id 不変 = 履歴・承認・監査 FK 保全)
+    else 一致なし
+        SN->>SN: JIT: sys_user 自動作成<br/>(User Provisioning Enabled=Yes、user_name = NameID)
+    end
+    SN-->>U: SN セッション確立・ログイン完了
+```
+
 ### 10.1.4 並走 4 Phase（Power-on → Pilot → 全社 → PW 無効化）（D-U10-04）
 
 **採用**: [SN guide §6](../reference/servicenow-sso-user-linking-guide.md) の並走運用を次の 4 Phase に正規化し、テナント別オンボーディング Runbook（U9）の骨子とする。
@@ -106,6 +129,18 @@ Wave 1/2 で本基盤の**内部機構**（U2 Keycloak 論理 / U3 プロビジ�
 | **M1** | Pilot | 2-4 週間 | Pilot 10-20 名のみ `sso_source = <IdP sys_id>` 設定。sys_id 不変・履歴表示・権限・Group Membership を受入テスト（§10.1.6 の T-1〜T-5） | `sso_source` クリアで即時 |
 | **M2** | 全社 SSO 有効化 | 1-2 ヶ月 | 全ユーザに `sso_source` 一括設定（Break Glass 除外、SN guide §5 Step 4 スクリプト）。PW 認証も継続（フェイルオーバー）。`login_type != 'sso'` の未 SSO ログインを login_history で追跡しフォローアップ | per-user 単位で戻せる |
 | **M3** | PW 無効化 | 1 ヶ月 | 全員の SSO ログイン成功を確認後、一般ユーザの PW 無効化 → 最終的に `glide.authenticate.sso.mandatory = true`。**Break Glass 管理者のみ残置**（§10.1.5）。PW 無効化と SSO 強制は同一 Change ウィンドウで実施 | mandatory=false へ戻す |
+
+4 Phase の時系列と受入テスト T-1〜T-5 の位置をタイムラインとして図示する（2026-07-26 図示追加）:
+
+```mermaid
+flowchart LR
+    M0["M0 Power-on (1-2 週間)<br/>CL-SN-01 発行 + 提供 6 点セット<br/>mandatory=false で並走モード起動<br/>重複 sys_user 統合を完了 (B-SN-19)<br/>巻き戻し: 設定削除のみ"]
+    M1["M1 Pilot (2-4 週間)<br/>10-20 名のみ sso_source 設定<br/>巻き戻し: sso_source クリアで即時"]
+    M2["M2 全社 SSO 有効化 (1-2 ヶ月)<br/>全ユーザ sso_source 一括設定 (Break Glass 除外)<br/>PW 認証も継続 (フェイルオーバー)<br/>未 SSO ログインを login_history で追跡<br/>巻き戻し: per-user 単位"]
+    M3["M3 PW 無効化 (1 ヶ月)<br/>一般ユーザ PW 無効化 + mandatory=true<br/>(同一 Change ウィンドウ)<br/>Break Glass 管理者のみ残置<br/>巻き戻し: mandatory=false へ戻す"]
+    M0 --> M1 --> M2 --> M3
+    T["受入テスト必須 5 点 (§10.1.6):<br/>T-1 既存リンク sys_id 不変 / T-2 JIT 新規作成<br/>T-3 削除連鎖 / T-4 Break Glass / T-5 履歴非破壊"] -.->|"M1 で実施"| M1
+```
 
 - 並走許容期間・Change Management 制約はゲート **B-SN-20**（推奨計 2-4 ヶ月）/ **B-SN-13**。顧客 SN 管理者の SAML 経験（**B-SN-12**）が「なし」の場合は ServiceNow Partner 支援を前提に工程を再見積もる。
 - 責務分担は ADR-023 §F の分担表（弊社 = Keycloak 側 + 提供 6 点、顧客 = SN 側 8 項目）をそのまま採用し、Runbook に転記する（U9）。
@@ -178,7 +213,7 @@ sequenceDiagram
 | ユーザ検索・参照 | `GET /users?query=&external_id=&enabled=&cursor=` / `GET /users/{sub}` | `idm:users:read` | CRUD・検索 |
 | ユーザ作成 | `POST /users`（`provisioned_by` は経路で自動決定: 管理画面 = `local-admin` / CC = `app` + `provisioned_app`） | `idm:users:write` | CRUD |
 | 属性更新 | `PATCH /users/{sub}`（User Profile 宣言属性のみ受理、U3 D3-01。ライフサイクル属性の直接書換は**拒否**） | `idm:users:write` | 編集 |
-| 無効化 / 再有効化 | `POST /users/{sub}/deactivate`（Soft Delete: `enabled=false` + `deprovisioned_at` + Session Revoke）/ `POST /users/{sub}/reactivate` | `idm:users:deactivate` / `idm:users:reactivate` | enabled/disabled トグル・退職処理 |
+| 無効化 / 再有効化 | `POST /users/{sub}/deactivate`（Soft Delete: `enabled=false` + `deprovisioned_at` + Session Revoke。**非 IdP〔mode A〕対象時は両側同期: ① Broker shadow 無効化+logout → ② IdP-KC Soft Delete〔PrivateLink 経由、① が先〕— U3 D3-17、2026-07-24**）/ `POST /users/{sub}/reactivate` | `idm:users:deactivate` / `idm:users:reactivate` | enabled/disabled トグル・退職処理 |
 | **DELETE 動詞** | **提供しない（404 ではなく 405）** | —（`idm:users:delete` は Phase 1 非定義） | Phase 1 物理削除禁止の API 層での物理的強制（U3 D3-09 / U5 §5.8.1） |
 | 招待 | `POST /invitations`（招待リンク発行）/ `GET /invitations` | —（管理画面経路のみ） | 招待リンク |
 | クレデンシャル | `POST /users/{sub}/credentials/password-reset`（強制発行）/ `DELETE /users/{sub}/credentials/mfa`（MFA・Recovery Codes リセット、U4 §4.3.3 の受け皿）/ `POST /users/{sub}/unlock` | —（管理画面経路のみ。**U7 §7.6.1 L4 の JIT 承認経路を経由**） | PW リセット・MFA リセット・ロック解除 |
@@ -188,7 +223,7 @@ sequenceDiagram
 | 監査ログ照会 | `GET /audit-logs?actor=&target=&type=&from=&to=`（ログイン履歴 + 管理操作ログ、自テナント分のみ） | —（管理画面経路のみ） | 監査ログ |
 | ID マッピング | `GET /idmap/{sub}` / `PUT /idmap/{sub}/{system_code}`（履歴行方式、U3 D3-03 DDL 準拠） | `idm:idmap:read` / `idm:idmap:write` | ADR-054 §C.3 の API 化 |
 | セッション | `POST /users/{sub}/logout`（強制ログアウト = 全セッション削除 + L4 Back-Channel 発火、U5 §5.4.2） | `idm:sessions:revoke` | 即時遮断 |
-| **ユーザ文脈（自分）** | `GET /api/me/apps`（§10.2.4）/ `GET /api/me/profile`（userinfo 補完: 表示名・テナント表示名） | 不要（自ユーザ AT、`aud-idm-api`。U5 §5.8.2 の認可モデル分離） | launchpad / Sorry 供給 |
+| **ユーザ文脈（自分）** | **`GET /api/me/context`**（2026-07-24 拡張: apps + 組織コンテキスト + 機能ロール割当。`/api/me/apps` は apps 部分のエイリアス、§10.2.4）/ `GET /api/me/profile`（userinfo 補完: 表示名・テナント表示名） | 不要（自ユーザ AT、`aud-idm-api`。U5 §5.8.2 の認可モデル分離） | launchpad / Sorry / 業務アプリ（読取元 = Broker Acct 統合射影、U3 D3-16） |
 
 **API 規約（全リソース共通）**:
 
@@ -329,6 +364,17 @@ flowchart LR
 | B | 旧 IAM の**ローカル PW ユーザ**（P-4 / SN-only 等） | **User Storage SPI 並走**（初回ログイン時にキャッシュ移行）を第一選択 | **IdP-KC**（P-07 γ: Broker のローカルは管理者のみのため） | 移行完了時 `realm_import` 相当 → 経路 ④/⑤ へ収束 | 初回ログインで新 algo 再ハッシュ（強制リセットなし） |
 | C | **属性・ID マッピングのみ**必要な集団（未ログインでも登録したい） | **バルク import**（Realm Import / Admin API バッチ） | 両方 | `realm_import` | credential なしで作成、初回は SPI 経由 or リセット |
 | D | **人事 DB（HRIS）起点**で統合する顧客 | ADR-054 の SCIM Push（D1 Facade、U3 §3.5）で初期投入 + 継続同期 | IdP-KC | `scim` | — |
+
+対象集団の性質から方式 A〜D を選ぶ判定を図示する（PW ハッシュ互換の詳細判定は §10.4.2 のフローへ続く。2026-07-26 図示追加）:
+
+```mermaid
+flowchart TB
+    Q0{"移行対象ユーザ集団の性質は?"}
+    Q0 -->|"旧 IAM のフェデ済ユーザ<br/>(顧客 IdP あり)"| A["A: JIT 移行 or L1 SCIM 事前登録<br/>受け皿 = Broker<br/>PW 移行不要 (認証は顧客 IdP)"]
+    Q0 -->|"旧 IAM のローカル PW ユーザ<br/>(P-4 / SN-only 等)"| B["B: User Storage SPI 並走 (第一選択)<br/>受け皿 = IdP-KC (P-07 γ)<br/>初回ログインで新 algo 再ハッシュ<br/>→ PW 判定は §10.4.2 フローへ"]
+    Q0 -->|"属性・ID マッピングのみ必要<br/>(未ログインでも登録したい)"| C["C: バルク import<br/>(Realm Import / Admin API バッチ)<br/>credential なしで作成"]
+    Q0 -->|"人事 DB (HRIS) 起点で統合"| D["D: SCIM Push (D1 Facade)<br/>初期投入 + 継続同期<br/>受け皿 = IdP-KC"]
+```
 
 - 切替単位 = **アプリ単位**（ロールバック容易、B-MIG-6 推奨）、並走期間 = **3〜6 ヶ月**（B-MIG-4。並走期間 = 全ユーザが一度はログインする期間、ADR-019 §B）。並走期は新旧の SSO セッションが独立となる旨を事前周知する（ADR-019 §D、B-616 連動）。
 - バルク import 時のバックフィルは jit-scim §10.4.B.6 手順（`provisioned_by` 一括付与）に従い、**90 日バッチ・Re-Activation は `realm_import` を人間レビュー/拒否扱い**とする安全側規定（U3 D3-04）をそのまま適用する。
@@ -493,3 +539,4 @@ flowchart TB
 
 - 2026-07-24: 初版（Wave 3 起草）。Baseline v1（P-13/P-14/P-17/P-18）前提。ServiceNow パターン ② の基本設計化（SAML Client K5 / Matching Field / 並走 4 Phase / Break Glass / 削除連鎖 T-1〜T-5）、ユーザ管理 API `idm-api` v1（単一 OpenAPI × 2 デプロイ / C ハイブリッド実装 / `GET /api/me/apps` 確定）、Webhook 配信機構（`basis.*` 正規化 + HMAC + DLQ + REQ-OUT-01 連動）、移行設計（4 集団マトリクス / PW ハッシュ判定フロー / idmap 旧 ID 記録 / `legacy_user_id` クレーム廃止）、DSAR Phase 1 手動運用の範囲確定（D-U10-01〜13）。
 - 2026-07-24 (v1.1): Wave 3 最終レビュー反映 — **H-3**: 未決に U10-OP-6（オンボーディング承認 UI の Backend 共用）/ U10-OP-7（`canary-central-readonly` スコープ設計）/ U10-OP-8（Admin API SLO 境界）の 3 件追加、§10.3.2 に `idp.enabled/disabled`・`maintenance.scheduled` の予約 2 行追加（Phase 1 は user 系のみ — U9 と合意済み）。**M-4**: §10.3 の Egress を REQ-OUT-01 流用から「枠拡張 or 新 REQ-OUT-06 起票を U6 へ依頼」に修正（U6 引き渡しにも追加）。**M-5**: idm-api 公開経路に REQ-IN-12 予約採番依頼を明記。**M-6**: U3 への引き渡し新設（`provisioned_by=legacy_spi` の D3-04 行追加依頼）。**M-13**: §10.2.1 に Admin SPA = WCAG 2.2 AA + ATAG 2.0 準拠（ADR-043 / U4）を追記。**M-14**: 契約書テンプレート反映のスコープ外明記（法務・契約タスクへ返却）。**L-2**: SAML Client テンプレート採番 K5 → CL-SN-01 改称（U9 禁則 K-\* との衝突回避、参照 5 箇所追随）。**L-3**: §10.1.6 見出しの括弧混在修正。**L-4**: 出典 U3 §3.7.4 #4 → U3 D3-05。**L-5**: `user.created` の JIT 発生源を First Broker ログインイベント（Event Listener SPI 経由、U7 D-U7-04 emit 専任原則）に修正。
+- 2026-07-26 (v1.2): 可読性向上 — mermaid 図 3 点追加（§10.1.3 SN SSO + sys_user リンク/JIT 作成シーケンス / §10.1.4 並走 4 Phase タイムライン〔受入テスト T-1〜T-5 の位置含む〕/ §10.4.1 移行方式 A〜D 判定フロー）。既存図（§10.1.6 削除連鎖 / §10.3.3 Webhook 配信 / §10.4.2 PW ハッシュ判定）は変更なし。設計内容の変更なし。

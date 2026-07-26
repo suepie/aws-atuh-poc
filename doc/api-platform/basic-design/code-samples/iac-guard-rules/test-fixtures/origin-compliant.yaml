@@ -1,0 +1,10 @@
+Resources:
+  GoodApi:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: good
+      Policy: "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Condition\":{\"IpAddress\":{\"aws:SourceIp\":\"pl-58a04531\"},\"StringEquals\":{\"aws:RequestHeader/X-Origin-Verify\":\"secret\"}}}]}"
+  GoodSgIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      SourcePrefixListId: pl-58a04531

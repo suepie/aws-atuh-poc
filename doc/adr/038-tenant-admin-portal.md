@@ -54,7 +54,7 @@
 
 > **⚠ 2026-07-24 実装確定（基本設計 Wave 3 [U10 D-U10-08](../basic-design/10-integration-migration-design.md)）**:
 >
-> 1. **API 実装確定 = `idm-api` v1**（単一 OpenAPI × 2 デプロイ、U10 D-U10-08）。**本文の JWT `apps` / `roles` 例は D-U4-06 / U10 で上書き** — エンタイトルメントは JWT に載せず **API 照会**で解決。
+> 1. **API 実装確定 = `idm-api` v1**（単一 OpenAPI × 2 デプロイ、U10 D-U10-08）。**本文の JWT `apps` / `roles` 例は D-U4-06 / U10 で上書き** — エンタイトルメントは JWT に載せず **API 照会**で解決。**（2026-07-24 追記、[U3 §3.8](../basic-design/03-identity-provisioning-design.md)）**: 照会 API は `GET /api/me/context` に拡張（apps + 組織コンテキスト + 機能ロール割当）。**管理画面の authoring スコープに「アプリ割当（エンタイトルメント）・組織属性・機能ロール割当（opaque per-app 文字列の器）」を追加** — IdP テナント・非 IdP テナント共通の authoring 面（AZB-3。フェデ系の IdP group 駆動は後付けオプション = AZB-4）。粗粒度認可の SSOT = 本 Backend DB。**（2026-07-24 追記 2、[U3 D3-17](../basic-design/03-identity-provisioning-design.md) / [note §8](../basic-design/research/idp-kc-user-mgmt-authz-boundary-notes.md)）**: 非 IdP テナントのユーザ管理は **mode A（本管理画面 = SoT）単独**で確定。CRUD は Broker 側 idm-api がオーケストレーションし、**削除は「① Broker shadow 無効化 + Session Revoke → ② IdP-KC Soft Delete（PrivateLink 経由）」の両側同期**（① が先 — Broker は refresh 時に IdP-KC を再確認しないため）。安全網 = 日次リコンサイル（RB-USR-06）。
 > 2. **§H 段階的構築パス（ロードマップ）は U10 D-U10-08 で一部前倒し**：**MFA リセット・`/org/idps`（IdP 接続管理）を Phase 1 に含む**（[U4 §4.3.3](../basic-design/04-auth-ux-design.md) の要求が根拠。旧 Phase 2 / Phase 4 配置を上書き）。
 > 3. **§G 配置 URL は `/idm/v1` に正規化**（旧 `api.basis.example.com/admin/*` 表記を読み替え）。
 

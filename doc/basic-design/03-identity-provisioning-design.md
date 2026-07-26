@@ -18,7 +18,7 @@
 | **U10 周辺連携** | L1（顧客 IdP → 本基盤）のプロビジョニング | L2（本基盤 → ServiceNow 等 SP）のプロビジョニング詳細（[ADR-023 §L](../adr/023-servicenow-sp-integration.md) 前提）、ユーザ管理画面 API の OpenAPI 化 |
 | **U7 セキュリティ** | 監査イベントの発行点定義 | ITDR 連携・ログ保管の実装 |
 
-本書の決定は **D3-01〜D3-13** で採番する。
+本書の決定は **D3-01〜D3-16** で採番する（D3-14〜16 は §3.8、2026-07-24 追加）。
 
 ---
 
@@ -115,9 +115,24 @@ Keycloak でユーザーレコードが生まれる経路を次の 5 つに限�
 | **①** | JIT（フェデ初回ログイン） | Broker | 顧客 IdP | `jit` | First Broker Login SPI（未設定時のみセット） | ✅ | **対象** | **対象** |
 | **②** | SCIM 受信（顧客 IdP → Broker: D2 / 顧客 HRIS → IdP-KC: D1） | Broker / IdP-KC | 顧客 IdP / HRIS | `scim` + `scim_active=true` | SCIM Facade（§3.5） | ログイン後に追加 | 対象外（SoT 尊重） | **禁止** |
 | **③** | LDAP User Federation | Broker | 顧客 AD/LDAP | `ldap`（+ `federation_link` 自動） | LDAP Provider 設定 | ❌（federation_link で判別） | 対象外（LDAP Sync が AD 側 Disable を反映、[ADR-025 §H.4.B](../adr/025-scim-positioning-and-receive-stance.md)） | 禁止（LDAP Sync 委譲） |
-| **④** | 管理者ローカル作成 | Broker / IdP-KC | 本基盤運用 | `local-admin` | 管理者操作（Tenant Admin Portal / ADR-038） | ❌ | 対象外 | **禁止**（管理者操作待ち） |
+| **④** | 管理者ローカル作成 = **非 IdP テナント mode A を含む**（§3.8 D3-17） | Broker / IdP-KC | 本基盤運用 / **非 IdP はテナント管理者（管理画面 = SoT）** | `local-admin`（**⚠ 未決: テナント管理者 portal 作成に新値 `portal` を切るか — D3-17**） | 管理者操作（Tenant Admin Portal / ADR-038） | ❌ | 対象外 | **禁止**（管理者操作待ち） |
 | **⑤** | **アプリ発 CRUD（P-17 新規）** | **IdP-KC** | **同居アプリ** | **`app`** + `provisioned_app=<client_id>` | 専用 API 層（D3-05） | ❌ | 対象外（アプリが SoT、下記） | **禁止**（アプリ操作待ち） |
 | — | Realm Import（移行時のみ） | 両方 | 旧システム | `realm_import` | 移行バッチ | JSON 次第 | 人間レビュー | 禁止 |
+
+各経路がどの KC に書き `provisioned_by` に何を刻むかを図示する（2026-07-26 図示追加）:
+
+```mermaid
+flowchart LR
+    R1["① フェデ初回ログイン<br/>(SoT: 顧客 IdP)"] -->|"First Broker Login SPI<br/>(未設定時のみセット)"| B1["Broker KC<br/>provisioned_by=jit"]
+    R2["② SCIM D2<br/>(顧客 IdP 発)"] -->|"SCIM Facade"| B2["Broker KC<br/>provisioned_by=scim<br/>+ scim_active=true"]
+    R2b["② SCIM D1<br/>(顧客 HRIS 発)"] -->|"SCIM Facade"| I2["IdP-KC<br/>provisioned_by=scim<br/>+ scim_active=true"]
+    R3["③ LDAP User Federation<br/>(SoT: 顧客 AD/LDAP)"] --> B3["Broker KC<br/>provisioned_by=ldap<br/>(+ federation_link 自動)"]
+    R4["④ 管理者ローカル作成<br/>(非 IdP テナント mode A 含む)"] --> B4["Broker KC / IdP-KC<br/>provisioned_by=local-admin"]
+    R5["⑤ アプリ発 CRUD<br/>(P-17、SoT: 同居アプリ)"] -->|"専用 API 層 (D3-05)"| I5["IdP-KC<br/>provisioned_by=app<br/>+ provisioned_app=client_id"]
+    R6["Realm Import<br/>(移行時のみ)"] --> B6["両 KC<br/>provisioned_by=realm_import"]
+```
+
+> 凡例: 90 日バッチ・Re-Activation の対象は ①（`jit`）のみ（idpkc shadow は除外、D3-09 追記）。他経路は SoT 尊重で対象外（詳細は上表）。
 
 値体系の設計原則:
 - **未知の値・null は常に安全側**（90 日バッチ = 人間レビュー行き / Re-Activation = 拒否）。[jit-scim §10.4.I.2](../common/jit-scim-coexistence-keycloak.md) の「上記以外 → USER_DISABLED」分岐がそのまま新値 `app` の安全網になる（SPI 改修前でも誤復活しない）。ただし監査可読性のため **U2 の Re-Activation SPI に `app` の明示分岐（拒否 + 専用ログ）を追加**する。
@@ -195,14 +210,21 @@ P-17 により IdP-KC Acct にはアプリが同居し、当該アプリがユ�
 
 ### D3-09: S1-S10 状態遷移 + 3 段階削除モデル
 
-**状態機械**（全経路共通の 4 状態）:
+**状態機械**（全経路共通の 4 状態。2026-07-26 図示追加: 従来の ASCII 表記を stateDiagram に置換、内容は不変）:
 
+```mermaid
+stateDiagram-v2
+    Active : 有効 (enabled=true)
+    Disabled : 無効 (enabled=false + deprovisioned_at=now + not_before + Session Revoke)
+    Deleted : 物理削除済 (S3 Glacier アーカイブ後 DELETE CASCADE)
+    [*] --> Active : 経路①〜⑤で作成
+    Active --> Disabled : S5 / S6 / S10 / 管理者・アプリ deactivate
+    Disabled --> Active : Re-Activation(jit のみ) / SCIM active=true / 管理者・アプリ reactivate (deprovisioned_at クリア)
+    Disabled --> Deleted : deprovisioned_at + retention_years 経過 (Phase 2 バッチ)
+    Deleted --> [*]
 ```
-[未登録] --①〜⑤ 作成--> [有効 enabled=true]
-[有効] --S5/S6/S10/管理者/アプリ deactivate--> [無効 enabled=false + deprovisioned_at=now + not_before + Session Revoke]
-[無効] --Re-Activation（jit のみ）/ SCIM active=true / 管理者・アプリ reactivate--> [有効]（deprovisioned_at クリア）
-[無効] --deprovisioned_at + retention_years 経過（Phase 2 バッチ）--> [物理削除済（S3 Glacier アーカイブ後 DELETE CASCADE）]
-```
+
+**90 日バッチ除外の追加（2026-07-24、D3-17）**: `provisioned_by=jit` でも **`jit_idp_alias` が `idpkc%`（= IdP-KC の Broker shadow）のものは 90 日バッチ対象から除外**する。SoT = IdP-KC で削除は管理画面同期駆動（D3-17）のため、shadow の自動 deprovision は不整合の温床。代替の砦 = 日次リコンサイル（D3-17）。
 
 **S1-S10 遷移表**（[jit-scim §10.4.G.2](../common/jit-scim-coexistence-keycloak.md) を設計確定。JIT = Pull / SCIM = Push の非対称が全行の根）:
 
@@ -359,3 +381,103 @@ P-17 により IdP-KC Acct にはアプリが同居し、当該アプリがユ�
 2. First Broker Login SPI の `provisioned_by` 条件分岐 + Re-Activation SPI の `app` 明示拒否分岐（D3-04/D3-12）
 3. per-Mapper syncMode=IMPORT 対象属性（`scim_active` / `provisioned_by`）
 4. 専用 API 層クライアントの Client Credentials スコープ設計（D3-05、U5 とも連携）
+
+## 3.8 統合コンテキスト射影・組織属性・認可境界（2026-07-24 追加、D3-14〜D3-16）
+
+> 出典: [research/idp-kc-user-mgmt-authz-boundary-notes.md](research/idp-kc-user-mgmt-authz-boundary-notes.md)（ユーザー設計討議の決定ログ AZB-1〜5 / RC-1〜4）。本節はその本体反映 + メインセッション検証での**訂正 2 点**を含む。
+
+### D3-14: 認可境界 — 本基盤は「粗粒度」まで（AZB-1/2/3/5）
+
+**採用**: 認可 3 層のうち本基盤が持つのは **L-認可2（組織コンテキスト + エンタイトルメント + 機能ロール割当の器）まで**。SSOT = ADR-038 Backend DB。JWT には載せず **API pull（`/api/me/context`）で配信**（ハイブリッド C / P-10 維持）。
+
+| 項目 | 所有者 | 備考 |
+|---|---|---|
+| アプリ エンタイトルメント | 本基盤 | **フェデ系テナントにも必要**（AZB-5 確定 — 持たないと部門/上長で認可するアプリがフェデ系で動かない。アプリ契約をフェデ/非 IdP で同一形にする） |
+| 組織属性（部門/上長/役職/コストセンター/雇用形態/入社年度） | 本基盤（フェデ系は SCIM/JIT 同期の**射影**、SoT = 顧客 IdP/HRIS） | 認可に要る部分集合のみ（Minimum Storage、ADR-025） |
+| 機能ロール割当の**器**（opaque per-app 文字列） | 本基盤（authoring は共通管理画面 = AZB-3。フェデ系の IdP group 駆動は後付けオプション = AZB-4） | 意味の定義・閾値・ルーティング・リソース判定は**アプリ**（境界原則: 組織ロールまで本基盤、機能ロールは器だけ） |
+
+### D3-15: 組織属性の格納（AZB-1b）と D3-01 への追加
+
+**採用**: 単純 per-user 組織属性 = **Keycloak user attribute（User Profile 宣言、D3-01 SSOT に以下を追加）**。関係データ（機能ロール割当・エンタイトルメント・idmap・射影）= Backend DB。
+
+D3-01 追加行（realm.json 反映は U2 §2.6）: `department` / `manager_ref` / `job_title` / `cost_center` / `organization` / `division` / `employment_type` / `hire_year`（書込主体: SCIM Facade〔Enterprise 拡張写像〕/ API 層 / 管理画面。JWT 非搭載 = U5 C-3 検査対象に追加）。
+
+- **⚠ 訂正 1（検証で判明）**: SCIM Enterprise 拡張（RFC 7643 §4.3）の `manager` は**参照型（complex: value = SCIM リソース id）**であり文字列属性へ直写像できない。**`manager_ref` = 同一テナント内の `external_id` 値へ正規化して保存する規約**とする（Facade が SCIM id → external_id を解決。解決不能時は保留キューでリトライ — 順序到着問題）。
+- Enterprise 拡張で標準的に運べるのは `employeeNumber / costCenter / organization / division / department / manager`（検証済み ✅）。`employment_type` / `hire_year` はカスタム属性（Facade のスキーマ拡張で受理）。
+
+### D3-16: 統合コンテキスト射影（`/api/me/context` の読取元、RC-1〜4）
+
+**採用（方向確定、実測ゲート付き）**: **Broker Acct に統合射影（Aurora `idmap` 同居の read model、RC-1）**を置き、`/api/me/context` はこの射影を 1 read するだけ（**リクエスト時に Keycloak を読まない・アカウント跨ぎしない** — P-17 / U6 D-U6-02 と整合）。提供場所 = Broker Acct の idm-api（RC-2 (i)。IdP-KC 同居アプリは **App Acct のアプリと同格の RP** として同経路で到達 — IdP-KC「基盤コンポーネント」としての単方向原則とは別レイヤ）。
+
+統合射影への 3 つの書込フィードと読取経路を図示する（2026-07-26 図示追加）:
+
+```mermaid
+flowchart LR
+    W1["① D2 SCIM<br/>(顧客 IdP → Broker Facade)"] -->|"直接 upsert"| PJ
+    W2["② D1 SCIM / アプリ CRUD<br/>(IdP-KC 側)"] --> EB["EventBridge<br/>(クロスアカウント / at-least-once)"]
+    EB -->|"Broker ハンドラで<br/>冪等 upsert + version 最新勝ち"| PJ
+    W3["③ 管理画面 authoring"] -->|"直接 upsert"| PJ
+    PJ["統合射影 (read model)<br/>Broker Acct Aurora idmap 同居"]
+    BKC["Broker KC 初回ログイン"] -.->|"IDENTITY_PROVIDER_FIRST_LOGIN<br/>→ Event Listener SPI → EventBridge<br/>(sub バックフィル)"| PJ
+    RP["アプリ / launchpad<br/>(IdP-KC 同居アプリ含む)"] -->|"GET /api/me/context"| IDM["idm-api<br/>(Broker Acct)"]
+    IDM -->|"1 read のみ<br/>(Keycloak 非経由・アカウント跨ぎなし)"| PJ
+```
+
+> 凡例: 実線 = 書込フィード ①〜③ と読取、点線 = 初回ログイン時の `sub` バックフィル（射影キーは `(tenant_id, external_id)` で先行作成）。
+
+- 書込フィード: ① D2 SCIM → Broker Facade 直 upsert ② D1 SCIM / アプリ CRUD → IdP-KC → EventBridge（経路 5 同機構）→ Broker ハンドラ upsert ③ 管理画面 authoring 直。
+- **sub 未生成の扱い**: 射影キーは `(tenant_id, external_id)` で先行作成し、Broker `sub` は初回ログイン時バックフィル。**⚠ 訂正 2（RC-3）**: リンクイベントの emit は First Broker Login の Authenticator SPI 直接ではなく、**Event Listener SPI（emit 専任、U7 D-U7-04）が `IDENTITY_PROVIDER_FIRST_LOGIN` イベントを EventBridge へ送る**形とする（SPI 責務分離の維持）。
+- 一貫性: EventBridge at-least-once 前提の**冪等 upsert + version 最新勝ち**（RC-4）。鮮度: SCIM 即時 / JIT はログイン時更新（stale はアプリ合意）。読取は短 TTL キャッシュ可。
+- **スケール方向性（未確定）**: Facade はステートレス多テナント 1 デプロイ/Acct（テナント別デプロイではない）。ボトルネックは Facade でなく Admin API/Aurora 書込・バルク投入・externalId 検索（P-16 同根）。手当て候補 = 非同期 Writer（キュー + 202 応答）/ テナント別フェア queueing / バルク専用パス / externalId インデックス（research note §5.4、**PoC 実測で確定**）。
+
+### ゲート・引き渡しの更新（D3-14〜16 分）
+
+- **G-SCIM 拡張**（Baseline §1.5 反映）: ① スケール次元 = 500/1000 テナント externalId 検索 p99 / バルク投入（1 テナント 5 万件）中の他テナント遅延 / Writer 流量制御下の Aurora 負荷（G-IdP-Scale と同一データセット併走）② 非 IdP E2E = D1 SCIM → EventBridge → 射影 → 初回ログイン sub バックフィル + 読取 p99。
+- **D3-11 サポート操作に追加**: 組織属性の PUT/PATCH（Enterprise 拡張写像 + `manager_ref` 正規化）。SCIM の書込先は Keycloak（identity + 組織属性）のみ — 機能ロール割当・エンタイトルメントは SCIM で触らせない（管理画面 authoring → Backend DB。**SCIM 受け口は Facade の 1 箇所**、research note §5.3）。
+- 反映先: U2 §2.5.4 注記 / U4 §4.4.3 / U5 §5.8 / U10 §10.2.2 / ADR-038（各書の 2026-07-24 注記参照）。
+
+### D3-17: 非 IdP テナントのユーザ CRUD/削除モデル — mode A 単独（2026-07-24 確定、[research note §8](research/idp-kc-user-mgmt-authz-boundary-notes.md)）
+
+**採用**: 非 IdP テナント = **mode A（管理画面 = SoT）単独**。テナント管理者がユーザ一覧/編集画面から作成・編集・削除。**mode B（HRIS/D1 SCIM — 要念押し確認）・mode C（アプリ発 CRUD = 経路 ⑤）・EventBridge 削除経路・非 IdP の 90 日休眠バッチは Phase 1 対象外**（mode C を将来提供する場合のみ EventBridge 復活、note §8.5。「数年休眠で削除」が要件化したらテナント別リテンションポリシーとして後付け）。
+
+**CRUD 同期モデル（管理 API = Broker 側 idm-api がオーケストレーション、全て同期・数百 ms）**:
+
+| 操作 | 同期の中身 | Broker 関与 |
+|---|---|---|
+| 作成 | IdP-KC のみ（Broker shadow は初回ログインで遅延生成） | なし |
+| 編集（組織属性等） | IdP-KC + 射影（D3-16）更新 | 射影のみ |
+| **削除** | **① Broker shadow 無効化 + not_before 相当（全セッション削除 = `users/{id}/logout`、U5 §5.4.2 と同一 API）→ ② IdP-KC Soft Delete（Broker→IdP-KC PrivateLink 経由）→ ③ 射影 deprovisioned** | **必須・① が先（順序が命）** |
+
+削除操作の同期シーケンスを図示する（2026-07-26 図示追加）:
+
+```mermaid
+sequenceDiagram
+    participant TA as テナント管理者
+    participant API as idm-api
+    participant BK as Broker KC
+    participant IK as IdP-KC
+    participant PJ as 統合射影
+    TA->>API: ユーザ削除
+    API->>BK: ① shadow 無効化 + 全セッション削除<br/>(users/{id}/logout)
+    Note right of BK: refresh 時に user.enabled が検査されるため<br/>この時点で invalid_grant = 遮断成立。<br/>① を先にしないと Broker セッション/RT が<br/>独立生存し退職者が最大 24h アクセス可能
+    BK-->>API: 成功 (失敗なら②③へ進まず中断)
+    API->>IK: ② Soft Delete<br/>(Broker→IdP-KC PrivateLink、idm-api 宛)
+    Note right of IK: ② の失敗はリトライで安全<br/>(ユーザは ① で遮断済み)
+    IK-->>API: 成功
+    API->>PJ: ③ 射影 deprovisioned
+```
+
+> 凡例: 発行済み AT は ① 実行後も最大 30 分有効（P-09 受容済み、下記注記）。2 コール間の不整合は日次リコンサイル（RB-USR-06）が補正。
+
+- **① を先にする理由（検証済み ✅）**: Keycloak は **refresh 時に user.enabled を検査**するため shadow の `enabled=false` + セッション削除で即 invalid_grant。逆に **Broker は refresh 時に IdP-KC を再確認しない**ため、IdP-KC だけ消しても Broker セッション/RT は独立に生存 → shadow 未対処だと退職者が最大 24h（セッション Max）アクセス可能。① 成功後の ② 失敗はリトライで安全（ユーザは遮断済み）、① 失敗なら中断。
+- **残存ウィンドウの注記（既存決定との整合）**: ① 実行後も**発行済み AT は最大 30 分**有効（オフライン検証、P-09）。これは U5 ゾンビ窓 Z 系（ADR-025 §I.5 の複合統制）で受容済みのリスクと同一であり、本モデルで新たな悪化はない。
+- **経路の実装形（既存決定との整合解釈）**: PrivateLink（D-U6-06 単方向）の宛先は **IdP-KC 側 idm-api（専用 API 層と同一デプロイ、U10 の OpenAPI × 2 の内部呼び出し）**とし、**IdP-KC Admin API は従来どおり in-cluster からのみ**呼ぶ（D-U6-11 hostname-admin 内部限定・06a §A.2.1b の原則を維持。Admin API を PrivateLink へ直接露出しない）。→ U6 §6.3.2 に反映、ルート追加の実装形は U6 O-12。
+- **安全網 = 日次リコンサイル**: 2 アカウント 2 コールは分散 Tx ではないため、「IdP-KC の `deprovisioned_at` 有り ↔ Broker shadow enabled=true」を日次突合して補正（U9 RB-USR-06）。idpkc shadow は 90 日バッチ除外（D3-09 追記）のため、これが代替の砦。
+- **SCIM を内部伝播（IdP-KC → Broker）に使わない（却下根拠、検証済み ✅）**: ① **Keycloak は SCIM を送信できない**（ネイティブは受信検討止まり、送信クライアントなし）→ 拡張自作は §2.7 バージョン固定・RHBK サポートと衝突 ② `scim_active` の意味崩壊（内部フェデを外部顧客 SoT と誤認）③ shadow の除外印は既存 `jit_idp_alias=idpkc%` で足りる。mode A では**同期 2 コールが最良**（即時・DLQ 不要）。
+- **未決**: `provisioned_by` の値 — 経路 ④ の `local-admin` 流用か、テナント管理者 portal 作成を区別する新値 `portal` か（Case 表・Re-Activation 分岐 D3-12 に波及するため同時決定。監査上の区別要否がポイント）。
+
+## 改訂履歴
+
+- 2026-07-26 (v1.4): 可読性向上のため mermaid 図 4 点を追加（D3-04 プロビ経路全体図 / D3-09 状態機械の stateDiagram 化〔ASCII 置換、内容不変〕/ D3-16 統合射影データフロー図 / D3-17 mode A 両側同期削除シーケンス図）。決定内容の変更なし（図示のみ）。
+- 2026-07-24 (v1.3): §3.8 に D3-17 追加（非 IdP mode A 単独・両側同期削除・日次リコンサイル・SCIM 内部伝播却下・Phase スコープ、note §8）。D3-04 ④ 注記 + D3-09 に idpkc shadow バッチ除外。
+- 2026-07-24 (v1.2): §3.8 新設（D3-14〜16: 認可境界・組織属性・統合射影。research/idp-kc-user-mgmt-authz-boundary-notes.md の本体反映 + 訂正 2 点〔manager 参照型の正規化 / RC-3 emit は Event Listener SPI 経由〕）。

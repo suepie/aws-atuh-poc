@@ -1,0 +1,26 @@
+{
+  "name": "central-canary-puppeteer",
+  "version": "1.0.0",
+  "description": "Central Auth Check Canary (CloudWatch Synthetics Puppeteer). App Registry(DynamoDB) + OpenAPI Registry(S3) を Scan して全アプリの認証外形を Negative/Positive で probe し、4x4 真偽値表で分類する。ADR-059 Pattern β。",
+  "main": "index.js",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "test": "node --test"
+  },
+  "//": "syn-nodejs-puppeteer-16.1 runtime 前提。@aws/synthetics-puppeteer / @aws/synthetics-logger は runtime が提供するため devDependencies 相当（zip には含めない）。",
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.600.0",
+    "@aws-sdk/util-dynamodb": "^3.600.0",
+    "@aws-sdk/client-s3": "^3.600.0",
+    "@aws-sdk/client-secrets-manager": "^3.600.0",
+    "@aws-sdk/client-cloudwatch": "^3.600.0",
+    "@aws-sdk/client-lambda": "^3.600.0",
+    "js-yaml": "^4.1.0"
+  },
+  "peerDependencies": {
+    "@aws/synthetics-puppeteer": "*",
+    "@aws/synthetics-logger": "*"
+  }
+}

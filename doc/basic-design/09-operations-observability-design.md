@@ -128,6 +128,29 @@ ALB access log / CloudWatch Logs（Lambda・Facade・API 層）
   → マスキング Lambda 経由で同 3 層へ（U7 §7.3.1 の表の通り）
 ```
 
+上記の経路にメトリクス系（§9.1.1）を併せたパイプライン全体を図示する（2026-07-26 図示追加）:
+
+```mermaid
+flowchart LR
+    subgraph SRC["ソース (両クラスタ / 6 Acct)"]
+        KC["KC Container stdout"]
+        ALB["ALB access log /<br/>CW Logs (Lambda・Facade・API 層)"]
+        MET["KC・ノード・AWS メトリクス<br/>(OTel Collector: infra Pool Deployment<br/>+ 全ノード DaemonSet)"]
+    end
+    KC --> FB["Fluent Bit DaemonSet<br/>(全ノード、KC Pool toleration 付き)"]
+    FB --> AGG["Fluent Bit Aggregator (infra Pool)<br/>マスキング辞書 M-1〜14 集中適用 = scrubbing<br/>(全ソース通過後に保存)"]
+    ALB --> ML["マスキング Lambda"]
+    AGG --> HOT["① CloudWatch Logs<br/>Hot 90 日"]
+    AGG --> FH["② Kinesis Firehose"]
+    FH --> S3["監査 Acct S3<br/>Object Lock Compliance 7 年 + Athena<br/>(Cold / WORM)"]
+    AGG --> OS["③ OpenSearch (Warm 1 年 + UltraWarm)<br/>週次監査スキャン・SIEM 相関"]
+    ML --> HOT
+    ML --> FH
+    ML --> OS
+    MET --> AMP["AMP<br/>(弊社監査 Acct 1 Workspace 集約)"]
+    AMP --> AMG["AMG ダッシュボード / Alerting<br/>→ SNS → PagerDuty / Slack"]
+```
+
 | 項目 | 決定 |
 |---|---|
 | Hot | CloudWatch Logs **90 日**（両 Acct。retention は IaC 固定、変更は PR のみ） |
@@ -177,6 +200,7 @@ ALB access log / CloudWatch Logs（Lambda・Facade・API 層）
 | RB-APP-01〜03 | アプリ追加 / 認可要件追加 / 廃止（廃止時 RT 強制失効含む） | NFR-6.5 B-1〜B-3 |
 | RB-USR-01〜04 | 個別 CRUD / PW リセット / MFA リセット / ロック解除（**γ シナリオ P-07 により対象は管理者層のみ・週次〜月次頻度**。P-3 フェデユーザは顧客 IdP 責任）。**RB-USR-03（MFA リセット）は Recovery Codes 管理者リセットを含む**（U4 §4.3.3。本人確認手順込み） | NFR-6.5 C-1〜C-4、U4 §4.3.3 |
 | RB-USR-05 | 一括インポート / 一括 deprovision（テナント一括 logout ジョブ含む — U5 引き渡し） | NFR-6.5 D-1〜D-3、U5 §5.9.2 |
+| RB-USR-06（2026-07-24 追加） | **非 IdP mode A 日次リコンサイル**（IdP-KC `deprovisioned_at` 有り ↔ Broker shadow enabled の突合・補正ジョブの監視と差分発生時の手動手順。idpkc shadow は 90 日バッチ除外のため本ジョブが代替の砦） | U3 D3-17 |
 | **RB-SEC-01** | クレデンシャル侵害対応 = ITDR L4 発動手順（手動承認 → not-before push + 全セッション削除 + Back-Channel Logout 一斉送信 + **AT ゾンビ窓 ≤30 分の追加監視**〔対象 sub/azp の API アクセス監視〕） | U5 §5.4.3 / U7 D-U7-05、NFR-6.5 E-1 |
 | **RB-SEC-02** | 強制ログアウト・Revocation 3 粒度（個別 / Client / 全体）・not-before push 単体手順 | U5 §5.4、NFR-6.5 E-2 |
 | RB-SEC-03 | 緊急 IP 制限（自管理 = Internal ALB / SG。エッジ WAF は他組織への Fast Track 依頼 — REQ-IN-01 の連絡手順） | NFR-6.5 E-3、U7 §7.8.1 |
@@ -291,6 +315,25 @@ ALB access log / CloudWatch Logs（Lambda・Facade・API 層）
 3. **機能検証**: Staging で ①SPI 3 系統 Flow 配置の回帰（Browser forms / First Broker / Post Broker — PoC F-6 / K-6 lint 含む）②**1000 IdP 合成データセット回帰（ログイン p99 / Admin API p99、ベースライン比 +10% 以内）**③G-SPI-Compat 項目（RHBK × upstream SPI 互換）。
 4. **カナリアデプロイ**: 本番は RHBK Operator ローリング（PDB maxUnavailable=1）を利用し、**1 Pod 目更新後に bake time 15 分**を置く。bake 中は §9.8 の synthetic ログインチェック（認証成功 + 該当 SPI パスの発火メトリクス）を毎分実行し、失敗で自動ロールバック（Git revert → ArgoCD 同期）。ユーザ影響ゼロ（Persistent user sessions が DB 保存のため、U8 D-U8-04）。
 
+ビルドから本番ローリングまでのパイプライン全体（§9.6.1 の構成 + 上記 1〜4 + §9.6.3 昇格ゲート）を図示する（2026-07-26 図示追加）:
+
+```mermaid
+flowchart TB
+    PR["SPI / 設定変更 PR (Git)"] --> CI["GitHub Actions (CI)<br/>OIDC Federation (long-lived key なし)"]
+    CI --> BLD["Maven ビルド + SBOM (CycloneDX)<br/>RHBK ベースイメージ (ECR ミラー) へ SPI JAR 焼き込み<br/>= 単一カスタムイメージ"]
+    BLD --> SCAN["Trivy スキャン<br/>(SLA: Critical 24h / High 7 日)"]
+    SCAN --> SIGN["Cosign 署名 + SLSA Provenance<br/>(Phase 1 = L2、12 ヶ月以内 L3)"]
+    SIGN --> ECR["ECR push (タグでなく digest 指定)<br/>東西 ECR 同時レプリケーション"]
+    ECR --> STG["Staging 昇格ゲート (パッチ含む全昇格必須)<br/>SPI 3 系統 Flow 回帰 + 1000 IdP 合成回帰<br/>(p99 ベースライン比 +10% 以内) + G-SPI-Compat"]
+    STG --> GIT["Git 上の digest 書き換え<br/>(本番昇格は手動承認)"]
+    GIT --> CD["OpenShift GitOps (ArgoCD)<br/>Git → クラスタ同期"]
+    CD --> OP["RHBK Operator ローリング<br/>(PDB maxUnavailable=1)"]
+    ADM["クラスタ admission policy:<br/>Cosign verify 必須 (未署名イメージ拒否)"] -.-> OP
+    OP --> BAKE{"1 Pod 目更新後 bake 15 分<br/>synthetic ログイン毎分 (§9.8)"}
+    BAKE -->|"成功"| ROLL["残 Pod ローリング完了<br/>(Persistent user sessions によりユーザ影響ゼロ)"]
+    BAKE -->|"失敗"| RB["自動ロールバック<br/>(Git revert → ArgoCD 同期)"]
+```
+
 - **根拠**: ADR-046（L2〜L5）、U2 §2.4/2.8、U8 D-U8-04、PoC V3''（SPI 3 系統配置）。
 - **未決**: Renovate の RHBK イメージ追従ルール（ADR-046 §C.4 の `keycloak` パッケージルールを RHBK タグ体系に合わせ調整）。
 
@@ -324,6 +367,21 @@ ALB access log / CloudWatch Logs（Lambda・Facade・API 層）
 | 4 | IdP + Org 作成 | 適用エンジンが Admin API で Org 作成 → IdP 作成（テンプレート Mapper 5-6 個、per-Mapper syncMode=IMPORT〔mfa_indicator のみ FORCE override、U2 §2.5.4〕）→ Org-IdP リンク → HRD ヒント登録 | 全自動 | 〜10 分 |
 | 5 | 疎通確認 | ①メタデータ解決・JWKS 取得（ステップ 3 の実効確認 = G-EGRESS 受入試験と同型、U6 §6.7.4）②テストログイン（顧客テスト ID での first-broker-login、L1 完了が前提）③JIT 属性書込確認 | ① 自動 / ②③ 顧客と合同 | ①〜5 分 / ②③ 顧客都合 |
 | 6 | 監視登録 | Per-tenant メトリクス系列の有効化 / SCIM Health Check 閾値登録（SCIM 顧客のみ）/ **IdP スケールダッシュボードのバッチ前後スナップショット確認（§9.1.2）** / RB-TEN-01 クローズ | 自動 | 〜5 分 |
+
+6 ステップの流れと G-EGRESS 形態によるリードタイム分岐を図示する（2026-07-26 図示追加）:
+
+```mermaid
+flowchart TB
+    S1["1 申請: テナント宣言ファイル PR<br/>(Metadata / ドメイン / HRD ヒントキー)"] --> S2["2 検証: lint 全自動 + 基盤運用 1 名レビュー<br/>(Metadata 妥当性 / alias 規約 / K-8 / K-7 / HRD 衝突) 〜2h"]
+    S2 --> S3{"3 Egress FQDN 更新 (REQ-OUT-01)<br/>他組織 NFW 許可リストへ反映<br/>形態は G-EGRESS 合意に依存"}
+    S3 -->|"②専用ルールグループ + ③更新委任<br/>= パイプラインから自動反映"| S3A["〜10 分"]
+    S3 -->|"①都度申請フォールバック"| S3B["先方 SLA ≤ 4 営業時間<br/>(SLA ≥ 1 営業日なら §NFR-3<br/>リードタイム改訂を U1 経由エスカレーション)"]
+    S3A --> S4["4 IdP + Org 作成 (全自動 〜10 分)<br/>Admin API: Org 作成 → IdP 作成 (Mapper 5-6 個)<br/>→ Org-IdP リンク → HRD ヒント登録"]
+    S3B --> S4
+    S4 --> S5["5 疎通確認: ①メタデータ解決・JWKS 取得 (自動 〜5 分)<br/>②テストログイン ③JIT 属性書込 (②③は顧客と合同)"]
+    S5 --> S6["6 監視登録 (自動 〜5 分)<br/>Per-tenant 系列 / SCIM HC 閾値 /<br/>ダッシュボード前後スナップショット"]
+    S6 --> DONE["RB-TEN-01 クローズ<br/>リードタイム計測: ステップ 1 PR 受付 → 5① 完了<br/>< 1 営業日 (②③形態なら純作業 2-3 時間)"]
+```
 
 **リードタイム < 1 営業日（§NFR-3 / NFR-6.5 A-1）の成立条件**: 基盤側純作業は ②③ 形態なら**合計 2-3 時間**で余裕をもって成立。①形態でも 4 営業時間 SLA が守られれば 1 営業日内に収まるが、余裕はない。**G-EGRESS が①のまま SLA ≥ 1 営業日となった場合は成立しない** — その場合は §NFR-3 のリードタイム改訂（緩和）を U1 経由でエスカレーションする（U6 §6.7.3 のフォールバック条件を本書が運用面から確認。「SLA 未合意のまま Phase 1 契約禁止」= G-EGRESS ゲートの趣旨）。
 
@@ -367,7 +425,7 @@ ALB access log / CloudWatch Logs（Lambda・Facade・API 層）
 | D-U9-04 | SLO 4 サービス（99.9/99.95/99.5/99.99）+ Burn Rate Alert（Fast 14.4× / Slow 6×）Phase 1 全設定 + エラーバジェット枯渇時の変更凍結ルール | §9.2.1 |
 | D-U9-05 | ログ 3 層 = CW Hot 90 日 / OpenSearch Warm / S3 Object Lock 7 年（ADR-053 §F を U7 D-U7-13 で上書き）、全ソース scrubbing 通過後保存、週次監査スキャン Dashboard | §9.3.1 |
 | D-U9-06 | SIEM 取込イベントセット確定（LOGIN 系 / TOKEN_EXCHANGE / **REVOKE_GRANT・LOGOUT 系** / USER_REACTIVATED / Admin Events 全量 / CloudTrail 6 Acct） | §9.3.2 |
-| D-U9-07 | Runbook 体系 RB-TEN/APP/USR/SEC/PLT/DR/MIG/DSAR **全 35 冊**（TEN 7 / APP 3 / USR 5 / SEC 7 / PLT 5 / DR 6 / MIG 1 / DSAR 1）+ **Phase 1 前必須 13 冊**（TEN-01/03、SEC-01/02/04/05/06、DR-00〜05）の指定 | §9.4.1 |
+| D-U9-07 | Runbook 体系 RB-TEN/APP/USR/SEC/PLT/DR/MIG/DSAR **全 36 冊**（TEN 7 / APP 3 / USR **6** / SEC 7 / PLT 5 / DR 6 / MIG 1 / DSAR 1。2026-07-24: RB-USR-06 リコンサイル追加）+ **Phase 1 前必須 13 冊**（TEN-01/03、SEC-01/02/04/05/06、DR-00〜05）の指定 | §9.4.1 |
 | D-U9-08 | 禁則集 K-1〜K-11（realm export 禁止 / 全 Pod 同時再起動は Writer 安定後 / ITDR フラグは RB-DR-00 のみ 等）を CI lint・パイプライン reject で機械強制 | §9.4.2 |
 | D-U9-09 | Terraform state = Acct × 層で 6+ 分割、テナント層は state を持たない、apply は CI（GitHub OIDC）のみ | §9.5.1 |
 | D-U9-10 | テナント層エンジン = 自作オンボーディング API（Admin API 差分適用）、**keycloak-config-cli 不採用**（K-1 と原理衝突） | §9.5.2 |
@@ -416,3 +474,4 @@ ALB access log / CloudWatch Logs（Lambda・Facade・API 層）
 
 - 2026-07-24: 初版（Wave 3 起草）。Baseline v1（P-01/P-04/P-15/P-16/P-17/P-18）準拠。可観測性（OTel/AMP/AMG/X-Ray + IdP 数関数監視、D-U9-01〜03）、SLO 定義書 + Burn Rate（D-U9-04）、ログ 3 層 + SIEM 取込セット（D-U9-05〜06）、Runbook 27 冊 + 禁則 K-1〜11（D-U9-07〜08）、IaC 2 層 + keycloak-config-cli 不採用 + ドリフト検知（D-U9-09〜11）、CI/CD（GitHub Actions/ArgoCD/ECR + SPI サプライチェーン + KC 昇格ゲート、D-U9-12〜14）、IdP オンボーディング 6 ステップ（D-U9-15）、Central Canary 弊社監査 Acct 配置変更（D-U9-16）を決定。
 - 2026-07-24 (v1.1): Wave 3 最終レビュー反映 — **H-1**: D-U9-10（keycloak-config-cli 不採用）の波及 4 件を §9.9.3 に追加（ADR-051 :15/:94/:305 / ADR-060 :341 / U8 §8.3.1・U2 §2.7.5 は適用済み）。**H-2**: 主インプットに U4 §4.7.4 追加、§9.6.1 に Theme lint + axe-core CI 段追加、RB-TEN-01 に顧客オンボーディングガイド付属・RB-USR-03 に Recovery Codes 管理者リセットを明記。**H-3**: RB-TEN-06（SN オンボーディング）/ RB-TEN-07（Webhook 購読登録）/ RB-MIG-01 / RB-DSAR-01 / RB-SEC-07 の 5 冊追加 + RB-PLT-04 に SAML RSA 証明書ローテ（U10-OP-1）統合注記 + §9.7 ステップ 3 に Webhook 配信先 FQDN 同プロセス注記。**M-1**: D-U9-07 の冊数を実列挙から再計上（全 35 冊 / 必須 13 冊）。**M-2**: D-U9-13 の SPI 表記を「3 JAR・4 機能」へ修正（U2 §2.4 整合）。**M-9**: §9.6.1 に PII クレーム検査 CI（U5 §5.1.4 C-1〜C-7）追加。**M-11**: U1 向け G-EGRESS 記述を「更新済み」へ。**L-1**: U8 §8.2.3 → §8.5.2。**L-6**: §9.7 ステップ 4 に mfa_indicator FORCE override 注記（U2 §2.5.4）。
+- 2026-07-26 (v1.2): 可読性向上 — mermaid 図 3 点追加（§9.3.1 ログ・メトリクスパイプライン全体図 / §9.6.2 CI/CD パイプライン図〔昇格ゲート・bake 判定含む〕/ §9.7.1 IdP オンボーディング 6 ステップフロー〔G-EGRESS 分岐付き〕）。設計内容の変更なし。

@@ -1,0 +1,83 @@
+# python-auth.yaml
+#
+# Python アプリコードの認証実装漏れ検出（SA-2 / 04 章 §4.4）
+# 構文は 04 章 §4.4.1 / §C-6.6.6 で検証済み（pattern-either / pattern-not /
+# patterns / message / severity / languages / metadata）。
+#
+# 収録ルール:
+#   fastapi-missing-auth-middleware  P6  FastAPI に auth middleware 欠落
+#   jwt-decode-without-verify        P5  JWT 署名検証なし（verify=False / none alg / 鍵未指定）
+#   missing-tenant-validation        P3  path の tenant_id を JWT クレームと未照合
+#
+# 実行:
+#   semgrep ci --config python-auth.yaml
+#   semgrep --config python-auth.yaml path/to/src
+
+rules:
+  # --- P6: FastAPI 認証 middleware 欠落 -------------------------------------
+  - id: fastapi-missing-auth-middleware
+    patterns:
+      - pattern: |
+          $APP = FastAPI(...)
+      - pattern-not-inside: |
+          $APP = FastAPI(...)
+          ...
+          $APP.add_middleware(...)
+          ...
+    # ↑ (1) patterns リスト形式 + (2) pattern-not-inside 末尾の `...` の両方が必須。
+    #   無いとモジュールトップレベルの FastAPI() 代入が pattern-not-inside の範囲
+    #   「内側」と判定されず、middleware があっても誤検知する
+    #   （Phase 4 P4-1 のローカル検証で発見・修正、research/phase4-local-verification-results.md）。
+    message: >-
+      FastAPI app is missing auth middleware. Use
+      app.add_middleware(AuthMiddleware, ...) (P6).
+    languages: [python]
+    severity: ERROR
+    metadata:
+      cwe: CWE-306
+      category: security
+      leak-pattern: P6
+
+  # --- P5: JWT 検証バグ（署名検証スキップ / none alg / 鍵未指定）------------
+  - id: jwt-decode-without-verify
+    pattern-either:
+      - pattern: jwt.decode($TOKEN, ..., verify=False, ...)
+      - pattern: jwt.decode($TOKEN, ..., algorithms=["none"], ...)
+      - patterns:
+          - pattern: jwt.decode($TOKEN, ...)
+          - pattern-not: jwt.decode($TOKEN, ..., key=$K, ...)
+          - pattern-not: jwt.decode($TOKEN, $K, ...)
+    message: >-
+      JWT decoded without proper signature verification
+      (verify=False / algorithms=["none"] / missing key) (P5).
+    languages: [python]
+    severity: ERROR
+    metadata:
+      cwe: CWE-347
+      category: security
+      leak-pattern: P5
+
+  # --- P3: tenant 越境チェック欠落 -----------------------------------------
+  - id: missing-tenant-validation
+    patterns:
+      - pattern: |
+          def handler(event, context):
+            ...
+            tenant_id = event['pathParameters'].get('tenant_id')
+            ...
+      - pattern-not-inside: |
+          def handler(event, context):
+            ...
+            jwt_tenant = event['requestContext']['authorizer']['tenant_id']
+            ...
+            if $REQ_TENANT != $JWT_TENANT:
+              ...
+    message: >-
+      Handler uses tenant_id from path but doesn't validate against
+      JWT claim (event.requestContext.authorizer.tenant_id) (P3).
+    languages: [python]
+    severity: ERROR
+    metadata:
+      cwe: CWE-639
+      category: security
+      leak-pattern: P3

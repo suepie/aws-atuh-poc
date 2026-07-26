@@ -1,0 +1,8 @@
+Resources:
+  BadBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      Tags:
+        - {Key: CostCenter, Value: EC}
+        - {Key: app-id, Value: checkout}
+        - {Key: env, Value: production}
