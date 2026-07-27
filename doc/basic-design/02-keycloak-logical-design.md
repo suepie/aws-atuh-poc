@@ -349,6 +349,7 @@ flowchart LR
 
 - **根拠**: SPI の数を絞るのは RHBK バージョン追従コスト（年 1-2 回の互換確認、ADR-055 §A.7）を面積で抑えるため。①③ の分離は Keycloak Issue #14942（Event Listener からの属性書込不可）による確定事項。
 - **共通未決事項（G-SPI-Compat）**: **RHBK 26.4 × upstream 26.x での全 Custom SPI 互換確認は未実施（TBD）**。PoC は upstream 26.6 で実施しており、RHBK ビルドでの `AuthenticationFlowContext` / `OrganizationProvider` API 互換・Operator Custom Image での動作を Phase 1 実装前ゲートとする（Baseline §1.5）。
+- **バージョンゲート（2026-07-27 追加、公式検証）**: 採用版が **[CVE-2025-14559](https://advisories.gitlab.com/pkg/maven/org.keycloak/keycloak-services/CVE-2025-14559/)（Token Exchange 実装欠陥で disabled ユーザにトークン発行）**の非該当（パッチ済み）であることを G-SPI-Compat の確認項目に含める。本基盤は Token Exchange を採用（U5 §5.3）かつ退職者遮断を `enabled=false` に依存する（[session-lifecycle-and-flows.md Q8/§8](../common/session-lifecycle-and-flows.md)）ため影響が直撃する。あわせて **[keycloak#37981](https://github.com/keycloak/keycloak/issues/37981)（`enabled=false` は既存セッション/AT を自動失効させない）**を前提に、無効化は必ず Session Revoke とペアで実装する（U3 §3.5 / D3-17 で担保済み）。
 
 ### 2.4.1 SPI ①: JIT 制御 Authenticator（`last-login-tracker` 発展形）
 

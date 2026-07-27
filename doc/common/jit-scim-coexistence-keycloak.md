@@ -2679,7 +2679,7 @@ flowchart TD
 flowchart TB
     subgraph L1 [第 1 段階：認証遮断 - 対策 B §10.7]
         L1_A[短命 Access Token + Refresh Token Rotation]
-        L1_B[退職後 数分〜4h で認証遮断]
+        L1_B[退職後 SCIM=数分 / JIT=最大 24h<br/>で認証遮断（2026-07-27 訂正）]
         L1_C[効果: 実質的なアクセス継続時間の短縮]
     end
     subgraph L2 [第 2 段階：Soft Delete - 対策 A §10.4.A/B / SCIM DELETE §10.4.G-S6]
@@ -2717,7 +2717,7 @@ flowchart LR
     Problem[JIT の弱点<br/>「顧客 IdP で退職しても<br/>本基盤に通知が来ない」]
     Problem --> ProbA[退職者の継続アクセス<br/>= 既発行トークンで最大 90 日]
     Problem --> ProbB[DB に Zombie 残存<br/>+ コンプラ違反]
-    ProbA --> CtrlB[対策 B: 短命セッション §10.7<br/>実質 Lag ≤ 4h]
+    ProbA --> CtrlB[対策 B: 短命セッション §10.7<br/>実質 Lag = SCIM 数分 / JIT アイドル 1h・絶対 24h<br/>（2026-07-27 訂正、旧「≤4h」は誤り）]
     ProbB --> CtrlA[対策 A: 90 日バッチ §10.4.A/B<br/>enabled=false + 多層防御 + 監査]
     CtrlA --> Cover[両方揃って<br/>PCI DSS 8.2.5 + 8.2.6 両方カバー]
     CtrlB --> Cover
@@ -3270,7 +3270,7 @@ UPDATE user_identity_history SET current_sub = 'new-sub' WHERE email = 'user@exa
 
 #### 10.7.1 案 A: 短命 Access Token + Refresh Token Rotation の Keycloak 設定
 
-**Realm Settings → Tokens タブ**:
+> **⚠ 2026-07-27 訂正 — 下記 Terraform 例の値は古い（P-09 / [U5 §5.2](../basic-design/05-token-session-authz-design.md) が正）**: 例の `sso_session_idle_timeout=24h` / `sso_session_max_lifespan=30d` は **絶対 24h の防御線を骨抜きにする誤設定**。基本設計の確定値は **AT 30 分 / SSO アイドル 1h / 絶対 24h**（規制テナントは短縮オプション: AT 5-15 分 / アイドル 15-30 分 / **絶対 8h**、U5 §5.2.3）。また現行アーキは単一 Realm + Organizations（ADR-033）のため `tenant-acme` のような**テナント別 Realm は使わない**（規制例外のみ、ADR-017）。退職者の実効遮断ラグの正確な分解は **[session-lifecycle-and-flows.md §5](session-lifecycle-and-flows.md)** を正とする。以下の例は歴史的記述として保持。
 
 ```hcl
 # Terraform 例

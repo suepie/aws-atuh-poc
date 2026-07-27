@@ -204,7 +204,7 @@ OIDC / SAML で標準化済み。論点は「**何のシステム間で SSO を�
 
 | レベル | 内容 | UX | セキュリティ | 主な採用例 |
 |:---:|---|:---:|:---:|---|
-| **L1 完全信頼**（業界標準デフォルト） | IdP セッションあれば即トークン発行、TTL も IdP に追従、`amr`/`acr` も継承 | ◎ 最高 | △ 中 | **Slack / Notion / Box / Auth0 / 一般 B2B SaaS** |
+| **L1 完全信頼**（業界標準デフォルト） | IdP セッションあれば即トークン発行、`amr`/`acr` も継承。**TTL は基本設計で「独立した短い TTL」に確定**（下記 ⚠、L1 の SSO 挙動 + L2 の独立 TTL のハイブリッド） | ◎ 最高 | △ 中 | **Slack / Notion / Box / Auth0 / 一般 B2B SaaS** |
 | **L2 部分信頼** | IdP セッション信頼するが、本基盤側 TTL を別に持つ（短く） | ○ 良 | ○ 高 | 中セキュリティ業務系 |
 | **L3 検証ありき信頼** | IdP セッション信頼するが、`acr`/`amr` を毎回検査、足りなければステップアップ | △ 中 | ◎ 高 | 規制業種、決済システム |
 | **L4 不信任（再認証強制）** | IdP セッションがあっても本基盤側で `prompt=login` で再認証 | × 悪 | ◎ 最高 | 金融・防衛など極めて厳格な業務系 |
@@ -257,7 +257,7 @@ IdP から受け取る ID Token のクレーム:
 | 軸 | 評価 | 詳細 |
 |---|:---:|---|
 | 本基盤側で直接対策 | ❌ | IdP の Cookie 管理は管轄外 |
-| 本基盤側で間接対策 | ○ | Access Token 短 TTL（5-15 分）、Keycloak は `max_age` 制約 |
+| 本基盤側で間接対策 | ○ | Access Token 短 TTL（**30 分。規制テナントは 5-15 分**、P-09 / U5 §5.2.3）+ `max_age` 制約。**実効遮断は AT でなく SSO セッション寿命（アイドル 1h / 絶対 24h）が支配**（[session-lifecycle-and-flows.md §5](../../../common/session-lifecycle-and-flows.md)）|
 | 顧客 IdP 側で対策 | ✅ 必須 | Conditional Access / リスクベース認証 |
 
 **残余リスク**: IdP Cookie 漏洩は本基盤に直接届く。検知不能（assertion は正規）。
@@ -313,7 +313,7 @@ IdP から受け取る ID Token のクレーム:
 - **Keycloak**: 外部リソースサーバーが `/introspect` に都度問い合わせ → **標準対応だがパフォーマンスコスト**
 
 **残余リスク**:
-- 短 TTL（5-15 分）期間中の遮断ラグ（両プラットフォーム共通）
+- 短 TTL 期間中の遮断ラグ（AT 30 分〔規制 5-15 分〕のゾンビ窓 + SSO セッション寿命。[session-lifecycle-and-flows.md §5](../../../common/session-lifecycle-and-flows.md)）
 - IdP 側 SCIM 連携がない場合、退職検知が JIT 時まで遅延
 
 → **両者の根本構造は同じ。Keycloak は Introspection 標準提供で実装が楽、ただし完全防止は不可（TTL ラグは残る）**。前回「Keycloak は Access Token も revoke 可能」と記述したが、**正確には「Refresh Token 経由で関連 Access Token を無効化」**（Cognito と同じ構造）。
@@ -446,8 +446,13 @@ flowchart TB
 | **デフォルト信頼レベル** | **L1 完全信頼**（業界主流）|
 | 接続承認した IdP のみ信頼 | 未承認 IdP は接続不可 |
 | **金融・規制業種向けオプション** | **L3 検証ありき信頼**（`acr_values` 検査 + ステップアップ）|
-| **TTL の扱い** | **IdP TTL に従う**（業界標準）+ 本基盤 Access Token は短 TTL（5-15 分）|
+| **TTL の扱い** | **本基盤は独立した短い SSO セッション TTL を持つ（アイドル 1h / 絶対 24h、規制テナントは絶対 8h）+ AT 30 分**（基本設計 P-09 / [U5 §5.2](../../../basic-design/05-token-session-authz-design.md) 確定）。**「IdP TTL に従う」わけではない**（下記 ⚠）。再認証は上流 IdP セッション生存時サイレント成立するため“再ログイン頻度”は上流 IdP に依存。全体像は [session-lifecycle-and-flows.md](../../../common/session-lifecycle-and-flows.md) |
 | 外部 IdP の MFA 主張 | **信頼**（[§FR-2.2.3](02-federation.md#323-mfa-重複回避--fr-fed-012)）|
+
+> **⚠ 2026-07-27 訂正 — 「TTL は IdP に従う」は誤り（基本設計で確定した正しい仕様）**:
+> 本基盤のデフォルトは「L1 の SSO 挙動（IdP セッションを信頼しサイレント再認証）+ L2 の独立 TTL（基盤が IdP と無関係に短い SSO セッション寿命を持つ）」のハイブリッド。**セッション寿命そのものは IdP に準じない**（アイドル 1h / 絶対 24h 固定、P-09）。
+> - **なぜ独立させるか**: IdP TTL を継承すると、IdP セッションが数週間生きる顧客では退職者（IdP 削除済み）が数週間ログインし続けられる。基盤が**絶対 24h で強制失効**するからこそ「少なくとも 24h に 1 回は IdP へ往復 → 削除が捕まる」保証が成立し、退職者の実効遮断ラグが最大 24h に収まる（[session-lifecycle-and-flows.md §5](../../../common/session-lifecycle-and-flows.md)）。
+> - **ユーザー体感**: セッション切れ後の再ログイン“頻度”は上流 IdP セッション寿命に依存（外部フェデ = 顧客 IdP が長寿命 → 一瞬遷移して復帰 / IdP-KC・ローカル = 再入力）。これは“セッション寿命が IdP に従う”のとは別概念。
 
 ### TBD / 要確認（[hearing-checklist.md](../../hearing-checklist.md) B-801〜B-802 系と連動）
 

@@ -34,10 +34,10 @@ deploy 後の**実際の API GW 定義**を正本として S3 に置く。リポ
 
 ```mermaid
 sequenceDiagram
-    participant SC as Service Catalog 製品<br/>(App Acct)
-    participant CR as openapi-export Lambda<br/>(Custom Resource)
-    participant AGW as API GW(App Acct)
-    participant S3 as OpenAPI Registry<br/>(ネットワーク監査 Acct)
+    participant SC as Service Catalog 製品 / App Acct
+    participant CR as openapi-export Lambda / Custom Resource
+    participant AGW as API GW / App Acct
+    participant S3 as OpenAPI Registry / ネットワーク監査 Acct
 
     SC->>CR: CloudFormation Create/Update
     CR->>AGW: GetExport（exportType=oas30, accepts=application/yaml）

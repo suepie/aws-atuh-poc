@@ -42,9 +42,9 @@
 
 ```mermaid
 sequenceDiagram
-    participant SC as Service Catalog 製品<br/>(App Acct)
-    participant CR as app-registry Lambda<br/>(Custom Resource)
-    participant DDB as App Registry<br/>(ネットワーク監査 Acct)
+    participant SC as Service Catalog 製品 / App Acct
+    participant CR as app-registry Lambda / Custom Resource
+    participant DDB as App Registry / ネットワーク監査 Acct
 
     SC->>CR: CloudFormation Create/Update<br/>(ResourceProperties)
     CR->>CR: buildItem（enabled 文字列→Boolean 正規化）

@@ -1037,6 +1037,56 @@ flowchart LR
 - Broker → IdP-KC は OIDC Federation 標準パターン（業界実装多数）
 - 段階的導入: Phase 1（Broker 単独・D 案）→ Phase 2（IdP-KC 追加）→ Phase 3（既存ユーザー段階移行）→ Phase 4（規制顧客向け追加 IdP-KC）
 
+#### E 案の内部プロビジョニング方式: Broker ← IdP-KC は **JIT**（SCIM 不採用）— 根拠とロジック
+
+> **背景・なぜここで決めるか**: E 案（2-tier）では、IdP-KC に収容されたユーザが **Broker 側にどう現れるか**を決める必要がある。選択肢は (i) **JIT**（ユーザの初回ログイン時に Broker が shadow を自動生成）と (ii) **SCIM**（IdP-KC が全ユーザを事前に Broker へ push）の 2 つ。ここは「外部顧客 IdP ← 本基盤」の SCIM/JIT 議論（[ADR-025](../../../adr/025-scim-positioning-and-receive-stance.md)）とは**別のレイヤ**（本基盤内部の Broker ⇄ IdP-KC 間）であり、混同しやすいため独立して根拠を確定する。詳細実装は [ADR-033 §A](../../../adr/033-keycloak-2tier-broker-idp-architecture.md) / [基本設計 02a](../../../basic-design/02a-broker-idpkc-federation.md) / [U3 D3-04/D3-16/D3-17](../../../basic-design/03-identity-provisioning-design.md)。
+
+**結論**: Broker ← IdP-KC の内部プロビジョニングは **JIT（First Broker Login による shadow 生成）を採用し、SCIM は採用しない**。Broker は IdP-KC を OIDC IdP（`idpkc-oidc01`）の 1 つとして登録し、IdP-KC ユーザは初回ログイン時に Broker 側へ `provisioned_by=jit` + `jit_idp_alias=idpkc-oidc01` の shadow として生成される。
+
+**根拠は 4 本の柱で構成される**:
+
+**① 技術的実現性 — Keycloak は SCIM を「送信」できない**
+
+SCIM で内部プロビジョニングするには「IdP-KC が SCIM クライアント（outbound）として Broker へ push する」必要がある。しかし **Keycloak には SCIM 送信クライアント（outbound provisioning）機能が core に存在しない**（開発中の将来機能。公式サーベイに「we are implementing a SCIM client that will allow **in the future** ... Keycloak can act as a SCIM client」と明記、[keycloak.org SCIM support survey feedback](https://www.keycloak.org/2026/02/scim-support-survey-feedback)；アンブレラ Issue [keycloak#13484](https://github.com/keycloak/keycloak/issues/13484) でも outbound は未実装。いずれも取得 2026-07-27）。実現には suvera/mitodl 等の**サードパーティ拡張の自作/導入**が必要で、**§2.7 のバージョン固定・RHBK サポート範囲と衝突**し G-SPI-Compat の検証対象を増やす。（なお SCIM **受信サーバ**は Keycloak 26.6 で experimental feature として core に追加されたが、[非サポート・仕様変更あり](https://www.keycloak.org/2026/04/scim-as-experimental-feature)であり本経路の判断には影響しない — 論点は outbound の不在。）対して JIT は **Keycloak-to-Keycloak OIDC ブローカリングのネイティブ機能**（[First Broker Login / First Login Flow](https://github.com/keycloak/keycloak/blob/main/docs/documentation/server_admin/topics/identity-broker/first-login-flow.adoc) の `Create User If Unique` authenticator が初回ログイン時にローカル shadow を JIT 作成）であり追加実装ゼロ（ADR-033 §A の標準パターン。federated_identity 概念も公式、`FEDERATED_IDENTITY` テーブル）。
+
+**② 意味論の正しさ — SCIM は「外部 SoT」を意味し、内部フェデには不適**
+
+SCIM は「外部の顧客 IdP / HRIS が Source of Truth」というプロトコル意味を持ち、shadow に `scim_active=true` が付く（[U3 D3-04](../../../basic-design/03-identity-provisioning-design.md) 経路②）。しかし **IdP-KC は内部の自社基盤であり外部 SoT ではない**。Broker 側の shadow の正しい意味は「IdP-KC ユーザのフェデ射影」であり、それを表現するのは JIT の `federated_identity`（Layer C = IdP-KC 側 sub）である。内部フェデを SCIM で表すと、ライフサイクルモデル（`scim_active` による 90 日バッチ除外判定・Re-Activation SPI の分岐・経路判別）が **内部ユーザを「外部 SoT ユーザ」と誤認**する。これは [D3-05 案 B](../../../basic-design/03-identity-provisioning-design.md) で却下した「混線」の再発である。JIT なら `provisioned_by=jit` + `jit_idp_alias=idpkc%` で「内部フェデ由来 shadow」と一意にマークされ、バッチ除外（D3-17）も正しく効く。
+
+**③ 必要性 — SCIM が JIT に勝る 2 点が、本経路ではいずれも発生しない**
+
+SCIM が JIT に勝るのは (a) ログイン前にターゲットへユーザを事前作成できる（pre-provisioning）、(b) 削除の push（deprovisioning）、の 2 点。ところが本経路では両方とも不要:
+- **(a) 不要**: Broker の shadow は「ログイン時にトークンを発行するため」だけに必要で、**ログイン前に Broker が IdP-KC ユーザを知る必要はない**。認可・エンタイトルメントの authoring は Backend DB の統合射影（[U3 D3-16](../../../basic-design/03-identity-provisioning-design.md)）で `(tenant_id, external_id)` をキーに行い、Broker `sub` は初回ログイン時に backfill する（RC-3）。よって事前作成は不要。
+- **(b) 不要**: 非 IdP テナントの削除は mode A の同期両側削除（[U3 D3-17](../../../basic-design/03-identity-provisioning-design.md)）が **Broker idm-api から直接 Broker shadow を無効化**する。SCIM の deprovisioning push が埋めるべきギャップが構造的に存在しない。
+
+→ SCIM の利点がどちらも本経路では生じないため、**JIT で必要十分**。
+
+**④ 既存モデルとの一貫性**
+
+外部顧客 IdP の JIT（S1: 顧客 IdP がユーザ追加 → 初回ログインまで Broker は不可視。[jit-scim §10.4.G](../../../common/jit-scim-coexistence-keycloak.md)）と**同じ挙動**になり、2-tier でもライフサイクル S1-S10 が Broker 視点で統一される。IdP-KC に作られたが未ログインのユーザ（never-logged-in）でも矛盾しない: 認可射影は admin 操作時に `(tenant_id, external_id)` で先行作成、削除は mode A step①（shadow 無効化）が no-op + step②（IdP-KC soft delete）で完結し、オーファン shadow は生じない。
+
+**SCIM vs JIT 比較（本経路 = Broker ← IdP-KC 限定）**:
+
+| 観点 | SCIM（不採用） | **JIT（採用）** |
+|---|---|---|
+| 実装 | Keycloak に SCIM **送信**クライアント core 未実装（将来機能）→ サードパーティ拡張要（§2.7 衝突） | ネイティブ（First Broker Login、追加ゼロ） |
+| 意味論 | 「外部 SoT」を含意 → 内部フェデを誤表現（scim_active 混線） | 「フェデ射影」を正しく表現（federated_identity） |
+| 事前作成の要否 | 提供するが**本経路では不要**（射影は Backend DB で先行） | ログイン時生成で必要十分 |
+| 削除 push の要否 | 提供するが**本経路では不要**（mode A 同期両側削除が直接無効化） | — |
+| 一貫性 | 外部 JIT と別モデルになり分岐増 | 外部 JIT と同一モデル（S1-S10 統一） |
+| バッチ除外印 | scim_active（意味崩壊） | `jit_idp_alias=idpkc%`（一意・正しい） |
+
+**要件としての帰結**:
+- 【Must】Broker は IdP-KC を OIDC IdP として登録し、内部プロビジョニングは JIT で行う。
+- 【Must】内部フェデ由来の shadow は `jit_idp_alias=idpkc%` でマークし、90 日休眠バッチから除外する（削除は mode A 同期 + 日次リコンサイルが担保、D3-17）。
+- 【Won't（Phase 1）】IdP-KC → Broker の SCIM push は実装しない（上記 ①〜④）。将来 IdP-KC を人事 SoT 連動させる要件が出ても、その SoT は「顧客 HRIS → IdP-KC」（D1 SCIM、経路②）で受け、Broker への内部反映は JIT のまま維持する。
+
+**一次資料（2026-07-27 検証）**:
+- SCIM 送信 core 未実装（将来機能）: [keycloak.org SCIM support survey feedback](https://www.keycloak.org/2026/02/scim-support-survey-feedback) / [keycloak#13484](https://github.com/keycloak/keycloak/issues/13484)
+- SCIM 受信は 26.6 で experimental（非サポート）: [SCIM as an experimental feature](https://www.keycloak.org/2026/04/scim-as-experimental-feature)
+- First Broker Login（JIT）標準動作: [First Login Flow (server_admin)](https://github.com/keycloak/keycloak/blob/main/docs/documentation/server_admin/topics/identity-broker/first-login-flow.adoc) / [Identity brokering day-1 サポート](https://www.keycloak.org/2026/01/federated-client-authentication)
+- SCIM の意味論（SoT → 対象システムの provisioning、enterprise-to-cloud）: [RFC 7644](https://www.rfc-editor.org/rfc/rfc7644.html) / [RFC 7643](https://www.rfc-editor.org/rfc/rfc7643.html)
+
 #### 推奨配置
 
 | 顧客タイプ | 配置（中規模 D 案）| 配置（大規模 E 案）|

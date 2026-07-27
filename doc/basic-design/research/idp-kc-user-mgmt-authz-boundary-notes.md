@@ -220,7 +220,7 @@ IdP を持たない顧客のユーザは全て IdP-KC に収容される。同�
 ### 8.4 SCIM を内部伝播に使わない根拠（調査確定）
 
 「IdP-KC → Broker を SCIM で」案は**却下**。
-- **Keycloak は SCIM を送信できない**（ネイティブは受信サーバ止まり、送信クライアントは将来対応 — keycloak.org SCIM survey feedback 2026-02）。→ コミュニティ拡張 or 自作が必要 = §2.7.1（バージョン固定・RHBK サポート）と衝突。
+- **Keycloak には SCIM 送信クライアント（outbound）が core 未実装**（将来機能 — [keycloak.org survey feedback](https://www.keycloak.org/2026/02/scim-support-survey-feedback) / [keycloak#13484](https://github.com/keycloak/keycloak/issues/13484)、2026-07-27 検証）。受信サーバは 26.6 で experimental 追加だが outbound とは別レイヤ。→ 送信はサードパーティ拡張（suvera/mitodl 等）or 自作が必要 = §2.7.1（バージョン固定・RHBK サポート）と衝突。
 - **scim_active 意味崩壊**（内部フェデを「外部顧客 SoT」と誤認 = D3-05 案 B の混線再発）。
 - shadow のバッチ除外印は scim_active でなく**既存 `jit_idp_alias=idpkc-oidc01`**（作成時=初回ログイン SPI で付与、バッチ側が読んで除外）。
 

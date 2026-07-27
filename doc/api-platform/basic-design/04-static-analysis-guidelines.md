@@ -285,4 +285,4 @@ rules:
 
 - [§C-API-6 §C-6.6.4/.6](../proposal/common/06-external-api-auth-architecture.md) — L1/L3 実装サンプル
 - [§FR-API-7 §7.2.2](../proposal/fr/07-guardrails.md) — Config Rules（Post-Deploy）との役割分担
-- [05-security-test-process.md](05-security-test-process.md) — テストプロセス全体での位置付け
+- [05-security.md](05-security.md) — セキュリティ 3 本柱（テストプロセス §5.3 での位置付け）

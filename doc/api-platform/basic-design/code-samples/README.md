@@ -62,7 +62,10 @@
 | `api-gw-iam` | API GW + AWS_IAM | 403 | （SigV4、Phase 2）|
 | `alb-code-jwt` | ALB + アプリコード JWT | 401/403 | Bearer で 200 |
 | `alb-cookie-monolith` | ALB + Cookie SSR モノリス | 302 Redirect to /login | Puppeteer ログイン |
+| `bff-cookie-session` | **BFF（ブラウザ↔BFF=Cookie セッション）** | 401 or 302（BFF 実装依存）| Puppeteer ログイン → Cookie |
 | `lambda-url-iam` | Lambda Function URL + IAM | 403 | （SigV4、Phase 2）|
+
+> `bff-cookie-session` は BFF アーキパターン（[§C-API-2 §C-2.1.1.A](../../proposal/common/02-runtime-selection-criteria.md)）の**ブラウザ↔BFF 入口**を監視する。BFF↔API 間（Bearer）は内部通信のため、BFF 入口の監視で実質カバー。API を独立監視する場合は別レコードで `api-gw-jwt` として登録。
 
 ### 2.2 OpenAPI Registry（S3）構造
 

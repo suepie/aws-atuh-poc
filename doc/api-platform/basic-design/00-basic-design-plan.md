@@ -42,7 +42,8 @@ API プラットフォーム標準の要件定義（`proposal/` 配下: §FR-API
 | 02 | `02-rate-limiting-quota-rules.md` | 流量制御ルール（WAF Rate-based / Usage Plan / method throttle / CloudFront）| §FR-API-3、ADR-052 | 検証エージェント |
 | 03 | `03-billing-cost-allocation-rules.md` | 課金制御・按分ルール（Cost Tag / Budgets / Partner 按分 / Outbound SaaS）| §FR-API-4、§NFR-API-8 | 検証エージェント |
 | 04 | `04-static-analysis-guidelines.md` | 静的解析（cfn-guard / cdk-nag / Semgrep）ガイド | §C-API-6 §C-6.6.4/.6 | 検証エージェント |
-| 05 | `05-security-test-process.md` | テストプロセス（Pre-Deploy / Deploy / Runtime の 3 段階）| §C-API-6 §C-6.6.9 | 検証エージェント |
+| 05 | `05-security.md` | セキュリティ 3 本柱（ネットワーク / 認証制御 / テストプロセス）| §C-API-6 §C-6.6.9 / 認証 06 章 / ADR-039/057 | 検証エージェント |
+| 06 | `06-logging-monitoring.md` | ログ・監視（最低限 OBS-1〜4：アクセスログ / 相関 ID / マスク / 保持）横断関心事 | §FR-API-4 §4.2 / 05 章 / 認証基盤ログ | 検証エージェント |
 
 ### ② Swagger 駆動 認証外形監視の実装
 
@@ -76,8 +77,8 @@ API プラットフォーム標準の要件定義（`proposal/` 配下: §FR-API
 
 | Phase | 内容 | 状態 |
 |---|---|:---:|
-| **Phase 1** | 骨格（00-index / 00-plan / 01-overview）+ ガイドライン章 02-05 | 🚧 着手（2026-07-06）|
-| Phase 2 | 外形監視設計章 10-16 | 未着手 |
+| **Phase 1** | 骨格（00-index / 00-plan / 01-overview）+ ガイドライン章 02-06 | 🚧 着手（2026-07-06）|
+| Phase 2 | 外形監視設計章 10-18 | 未着手 |
 | Phase 3 | 実装物（code-samples/）| 未着手 |
 | Phase 4 | PoC 検証（ネットワーク監査 Acct モック + 1 App Acct 相当）| 未着手 |
 

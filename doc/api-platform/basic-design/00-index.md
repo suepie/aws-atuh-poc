@@ -6,8 +6,8 @@
 
 本基本設計は proposal（要件定義 SSOT）を **アプリチーム向けガイドライン** と **動く実装物** に落とす。対象は 2 領域:
 
-1. **クラウド観点ガイドライン類**（章 01-05）: 流量・課金制御、静的解析、テストプロセス
-2. **Swagger 駆動 認証外形監視の実装**（章 10-16 + code-samples/）
+1. **クラウド観点ガイドライン類**（章 01-06）: 全体像、流量・課金制御、静的解析、セキュリティ、ログ・監視
+2. **Swagger 駆動 認証外形監視の実装**（章 10-18 + code-samples/）
 
 proposal（§FR-API-* / §NFR-API-* / §C-API-*）は参照物として維持。
 
@@ -15,7 +15,7 @@ proposal（§FR-API-* / §NFR-API-* / §C-API-*）は参照物として維持。
 
 1. [00-basic-design-plan.md](00-basic-design-plan.md) — 計画書（スコープ / 前提 BD-P-01〜08 / 章立て / Phase 分割 / 品質方針）
 2. [01-cloud-guidelines-overview.md](01-cloud-guidelines-overview.md) — ガイドライン総論（アプリチームが最初に読む）
-3. 各ガイドライン章（02-05）→ 外形監視章（10-16）
+3. 各ガイドライン章（02-06）→ 外形監視章（10-18）
 
 ## 設計書一覧
 
@@ -27,7 +27,8 @@ proposal（§FR-API-* / §NFR-API-* / §C-API-*）は参照物として維持。
 | 02 | [02-rate-limiting-quota-rules.md](02-rate-limiting-quota-rules.md) | 流量制御ルール（WAF / Usage Plan / method throttle / CloudFront）| ✅ Phase 1 |
 | 03 | [03-billing-cost-allocation-rules.md](03-billing-cost-allocation-rules.md) | 課金制御・按分ルール（Cost Tag / Budgets / Partner / Outbound）| ✅ Phase 1 |
 | 04 | [04-static-analysis-guidelines.md](04-static-analysis-guidelines.md) | 静的解析（cfn-guard / cdk-nag / Semgrep）| ✅ Phase 1 |
-| 05 | [05-security-test-process.md](05-security-test-process.md) | テストプロセス 3 段階（Pre-Deploy / Deploy / Runtime）| ✅ Phase 1 |
+| 05 | [05-security.md](05-security.md) | セキュリティ 3 本柱（ネットワーク / 認証制御 / テストプロセス）| ✅ Phase 1 |
+| 06 | [06-logging-monitoring.md](06-logging-monitoring.md) | ログ・監視（最低限 OBS-1〜4、アプリの自由度は縛らない横断関心事）| ✅ Phase 1 |
 
 > **Phase 1 完了時の検証成果（ファクトチェックで発見・修正）**:
 > - proposal §FR-API-3 の WAF 閾値範囲を修正（`100〜200億` → `10〜20億`、AWS API リファレンス確認）+ 評価窓の「固定」表記を「選択可」に

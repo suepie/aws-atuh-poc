@@ -11,7 +11,8 @@
 
 | 用語 | 定義 |
 |---|---|
-| **アーキパターン** | フロント・バックエンドの分離方式（SPA+API / SSR+API / SSR モノリス）。本標準のスコープ定義の中核 |
+| **アーキパターン** | フロント・バックエンドの分離方式（SPA+API / SSR+API / SSR モノリス / **BFF**）。本標準のスコープ定義の中核 |
+| **BFF** | Backend for Frontend。SPA/モバイルと API の間に挟むサーバサイド層。ブラウザ↔BFF は Cookie、BFF↔API は Bearer の 2 層認証（§C-2.1.1.A）|
 | **実装ランタイム** | API バックエンドが動く実行環境（Lambda / ECS Fargate / Function URL / AppSync 等） |
 | **2 系統並行カタログ** | 本標準では Serverless / Container の 2 系統をどちらも標準として提供 |
 | **モノリス** | フロントエンドとバックエンドが 1 プロセスに同居する構成（Next.js full-stack / Rails / Spring Boot 等） |
@@ -59,7 +60,7 @@ flowchart LR
 
 ---
 
-## §C-2.1 アーキパターン選定（3 パターン）
+## §C-2.1 アーキパターン選定（4 パターン：A SPA+API / B SSR+API / C SSR モノリス / D BFF）
 
 **このサブセクションで定めること**：フロントエンドとバックエンドをどう分けるかの選定基準。
 **主な判断軸**：チームスキル、SEO、機動性、規模、移行容易性。
@@ -82,6 +83,23 @@ flowchart LR
 | **初期表示パフォーマンス** | JS バンドル後 | サーバ側で HTML 生成、TTFB 速い | 同左 |
 | **適性規模** | 大規模 / マルチクライアント / B2B SaaS | SEO 重視 + 高機能 + モバイル併用 | 小〜中規模 / 単一クライアント |
 | **モバイルアプリ連携** | API 共用容易 | 同左 | API 切り出し追加実装が必要 |
+
+### §C-2.1.1.A 第 4 パターン：D. BFF（Backend for Frontend）⭐
+
+A（SPA + API）の派生形として、**SPA/モバイルと API の間にサーバサイドの BFF を挟む**パターン。ブラウザに token を持たせず機密性を高める。認証の持ち方が **2 層**なのが最大の特徴（CSRF 責任分界は [ADR-057](../../../adr/057-csrf-protection-responsibility-boundary.md)、外形監視は [basic-design 14 章 §14.3](../../basic-design/14-canary-implementation-guide.md)）。
+
+| 観点 | D. BFF |
+|---|---|
+| **構成** | SPA/モバイル → **BFF（Confidential Client、サーバサイド）** → バックエンド API |
+| **代表例** | Next.js BFF / 専用 BFF（Node/Go）+ SPA、`@auth0/nextjs-auth0` 等 |
+| **認証（2 層）** | ブラウザ↔BFF = **HttpOnly Cookie セッション** / BFF↔API = **Bearer JWT**（BFF が token を保持・付与）|
+| **CSRF** | ブラウザ↔BFF が Cookie のため **CSRF 対策必須**（[ADR-057](../../../adr/057-csrf-protection-responsibility-boundary.md)）|
+| **公開範囲 §FR-API-1** | BFF は CloudFront + Origin Protection、背後 API は Internal / Private |
+| **実装ランタイム** | **Container 推奨**（セッション状態）。ステートレス BFF（セッションを DynamoDB/ElastiCache 外出し）なら Lambda 可 |
+| **適性** | SPA だが **XSS で token を盗ませたくない**、機密性重視、金融/規制系 |
+| **トレードオフ** | BFF サーバの運用コスト + セッション管理。A（SPA 直）より重いが token 露出リスクを排除 |
+
+**なぜ第 4 パターンとして独立させるか**: A（SPA + API、ブラウザが Bearer 保持）と認証モデルが根本的に違う（Cookie ↔ Bearer の二層変換）。外形監視（[basic-design 18 章](../../basic-design/18-scan-modes-and-scheduling.md) / authPattern `bff-cookie-session`）でも probe 方式が変わる。
 
 ### §C-2.1.2 アーキパターン選定フロー（決定木）
 
@@ -109,6 +127,8 @@ flowchart TD
     style PC fill:#f3e5f5,stroke:#6a1b9a
     style PC2 fill:#f3e5f5,stroke:#6a1b9a
 ```
+
+> **D. BFF への分岐**: 上記で **A（SPA + API）に到達し、かつ「ブラウザに token を持たせたくない（XSS 耐性 / 機密性 / 規制）」**なら **D. BFF** を選ぶ。BFF は A の派生（SPA 前提）で、認証を Cookie ↔ Bearer の 2 層に変える（§C-2.1.1.A）。
 
 ### §C-2.1.3 デフォルト推奨
 

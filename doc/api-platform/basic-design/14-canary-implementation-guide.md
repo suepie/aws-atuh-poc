@@ -10,6 +10,17 @@
 **この章で定めること**: canary の実装構成（Puppeteer カスタムの内部モジュール / Multi Checks の使い分け / モノリス・Private 対応 / 要 PoC 項目）。
 **主な判断軸**: 11 章のアーキを「動くコード」に落とす。実装は既に [code-samples/](code-samples/) にあり本章はその構造と使い方を説明する。
 
+**本章の位置づけ（全体像の中で）**:
+
+```mermaid
+flowchart LR
+    A["11 章<br/>アーキ設計"] --> THIS["14 章 実装ガイド<br/>lib 構成 / 検証方式"]
+    R["12/13 章<br/>Registry データ源"] --> THIS
+    THIS --> IMPL["code-samples/<br/>central-canary-puppeteer"]
+    THIS --> AL["15 章<br/>Alert Router"]
+    style THIS fill:#fff9c4
+```
+
 ---
 
 ## §14.1 Puppeteer カスタム canary の構成
@@ -47,18 +58,30 @@
 
 ---
 
-## §14.3 モノリス対応（API GW を使わないアプリ）
+## §14.3 モノリス / BFF 対応（API GW を使わない・Cookie セッション系）
 
-`authPattern` で assertion 方式を切替え、**API GW 以外のアプリも監視**する。
+`authPattern` で assertion 方式を切替え、**API GW 以外のアプリや BFF も監視**する。
 
 | 構成 | authPattern | Negative 検証 |
 |---|---|---|
 | Public ALB + Cookie SSR | `alb-cookie-monolith` | 未認証 → **302 /login** を観測 |
 | Public ALB + Bearer JWT（アプリコード検証）| `alb-code-jwt` | 401/403（API GW と同じ）|
+| **BFF（SPA + BFF + API、[§C-API-2 §C-2.1.1.A](../proposal/common/02-runtime-selection-criteria.md)）** | **`bff-cookie-session`** | **ブラウザ↔BFF 入口を監視、未認証 → 401 or 302** |
 | Lambda Function URL（IAM）| `lambda-url-iam` | 403 |
 | CloudFront + ALB + SSR | 上記 + Origin Protection 経由 | 実 UX と同一 |
 
-→ アプリチームは OpenAPI に `x-canary-auth-mode: cookie-redirect` を付けるだけ（13 章 §13.3）。詳細は [ADR-059 §D](../../adr/059-central-auth-check-canary-architecture.md)。
+→ Cookie セッション系（`alb-cookie-monolith` / `bff-cookie-session`）は OpenAPI に `x-canary-auth-mode: cookie-redirect` を付ける（13 章 §13.3）。詳細は [ADR-059 §D](../../adr/059-central-auth-check-canary-architecture.md)。
+
+### §14.3.1 BFF の 2 層と監視範囲
+
+BFF は認証が 2 層（ブラウザ↔BFF=Cookie / BFF↔API=Bearer）。**外形監視は「ブラウザ↔BFF 入口」を見れば実質カバー**できる：
+
+| 層 | 認証 | 外形監視 |
+|---|---|---|
+| ブラウザ → BFF | Cookie セッション | ✅ `bff-cookie-session` で probe（Negative: Cookie なし → 401/302）|
+| BFF → API | Bearer（BFF が付与）| 内部通信で外部から見えない。API を独立監視するなら別レコードで `api-gw-jwt` 登録 |
+
+→ **BFF 入口が正しく未認証を弾けば、背後 API は BFF 経由（+ Origin Protection / Private）でしか叩けない設計が前提**。API を公開している場合は API も別途登録する。
 
 ---
 

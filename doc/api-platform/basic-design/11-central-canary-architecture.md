@@ -21,8 +21,8 @@
 ```mermaid
 sequenceDiagram
     participant CC as Central Canary
-    participant Reg as App Registry(DDB)
-    participant OAR as OpenAPI Registry(S3)
+    participant Reg as App Registry DDB
+    participant OAR as OpenAPI Registry S3
     participant CF as アプリ CloudFront
     participant AR as Alert Router
     participant CW as CloudWatch
@@ -91,6 +91,7 @@ canary 冒頭で**既知の挙動**を確認し、テスト基盤自体の健全
 | `api-gw-jwt` | 401/403 | Bearer（OAuth Client Credentials）| ✅ 検証済 |
 | `alb-code-jwt` | 401/403 | Bearer | ✅ |
 | `alb-cookie-monolith` | **302 → /login** | Puppeteer ログインフロー | ◐ Negative 済 / Positive 要 PoC |
+| `bff-cookie-session` | **401 or 302**（BFF 実装依存）| Puppeteer ログイン → Cookie | ◐ Negative 済 / Positive 要 PoC |
 | `api-gw-iam` | 403 | SigV4 署名 | ⏳ Phase 2 |
 | `lambda-url-iam` | 403 | SigV4 署名 | ⏳ Phase 2 |
 

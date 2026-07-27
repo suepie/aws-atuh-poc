@@ -161,6 +161,7 @@ flowchart TB
 
 - **前提条件**: Client 単位 override はテナント単位の設定ではないため、**短縮対象テナントは専用 Client を発行する**（共有マルチテナント Client のままではテナント別 TTL は不成立）。ADR-017 の例外条件（規制要件顧客）と同じ入口で判定する。
 - 短縮とセットで SSO Session Idle の短縮（15-30 分、[session-management-deep-dive §7](../reference/session-management-deep-dive.md): 金融・医療 5-15 分 / 1-2h）も同一テナント判定で適用可能とする（こちらはテナント専用 Client の Client Session Idle override）。
+- **絶対セッション短縮（2026-07-27 追加、Option B）**: 規制/PCI テナントは **SSO Session Max（絶対）を既定 24h → 8h に短縮**する。これは「JIT 削除された退職者が**使い続けた場合**の最大遮断ラグ」を 24h → 8h に縮める唯一の手段（アイドル短縮は放置時のみ、AT 短縮はオフライン窓のみに効く。退職者遮断の実効上限を決めるのは絶対セッション — [session-lifecycle-and-flows.md §5](../common/session-lifecycle-and-flows.md)）。**Client 単位 override が効くのは Client Session Idle/Max のみで SSO Session Max は Realm 単位**のため、絶対 8h を要するテナントは **ADR-017 の規制例外 = 専用 Realm** で実現する（AT/アイドル短縮の専用 Client とは適用レイヤが異なる点に注意）。SCIM 併用が可能なテナントは SCIM 即時遮断（数分）が優先で、絶対短縮は SCIM 不可の規制テナントの補完。
 - **代替案**: ① Realm 属性 + カスタム TokenProvider SPI でテナント別 TTL — Custom SPI の追加（G-SPI-Compat 対象増）に見合わず不採用。② Client Scope による TTL 制御 — Keycloak に該当機能がなく不成立。③ 規制テナント専用 Realm — ADR-017 の例外条件を満たす場合のみ（その場合 Realm 既定値で設定）。
 - **未決事項**: 短縮対象テナントの有無・値は顧客ヒアリング（PCI DSS / 金融系）待ち。§5.9 に登録。
 
@@ -177,6 +178,7 @@ AT は Stateless JWT のため、失効操作後も **最大 30 分（テナン�
 | Z-5 | AT 単体の盗難（XSS / ログ漏洩 / MITM） | なし（Bearer の宿命、ADR-060 §B.1） | — | **≤30 分（構造的残余リスク）** | Phase 1 = 短寿命化のみ。**Phase 2 DPoP で完全防御**（ADR-060 §B.4、§5.9） |
 
 - **契約明示事項**（ADR-060 §B.6 と同一方針): 「本基盤は Phase 1 で AT 30 分 + RT Rotation により影響を最小化する。即時遮断（数分以内）を要する規制テナントには TTL 短縮オプション（§5.2.3）を提供し、Phase 2 で DPoP、Phase 3 で Introspection によるリアルタイム失効を計画する」。
+- **全セッション層の一覧・作成/削除フロー・退職者実効遮断ラグの完全な整理は [session-lifecycle-and-flows.md](../common/session-lifecycle-and-flows.md) を SSOT とする**（2026-07-27 新設。AT 30 分は「オフライン窓」であって遮断時間ではない旨、退職者の実効遮断 = SCIM 数分 / JIT アイドル 1h・絶対 24h〔規制 8h〕を明示）。
 
 ---
 

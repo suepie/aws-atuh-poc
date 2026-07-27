@@ -66,6 +66,71 @@
 - **Auth 軸は本 API プラットフォームの外**。共有認証基盤（ROSA/Keycloak）側のコストは認証基盤側の按分機構に委ねる。本章はあくまで「API プラットフォームのアプリ側で発生するコスト」を対象とする。
 - **Outbound SaaS（軸 6）は AWS の請求に乗らない**。Stripe/OpenAI 等の課金は各 SaaS の明細で発生するため、AWS Budgets/CUR では捕捉できない。§3.5 で別建ての監視を定義する。
 
+### §3.1.1 コスト按分に関わるサービス一覧（俯瞰表）
+
+「どのサービスが按分パイプラインのどこで効くか」を 1 枚で把握する。**役割カテゴリ = 発生源 / 識別・計測 / 集約 / 分析・可視化 / 制御 / 出力**の 6 段。
+
+| 役割カテゴリ | サービス / 機能 | 按分での役割 | 対応節 |
+|---|---|---|---|
+| **発生源**（課金が出る）| Lambda / Fargate / ROSA(EKS) | Compute 費。`app-id` タグで按分（テナント別は EMF 併用）| §3.1 軸1 |
+| 発生源 | ALB / NLB / API Gateway / CloudFront | Network 費。`app-id` / `exposure` タグ | §3.1 軸2 |
+| 発生源 | S3 / EBS / Aurora / DynamoDB | Storage 費。`app-id` タグ | §3.1 軸3 |
+| 発生源 | NAT GW / VPC Endpoint / CloudFront egress | Data transfer。**一部 untaggable** → split charge | §3.1 軸4 |
+| 発生源 | 外部 SaaS（Stripe / OpenAI 等）| **AWS 請求外**。別建て監視 | §3.5 |
+| **識別・計測** | Cost Allocation Tag（`app-id`/`env`/`cost-center`/`owner`）| 按分の**一次キー**。要 activate（Org 管理 Acct）| §3.2 |
+| 識別・計測 | API Gateway Usage Plan + API Key | Partner（法人テナント）識別。**認証ではなく識別・計測用**| §3.4.1 |
+| 識別・計測 | GetUsage API | API Key ごとの日次 used/remaining quota | §3.4.2 |
+| 識別・計測 | API GW Access Log / EMF | リクエスト詳細・`tenant_id` 次元メトリクス | §3.4.2 |
+| **集約** | Cost & Usage Report (CUR 2.0, S3/Parquet) | 生データ **SSOT**。`resource_tags_user_*` 列 | §3.4.3 |
+| 集約 | Cost Categories（split charge rule）| タグ/Acct を束ねる**二次分類**・untaggable 共有費の比例配分 | §3.4.4 |
+| **分析・可視化** | Athena | CUR を標準 SQL 集計（サーバーレス）| §3.4.3 |
+| 分析・可視化 | Cost Explorer | 即席ドリルダウン | §3.6.1 |
+| 分析・可視化 | QuickSight | 定型ダッシュボード（日次）| §3.6 |
+| 分析・可視化 | Cost Anomaly Detection | 異常検知（Cost Categories 軸と併用）| §3.9.1 |
+| **制御** | AWS Budgets（Cost/Usage）| app/env 別の上限・予測アラート（最終防衛線）| §3.3 |
+| 制御 | Budget Actions（IAM/SCP）| 超過時アクション（Phase 1 は既定 OFF）| §3.3.3 |
+| **出力** | 内部請求 / 部門明細 / Partner 明細 | 会計連携は別途 | §3.6 |
+
+> **タグ（一次データ・付与=アプリ）→ Cost Categories（二次分類・定義=中央）→ CUR（SSOT）→ Athena/QuickSight（可視化）** が背骨。API Key/GetUsage は Partner 按分の補助計測、Budgets/Actions は上限制御で按分そのものではない。
+
+### §3.1.2 按分パイプライン概念図
+
+```mermaid
+flowchart TB
+    subgraph L1["① 発生源（課金）"]
+        C1[Compute<br/>Lambda/Fargate/ROSA]
+        C2[Network<br/>ALB/APIGW/CloudFront]
+        C3[Storage<br/>S3/Aurora/DDB]
+        C4[Data transfer<br/>NAT/VPCe ※一部 untaggable]
+        C5[外部 SaaS<br/>※AWS 請求外]
+    end
+    subgraph L2["② 識別・計測"]
+        T[Cost Allocation Tag<br/>app-id/env/cost-center]
+        K[Usage Plan + API Key<br/>GetUsage / Access Log]
+    end
+    subgraph L3["③ 集約"]
+        CUR[CUR 2.0<br/>S3/Parquet ★SSOT]
+        CAT[Cost Categories<br/>split charge]
+    end
+    subgraph L4["④ 分析・可視化・制御"]
+        ATH[Athena]
+        QS[QuickSight/Cost Explorer]
+        BUD[Budgets/Anomaly]
+    end
+    C1 & C2 & C3 & C4 --> T --> CUR
+    C2 --> K --> ATH
+    C4 -. untaggable .-> CAT --> CUR
+    CUR --> ATH --> QS
+    CUR --> BUD
+    C5 -. SaaS Usage API .-> BUD
+    QS --> OUT[内部請求 / 部門・Partner 明細]
+    style CUR fill:#fff9c4
+    style T fill:#c8e6c9
+    style OUT fill:#e3f2fd
+```
+
+> §3.4.3 の図は「Partner 按分の**処理フロー**（誰が何を渡すか）」、本図は「按分に関わる**サービスの層構造**（何がどこに効くか）」。前者=フロー、後者=概念マップ。
+
 ---
 
 ## §3.2 必須 Cost Allocation Tag 標準（BL-1 対応）

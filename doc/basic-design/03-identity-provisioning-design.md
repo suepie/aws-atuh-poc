@@ -473,7 +473,7 @@ sequenceDiagram
 - **残存ウィンドウの注記（既存決定との整合）**: ① 実行後も**発行済み AT は最大 30 分**有効（オフライン検証、P-09）。これは U5 ゾンビ窓 Z 系（ADR-025 §I.5 の複合統制）で受容済みのリスクと同一であり、本モデルで新たな悪化はない。
 - **経路の実装形（既存決定との整合解釈）**: PrivateLink（D-U6-06 単方向）の宛先は **IdP-KC 側 idm-api（専用 API 層と同一デプロイ、U10 の OpenAPI × 2 の内部呼び出し）**とし、**IdP-KC Admin API は従来どおり in-cluster からのみ**呼ぶ（D-U6-11 hostname-admin 内部限定・06a §A.2.1b の原則を維持。Admin API を PrivateLink へ直接露出しない）。→ U6 §6.3.2 に反映、ルート追加の実装形は U6 O-12。
 - **安全網 = 日次リコンサイル**: 2 アカウント 2 コールは分散 Tx ではないため、「IdP-KC の `deprovisioned_at` 有り ↔ Broker shadow enabled=true」を日次突合して補正（U9 RB-USR-06）。idpkc shadow は 90 日バッチ除外（D3-09 追記）のため、これが代替の砦。
-- **SCIM を内部伝播（IdP-KC → Broker）に使わない（却下根拠、検証済み ✅）**: ① **Keycloak は SCIM を送信できない**（ネイティブは受信検討止まり、送信クライアントなし）→ 拡張自作は §2.7 バージョン固定・RHBK サポートと衝突 ② `scim_active` の意味崩壊（内部フェデを外部顧客 SoT と誤認）③ shadow の除外印は既存 `jit_idp_alias=idpkc%` で足りる。mode A では**同期 2 コールが最良**（即時・DLQ 不要）。
+- **SCIM を内部伝播（IdP-KC → Broker）に使わない（却下根拠、検証済み ✅）**: ① **Keycloak には SCIM 送信クライアント（outbound）が core 未実装**（将来機能、[keycloak.org survey feedback](https://www.keycloak.org/2026/02/scim-support-survey-feedback) / [keycloak#13484](https://github.com/keycloak/keycloak/issues/13484)、2026-07-27 検証。受信サーバは 26.6 で experimental だが outbound とは別）→ サードパーティ拡張自作は §2.7 バージョン固定・RHBK サポートと衝突 ② `scim_active` の意味崩壊（内部フェデを外部顧客 SoT と誤認）③ shadow の除外印は既存 `jit_idp_alias=idpkc%` で足りる。mode A では**同期 2 コールが最良**（即時・DLQ 不要）。
 - **未決**: `provisioned_by` の値 — 経路 ④ の `local-admin` 流用か、テナント管理者 portal 作成を区別する新値 `portal` か（Case 表・Re-Activation 分岐 D3-12 に波及するため同時決定。監査上の区別要否がポイント）。
 
 ## 改訂履歴
