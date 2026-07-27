@@ -14,7 +14,9 @@
 
 ## §11.1 処理フロー（1 回の実行）
 
-Central Canary は 5 分周期で起動し、全アプリを横断 probe する。
+> ⚠ **実行モデルは [18 章](18-scan-modes-and-scheduling.md) で見直し済み**: 「5 分周期の全量」は廃し、**M1 デプロイ差分（自動・変更アプリ単位）+ M3 フル監査（手動・全量）**の 2 モードに再設計。実行基盤も Synthetics canary から **Lambda に一本化**（probe lib は共通流用）。本節は「1 回の実行で何をするか」の処理内容を示す（頻度・基盤は 18 章が SSOT）。
+
+1 回の実行で（M1 は対象アプリ、M3 は全アプリを）以下のように横断 probe する。
 
 ```mermaid
 sequenceDiagram
@@ -107,9 +109,9 @@ canary 冒頭で**既知の挙動**を確認し、テスト基盤自体の健全
 | Cookie モノリス Positive | ✅ 可能（Puppeteer）| ❌ |
 | 用途 | **全アプリ横断・動的**（Pattern β 本体）| 小規模・固定 endpoint の補助 |
 
-→ **Pattern β の本体は Puppeteer カスタム**（OpenAPI 動的発見が必須のため）。Multi Checks は「特定アプリの ≤10 endpoint を JSON だけで手軽に」の補助用途（14 章 §14.2）。
+→ **probe ロジック（lib）は共通**、OpenAPI 動的発見が必要なので Puppeteer 相当の probe 実装を使う。Multi Checks は「特定アプリの ≤10 endpoint を JSON だけで手軽に」の補助用途（14 章 §14.2）。
 
-> ⚠ **runtime バージョン（AWS 公式確認 2026-07）**: `syn-nodejs-puppeteer-16.1`（最新）/ `syn-nodejs-5.1`。namespace は `@aws/synthetics-puppeteer` / `@aws/synthetics-logger`（v13.1+ で旧 `Synthetics` から変更）。AWS SDK は v3。旧 `syn-nodejs-puppeteer-7.0` は Deprecated。
+> ⚠ **実行基盤は [18 章](18-scan-modes-and-scheduling.md) で Lambda に一本化**（M2 定期スケジュール廃止に伴い）。probe lib は共通流用し、synthetics 抽象を素の https 実装で注入する。Synthetics canary（`syn-nodejs-puppeteer-16.1` / namespace `@aws/synthetics-*` / SDK v3）は**将来 M2 やダッシュボード要件時のオプション**として温存。
 
 ---
 
@@ -117,18 +119,19 @@ canary 冒頭で**既知の挙動**を確認し、テスト基盤自体の健全
 
 | 環境 | Negative | Positive (GET) | Positive (POST 等) | Smoke |
 |---|:---:|:---:|:---:|:---:|
-| Production | 全 endpoint | 全 GET | ❌ skip（副作用回避）| ✅ |
-| Staging / Dev | 全 endpoint | 全 GET | ✅（cleanup 付き）| ✅ |
+| Production | 対象 endpoint | 対象 GET | ❌ skip（副作用回避）| ✅ |
+| Staging / Dev | 対象 endpoint | 対象 GET | ✅（cleanup 付き）| ✅ |
 
-制御は OpenAPI アノテーション `x-canary-positive-test: pre-prod-only`（13 章 §13.3）。POST の副作用回避は本番の鉄則。
+「対象 endpoint」= M1 なら変更アプリの全 endpoint、M3 なら全 endpoint（[18 章](18-scan-modes-and-scheduling.md)）。制御は OpenAPI アノテーション `x-canary-positive-test: pre-prod-only`（13 章 §13.3）。POST の副作用回避は本番の鉄則。
 
 ---
 
-## §11.6 CloudWatch Metrics と FAIL 条件
+## §11.6 CloudWatch Metrics とアラーム条件
 
 - Namespace `APIPlatform/AuthCheck`、Dimensions `AppId` / `Env` / `AuthPattern`
 - Metrics: `AuthCheckPassed` / `AuthCheckCritical` / `AuthCheckWarn` / `AuthCheckInfo` / `EndpointsProbed`
-- **CRITICAL が 1 件でもあれば canary を throw で FAIL** → Synthetics の `SuccessPercent < 100` アラームが発火
+- **アラーム条件 = `AuthCheckCritical > 0`**（Lambda 基盤化に伴い、旧「canary FAIL → SuccessPercent<100」から metric ベースに変更、[18 章 §18.4](18-scan-modes-and-scheduling.md)）
+- CRITICAL 検知時は alert-router へ即時 invoke（15 章）も併走
 
 ---
 
@@ -144,7 +147,96 @@ canary 冒頭で**既知の挙動**を確認し、テスト基盤自体の健全
 
 ---
 
-## §11.8 未決事項
+## §11.8 具体的ユースケース（OpenAPI → probe → classify → alert）
+
+実際の OpenAPI 記述が、どのコードフローで probe され、どう分類され、どんなアラートになるかを 4 ケースで示す。すべて実装（`lib/openapi.js` の `extractEndpoints` → `lib/probe.js` → `lib/classify.js`）に対応。
+
+### §11.8.1 ケース 1：標準的な JWT API（正常、アラートなし）
+
+**OpenAPI**:
+```yaml
+paths:
+  /api/users:
+    get:
+      x-canary-positive-test: true
+      x-canary-test-token-secret: canary-central-readonly
+  /_/health:
+    get:
+      x-synthetics-skip-auth-check: true
+```
+
+| 段階 | 動き |
+|---|---|
+| extractEndpoints | `/api/users`（positiveTest:true）、`/_/health`（skipAuthCheck:true）|
+| probe（api-gw-jwt）| users: Negative→401、Positive(Bearer)→200 / health: Negative skip（null）|
+| classify | `classify(401,200)`→OK、`classify(null,undefined)`→OK |
+| 結果 | CloudWatch `AuthCheckPassed=2`、アラートなし、canary PASS |
+
+### §11.8.2 ケース 2：認証漏れを検知（CRITICAL/P1）🔥
+
+アプリチームが誤って `/api/orders` を `AuthorizationType=NONE` でデプロイ（アノテーションなし = 認証必須のはず）。
+
+**OpenAPI**:
+```yaml
+paths:
+  /api/orders:
+    get: {}
+```
+
+| 段階 | 動き |
+|---|---|
+| probe | Negative（認証なし）→ API GW に Authorizer なし → **200 が返る** |
+| classify | `classify(200, undefined)` → Negative が 2xx = **CRITICAL/P1**（Auth missing or bypassed）|
+| alert-router | App Registry `alertRouting.p1`（Security SNS）へ Publish → 🔥「expense-api/prod GET /api/orders が未認証で 200」|
+| アラーム | `AuthCheckCritical > 0` の CloudWatch アラーム発火（18 章 §18.4）|
+
+→ **静的解析をすり抜けた認証漏れを実トラフィックで捕捉**。本機構の存在意義。
+
+### §11.8.3 ケース 3：test token 失効を検知（WARN/P2）
+
+`/api/users` の認証は正常だが、canary の test token が失効。
+
+| 段階 | 動き |
+|---|---|
+| probe | Negative→401（認証は正常に動作）/ Positive（失効 Bearer）→401 |
+| classify | `classify(401,401)` → 両方拒否 = **WARN/P2**（Test token expired）|
+| alert-router | P2 Platform チームへ（Security ではない）→ 🟡「canary の token を確認」|
+
+→ Negative だけなら「401 で OK」と誤判定していた。**Positive 併用で「認証 OK だがテストが壊れている」を分離**（§11.2.1 の核心）。
+
+### §11.8.4 ケース 4：Cookie モノリス（302 検証）
+
+ALB + SSR モノリス（`authPattern=alb-cookie-monolith`）。
+
+**OpenAPI**:
+```yaml
+paths:
+  /dashboard:
+    get:
+      x-canary-auth-mode: cookie-redirect
+      x-canary-expected-redirect: /login
+```
+
+| 段階 | 動き（正常）| 動き（漏れ）|
+|---|---|---|
+| probe | Negative（Cookie なし）→ **302 /login**（追従せず観測）| 未認証で **200**（ログインせず閲覧可）|
+| classify | `classify(302,undefined,'alb-cookie-monolith')` → 302 を認証拒否とみなし **OK** | `classify(200,...)` → 302 でない 2xx = **CRITICAL/P1** |
+
+→ **API GW を使わないモノリスでも認証漏れを検知**（14 章 §14.3）。
+
+### §11.8.5 4 ケース一覧
+
+| ケース | Neg | Pos | classify | アラート |
+|---|:---:|:---:|---|---|
+| 1 正常 JWT | 401 | 200 | OK | なし |
+| 2 認証漏れ | **200** | — | **CRITICAL/P1** | 🔥 Security 即時 |
+| 3 token 失効 | 401 | 401 | WARN/P2 | 🟡 Platform |
+| 4 モノリス正常 | 302 | — | OK | なし |
+| 4' モノリス漏れ | 200 | — | CRITICAL/P1 | 🔥 Security |
+
+---
+
+## §11.9 未決事項
 
 | ID | 内容 |
 |---|---|

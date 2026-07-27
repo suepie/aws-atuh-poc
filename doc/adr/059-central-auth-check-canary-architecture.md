@@ -56,9 +56,11 @@
 
 ## Decision
 
+> ⚠ **実行モデル見直し（2026-07-27、基本設計 [18 章](../api-platform/basic-design/18-scan-modes-and-scheduling.md)）**: 当初の「5 分周期の全量スキャン（Synthetics canary）」は規模拡大時に重いため見直した。**M1 デプロイ差分（自動・変更アプリ単位）+ M3 フル監査（手動・全量）**の 2 モードに再設計し、**M2 常時 heartbeat は当面なし**（重要 endpoint の定義をアプリと合意後に将来追加）。**実行基盤は Synthetics canary から Lambda に一本化**（probe lib は共通流用、Synthetics は M2 / ダッシュボード要件時のオプションに格下げ）。アラームは canary FAIL でなく CloudWatch metric `AuthCheckCritical>0`。本 ADR の以降の記述で「Central Canary」「Synthetics 5 分」とあるのは、この見直しで読み替える（Pattern β / App Registry / OpenAPI Registry / Hybrid 検証 / Cross-Acct / Monolith / Private の設計は不変）。
+
 ### 採用方針
 
-**Pattern β（ネットワーク監査 Acct に Central Canary 集約）を採用**。
+**Pattern β（ネットワーク監査 Acct に Central 集約）を採用**。実行モデルは上記見直しにより 2 モード（M1 差分/自動・M3 フル/手動）+ Lambda 基盤。
 
 ### 主要判断
 

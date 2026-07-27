@@ -95,9 +95,26 @@ paths:
 
 1. アプリチームが endpoint を追加（OpenAPI 更新）
 2. deploy 時に openapi-export が新版を S3 に上書き
-3. Central Canary が次回実行で新 endpoint を probe 対象化
+3. probe（M1/M3）が次回実行で新 endpoint を対象化
 
-→ **Central Canary のコード変更は不要**。OpenAPI を正本にすることで「監視対象の維持」が自動化される。
+→ **probe のコード変更は不要**。OpenAPI を正本にすることで「監視対象の維持」が自動化される。
+
+## §13.5 S3 Versioning による差分抽出（M1 の入力）
+
+[18 章 M1（デプロイ差分）](18-scan-modes-and-scheduling.md) は「デプロイされたアプリを probe する」トリガに、この OpenAPI Export を使う。
+
+```mermaid
+flowchart LR
+    Dep[デプロイ] --> Exp[openapi-export<br/>新 openapi.yaml を Put]
+    Exp -->|S3 PutObject イベント| EB[EventBridge]
+    EB --> L[delta-probe Lambda<br/>mode=delta, appId]
+    L --> P[そのアプリの全 endpoint probe]
+```
+
+- **M1 のトリガ = OpenAPI Export の S3 PutObject イベント**（= そのアプリがデプロイされた証跡）
+- ⚠ **差分粒度はアプリ単位**（18 章 §18.2.1）: S3 versioning で新旧 diff は取れるが、**endpoint 単位に絞らず「そのアプリの全 endpoint」を probe** する。理由は、認証コードだけ変えて OpenAPI が不変なケース（middleware 削除等）を見逃さないため。S3 versioning の diff は「何が変わったか」の**参考情報**（アラート本文への付記）に使い、probe 範囲の絞り込みには使わない。
+
+> **なぜ endpoint 単位に絞らないか**は 18 章 §18.2.1 の設計判断 D-M-18-2 参照。
 
 ---
 

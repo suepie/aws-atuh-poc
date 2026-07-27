@@ -1149,7 +1149,9 @@ ORDER BY distinct_ips DESC;
 
 **配置方針（Pattern β 採用、[ADR-059](../../../adr/059-central-auth-check-canary-architecture.md)）**：
 
-CloudWatch Synthetics canary は **各アプリ Acct には配置しない**。**ネットワーク監査 Acct に Central Canary を集約**し、App Registry（DynamoDB）+ OpenAPI Registry（S3）を Scan して全アプリを横断監視する。アプリ deploy 時に Service Catalog 製品が App Registry へ自動登録するため、Central Canary の変更なしに新規アプリが監視対象に追随する。
+各アプリ Acct には probe を配置しない。**ネットワーク監査 Acct に Central 集約**し、App Registry（DynamoDB）+ OpenAPI Registry（S3）を Scan して全アプリを横断監視する。アプリ deploy 時に Service Catalog 製品が App Registry へ自動登録するため、probe 側の変更なしに新規アプリが監視対象に追随する。
+
+> ⚠ **実行モデルは基本設計 [18 章](../../basic-design/18-scan-modes-and-scheduling.md) で見直し済み**: 「5 分周期の全量」→ **M1 デプロイ差分（自動）+ M3 フル監査（手動）**の 2 モード、実行基盤は **Lambda に一本化**（Synthetics は将来 M2 用オプション）。以下の Runtime / executeHttpStep の記述は「Synthetics を使う場合」の参考として残す（probe lib は Lambda / Synthetics 共通）。
 
 **Runtime バージョン（2026-07 時点）**：
 

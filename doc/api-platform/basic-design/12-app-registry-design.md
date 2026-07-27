@@ -101,7 +101,34 @@ app-registry Lambda の配置は 2 パターン（16 章で詳細）:
 
 ---
 
-## §12.6 未決事項
+## §12.6 なぜ App Registry が要るか（代替案比較）
+
+canary が 1 アプリを probe するには、**API の形（endpoint 一覧）以外に**運用メタデータが要る。これらは OpenAPI（= API 仕様）には属さない。
+
+| 必要な情報 | App Registry の属性 | OpenAPI に書けるか |
+|---|---|---|
+| どこを叩くか（CloudFront URL）| `baseUrl` | ✗ production URL は API 仕様に入れない、env で変わる |
+| どの認証方式か | `authPattern` | △ 書けるが env 依存 |
+| どの test token か | `testTokenSecret` | ✗ 秘密情報の参照 |
+| 誰に通知するか | `alertRouting` | ✗ 運用情報であって API 仕様でない |
+| 監視 ON/OFF | `enabled` | ✗ |
+
+→ **OpenAPI Registry は「API の形」、App Registry は「監視の運用メタデータ」で責務が異なる**。
+
+### §12.6.1 代替案の却下理由
+
+| 案 | 仕組み | 却下理由 |
+|---|---|---|
+| **App Registry（採用）** | DynamoDB 台帳 | — |
+| OpenAPI だけ | S3 list で発見 + 全メタを OpenAPI に埋込 | production URL / token / 通知先 / env 別設定を API 仕様に混入し責務が壊れる |
+| Resource Explorer / Config で動的発見 | 各 App Acct の API GW を列挙 | CloudFront URL / authPattern / 通知先が**発見できない**（AWS リソースは分かるが監視方式は別途要る）|
+| タグベース | API GW にタグ、Config Aggregator | `alertRouting` 等はタグに入り切らない、Cookie モノリスは API GW ですらない |
+
+→ App Registry は「**監視に必要な運用メタデータの single source of truth**」。`enabled` で一時停止、`alertRouting` でアプリ別通知先という運用は台帳ならでは。
+
+---
+
+## §12.7 未決事項
 
 | ID | 内容 |
 |---|---|

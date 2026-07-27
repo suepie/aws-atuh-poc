@@ -40,7 +40,7 @@ flowchart TB
     subgraph NetAudit["ネットワーク監査 Acct（中央運用）"]
         Reg[App Registry<br/>DynamoDB]
         OAR[OpenAPI Registry<br/>S3]
-        CC[Central Canary<br/>Synthetics Puppeteer 16.1]
+        CC[Central Probe<br/>Lambda（probe lib 共通）<br/>M1 差分/M3 フル ※18 章]
         AR[Alert Router<br/>Lambda]
         SNS1[SNS: P1 Security]
         SNS2[SNS: P2 Platform]
@@ -64,7 +64,7 @@ flowchart TB
     SCB -.登録.-> Reg
     SCB -.export.-> OAR
 
-    CC -->|5min: Scan| Reg
+    CC -->|Scan（M1 対象/M3 全量）| Reg
     CC -->|Get spec| OAR
     CC -->|probe（CloudFront 経由）| CFA --> APIA
     CC -->|probe| CFB --> APIB
@@ -75,6 +75,8 @@ flowchart TB
     style AppA fill:#e8f5e9
     style AppB fill:#e8f5e9
 ```
+
+> ⚠ **実行モデルは [18 章](18-scan-modes-and-scheduling.md) で見直し済み**: 当初の「5 分周期の全量スキャン」は重いため廃止し、**M1 デプロイ差分（自動・変更アプリ単位）+ M3 フル監査（手動・全量）**の 2 モードに再設計。実行基盤も Synthetics canary から **Lambda に一本化**（probe lib は共通流用、Synthetics は将来 M2 用オプション）。図中の Central Probe はこの Lambda を指す。
 
 ### §10.1.2 なぜ β（中央）か — α（分散）との比較
 

@@ -54,7 +54,9 @@ API プラットフォーム標準の要件定義（`proposal/` 配下: §FR-API
 | 13 | `13-openapi-registry-design.md` | OpenAPI Registry（S3）構造・Export Custom Resource | ADR-059、§C-API-5 | 後続 |
 | 14 | `14-canary-implementation-guide.md` | Puppeteer / Multi Checks 実装ガイド + モノリス / Private 対応 | ADR-059 §D/§E | 後続 |
 | 15 | `15-alert-routing-design.md` | 4×4 真偽値表 Alert Router 設計（P1/P2/P3 分岐）| §C-6.6.8 | 後続 |
-| 16 | `16-cross-account-iam-design.md` | Cross-Acct Role / Custom Resource / StackSets 配布 | ADR-039/059 | 後続 |
+| 16 | `16-cross-account-iam-design.md` | Cross-Acct 登録 5 案比較 / StackSets 配布 | ADR-039/059 | 後続 |
+| 17 | `17-deployment-integration-and-registration.md` | デプロイ検知と登録（Service Catalog / CI/CD / EventBridge の 3 層）| §C-API-5 / ADR-059 | 後続（質問対応で追加）|
+| 18 | `18-scan-modes-and-scheduling.md` | スキャン実行モード（M1 差分/自動 + M3 フル/手動、Lambda 基盤一本化）— 実行モデル SSOT | ADR-059 | 後続（実行モデル見直しで追加）|
 
 ## 3. 実装物（code-samples/、認証基盤と分離）
 

@@ -28,38 +28,42 @@ Pattern β で発生する Cross-Acct は **2 経路のみ**（それ以外は P
 
 ---
 
-## §16.2 Lambda 配置の 2 モデル
+## §16.2 Cross-Account 登録の設計案比較（5 案）
 
-app-registry / openapi-export Lambda をどこに置くかで Cross-Acct の形が変わる。
+App Registry / OpenAPI Registry への書き込みを、App Acct からどう中央へ届けるか。5 案を比較する。
 
-### モデル A: 中央配置（推奨）
+| 案 | 仕組み | 権限最小 | 実装 | App Acct 負担 | 疎結合 | 障害耐性 |
+|---|---|:---:|:---:|:---:|:---:|:---:|
+| **1: 中央 Lambda + Cross-Acct Invoke** | App Acct が中央 Lambda を Invoke | ✅ Invoke 1 点 | ✅ 低 | ✅ 小 | △ | △ |
+| **2: App Acct Lambda + AssumeRole** | App Acct Lambda が中央ロールを引受け書込 | ⚠ AssumeRole 各所 | ⚠ 中 | ⚠ 中 | △ | △ |
+| **3: EventBridge クロスアカウント Bus** | App Acct → 中央 Event Bus → 中央 Lambda | ✅ PutEvents 1 点 | ⚠ 中 | ✅ 小 | ✅ 高 | ✅ 高（非同期）|
+| **4: DynamoDB Resource Policy 直書き** | App Acct ロールに中央 DDB PutItem を許可 | ❌ DDB 直開放 | ✅ 低 | ✅ 小 | ✗ | △ |
+| **5: 中央 S3 に Put → S3 イベントで DDB 反映** | App Acct → 中央 S3（Bucket Policy）→ 反映 | ✅ S3 Put 1 点 | ⚠ 中 | ✅ 小 | ✅ 高 | ✅ 高 |
+
+### §16.2.1 各案の要点
+
+- **案 1（中央 Lambda Invoke）**: Cross-Acct を「Lambda Invoke 権限 1 点」に集約、実装最小。ただし同期呼び出しで、中央 Lambda 障害時に deploy がブロックされうる。→ **Phase 1 の第一候補**。
+- **案 2（AssumeRole）**: App Acct 側に AssumeRole ロジックが分散、Cross-Acct 複雑性が各アプリに広がる。実装は `buildDocClient`（`CROSS_ACCT_ROLE_ARN`）で対応済み。
+- **案 3（EventBridge Bus）**: App Acct が中央 Event Bus に `PutEvents` するだけ。**非同期・疎結合**で中央障害でもイベント滞留 → 後処理。EventBridge Archive で監査も付く。→ **規模拡大時の移行先**。
+- **案 4（DDB Resource Policy 直書き）**: 中央 DDB を Cross-Acct 直開放 = **最も広い攻撃面**。誤操作・悪用リスク大。**非推奨**。
+- **案 5（中央 S3 + イベント）**: App Acct が登録 JSON を中央 S3 に Put、S3 イベントで反映。OpenAPI Export と書込経路を統一できる。疎結合。
+
+### §16.2.2 段階採用
 
 ```mermaid
 flowchart LR
-    subgraph App["App Acct"]
-        SC[Service Catalog 製品]
-    end
-    subgraph Net["ネットワーク監査 Acct"]
-        L[app-registry / openapi-export Lambda]
-        DDB[App Registry]
-        S3[OpenAPI Registry]
-    end
-    SC -->|Cross-Acct Invoke| L
-    L --> DDB
-    L --> S3
+    P1[Phase 1<br/>案 1: 中央 Lambda Invoke<br/>最小実装ですぐ動く] -->|規模拡大 / 疎結合強化| P2[Phase 2<br/>案 3: EventBridge Bus<br/>非同期・障害耐性・監査]
+    style P1 fill:#c8e6c9
+    style P2 fill:#e3f2fd
 ```
 
-- Lambda を**中央に置き、App Acct からは Invoke するだけ**
-- Cross-Acct は「Lambda Invoke 権限」1 点に集約
-- Lambda 自身は同 Acct の DDB/S3 を書く（`CROSS_ACCT_ROLE_ARN` 不要）
+| 重視点 | 推奨案 |
+|---|---|
+| 最小実装・すぐ動く | **案 1**（中央 Lambda Invoke）|
+| 疎結合・障害耐性・監査 | **案 3**（EventBridge Bus）|
+| セキュリティ最小面 | 案 1 or 案 3（**案 4 は避ける**）|
 
-### モデル B: App Acct 配置
-
-- Lambda を App Acct に置き、STS AssumeRole で中央のロールを引き受けて DDB/S3 を書く
-- `CROSS_ACCT_ROLE_ARN` を設定（実装は対応済み: `buildDocClient`）
-- Cross-Acct の複雑性が各 App Acct に分散する
-
-→ **モデル A を推奨**（Cross-Acct を中央の Invoke 権限に閉じ込め、App Acct 側の設定を最小化）。
+→ **Phase 1 は案 1 で立ち上げ、規模拡大時に案 3 へ移行**。`app-registry` Lambda は案 1（中央配置）/ 案 2（App Acct 配置）の両構成に実装対応済み。
 
 ---
 
@@ -100,7 +104,7 @@ ADR-039 v2 では「ネットワーク監査 Acct = 自管理」前提だが、R
 
 | ID | 判断 | 根拠 |
 |---|---|---|
-| D-M-16-1 | Cross-Acct はモデル A（中央 Lambda + App Acct から Invoke）を推奨 | Cross-Acct を Invoke 権限 1 点に集約、App Acct 設定を最小化 |
+| D-M-16-1 | Cross-Acct は Phase 1 = 案 1（中央 Lambda + App Acct から Invoke）、規模拡大時 = 案 3（EventBridge Bus）| Invoke 権限 1 点に集約、疎結合強化は EventBridge へ移行（§16.2）。案 4（DDB 直開放）は避ける |
 | D-M-16-2 | canary の probe は Public URL 経由で Cross-Acct 権限不要 | 実 UX 同一 + 権限を書き込みだけに限定 |
 | D-M-16-3 | 製品配布は StackSets / Portfolio 共有 | 全 App Acct への一括配布 |
 | D-M-16-4 | ROSA 側 P-18 確定まで自管理前提で記述、差分改訂 | 前提変更に追随（BD-Q-01）|

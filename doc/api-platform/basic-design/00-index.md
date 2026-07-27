@@ -44,7 +44,9 @@ proposal（§FR-API-* / §NFR-API-* / §C-API-*）は参照物として維持。
 | 13 | [13-openapi-registry-design.md](13-openapi-registry-design.md) | OpenAPI Registry（S3 構造 / Export / アノテーション）| ✅ Phase 2 |
 | 14 | [14-canary-implementation-guide.md](14-canary-implementation-guide.md) | 実装ガイド（lib 構成 / Multi Checks / モノリス / Private / 要 PoC）| ✅ Phase 2 |
 | 15 | [15-alert-routing-design.md](15-alert-routing-design.md) | 4×4 → SNS 振り分け（P1/P2/P3 / ARN 2 段解決）| ✅ Phase 2 |
-| 16 | [16-cross-account-iam-design.md](16-cross-account-iam-design.md) | Cross-Acct IAM（2 経路 / モデル A/B / StackSets / BD-Q-01）| ✅ Phase 2 |
+| 16 | [16-cross-account-iam-design.md](16-cross-account-iam-design.md) | Cross-Acct IAM（2 経路 / 登録 5 案比較 / StackSets / BD-Q-01）| ✅ Phase 2 |
+| 17 | [17-deployment-integration-and-registration.md](17-deployment-integration-and-registration.md) | デプロイ検知と登録（Service Catalog / CI/CD / EventBridge の 3 層）| ✅ Phase 2 |
+| 18 | [18-scan-modes-and-scheduling.md](18-scan-modes-and-scheduling.md) ⭐ | **スキャン実行モード（M1 差分/自動 + M3 フル/手動、M2 将来、Lambda 基盤一本化）— 実行モデル SSOT** | ✅ Phase 2 |
 
 ## 実装物（code-samples/、認証基盤と分離）
 
