@@ -76,8 +76,8 @@ flowchart TB
     S3A[("監査 S3<br/>Object Lock 7y")]
     CAN["Central Canary(U9 D-U9-16)<br/>外形監視 + 認証実装漏れ検知"]
   end
-  subgraph APPA["🟢 App Acct × N"]
-    RP["アプリ(RP)"]
+  subgraph APPA["🟢 App Acct × N(内部詳細 = §A.1.1)"]
+    RP["アプリ(RP)<br/>OIDC クライアント + JWT 検証器"]
   end
   OSA["大阪(DR): パイロットライト ×2<br/>infra Pool 稼働 + KC Pool min0 + Aurora Global Secondary"]
 
@@ -129,6 +129,92 @@ flowchart TB
 ```
 
 凡例: 太線 = 公開経路(入口/宛先がインターネット)/ 細線 = 私設(弊社 Acct 内・Acct 間)/ 点線 = 管理系・監視・条件付き。`(追加)` = 元表に無かった抜け候補(§A.3)。
+
+## A.1.1 アプリ側(RP)の構成 2 パターンと認証基盤への接続(2026-07-28 追記)
+
+§A.1 の `App Acct × N` の中身を詳細化する。**最重要の原則**を先に述べる:
+
+> **認証基盤(Broker)は「OIDC の標準エンドポイント群」を提供するだけ**である — `authorize`(ログイン画面) / `token`(コード→トークン交換・リフレッシュ) / `JWKS`(署名検証用の公開鍵) / `logout` / `userinfo`。**各アプリは "RP(Relying Party)" を自分側に持つ**。RP は 2 つの部品からなる:
+> 1. **OIDC クライアント**(ログインのリダイレクトとトークン交換を行う。SPA なら Public Client + PKCE、サーバーサイドなら Confidential Client = BFF)
+> 2. **JWT 検証器**(API 呼び出しごとにトークンを検証する。**オフライン検証** = キャッシュした JWKS で署名・`iss`/`aud`/`exp`/`tenant_id` をローカル確認)
+>
+> **認証基盤はリクエスト毎の経路には立たない**。JWT 検証はアプリ側でオフライン完結し、認証基盤を叩くのは (a) ログイン時 (b) JWKS の定期更新(既定 1h キャッシュ、[ADR-012](../adr/012-vpc-lambda-authorizer-internal-jwks.md) の VPC 内経路)だけ。「毎回認証基盤に問い合わせる」構成ではない。
+
+### パターン 1: CloudFront + WAF + S3 / API Gateway + Lambda(サーバーレス)
+
+```mermaid
+flowchart LR
+  U["ブラウザ"]
+  subgraph EDGE["他組織エッジ"]
+    CFA["CloudFront + WAF<br/>(SPA配信 / API 前段)"]
+  end
+  subgraph AUTH["認証基盤 Broker(auth.basis)"]
+    AZ["OIDC 標準エンドポイント<br/>authorize / token / JWKS / logout"]
+  end
+  subgraph APP["App Acct(パターン1: サーバーレス)"]
+    S3["S3<br/>SPA 静的アセット"]
+    APIGW["API Gateway"]
+    LAUTH["Lambda Authorizer<br/><b>= JWT 検証器(オフライン)</b><br/>JWKS キャッシュ + iss/aud/exp/tenant_id 検証"]
+    LBIZ["Lambda<br/>業務ロジック"]
+    BFF["(任意) BFF Lambda<br/>Confidential Client<br/>= OIDC クライアント"]
+  end
+  U -->|"1 SPA 取得"| CFA --> S3
+  U -.->|"2 ログイン(frontchannel)"| AZ
+  BFF -.->|"3 code→token / refresh<br/>(VPC内・B-I2)"| AZ
+  U -->|"4 API 呼出(Bearer JWT)"| CFA --> APIGW
+  APIGW -->|"5 検証依頼<br/>(結果を API GW がキャッシュ)"| LAUTH
+  LAUTH -.->|"JWKS 取得<br/>(VPC内・1h キャッシュ・ADR-012)"| AZ
+  LAUTH -->|"offline 検証OK → allow"| APIGW --> LBIZ
+```
+
+- **SPA 直(BFF なし)の場合**: BFF Lambda を置かず、SPA(ブラウザ) が Public Client + PKCE でログイン〜`code→token` 交換を**ブラウザからインターネット経由(公開 token エンドポイント)**で行う。トークンは SPA メモリ保持。API 検証は同じく Lambda Authorizer。
+- **BFF ありの場合(推奨)**: BFF Lambda が Confidential Client として `code→token` を**サーバーサイド(VPC 内経路 B-I2)**で行い、ブラウザにはアプリセッション Cookie のみ渡す(トークンをブラウザに置かない)。
+
+### パターン 2: LB(ALB) + ECS(コンテナ)
+
+```mermaid
+flowchart LR
+  U["ブラウザ"]
+  subgraph EDGE["他組織エッジ"]
+    CFB["CloudFront + WAF"]
+  end
+  subgraph AUTH["認証基盤 Broker(auth.basis)"]
+    AZ2["OIDC 標準エンドポイント<br/>authorize / token / JWKS / logout"]
+  end
+  subgraph APP2["App Acct(パターン2: コンテナ)"]
+    ALB["Internal ALB"]
+    subgraph ECS["ECS タスク"]
+      MW["OIDC ミドルウェア / oauth2-proxy(sidecar)<br/><b>= OIDC クライアント + JWT 検証器</b>"]
+      BIZ["業務コンテナ"]
+    end
+  end
+  U -->|"1 アクセス"| CFB --> ALB --> MW
+  U -.->|"2 ログイン(frontchannel)"| AZ2
+  MW -.->|"3 code→token / refresh<br/>(VPC内・B-I2)"| AZ2
+  MW -.->|"JWKS 取得(VPC内・キャッシュ)"| AZ2
+  MW -->|"offline 検証OK"| BIZ
+```
+
+- ECS アプリは **OIDC ミドルウェア**(言語フレームワークのライブラリ)or **oauth2-proxy 等の sidecar/リバースプロキシ**で「ログイン(OIDC クライアント)」と「毎リクエストの JWT 検証(オフライン)」の両方を担う。API Gateway / Lambda Authorizer は使わず、**検証はアプリ内(またはサイドカー)**で行う。
+- 内部マイクロサービス間の伝播が必要なら Token Exchange(RFC 8693、[U5 §5.3](05-token-session-authz-design.md))を Broker に要求する経路が加わる。
+
+### 「認証基盤に来るもの」= 役割・エンドポイント・頻度(両パターン共通)
+
+| # | 何が来るか(呼ぶ側) | 役割 | 叩く先 | 経路 | 頻度 |
+|---|---|---|---|---|---|
+| 1 | **ブラウザ** | ユーザ認証(ログイン画面) | `authorize` / login | 公開(他組織エッジ、frontchannel) | ログイン時のみ |
+| 2 | **BFF / ECS ミドルウェア**(= OIDC クライアント) | コード→トークン交換・リフレッシュ | `token` | **VPC 内(B-I2、ADR-012)**。SPA 直のみ公開経路 | ログイン / リフレッシュ時 |
+| 3 | **Lambda Authorizer / ECS ミドルウェア**(= JWT 検証器) | 署名検証用の公開鍵取得 | `JWKS` | **VPC 内・1h キャッシュ(ADR-012)** | 定期(**リクエスト毎ではない**) |
+| 4 | (任意) アプリ Backend | 組織コンテキスト / エンタイトルメント取得 | idm-api `/api/me/context`([U3 D3-16](03-identity-provisioning-design.md)) | VPC 内 | 認可判断時(短 TTL キャッシュ可) |
+
+→ **JWT の検証そのもの(iss/aud/exp/tenant_id/署名)はアプリ側でオフライン完結**し、この表の 1〜4 のどれも「リクエスト毎に認証基盤を叩く」ものではない。認証基盤は per-request の経路に立たない(= スケール・可用性のボトルネックにならない)。
+
+### 「Lambda Authorizer なのか認証アプリなのか」への回答
+
+- **Lambda Authorizer は "アプリ側の JWT 検証器"** であって「認証基盤が各アプリのために動かす認証アプリ」ではない。**オフライン検証**(キャッシュ JWKS + クレーム検証)を行い、結果を API Gateway がキャッシュする。認証基盤へ毎回問い合わせているわけではない。
+- **認証基盤側にアプリごとの "認証アプリ" は存在しない**。認証基盤は標準 OIDC エンドポイントを提供するだけで、RP(OIDC クライアント + 検証器)は各 App Acct 側の実装。検証器の実体がパターン 1 では Lambda Authorizer、パターン 2 では ECS の OIDC ミドルウェア / oauth2-proxy sidecar、という違いだけ。
+- リアルタイム失効(退職者即遮断)が要る規制ケースのみ、Phase 3 で **API GW での Token Introspection**(オンライン検証)を選択肢に加える([U5 §5.2.4 Z-4](05-token-session-authz-design.md))。Phase 1 はオフライン検証 + 短 TTL が既定。
+- RP 実装の必須事項(state+PKCE / Bearer 検証 / aud・tenant_id 検証 / リフレッシュ実装 / Back-Channel Logout 受信)は [U5 §5.6 RP 実装ガイド](05-token-session-authz-design.md)、認証実装漏れの検知は [Central Canary(ADR-059 / U9 §9.8)](09-operations-observability-design.md)。
 
 ## A.2 ROSA HCP クラスタ内部詳細(Broker/IdP-KC 共通、差分は §A.2.2)
 
@@ -411,5 +497,6 @@ flowchart TB
 ## 改訂履歴
 
 - 2026-07-24: 初版。ユーザー提供のフロー表(B-*/I-* 系)を全量反映 + 抜け 8 系統を追加 + ROSA 内部詳細図(初出)+ OVN IP レンジ表。
+- 2026-07-28 (v1.3): **§A.1.1 新設 — アプリ側(RP)の構成 2 パターン**(パターン1 CloudFront+WAF+S3 / API GW + Lambda Authorizer、パターン2 ALB+ECS + OIDC ミドルウェア/oauth2-proxy)+ 「認証基盤に来るもの」の役割・頻度表 + 「Lambda Authorizer = アプリ側のオフライン検証器であって認証基盤の per-request 経路ではない」を明確化。
 - 2026-07-24 (v1.2): **§A.5 IP アドレス割当計画(第 1 案)新設** — 東京 10.64/13・大阪 10.72/13・アプリ 10.68/14 の採番方針、アカウント別 VPC 表(/21 × 4 + 予備)、サブネット 6 層割付(Worker /24・ALB /26・**Lambda 統合 /26(Webhook/idmap λ の VPC アタッチ用に新設)**・Aurora /27・VPCE /27・TGW /28)、4 クラスタの Pod/Service CIDR ずらし案(A6a-2 の推奨解)、禁止・照会リスト。新未決 A6a-5(CIDR 照会・凍結)/ A6a-6(同居アプリ実行形態)。
 - 2026-07-24 (v1.1): **公式ドキュメント・ファクトチェック反映**(16 項目検証、❌1 + ⚠5)— OLM 本体は RH 側 CP(Worker は導入 Operator のみ)/ SRE=backplane JIT(break-glass は顧客側機能の名称)/ UWM 新規クラスタ既定無効 → Day-2 有効化必須 / maxPods 250 追記 / OVN 内部予約レンジ(100.64/16・100.88/16・169.254/17・172.20.0.1)追加 / **NLB ヘアピン制限とクラスタ内 Service 原則の明文化(§A.2.1b)**。

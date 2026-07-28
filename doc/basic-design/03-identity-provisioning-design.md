@@ -226,6 +226,8 @@ stateDiagram-v2
 
 **90 日バッチ除外の追加（2026-07-24、D3-17）**: `provisioned_by=jit` でも **`jit_idp_alias` が `idpkc%`（= IdP-KC の Broker shadow）のものは 90 日バッチ対象から除外**する。SoT = IdP-KC で削除は管理画面同期駆動（D3-17）のため、shadow の自動 deprovision は不整合の温床。代替の砦 = 日次リコンサイル（D3-17）。
 
+**90 日バッチの実行基盤（2026-07-28、実装面は [U9 D-U9-17](09-operations-observability-design.md)）**: 休眠スキャン + Soft Delete は **ROSA infra Pool の Kubernetes CronJob**（Lambda 不採用 — Admin API が内部限定 + 実行時間上限）で回す。Admin API 経由・冪等・`concurrencyPolicy: Forbid` + Broker Aurora の advisory lock で単一実行を保証し、disable 直前に `last_login` を再チェック（TOCTOU 対策）。`enabled=false` は必ず Session Revoke とペア（keycloak#37981）。Phase 2 物理削除バッチも同基盤。
+
 **S1-S10 遷移表**（[jit-scim §10.4.G.2](../common/jit-scim-coexistence-keycloak.md) を設計確定。JIT = Pull / SCIM = Push の非対称が全行の根）:
 
 | # | イベント | JIT（①） | SCIM（②） |

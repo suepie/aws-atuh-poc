@@ -279,7 +279,7 @@ KC 26.1 以降 **jdbc-ping がデフォルト**（ノードディスカバリを
 |------|---------------|------|
 | 接続先エンドポイント | **Cluster（Writer）エンドポイントのみ**。Reader エンドポイントを KC に渡さない | jdbc-ping のハートビート書込 + KC のトランザクション整合。読取分散は KC では行わない |
 | Pod あたり接続プール | **`db-pool-initial-size` = `db-pool-min-size` = `db-pool-max-size` = 30 の等値**を明示設定（2026-07-23 改訂: 旧 10/30 → Keycloak 公式推奨の等値化。Agroal デフォルト max 100/pod は放置厳禁） | 等値化で接続チャーン回避 + PostgreSQL server-side prepared statement（5 回実行で有効化）が効き **p99 に有利**。トレードオフ: scale-out 時に新 Pod が即 30 本確保するが、下記の Writer 余裕内に収まる |
-| 総接続数見積 | 最大 Pod 数 27（Broker 9 + IdP-KC 18）× 30 = **810**。Writer 上限は r7g.xlarge で **max_connections ≈ 3,300**（`LEAST(DBInstanceClassMemory/9531392, 5000)`、32GB）から**予約枠**（superuser 3 + Aurora 内部 + 管理画面 Backend の Admin API クライアント + postgres_exporter + 移行バッチ）を控除して評価 — それでも大幅な余裕 | 2 系統 DB に分かれるため実際はさらに余裕（Broker 270 / IdP-KC 540）。**idmap 補助 DB の接続は API 層/バッチ側の別プールで独立計上**（KC の枠と混ぜない） |
+| 総接続数見積 | 最大 Pod 数 27（Broker 9 + IdP-KC 18）× 30 = **810**。Writer 上限は r7g.xlarge で **max_connections ≈ 3,300**（`LEAST(DBInstanceClassMemory/9531392, 5000)`、32GB）から**予約枠**（superuser 3 + Aurora 内部 + 管理画面 Backend の Admin API クライアント + postgres_exporter + 移行バッチ + **退職者遮断バッチの advisory lock 接続**〔U9 D-U9-17、少数・短命〕）を控除して評価 — それでも大幅な余裕 | 2 系統 DB に分かれるため実際はさらに余裕（Broker 270 / IdP-KC 540）。**idmap 補助 DB の接続は API 層/バッチ側の別プールで独立計上**（KC の枠と混ぜない） |
 | jdbc-ping 留意 | Failover（Writer 交代 / Global DB Promote）中はディスカバリ書込が一時失敗する。**クラスタ全 Pod の同時再起動を伴う操作は Writer 安定後に実施**する運用制約を U8/U9 Runbook に引き渡す | KC 26.1 リリースノート、ADR-051 |
 | タイムアウト | JDBC socket/login timeout を ALB/Route 53 Failover TTL（30s）より短く設定し、Failover 検知を DB 側で先行させる | ADR-051 §D.2 |
 

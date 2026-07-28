@@ -707,6 +707,8 @@ echo "  Mode: $DRY_RUN"
 
 #### CronJob (Kubernetes) 例
 
+> **⚠ 2026-07-28 注記**: 下記例の `REALM=tenant-acme`（テナント別 Realm 前提）は現行アーキ（単一 Realm + Organizations、ADR-033）に**不整合**。本番の対象抽出は「Realm 指定」でなく **`provisioned_by=jit` ∧ `jit_idp_alias≠idpkc%` ∧ `last_login>90日` ∧ `enabled=true` の属性/Org フィルタ**で行う。実行基盤・多重実行対策・冪等要件の確定版は **[U9 D-U9-17](../basic-design/09-operations-observability-design.md)**（in-cluster CronJob + concurrencyPolicy: Forbid + advisory lock + TOCTOU 再チェック + Session Revoke）を正とする。以下の例はシェル実装のイメージとして保持。
+
 ```yaml
 apiVersion: batch/v1
 kind: CronJob

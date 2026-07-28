@@ -201,6 +201,7 @@ flowchart LR
 | RB-USR-01〜04 | 個別 CRUD / PW リセット / MFA リセット / ロック解除（**γ シナリオ P-07 により対象は管理者層のみ・週次〜月次頻度**。P-3 フェデユーザは顧客 IdP 責任）。**RB-USR-03（MFA リセット）は Recovery Codes 管理者リセットを含む**（U4 §4.3.3。本人確認手順込み） | NFR-6.5 C-1〜C-4、U4 §4.3.3 |
 | RB-USR-05 | 一括インポート / 一括 deprovision（テナント一括 logout ジョブ含む — U5 引き渡し） | NFR-6.5 D-1〜D-3、U5 §5.9.2 |
 | RB-USR-06（2026-07-24 追加） | **非 IdP mode A 日次リコンサイル**（IdP-KC `deprovisioned_at` 有り ↔ Broker shadow enabled の突合・補正ジョブの監視と差分発生時の手動手順。idpkc shadow は 90 日バッチ除外のため本ジョブが代替の砦） | U3 D3-17 |
+| RB-USR-07（2026-07-28 追加） | **退職者遮断バッチ（90 日休眠 Soft Delete CronJob、D-U9-17）の監視**（dry-run 差分レビュー / 実行サマリ確認 / 失敗時の手動再実行〔冪等〕/ **アップグレード窓と重なる場合の一時停止手順** / advisory lock 競合時の切り分け）。Phase 2 物理削除バッチも本 Runbook に統合 | U9 D-U9-17、U3 D3-09 |
 | **RB-SEC-01** | クレデンシャル侵害対応 = ITDR L4 発動手順（手動承認 → not-before push + 全セッション削除 + Back-Channel Logout 一斉送信 + **AT ゾンビ窓 ≤30 分の追加監視**〔対象 sub/azp の API アクセス監視〕） | U5 §5.4.3 / U7 D-U7-05、NFR-6.5 E-1 |
 | **RB-SEC-02** | 強制ログアウト・Revocation 3 粒度（個別 / Client / 全体）・not-before push 単体手順 | U5 §5.4、NFR-6.5 E-2 |
 | RB-SEC-03 | 緊急 IP 制限（自管理 = Internal ALB / SG。エッジ WAF は他組織への Fast Track 依頼 — REQ-IN-01 の連絡手順） | NFR-6.5 E-3、U7 §7.8.1 |
@@ -286,6 +287,51 @@ flowchart LR
 - **根拠**: U8 D-U8-07（経路 1 の成立条件 =「Aurora の中身 = Git」の常時担保）、U8 §8.9.2。
 
 ---
+
+### 9.5.4 決定 D-U9-17: 退職者遮断バッチ（90 日休眠 Soft Delete）の実行基盤 = in-cluster CronJob（O-U9-8 確定）
+
+> **背景・なぜここで決めるか**: JIT のみテナントでは顧客 IdP の退職を本基盤が検知できない（[jit-scim §10.7](../common/jit-scim-coexistence-keycloak.md) S5）。「削除」の実体は **`last_login` を入力とした 90 日休眠 Soft Delete バッチ**（対策 A、[U3 D3-09](03-identity-provisioning-design.md)）であり、これを動かす実行基盤を確定する（O-U9-8 のクローズ）。`last_login` の記録自体は Keycloak 内の Custom Authenticator SPI（U2 SPI ①、debounce 1 日）で行い、本決定は「休眠スキャン + Soft Delete」を回す定期ジョブの基盤を扱う。
+
+**採用**: **ROSA infra Pool 上の Kubernetes CronJob**（Lambda 不採用）。SCIM Facade と同じ配置レイヤ。
+
+**なぜ Lambda でなく CronJob か（判断根拠・O-U9-8 の結論）**:
+
+| 観点 | Lambda | **in-cluster CronJob（採用）** |
+|---|---|---|
+| Keycloak Admin API 到達 | Admin API は **hostname-admin 内部限定 / 外部 403**（[U6 D-U6-11](06-infra-network-design.md)）。Lambda は VPC アタッチ + 内部 ALB 到達が必要で、Admin API を外に晒す思想に反する | **クラスタ内 Service で直接到達**（06a §A.2.1b、SCIM Facade と同一パターン） |
+| 実行時間 | **15 分上限** — 10M 規模で休眠 JIT が多いと超過 | 上限なし（ページング・チェックポイント可） |
+| DB 整合 | 直接 Aurora を書くと Infinispan キャッシュをバイパスし不整合 → いずれにせよ **Admin API 経由が必須** | 同左だが in-cluster で素直 |
+
+→ Admin API の内部限定 + 実行時間上限の 2 点で CronJob が素直。**KC Pool（HPA 動的）ではなく infra Pool（準静的）に置く**ため、ログイン負荷スパイクによる HPA スケールはバッチに一切影響しない。
+
+**バッチのロジック（冪等・Admin API 経由）**:
+1. 対象抽出 = `provisioned_by=jit` ∧ `jit_idp_alias≠idpkc%`（idpkc shadow 除外、D3-17）∧ `last_login > 90 日` ∧ `enabled=true`。**単一 Realm + Organizations 前提で Org/属性フィルタで抽出**（テナント別 Realm ではない）。
+2. **TOCTOU 対策**: disable の直前に `last_login` を再取得し、閾値内に活動があれば skip（スキャン〜実行の間にログインした現役ユーザの誤削除防止）。
+3. Soft Delete = `enabled=false` + `deprovisioned_at=now` + `deprovisioned_reason` + **Session Revoke（`users/{id}/logout`）**を Admin API で実行（[keycloak#37981](https://github.com/keycloak/keycloak/issues/37981) の通り `enabled=false` 単独では既存セッション/AT が残るため Session Revoke 必須）。
+4. 全操作を**冪等**に（既に `enabled=false` / `deprovisioned_at` セット済みは skip）。
+
+**多重実行・スケール耐性（3 点セット — 必須）**:
+
+| # | リスク | 対策 |
+|---|---|---|
+| ① | **スケジュール重なり**（前回が長引き次回が発火 → Job 並行） | **`concurrencyPolicy: Forbid`**（既定 `Allow` のため明示必須） |
+| ② | **Job 内の重複 Pod**（ノード障害/分断でコントローラが 2 つ目の Pod を作る at-least-once 挙動、退避リトライの瞬間重なり） | **`podReplacementPolicy: Failed`**（Pod 完全終了後に置換）+ **アプリ側排他ロック = Broker Aurora の PostgreSQL advisory lock**（バージョン非依存の確実な排他。2 つ目は即終了） |
+| ③ | 多重が起きても壊れないこと | 上記ロジック 4 の**冪等性**（二重 disable は無害、Session Revoke も冪等） |
+
+**ノード退避耐性（スケールイン / アップグレード時）**:
+- infra Pool のノードドレイン（主に Machine Pool ローリングアップグレード時）でバッチ Pod が退避されると Job は**最初からやり直す**（`restartPolicy: OnFailure` + `backoffLimit`）。冪等性（処理済み skip）により再実行は安全。
+- PDB は補助（`node-drain-grace-period` 内でのみ完走を助ける。超過で強制退避 — U6 §6.2.2）。`activeDeadlineSeconds` で暴走上限。
+- **運用ルール（Runbook）**: バッチのスケジュールを**計画メンテナンス窓 / ノードアップグレードと重ねない**（そもそも退避機会を避ける）。`startingDeadlineSeconds` で逃したスケジュールの扱いを規定。
+
+**可観測性・ガードレール**: dry-run モード + 1 実行あたり disable 上限（暴走防止、§10.4.I.2 思想）/ `USER_DISABLED` を Event Listener SPI → EventBridge → 監査 S3 に発行（§9.3.2）/ サマリを CloudWatch Logs / 失敗 = アラート（§9.2）。未知の `provisioned_by` は disable せず人間レビュー行き（安全側、D3-04）。
+
+**Phase 2 物理削除バッチ**: 同一の CronJob 基盤・同一の堅牢化 3 点セットで実装。対象 = `deprovisioned_at + retention_years` 経過。監査ログ S3 Glacier Deep Archive → DELETE CASCADE + `idmap` 掃除（[U3 D3-09 第 3 段階](03-identity-provisioning-design.md) / jit-scim §10.4.K.6）。Phase 1 は物理削除禁止（4 層ガードレール）のため本バッチは Phase 2 で有効化。
+
+**適用範囲の注意**: 非 IdP テナント（IdP-KC 収容）ユーザと idpkc shadow は **90 日バッチ対象外**（mode A の管理画面 SoT + 日次リコンサイル RB-USR-06 が代替、D3-17）。未達アプリ向けのテナント単位オプトイン（U3-OP-1）を Phase 1 設定項目に持つ。
+
+**U6 引き渡し**: バッチ（Broker Acct）は排他ロック取得のため Broker Aurora へ短命接続を張る（KC の jdbc-ping プールとは別枠・少数接続。max_connections 予約枠に含める — U6 §6.4.2）。
+
+**一次資料（Kubernetes 標準セマンティクス）**: [CronJob concurrencyPolicy](https://kubernetes.io/docs/concepts/workloads/controllers/cron-jobs/) / [Job podReplacementPolicy](https://kubernetes.io/docs/concepts/workloads/controllers/job/#pod-replacement-policy) / [PostgreSQL Advisory Locks](https://www.postgresql.org/docs/current/explicit-locking.html#ADVISORY-LOCKS)。
 
 ## 9.6 CI/CD（ROSA HCP + RHBK Operator 前提）
 
@@ -435,6 +481,7 @@ flowchart TB
 | D-U9-14 | KC 昇格 = digest 固定 + OLM Explicit + **パッチ含め Staging 1000 IdP 回帰必須**（P-16 対策 1 の CI 化） | §9.6.3 |
 | D-U9-15 | IdP オンボーディング 6 ステップ（検証 → **REQ-OUT-01 FQDN 更新** → 作成 → 疎通 → 監視登録）、リードタイム < 1 営業日は G-EGRESS ②③ 形態で成立（① SLA ≥ 1 営業日なら NFR 改訂エスカレーション） | §9.7.1 |
 | D-U9-16 | Central Canary は**弊社監査 Acct へ配置変更**（P-18 帰結、ADR-059 要改訂）、Phase 1 = Hybrid 検証（Positive + Negative 401/403）+ SLO 外形・デプロイ bake 兼用 | §9.8.1 |
+| D-U9-17 | **退職者遮断バッチ = in-cluster CronJob（infra Pool、Lambda 不採用）**。Admin API 経由・冪等 + `concurrencyPolicy: Forbid` + advisory lock + TOCTOU 再チェック + Session Revoke。Phase 2 物理削除も同基盤（O-U9-8 確定） | §9.5.4 |
 
 ### 9.9.2 未決事項（オープン項目）
 
@@ -447,7 +494,7 @@ flowchart TB
 | O-U9-5 | SPI 内 Micrometer 計装の RHBK 互換 | G-SPI-Compat への検証項目追加（U2 へ依頼） | G-SPI-Compat |
 | O-U9-6 | アラート Routing 実体 | PagerDuty 契約 / オンコールローテーション体制（NFR-6.3 の 24/7 要否ヒアリング連動） | Phase 1 実装前 |
 | O-U9-7 | B-OBS-2/3/4/5 | ダッシュボード共有範囲 / APM 最終確認 / SLO 公開 / SLA 連動 | ヒアリング |
-| O-U9-8 | テナント一括 logout ジョブ / 90 日 enabled=false バッチの実行基盤 | CronJob（infra Pool）実装詳細（U3 D3-09 / U5 §5.9.2 の実行面） | Phase 1 実装時 |
+| ~~O-U9-8~~ | ~~90 日 enabled=false バッチの実行基盤~~ | **✅ 2026-07-28 確定 = D-U9-17（in-cluster CronJob、堅牢化 3 点セット）**。テナント一括 logout ジョブも同基盤 | クローズ |
 | O-U9-9 | 文書整合更新の残タスク | ADR-040 OOS 残存注記（§FR-8.6 / §NFR-4.7）の参照整理（U7 §7.9.3 から引き受け。**ADR-040/036 は別スレッド改訂中のため本書からは書込まず、完了後に実施**） | 別スレッド完了後 |
 
 ### 9.9.3 他単元・ADR への引き渡し
@@ -473,5 +520,6 @@ flowchart TB
 ## 改訂履歴
 
 - 2026-07-24: 初版（Wave 3 起草）。Baseline v1（P-01/P-04/P-15/P-16/P-17/P-18）準拠。可観測性（OTel/AMP/AMG/X-Ray + IdP 数関数監視、D-U9-01〜03）、SLO 定義書 + Burn Rate（D-U9-04）、ログ 3 層 + SIEM 取込セット（D-U9-05〜06）、Runbook 27 冊 + 禁則 K-1〜11（D-U9-07〜08）、IaC 2 層 + keycloak-config-cli 不採用 + ドリフト検知（D-U9-09〜11）、CI/CD（GitHub Actions/ArgoCD/ECR + SPI サプライチェーン + KC 昇格ゲート、D-U9-12〜14）、IdP オンボーディング 6 ステップ（D-U9-15）、Central Canary 弊社監査 Acct 配置変更（D-U9-16）を決定。
+- 2026-07-28 (v1.2): **§9.5.4 D-U9-17 新設 — 退職者遮断バッチの実行基盤を in-cluster CronJob に確定（O-U9-8 クローズ）**。Lambda 不採用の判断根拠（Admin API 内部限定 + 15 分上限）、多重実行対策 3 点セット（concurrencyPolicy: Forbid / podReplacementPolicy + advisory lock / 冪等）、ノード退避耐性、TOCTOU 再チェック、Phase 2 物理削除も同基盤。RB-USR-07 追加、決定一覧に D-U9-17。
 - 2026-07-24 (v1.1): Wave 3 最終レビュー反映 — **H-1**: D-U9-10（keycloak-config-cli 不採用）の波及 4 件を §9.9.3 に追加（ADR-051 :15/:94/:305 / ADR-060 :341 / U8 §8.3.1・U2 §2.7.5 は適用済み）。**H-2**: 主インプットに U4 §4.7.4 追加、§9.6.1 に Theme lint + axe-core CI 段追加、RB-TEN-01 に顧客オンボーディングガイド付属・RB-USR-03 に Recovery Codes 管理者リセットを明記。**H-3**: RB-TEN-06（SN オンボーディング）/ RB-TEN-07（Webhook 購読登録）/ RB-MIG-01 / RB-DSAR-01 / RB-SEC-07 の 5 冊追加 + RB-PLT-04 に SAML RSA 証明書ローテ（U10-OP-1）統合注記 + §9.7 ステップ 3 に Webhook 配信先 FQDN 同プロセス注記。**M-1**: D-U9-07 の冊数を実列挙から再計上（全 35 冊 / 必須 13 冊）。**M-2**: D-U9-13 の SPI 表記を「3 JAR・4 機能」へ修正（U2 §2.4 整合）。**M-9**: §9.6.1 に PII クレーム検査 CI（U5 §5.1.4 C-1〜C-7）追加。**M-11**: U1 向け G-EGRESS 記述を「更新済み」へ。**L-1**: U8 §8.2.3 → §8.5.2。**L-6**: §9.7 ステップ 4 に mfa_indicator FORCE override 注記（U2 §2.5.4）。
 - 2026-07-26 (v1.2): 可読性向上 — mermaid 図 3 点追加（§9.3.1 ログ・メトリクスパイプライン全体図 / §9.6.2 CI/CD パイプライン図〔昇格ゲート・bake 判定含む〕/ §9.7.1 IdP オンボーディング 6 ステップフロー〔G-EGRESS 分岐付き〕）。設計内容の変更なし。
