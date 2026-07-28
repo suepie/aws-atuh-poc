@@ -186,6 +186,67 @@ sequenceDiagram
 
 **受入テスト（M1 Pilot の必須 5 点、SN guide §11 を正規化）**: T-1 既存ユーザリンク（sys_id 不変 + 履歴 10 件表示）/ T-2 JIT 新規作成（属性セット確認）/ T-3 **削除連鎖**（L1 Soft Delete → SAML 拒否 → Re-Activation → 復帰）/ T-4 Break Glass ログイン + 通知 / T-5 履歴非破壊 Regression（PA ダッシュボード・通知配信・代理承認）。
 
+### 10.1.7 SN セッションの先の API 認可 = OIDC 貫通フロー（ADR-023 §L.9-10 / P-14 のフロー化）
+
+**原則の言い換え（重要）**: 「認証 = SAML / 認可 = OIDC」という切り分けは不正確。正しくは**区間による使い分け**:
+
+| 区間 | プロトコル | 役割 |
+|---|---|---|
+| ブラウザで SN にログイン（SSO ハンドシェイク） | **SAML**（CL-SN-01） | Broker が認証済み identity を SN に主張 → SN セッション確立 |
+| SN の中での権限 | **SN の RBAC**（sys_user roles） | SN 自身が保持（Phase 1 は Broker から roles 非送出、§10.1.2） |
+| **SN の"外"の API を呼ぶ / 他アプリへ行く** | **OIDC / OAuth JWT**（本基盤発行） | Bearer トークンで API 認可（§5.6.3 の検証 6 点） |
+
+**なぜこの境界か**: **SAML には REST API を Bearer で認可する標準が無い**（[saml-vs-oidc §13](../common/saml-vs-oidc-comparison.md)、WS-Trust / SAML Bearer Grant は失敗・廃れた §13.7）。OAuth2/OIDC は Bearer JWT の API 認可標準を持つ。→ **SN に入る所 = SAML、そこから API に伸ばす所 = OIDC** に必然的になる。**SAML アサーションは API 層には一切出ない。**
+
+#### フロー 1: SN 内利用のみ（SAML だけ、OIDC 不要）
+
+ユーザが SN 内でチケット処理等をするだけなら §10.1.1〜10.1.3 の SAML SSO で完結し、OIDC は登場しない。
+
+#### フロー 2: SN から他アプリ API を呼ぶ（SN = OAuth クライアント）
+
+SN の連携・スクリプトが本基盤の別 API（例: 経費 API）を叩く場合:
+
+```mermaid
+sequenceDiagram
+    participant U as ユーザ
+    participant SN as ServiceNow
+    participant BR as Broker KC
+    participant API as 経費 API(OIDC RS)
+
+    U->>SN: SAML SSO(§10.1.3) 済み → SN セッション
+    Note over SN: SN 連携が外部 API を呼ぶ必要
+    SN->>BR: OAuth token 要求(SN = OAuth Client、token endpoint)
+    BR-->>SN: 本基盤発行 JWT(aud=expense-api / tenant_id / sub、ES256)
+    SN->>API: Authorization: Bearer <JWT>
+    API->>API: OIDC RS 検証(iss/aud/tenant_id/exp/署名 = §5.6.3)
+    API-->>SN: 応答
+```
+
+- SN は **OAuth 2.0 クライアント**として Broker からトークン取得。**Client Credentials**（sub=SN サービス、監査は「SN が実行」）が基本。ユーザ文脈が要る処理はフロー 3 に寄せる。
+- 交換後 API 呼び出しは U5 §5.3（Token Exchange）/ §5.6.3（Bearer 検証）に準拠。
+
+#### フロー 3: SN から他アプリ画面へ遷移（OIDC SSO で貫通）
+
+```mermaid
+sequenceDiagram
+    participant U as ユーザ
+    participant SN as ServiceNow
+    participant BR as Broker KC
+    participant APP as 経費アプリ(OIDC RP)
+
+    U->>SN: SAML SSO ログイン
+    Note over BR: この時点で Broker に SSO セッションが成立
+    U->>APP: SN 内リンクから遷移
+    APP->>BR: OIDC 認可要求(code + PKCE)
+    BR-->>U: SSO セッション有 → 再認証なしで発行(サイレント)
+    BR-->>APP: ID Token + Access Token(JWT)
+    Note over U,APP: SAML ログインが Broker SSO を張り、<br/>他アプリへ OIDC で貫通(再ログインなし)
+```
+
+- **SAML で SN にログインした時、その認証は Broker 経由**なので Broker の SSO セッションが立つ。→ 他アプリは OIDC で**再認証なしにトークン取得**（SSO）。**SAML ログインが OIDC SSO の土台**になる。
+
+**まとめ**: SN 単独利用なら SAML だけで完結。**SN ↔ 他アプリ / SN → API 連携がある場合のみ**、その先の認可を**本基盤発行 JWT（OIDC）で貫通**させる。API 側は OIDC リソースサーバとして tenant_id / aud を検証（越境防止）。実装上の依存 = SN 側 OAuth クライアント設定（フロー 2）+ 他アプリの OIDC RP 登録（フロー 3、U2 Client 定義群）。
+
 ---
 
 ## 10.2 ユーザ管理画面 API 仕様（ADR-038 Phase 1 MVP）

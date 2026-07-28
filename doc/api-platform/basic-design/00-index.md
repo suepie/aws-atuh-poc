@@ -17,6 +17,19 @@ proposal（§FR-API-* / §NFR-API-* / §C-API-*）は参照物として維持。
 2. [01-cloud-guidelines-overview.md](01-cloud-guidelines-overview.md) — ガイドライン総論（アプリチームが最初に読む）
 3. 各ガイドライン章（02-06）→ 外形監視章（10-18）
 
+## 主要な構成図・フロー（全体像を掴む）
+
+| 見たいもの | 場所 |
+|---|---|
+| **API 制御 全体像**（実行時パス + ガバナンスパス）| [01 §1.0.0](01-cloud-guidelines-overview.md) |
+| **ガイドライン構成図**（統制領域 5 本柱）| [01 §1.0.0](01-cloud-guidelines-overview.md) |
+| ガイドライン章の読み順ナビ | [01 §1.1](01-cloud-guidelines-overview.md) |
+| **認証不備チェック 構成図**（Pattern β 骨格）| [10 §10.1.1](10-external-monitoring-overview.md) |
+| **認証不備チェック 統合構成図**（登録・トリガー・probe・通知）| [10 §10.1.3](10-external-monitoring-overview.md) |
+| **認証不備チェック E2E フロー**（deploy→検知→通知→是正）| [10 §10.1.4](10-external-monitoring-overview.md) |
+| 認証不備チェック 実行シーケンス（1 実行の中身）| [11 §11.1](11-central-canary-architecture.md) |
+| 課金按分パイプライン概念図 | [03 §3.1.2](03-billing-cost-allocation-rules.md) |
+
 ## 設計書一覧
 
 ### ① クラウドガイドライン類（アプリチーム向け）

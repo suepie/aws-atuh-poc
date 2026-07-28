@@ -91,6 +91,73 @@ flowchart TB
 
 → **「各アプリ実装を中央でチェックする」という要件目的に対し β が構造的に正解**。α の Deploy 漏れ防止に必要な SCP / Config / Dashboard の 3 段防御（[ADR-059 §F](../../adr/059-central-auth-check-canary-architecture.md)）が β では不要になる。
 
+### §10.1.3 統合構成図（登録・トリガー・probe・通知）
+
+§10.1.1 は「どこに何があるか」の骨格。ここでは **登録（12/13 章）→ トリガー（18 章）→ probe/classify（11 章）→ 通知（15 章）** までを 1 枚に統合する。各コンポーネントの詳細は該当章が SSOT。
+
+```mermaid
+flowchart TB
+    subgraph AppAcct["各 App Acct（監視対象）"]
+        CICD["CI/CD"] --> SCP["Service Catalog 製品"]
+        SCP --> EDGE["CloudFront → API GW / ALB<br/>認証実装"]
+        SCP --> CRR["Custom Resource<br/>登録・Export"]
+        EDGE -. deploy イベント .-> EVT["CloudTrail / S3 Put"]
+    end
+
+    subgraph NetAudit["ネットワーク監査 Acct（中央運用）"]
+        REG["App Registry<br/>DynamoDB"]
+        OAR["OpenAPI Registry<br/>S3"]
+        EB["EventBridge"]
+        PROBE["Probe Lambda<br/>probe / classify lib 共通"]
+        CWM["CloudWatch Metrics/Alarm<br/>AuthCheckCritical＞0"]
+        ALR["Alert Router Lambda"]
+        SNS1["SNS P1 Security"]
+        SNS2["SNS P2 Platform"]
+        SNS3["SNS P3 App"]
+    end
+
+    MAN["運用者 手動"]
+
+    CRR -->|Cross-Acct 登録| REG
+    CRR -->|OpenAPI export| OAR
+    EVT --> EB
+    EB -->|M1 差分・自動| PROBE
+    MAN -->|M3 フル・手動| PROBE
+    PROBE -->|対象取得| REG
+    PROBE -->|spec 取得| OAR
+    PROBE -->|Neg/Pos probe（CF 経由）| EDGE
+    PROBE --> CWM
+    PROBE -->|CRITICAL/WARN/INFO| ALR
+    ALR --> SNS1 & SNS2 & SNS3
+
+    style NetAudit fill:#fff3e0
+    style AppAcct fill:#e8f5e9
+    style PROBE fill:#fff9c4
+```
+
+> §10.1.1 との違い: こちらは **トリガー（EventBridge の M1 / 手動 M3、18 章）と classify・Alarm（11 章）を明示**した完全版。実行基盤は Synthetics canary ではなく **Lambda 一本化**（§10.1.1 の注記どおり）。
+
+### §10.1.4 エンドツーエンド フロー（deploy → 検知 → 通知 → 是正）
+
+1 つの API が「世に出てから認証漏れが通知・是正されるまで」の縦断フロー。章をまたぐ流れを 1 本で示す。
+
+```mermaid
+flowchart LR
+    D["① デプロイ<br/>04 静的解析 pass"] --> R["② 登録<br/>App/OpenAPI Registry<br/>（12/13 章）"]
+    R --> T["③ トリガー<br/>M1 差分（自動）/ M3 フル（手動）<br/>（18 章）"]
+    T --> P["④ probe<br/>Negative + Positive<br/>（11 章）"]
+    P --> C{"⑤ classify<br/>4×4 真偽値表<br/>（11 章）"}
+    C -->|OK| OK["✅ Metrics 記録のみ"]
+    C -->|CRITICAL/WARN/INFO| A["⑥ Alert Router<br/>（15 章）"]
+    A --> N["⑦ 通知<br/>P1 Security / P2 Platform / P3 App"]
+    N --> FIX["⑧ 是正<br/>SLA 内（05 章 §5.3.6）"]
+    style C fill:#fff9c4
+    style A fill:#ffe0b2
+    style FIX fill:#c8e6c9
+```
+
+> **静的解析（①の 04 章）をすり抜けた認証漏れを、稼働後に④〜⑧で捕捉する**のが本機構の存在意義（具体例は [11 章 §11.8](11-central-canary-architecture.md) の 4 ケース）。①〜③はライフサイクル、④〜⑤の 1 実行内の詳細は [11 章 §11.1](11-central-canary-architecture.md) のシーケンス図。
+
 ---
 
 ## §10.2 実装物ナビ（章 ↔ code-samples 対応）

@@ -207,6 +207,107 @@ flowchart TB
 | PrivateLink | IdP-KC への **送信側**(Endpoint) | Ingress NLB を **Endpoint Service 化して着信のみ**(逆流不能) |
 | DB | Broker DB + **idmap 別 DB** | IdP-KC DB(**PW ハッシュ**) |
 
+### A.2.3 テイント配置・スケール連鎖・クラスタ内通信(2026-07-28 追加)
+
+HCP には専用 Infra Node が無く infra 系が Worker に同居する(U6 §6.2.1)。**2 Pool 役割分離**(U6 §6.2.2 D-U6-04)の配置・スケール・通信を 3 図で示す。
+
+#### 図 A.2.3-1: テイント/トレラントで「何がどこに載るか」
+
+```mermaid
+flowchart TB
+    subgraph POD["生成される Pod"]
+        KCPOD["KC Pod<br/>toleration: dedicated=keycloak<br/>nodeSelector: workload=keycloak<br/>(中: keycloak コンテナ = SPI 焼込 image)"]
+        INFPOD["infra Pod(router / Prometheus / registry /<br/>RHBK Operator / SCIM Facade / Fluent Bit)<br/>toleration: なし"]
+    end
+    SCHED{"kube-scheduler<br/>テイント許容? + ラベル一致?"}
+    KCPOD --> SCHED
+    INFPOD --> SCHED
+    subgraph KCPOOL["keycloak Pool ノード(EC2)<br/>taint=dedicated=keycloak:NoSchedule / label=workload=keycloak"]
+        K1["KC Pod のみ"]:::kc
+    end
+    subgraph INFRAPOOL["default(infra) Pool ノード(EC2)<br/>テイントなし / label=default(ROSA 必須の無テイント Pool・レプリカ≥2)"]
+        I1["router / Prometheus / registry /<br/>Operator / SCIM Facade / Fluent Bit"]:::inf
+    end
+    SCHED -->|"テイント許容 + label 一致 → 許可"| KCPOOL
+    SCHED -->|"KC のテイントを許容せず → 弾かれ default へ"| INFRAPOOL
+    classDef kc fill:#e3f2fd,stroke:#1565c0
+    classDef inf fill:#fff8e1,stroke:#f57f17
+```
+
+**要点**: テイント=締め出し。KC Pool の `NoSchedule` テイントを許容する KC Pod だけが入り、infra Pod は許容しないため**自動的に default Pool へ落ちる**。分離の主役はテイント。
+
+#### 図 A.2.3-2: スケールの連鎖(HPA → Pending → Cluster Autoscaler → EC2)
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Load as ログイン負荷
+    participant HPA
+    participant Dep as KC(StatefulSet/CR)
+    participant Sched as kube-scheduler
+    participant CA as Cluster Autoscaler
+    participant NP as KC MachinePool
+    participant ASG as AWS ASG
+    participant Node as 新 Worker(EC2)
+
+    Load->>HPA: CPU 60%超 / 予兆(login_success_password_rate>8/node・3分)
+    HPA->>Dep: replicas 3→5
+    Dep->>Sched: 新 KC Pod ×2 (toleration+nodeSelector=keycloak)
+    Sched-->>Dep: KC Pool に空き無 → Pod=Pending(Unschedulable)
+    CA->>Sched: Pending Pod 検知(要件=label:keycloak)
+    CA->>NP: KC Pool の replicas を +N(★この Pool だけ)
+    NP->>ASG: EC2 起動(RHCOS AMI + taint/label 自動付与)
+    ASG->>Node: 新 EC2 起動 → Node 参加(12-15分)
+    Node-->>Sched: label=keycloak + taint=NoSchedule で登録
+    Sched->>Node: Pending KC Pod を配置
+    Note over CA,Node: infra Pool は要件不一致で触られない<br/>= KC バーストが infra を巻き込まない
+```
+
+**要点**: Pod スケール(HPA)と Node スケール(Cluster Autoscaler)は別コントローラ。**CA は「Pending Pod の要件に一致する Pool」だけを増設**するため、KC 急増は KC Pool のみで吸収。縮小は cordon → drain(PDB `maxUnavailable=1` 尊重) → EC2 終了。ローリング更新は既定 `maxSurge=1/maxUnavailable=0`(§A.2.1b)。
+
+#### 図 A.2.3-3: クラスタ内通信(誰がどこと話すか)
+
+```mermaid
+flowchart TB
+    NLB["IngressController NLB(Private)"]
+    subgraph INFRA["default(infra) Pool ノード"]
+        RT["router pod(haproxy)"]
+        PR["Prometheus(UWM・要 Day-2 有効化)"]
+        SF["SCIM Facade"]
+        FB["Fluent Bit Aggregator"]
+    end
+    subgraph KCP["keycloak Pool ノード"]
+        KCa["KC Pod A"]
+        KCb["KC Pod B"]
+    end
+    AUR[("Aurora Writer")]
+    CP["Red Hat HCP(Control Plane)"]
+    S3[("監査 S3")]
+
+    NLB -->|"HTTPS(L7 route)"| RT
+    RT ==>|"Pod 網越し(クロスノード/プール)"| KCa
+    RT ==> KCb
+    PR -.->|"/metrics scrape(クロスプール)"| KCa
+    SF -.->|"Admin API=内部 Service(ClusterIP)<br/>/admin 403 を通らない(§A.2.1b 原則)"| KCa
+    KCa <-->|"Infinispan 分散cache + jdbc-ping(DB経由発見)"| KCb
+    KCa -->|"SG 直 JDBC(Writerのみ・pool initial=min=max)"| AUR
+    KCb --> AUR
+    FB -.->|"ログ集約(IRSA)"| S3
+    KCa -.->|"PrivateLink Worker→CP(組込)"| CP
+    classDef inf fill:#fff8e1,stroke:#f57f17
+    classDef kc fill:#e3f2fd,stroke:#1565c0
+    class RT,PR,SF,FB inf
+    class KCa,KCb kc
+```
+
+**要点**:
+- ユーザ経路: NLB → router pod(infra) → KC Pod(KC Pool)。Pool をまたぐが同一 AZ 配置で AZ 内に閉じる。
+- SCIM Facade → KC Admin API は**クラスタ内 Service(ClusterIP)で内部到達** = 外部 ALB の `/admin 403` を通らない(in-cluster を選ぶ理由。§A.2.1b の private NLB ヘアピン制限回避も同根)。
+- 監視: Prometheus(infra)が KC Pod `/metrics` をクロスプール scrape(UWM Day-2 有効化前提)。
+- KC↔KC: Infinispan + jdbc-ping(DB 経由発見)。KC→Aurora: SG 直 JDBC。Worker→CP: PrivateLink(HCP 組込)。
+
+**コンテナ粒度**: KC Pod=`keycloak` 1 コンテナ(Custom SPI は image 焼込のため追加なし)。router=haproxy / Prometheus / SCIM Facade / Fluent Bit は各 1 コンテナ。これらを「どの Pool の EC2 に載せるか」をテイントで振り分ける。
+
 ## A.3 抜けチェック結果(元表に無かったフロー 8 系統)
 
 元表(B-I1〜B-O6 / I-I1〜I-O5)は 10 冊と概ね整合。以下が**追加候補**(図には `(追加)` で反映済み):

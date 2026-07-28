@@ -179,7 +179,7 @@ flowchart LR
 
 ### §5.3.2 Pre-Deploy（TP-1）
 
-CI で **Unit test + IaC lint + 静的解析**（[04 章](04-static-analysis-guidelines.md)）を実行し、通過しないと deploy させない。静的解析の検知は CI を fail させる（例外は 04 章 §4.7 承認済みのみ）。
+CI で **Unit test + IaC lint + 静的解析**（[04 章](04-static-analysis-guidelines.md)）を実行し、通過しないと deploy させない。静的解析の検知は CI を fail させる（例外は 04 章 §4.4.5 承認済みのみ）。
 
 ### §5.3.3 Deploy（TP-2）
 

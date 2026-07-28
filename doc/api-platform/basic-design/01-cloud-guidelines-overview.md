@@ -59,6 +59,34 @@ flowchart TB
 
 > 実行時パスは「1 リクエストが辿る道」、ガバナンスパスは「1 アプリがリリースされる道」。**両方が揃って初めて "どんなアプリでも安全に" が成立**する。各章はこの地図のどこかを詳細化したもの。
 
+**ガイドライン構成図（統制領域＝各章の 5 本柱）**: 上の「地図」を、ガイドライン本体の構造として見ると次のとおり。01 総論を入口に、5 つの統制領域（02-06）がそれぞれ死守事項を持ち、共通基盤（Service Catalog / 要件 SSOT）の上に乗る。
+
+```mermaid
+flowchart TB
+    ENTRY["01 総論<br/>入口・全体像・責務分担"]
+    subgraph PILLARS["統制領域（各章の死守事項）"]
+        RL["02 流量制御<br/>RL-1〜4"]
+        BL["03 課金制御<br/>BL-1〜4"]
+        SA["04 静的解析<br/>SA-1〜3"]
+        SEC["05 セキュリティ<br/>NW-1〜4 / AC-1〜5 / TP-1〜4"]
+        OBS["06 ログ・監視<br/>OBS-1〜4"]
+    end
+    subgraph BASE["共通基盤（アプリは従うだけ）"]
+        SC["Service Catalog 製品<br/>死守事項を自動付与"]
+        SSOT["proposal 要件 SSOT<br/>§FR / §NFR / §C-API"]
+    end
+    ENTRY --> PILLARS
+    PILLARS --> SC
+    SC --> DEPLOYED["デプロイ済み API<br/>→ 認証外形監視（10-18 章）"]
+    SSOT -. 具体化 .-> PILLARS
+    style ENTRY fill:#fff9c4
+    style PILLARS fill:#e3f2fd
+    style BASE fill:#f3e5f5
+    style DEPLOYED fill:#c8e6c9
+```
+
+> 5 本柱は**並列**（どれも独立に守る）。共通基盤の Service Catalog が死守事項の大半を自動付与するため、アプリチームは「値を選ぶ・修正する」だけで準拠できる。デプロイ後の実装漏れ検知は外形監視（10-18 章）が担う。
+
 ### §1.0.1 なぜこのガイドラインが必要か
 
 API プラットフォーム標準（`proposal/` 配下）は **要件・設計仕様** を定義するが、各アプリチームがそれを読み解いて個別実装すると、解釈のばらつき・実装漏れ・車輪の再発明が起きる。本ガイドライン群は標準を **「従えばよい手順」** に落とし、アプリチームの認知負荷を最小化する。
@@ -116,9 +144,9 @@ API プラットフォーム標準（`proposal/` 配下）は **要件・設計�
 
 | # | 死守事項 | 章参照 |
 |---|---|---|
-| SA-1 | IaC は **cfn-guard または cdk-nag を CI で強制**（認証 / Origin Protection / タグ検証）| §4.x |
-| SA-2 | アプリコードは **Semgrep を CI で実行**（認証 middleware / JWT 検証バグ検出）| §4.x |
-| SA-3 | 検知は **deploy をブロック**（warn だけで通さない、例外は申請制）| §4.x |
+| SA-1 | **IaC の静的解析**（cfn-guard / cdk-nag）を CI で強制（認証 / Origin Protection / タグ検証）| §4.2 |
+| SA-2 | **アプリコードの静的解析**を CI で実行（必須観点: Lint / 型 / セキュリティ SAST / シークレット走査 / 依存脆弱性 SCA）| §4.3 |
+| SA-3 | **CI/CD 統合で検知は deploy をブロック**（warn だけで通さない、例外は申請制）| §4.4 |
 
 ### §1.1.4 セキュリティの死守事項（→ [05 章](05-security.md)）
 
