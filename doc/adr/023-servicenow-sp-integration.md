@@ -1151,6 +1151,20 @@ flowchart LR
 
 **含意**：**「本基盤は全アプリを OIDC 化すべき」ではない**。SN 側のような **既存エンタープライズ SP は SAML を維持**、**新規アプリのみ OIDC 標準** の "使い分け" が業界標準。
 
+#### L.9.1 【2026-07-29 追加】OIDC への懸念の技術的根拠（外部一次情報で裏取り）
+
+上表「SN OIDC は事例極少 / 切り分け困難」を、**ServiceNow 固有の実害**として一次情報で具体化する。**懸念は「認証そのもの」ではなく、本設計が依存する "JIT プロビジョニング + 属性マッピング + 既存 sys_user リンク" の層**にある。
+
+| # | OIDC の懸念（ServiceNow 固有） | 根拠 |
+|---|---|---|
+| 1 | **後発機能**：OIDC SSO は **Paris リリース（2020）で追加**、SAML に比べインタラクティブ SSO + プロビジョニングの実績が浅い | [Paris Feature: Google OIDC Config for SN SSO](https://www.servicenow.com/community/developer-blog/paris-feature-google-openid-connect-oidc-configuration-for/ba-p/2276078) |
+| 2 | **OIDC の JIT 自動プロビジョニングが脆く複雑**：「Automatically Provision User=True」だけでは作られない。**Data Source + Transform Map の作成・IdP 紐付け + システムプロパティ `glide.authenticate.multisso.user.autoprovision=true`** が別途必要（SAML の「トグル 1 つ」に対し部品多・事故報告多） | [SN Community: Auto provisioning not working with OIDC](https://www.servicenow.com/community/developer-forum/auto-provisioning-of-users-not-working-with-sso-login-via-openid/m-p/1808177) |
+| 3 | **OIDC の UserInfo ハンドラは plain JSON しか想定しない**：IdP が**署名付き JWT の userinfo を返すと自動プロビジョニング失敗**。→ 本設計の属性（`employee_number` 等）を OIDC で運ぶとこの落とし穴に当たり得る | [SN Community: OIDC auto-provisioning import table](https://www.servicenow.com/community/developer-forum/oidc-sso-auto-provisionning-import-table-not-created-for/m-p/3519105) |
+
+対して **SAML 側は「枯れた技術」**：JIT の中核（`User Provisioning Enabled=Yes` で sys_user 自動作成 / `employee_number` coalesce で既存リンク / sys_id 保全 / Assertion 属性マッピング、§10.1.3）が**ネイティブで成熟**し、主要 IdP のテンプレートも SAML 主体（[Okta の SN SAML 設定](https://saml-doc.okta.com/SAML_Docs/How-to-Configure-SAML-2.0-for-ServiceNow.html) / [CyberArk SN SAML SSO](https://docs.cyberark.com/identity/latest/en/content/applications/certified-apps/servicenow.htm)）。
+
+**結論**：**認証だけなら OIDC も動く**が、**本設計の肝（JIT 自動作成 + employee_number 突合 + 履歴保全 + 属性マッピング）を確実に回すには SAML が枯れていて安全**。これが「SN=SAML、"少し不安"の実体は OIDC の JIT/属性層」の実証的根拠。API 認可は L2=SAML でも OIDC JWT で貫通（§L.10）で不変。
+
 ### L.10 【2026-07-23 追加】L2 = SAML でも API 認可は OIDC で貫通させる設計
 
 **核心**：SN は SAML で認証するが、**本基盤 → 業務アプリ → API の連鎖では OIDC / JWT を使う**。両者は共存可能。

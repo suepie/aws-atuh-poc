@@ -404,6 +404,7 @@ P-18 により WAF の「/admin 全 IP Deny」は**他組織への要求（保�
 | REQ-IN-09 | SCIM 受信用 CloudFront + WAF セット × 2 | `scim-broker.<domain>` / `scim-idp.<domain>` 用（D2: 顧客 IdP → Broker / D1: 顧客 HRIS → IdP-KC）。送信元 IdP/HRIS の IP 許可リスト + テナント別 Rate Limit（初期値 10 req/s、U3 D3-11） | U3 D3-11、ADR-025 §I.1 |
 | REQ-IN-10 | CloudFront ログの scrubbing 連携 | 認証系ディストリビューションのログ設定で query string 記録を最小化（`code`/`state` 等が残らない設定）+ ログを弊社監査 Acct へ配信する場合は弊社側マスク経路を通すこと | U7 §7.3 |
 | REQ-IN-11 | launchpad SPA 配信用 CloudFront + WAF セット | `launchpad.<domain>`（launchpad/Sorry SPA 配信、S3 オリジン + OAC。**U4 §4.7.4 の追加提案に対する予約採番** — 詳細要求は U4 確定後に追補） | U4 §4.7.4（予約） |
+| REQ-IN-13 | **CloudFront → エッジ LB の到達方式 + NFW ingress ルート設計**（2026-07-29 追加、[06a §A.1.1](06a-network-flow-diagrams.md) / O-APP-1 連動） | `auth.`/`idp.`/`admin.` 等の**全 inbound が Network Firewall を必ず通過する**よう、① CloudFront → エッジ LB の到達方式〔(a) パブリック custom origin か (b) VPC origins プライベート LB か〕と ② その通信を firewall endpoint に通す **VPC ルートテーブル設計** を明示すること。**「NFW を通す」ことは自動成立せず経路設計が必須**が本要求の核心。(a) 採用時: エッジ LB の SG を CloudFront マネージドプレフィックスリスト（`com.amazonaws.global.cloudfront.origin-facing`）に限定 + ingress routing で NFW へ。(b) 採用時: **VPC origins は NACL 非評価 / TLS リスナー付き NLB 不可**の制約に留意（In-B の TCP パススルー NLB は TCP リスナーのため相性は要検証、§6.7.2） | ADR-039 §F、06a §A.1.1 |
 
 ### 6.7.2 ALB 経路か NLB 経路かの場合分け（REQ-IN-08、**先方確認事項**）
 
@@ -419,6 +420,8 @@ P-18 で Inbound が「ALB **または** NLB + Network Firewall」とされて�
 | 弊社評価 | 依存が増える | **推奨** — TLS 終端・証明書・プロキシ信頼チェーンが自管理で完結し、P-18 の管理外依存を最小化 |
 
 - **In-B 推奨の根拠補足（2026-07-24 追記）**: TLS 終端は 2 箇所で不可避に発生する — ①**CloudFront は WAF（L7 検査）のため終端が不可避**（これはどちらのパターンでも同じ）。②2 段目の終端を先方 ALB に置く（In-A）と**平文 HTTP が他組織 VPC 内に出現**するが、In-B（NLB パススルー）なら**平文の出現位置を自管理 VPC（弊社 Internal ALB 以降）に閉じられる**。P-18 の管理外領域に平文を置かないことが In-B 推奨の本質的理由。
+
+> **⚠ In-A/In-B とは別軸の未確定事項（2026-07-29、REQ-IN-13）**: 本表は「TLS 終端位置（ALB/NLB）」を場合分けするが、**「CloudFront がそのエッジ LB にどう到達するか」= (a) パブリック custom origin / (b) VPC origins（プライベート LB）は別軸で未確定**。P-18 の露出最小化志向だと (b) VPC origins（プライベート LB・パブリック IP なし）が整合的で、その場合 **[06a §A.1.1](06a-network-flow-diagrams.md) の「VPC origins × NFW 共存」注意（CloudFront 管理 ENI 経由通信・NACL 非評価）が認証パスにこそ本命で効く**。かつ VPC origins は「TLS リスナー付き NLB 不可」だが In-B は TCP:443 パススルー（TCP リスナー = TLS リスナーではない）のため許容されうる — **実装時に到達方式 × NFW ルート設計 × In-B の相性を要検証**（REQ-IN-13 として先方へ要求）。
 
 **要求文**: 「NLB（TCP:443 パススルー）経路を推奨する。ALB 経路とする場合は、①証明書更新 SLA、②XFF 付与仕様（追記位置・偽装除去）、③ヘルスチェックパス（`/health/ready`）、④アイドルタイムアウト ≥ 65s、の 4 点の合意を条件とする。」
 
@@ -474,6 +477,7 @@ Broker KC は顧客 IdP の authorization/token/JWKS/userinfo エンドポイン
 | O-9 | **U3-OP-3: SCIM Facade 実行形態** | 暫定 = ROSA 同居 namespace（default/infra Pool）の常駐サービス（§6.2.1）。Lambda + API GW 案との比較・レイテンシ要件の最終確定 | U3/U9 と合同、Phase 1 実装前 |
 | O-10 | **Egress 形態: 案 A（NAT GW）vs 案 B（egress zero + TGW）** | 案 B は NAT 不要 + P-18/PCI DSS 志向と整合し**積極検討**（§6.2.1/§6.7.3、U7 D-U7-16 でセキュリティ推奨済み）。**（2026-07-24 公式検証）機能名 = "egress zero"、2025Q1 GA、`--properties zero_egress:true`。ミラーは Red Hat が用意する in-region ECR（顧客自前構築ではない、VPC Endpoint 経由）。制約: ① Lightspeed/Telemetry 系機能不可 ② OperatorHub は Red Hat 製 Operator の default チャネルのみミラー → **RHBK Operator の利用チャネルが default であることの確認が採用条件** ③ ROSA CLI v1.2.45+ ④ zero_egress はプラットフォーム egress の排除であり、アプリの外向き（フェデ/HIBP/Webhook）は別管理（REQ-OUT 系）**。先方 TGW 接続可否と併せて決定 | 要求仕様書 v1 回答時（先方経路確認と同時） |
 | O-11 | **infra Pool サイジング実測** | c7g.large × 2〜3 暫定（§6.2.2）。1000+ IdP 時の Prometheus 時系列カーディナリティ + **Fluent Bit Aggregator のマスキング処理量**の実測（G-IdP-Scale P-4 と併せて）で確定。**⚠ c7g.large(4GB) は 1000+ IdP・10M MAU の Prometheus には不足懸念 — 比較対象に c7g.xlarge(8GB) とメモリ最適化系(r7g.large 16GB / m7g.large 8GB)を併記して実測**（台数でなくサイズで吸収する方針、2026-07-24 追記） | G-IdP-Scale 実施時 |
+| O-APP-1 | **アプリ inbound を NFW に通す経路設計（サーバーレス App 用）** | 2026-07-28、[06a §A.1.1](06a-network-flow-diagrams.md)。①静的 SPA(S3) = CloudFront+WAF+**OAC 直結で NFW 経路外**（LB 経由不要が公式推奨）②API = CloudFront **VPC origins → 監査 ALB → NFW → Private API GW(Interface Endpoint)**。要検証: VPC origins の CloudFront→オリジン通信をどの**ルートテーブルで firewall endpoint に通すか**（VPC origins は NACL 非評価・TLS リスナー付き NLB 不可）+ Private API GW の execute-api ENI IP の**動的追従**（Lambda カスタムリソース）+ 監査 Acct LB→案件 Acct への **VPC ピアリング/TGW 要求（REQ-IN 追加）** | サーバーレス App 採用時（他組織エッジ設計と合同） |
 
 ### 6.8.2 U8（可用性・DR）への引き渡し
 

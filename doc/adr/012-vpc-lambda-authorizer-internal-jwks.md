@@ -139,6 +139,59 @@ PoC 現構成では、Lambda Authorizer は **VPC 外（AWS マネージドネ�
 
 ---
 
+## 本番再評価（基本設計、2026-07-28）
+
+> 本節は PoC 期（2026-04、単一アカウント ECS 前提）の上記 Decision を、**基本設計（マルチアカウント ROSA HCP + 他組織エッジ CloudFront+WAF）文脈で再評価**し、JWKS 取得の確定方針を一箇所に集約する。関連の緊張（[jwks-public-exposure.md](../common/jwks-public-exposure.md) の「公開が安全・必要」 vs 本 ADR/[keycloak-network §6.5](../common/keycloak-network-architecture.md) の「私設化が理想」）を本節で解消する。
+
+### R.1 元の Decision を支えた 2 前提が陳腐化
+
+| PoC 期の前提 | 2026 現在 | 出典 |
+|---|---|---|
+| **VPC Lambda はコールドスタートが重い** | **ほぼ解消**（Hyperplane ENI で VPC オーバーヘッド <50ms、"Cold Starts Are Dead"）。VPC 化のペナルティは無視可 | [AWS VPC networking 改善](https://aws.amazon.com/blogs/compute/announcing-improved-vpc-networking-for-aws-lambda-functions/) |
+| **JWKS を隠したい**（生 Public ALB 露出が問題） | **JWKS は意図的に公開・CDN キャッシュ可**（秘密鍵は認可サーバから出ない）。かつ基本設計では**露出元が生 ALB → CloudFront+WAF に置換**され、元凶が消滅 | [Auth0 JWKS](https://auth0.com/docs/secure/tokens/json-web-tokens/json-web-key-sets)、jwks-public-exposure §2 |
+
+→ **「VPC 化はコスト高」も「JWKS は隠すべき」も、もはや決め手にならない。** 判断軸は **JWKS 秘匿ではなく「Resource Server の Egress ポスチャ」**へ移る。
+
+### R.2 前提の確定：Broker の OIDC エンドポイントは CloudFront で公開（BFF 非強制の帰結）
+
+**BFF を全アプリに強制できない（SPA-direct を許容する）**場合、以下は**公開必須**（[jwks-public-exposure §4](../common/jwks-public-exposure.md)）:
+
+| パス | 公開 | 理由 |
+|---|:-:|---|
+| `/auth`（authorize） | ✅ | ログインは BFF/SPA とも**ブラウザ経由リダイレクト**で常に公開 |
+| `/token` | ✅ | **SPA-direct はブラウザから code→token** を叩くため公開必須 |
+| `/certs`（JWKS） / `/logout` / `/.well-known/*` | ✅ | 署名検証・ログアウト・Discovery |
+| `/admin` / `/metrics` / `/health` | ❌ | 管理・監視・内部のみ（U6 §6.6 の /admin 403 と整合） |
+
+→ **authorize/token が既に公開なら、JWKS を同一 CloudFront で公開しても追加露出はゼロ**。公開は**エッジ = CloudFront + WAF の裏**（生 ALB ではない）で安全。
+
+### R.3 本番 Decision（PoC の「常に VPC 内」を上書き）
+
+**JWKS 取得の既定 = 認証 CloudFront で公開（配布）。Authorizer の VPC 配置は "アプリの Egress ポスチャ" で決める。**
+
+> **⚠ キャッシュの層を混同しない（2026-07-28 訂正）**: 認証 CloudFront は **authorize/token を絶対キャッシュしてはならない**（`CachingDisabled` 必須。`CachingOptimized` 等は `no-store` を無視しトークン/認可コードのキャッシュ漏洩＝重大事故、[06a §A.1.1](../basic-design/06a-network-flow-diagrams.md)）。**JWKS の実効キャッシュは "RP 側ローカル 1h" が主**（[aws-jwt-verify](https://github.com/awslabs/aws-jwt-verify)）であり、CDN キャッシュではない。CDN が一切キャッシュしなくても、各 RP が 1h ローカルキャッシュするため JWKS 取得は効率的（実質 1 fetch/h/RP）。**CDN で JWKS だけキャッシュしたい場合のみ**、`/certs`・`/.well-known/*` に限定した cached behavior を別途割当てるか、`UseOriginCacheControlHeaders` ポリシー（token=`no-store` 非キャッシュ / JWKS=`Cache-Control` でキャッシュ）を使う — **任意の最適化であり必須ではない**。
+
+| Resource Server の状態 | Authorizer | JWKS 取得 |
+|---|---|---|
+| **エッジに到達可**（通常の App Acct） | **VPC 外 or 通常 VPC**（JWKS 専用の私設経路は作らない）。可能なら **API GW HTTP API ネイティブ JWT オーソライザ / ALB ネイティブ OIDC** で自作 Lambda 自体を省略 | 認証 CloudFront 公開 JWKS を取得。**RP 側 1h ローカルキャッシュが主** + 未知 `kid` 時のみ refetch（[U5 §5.6.3](../basic-design/05-token-session-authz-design.md) / 06a §A.1.1）。CDN キャッシュは `/certs` 限定 behavior で任意 |
+| **Zero-egress（厳格プライベート）App Acct** | **VPC 内 Lambda + 私設 JWKS 経路**（コールドスタートはもう非問題なので躊躇不要）。ネイティブ勢は JWKS 到達不可のため使えず自作必須 | VPC Endpoint 経由 / **JWKS を App Acct に S3 ミラー**（鍵ローテ時のみ更新・小容量）/ TGW→Broker |
+
+- **JWKS 秘匿を理由に全 Authorizer を VPC 内固定するのは過剰**（公開鍵に守る秘密なし × クロスアカウント私設経路のコスト大）。VPC 化は Zero-egress のときだけ。
+- **`iss` 整合**：PoC の `JWKS_URL_OVERRIDES` ハックは本番では不要。**Split-horizon DNS**（`auth.basis` を公開ゾーン→CloudFront / PHZ→内部）で `iss` を統一（keycloak-network §6.5）。
+
+### R.4 唯一の分岐点と緊張の解消
+
+- **判断の分岐点は 1 点のみ**：「Broker エンドポイントを CloudFront で公開してよいか（組織ポリシー）」。**BFF 非強制なら公開必須**なので、実質**公開デフォルトで確定**。
+- **緊張の解消**：jwks-public-exposure の「公開が安全・必要」を**本番の既定**とし、本 ADR/keycloak-network §6.5 の「完全プライベート」は **Zero-egress アプリ or 全エンドポイント非公開ポリシー時の例外**に位置づけ直す。PoC の「並列 VPC Authorizer」検証は有効だが、**本番は "公開 JWKS + ネイティブ/非 VPC authorizer が既定、VPC 内は例外" に倒す**。
+
+### R.5 ステータス
+
+- Decision（PoC の VPC 並列 Authorizer 検証）は**完了・有効**。本節が**本番の運用方針を上書き**する（Accepted のまま、本番方針を R.3 に確定）。基本設計 06a §A.1.1（RP パターン）/ U6 §6.7（エッジ要求 REQ-IN-*）と整合。
+
+**Sources（本番再評価）**: [Announcing improved VPC networking for AWS Lambda](https://aws.amazon.com/blogs/compute/announcing-improved-vpc-networking-for-aws-lambda-functions/) / [Cold Starts Are Dead](https://dev.to/aws/cold-starts-are-dead-5fod) / [Auth0 JWKS](https://auth0.com/docs/secure/tokens/json-web-tokens/json-web-key-sets) / [WorkOS JWKS guide](https://workos.com/blog/developers-guide-jwks) / [aws-jwt-verify](https://github.com/awslabs/aws-jwt-verify)
+
+---
+
 ## References
 
 - [keycloak-network-architecture.md §6.5 本番理想形：完全プライベート構成](../common/keycloak-network-architecture.md)

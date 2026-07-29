@@ -52,6 +52,48 @@
 - **secret header の格下げ**: Internal ALB トポロジで本来目的(CF 迂回防止)は達成済み → 主防御 = /admin 403 + SG エッジ送信元限定、secret header = 追加層(他組織のローテ運用依存のため)
 - **In-B(NLB)推奨の TLS 根拠**: CloudFront は WAF のため終端不可避(両パターン共通)。2 段目を先方 ALB に置くと平文が他組織 VPC に出現 → NLB パススルーで**平文出現位置を自管理 VPC に閉じる**
 
+## 6. 第 3 弾検討(2026-07-28): 最大 Pod 数見積りの不整合と接続予算管理
+
+> ⚠ **§4 の「総接続 Broker 9×30=270 / IdP-KC 18×30=540、大幅余裕」は 10M ピーク実値ではなく中間/ベースライン値。要是正。**
+
+### 6.1 発見した不整合
+
+3 節の Pod 数定義が食い違う:
+- §6.2.2: KC Pool **ノード数** Broker max 9 / IdP-KC max 18、KC Pod = requests **2 vCPU**、c7g.xlarge(4vCPU)。→ c7g.xlarge は **1 pod/ノード** なのでノード≒Pod → 27。
+- §6.4.2: これを **"27 Pods"** として接続計算に流用。
+- §6.5.2/3: **10M ピーク上限 = Broker 51 vCPU / IdP-KC 135 vCPU(70/30)**。
+
+**矛盾**: 27 台の c7g.xlarge = 108 vCPU < ピーク 186 vCPU。→ **27 では 70/30 ピークを捌けない**。2 vCPU/pod で 186 vCPU を満たす Pod 数 ≈ **93(Broker ~26 / IdP-KC ~68)** = 真のピークは 27 でなく **~90 台級**。
+
+### 6.2 接続の実値(2 系統 DB 分割、律速は IdP-KC)
+
+| モデル | ピーク Pod 数 | IdP-KC DB 接続(pool 30) | 対 r7g.xlarge 3,300 |
+|---|---|---|---|
+| Keycloak 公式(少数・大型、~3/AZ = 総vCPU÷3) | Broker ~3 / IdP-KC ~3-9 | < 300 | 自明に余裕 |
+| **設計の 2vCPU 小型 + HPA(70/30 ピーク)** | Broker ~26 / IdP-KC ~68 | **~2,040** | **62%**(予約枠込 ~65%) |
+
+- **B-BROK-1(フェデ比率)が最大の振れ幅**: γ(97/3)なら IdP-KC ~7 pods=~210 接続で自明余裕 / 70/30 なら 6 割。
+- Broker DB は両モデルとも余裕(署名系で pod 少、~780 = 24%)。
+
+### 6.3 Keycloak 公式は「少数・大型 Pod」推奨(接続膨張の根本原因)
+
+公式サイジング([HA Guide](https://www.keycloak.org/high-availability/multi-cluster/concepts-memory-and-cpu-sizing) / [26.4 ベンチ](https://www.keycloak.org/2025/10/keycloak-benchmark)): **総 vCPU ÷ 希望 Pod 数(ベンチ 3 = AZ ごと 1)**。設計の「2vCPU 小型 Pod を HPA で増やす」は逆モデルで、**Pod 数・接続数を膨らませる**。
+
+### 6.4 是正(U6 引き渡し)
+
+| # | 問題 | 推奨 |
+|---|---|---|
+| 1 | §6.2.2(9/18 ノード)/§6.4.2(27 pods)/§6.5(51/135 vCPU)の不整合 | 3 節の Pod 数定義統一。「27」は Phase 1/ベースライン、10M ピークは別値(~90 台級)と明記 |
+| 2 | ピークで IdP-KC ~2,040 接続に達し得る | **接続予算 = pods × pool ≤ max_connections×0.7 で管理**。Pod 増に応じ pool を下げる規約を **D-U6-08 に追加**(30 固定でなく pods×pool を予算内に) |
+| 3 | 小型 Pod モデルが Pod/接続を膨張 | **Keycloak 公式「少数・大型 Pod(~3/AZ、vCPU/3)」を基本に寄せる**と Pod 数も接続数も激減。HPA は上限内バースト吸収に限定 |
+
+### 6.5 RDS Proxy 結論は不変(根拠は差し替え)
+
+- 最悪 2,040 < 3,300 で**収まる**。締まった時の正解は **pool サイズ低減 or DB r7g.2xlarge 化**であって RDS Proxy でない(prepared statement ピン留めで有害、§4/§6.4.3 不変)。
+- **RDS Proxy 不要は維持。ただし根拠を「27×30=810 大幅余裕」→「2 系統分割 + 接続予算管理(pods×pool)」に置換すべき**。
+
 ## U6 への反映(2026-07-23 v1.2 で適用済み)
 
 §6.2.1(CP/接続 3 系統/NAT・zero-egress O-10/NLB Ingress)/ §6.2.2(2 Pool 構成 + 2xlarge 事前 Pool)/ §6.2.3(infra Pool 加算 $2,032/月)/ §6.4.2(等値化 30/30/30 + 予約枠)/ §6.4.3(PgBouncer 拡張パス)/ §6.7.3(zero-egress と REQ-OUT の関係)/ §6.8.1(O-10/O-11)
+
+**§6（2026-07-28）は未反映** — U6 §6.4.2（接続計算の 27→実ピーク）/ §6.2.2・§6.5（Pod 数定義統一）/ D-U6-08（接続予算管理規約）/ §6.8.1（O 項目に「Pod サイジングモデル確定」追加）へ反映が必要。

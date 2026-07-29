@@ -138,37 +138,39 @@ flowchart TB
 > 1. **OIDC クライアント**(ログインのリダイレクトとトークン交換を行う。SPA なら Public Client + PKCE、サーバーサイドなら Confidential Client = BFF)
 > 2. **JWT 検証器**(API 呼び出しごとにトークンを検証する。**オフライン検証** = キャッシュした JWKS で署名・`iss`/`aud`/`exp`/`tenant_id` をローカル確認)
 >
-> **認証基盤はリクエスト毎の経路には立たない**。JWT 検証はアプリ側でオフライン完結し、認証基盤を叩くのは (a) ログイン時 (b) JWKS の定期更新(既定 1h キャッシュ、[ADR-012](../adr/012-vpc-lambda-authorizer-internal-jwks.md) の VPC 内経路)だけ。「毎回認証基盤に問い合わせる」構成ではない。
+> **認証基盤はリクエスト毎の経路には立たない**(**JWT=JWS のオフライン検証を採る限り**。opaque token + Introspection〔RFC 7662〕やリアルタイム失効が要る場合はオンライン=per-request 経路になる → 後述の Phase 3 で退避)。JWT 検証はアプリ側でオフライン完結し(RFC 9068 §4: 署名を JWKS 公開鍵で検証 + `iss`/`aud`/`exp` をローカル確認)、認証基盤を叩くのは (a) ログイン時 (b) JWKS の更新(**既定 1h キャッシュ + `kid` 不一致〔鍵ローテーション〕時に即時リフレッシュ** — AWS ベストプラクティス、[ADR-012](../adr/012-vpc-lambda-authorizer-internal-jwks.md) の VPC 内経路)だけ。「毎回認証基盤に問い合わせる」構成ではない。
 
 ### パターン 1: CloudFront + WAF + S3 / API Gateway + Lambda(サーバーレス)
 
 ```mermaid
 flowchart LR
   U["ブラウザ"]
-  subgraph EDGE["他組織エッジ"]
-    CFA["CloudFront + WAF<br/>(SPA配信 / API 前段)"]
+  subgraph EDGE["他組織エッジ(NW監査 Acct)"]
+    CFA["アプリ用 CloudFront + WAF<br/>(app. — SPA配信/API前段)"]
+    ACF["認証用 CloudFront + WAF<br/>(auth.basis — 別ディストリビューション<br/>認可系 behavior は CachingDisabled)"]
   end
-  subgraph AUTH["認証基盤 Broker(auth.basis)"]
+  subgraph AUTH["認証基盤 Broker"]
     AZ["OIDC 標準エンドポイント<br/>authorize / token / JWKS / logout"]
   end
   subgraph APP["App Acct(パターン1: サーバーレス)"]
-    S3["S3<br/>SPA 静的アセット"]
+    S3["S3(OAC 非公開)<br/>SPA 静的アセット"]
     APIGW["API Gateway"]
-    LAUTH["Lambda Authorizer<br/><b>= JWT 検証器(オフライン)</b><br/>JWKS キャッシュ + iss/aud/exp/tenant_id 検証"]
-    LBIZ["Lambda<br/>業務ロジック"]
-    BFF["(任意) BFF Lambda<br/>Confidential Client<br/>= OIDC クライアント"]
+    LAUTH["Lambda Authorizer<br/><b>= JWT 検証器(オフライン)</b>"]
+    LBIZ["Lambda 業務"]
+    BFF["(任意) BFF Lambda<br/>Confidential Client"]
   end
-  U -->|"1 SPA 取得"| CFA --> S3
-  U -.->|"2 ログイン(frontchannel)"| AZ
-  BFF -.->|"3 code→token / refresh<br/>(VPC内・B-I2)"| AZ
-  U -->|"4 API 呼出(Bearer JWT)"| CFA --> APIGW
-  APIGW -->|"5 検証依頼<br/>(結果を API GW がキャッシュ)"| LAUTH
-  LAUTH -.->|"JWKS 取得<br/>(VPC内・1h キャッシュ・ADR-012)"| AZ
-  LAUTH -->|"offline 検証OK → allow"| APIGW --> LBIZ
+  U -->|"1 SPA取得"| CFA --> S3
+  U -.->|"2 ログイン(frontchannel)<br/>Route53 auth.→認証CF"| ACF -.->|"エッジ→ALB→TGW"| AZ
+  U -.->|"2b SPA直の code→token<br/>(ブラウザ発 = 認証CF経由)"| ACF
+  BFF -.->|"3 BFF の code→token/refresh<br/>(VPC内・B-I2・CF経由せず)"| AZ
+  U -->|"4 API呼出(Bearer)"| CFA --> APIGW
+  APIGW -->|"5 検証依頼(結果TTLキャッシュ)"| LAUTH
+  LAUTH -.->|"JWKS(VPC内・1h+kid更新)"| AZ
+  LAUTH -->|"検証OK → allow"| APIGW --> LBIZ
 ```
 
 - **SPA 直(BFF なし)の場合**: BFF Lambda を置かず、SPA(ブラウザ) が Public Client + PKCE でログイン〜`code→token` 交換を**ブラウザからインターネット経由(公開 token エンドポイント)**で行う。トークンは SPA メモリ保持。API 検証は同じく Lambda Authorizer。
-- **BFF ありの場合(推奨)**: BFF Lambda が Confidential Client として `code→token` を**サーバーサイド(VPC 内経路 B-I2)**で行い、ブラウザにはアプリセッション Cookie のみ渡す(トークンをブラウザに置かない)。
+- **BFF ありの場合(業務・機密アプリで推奨)**: BFF Lambda が Confidential Client として `code→token` を**サーバーサイド(VPC 内経路 B-I2)**で行い、ブラウザにはアプリセッション Cookie のみ渡す(トークンをブラウザに置かない)。根拠 = IETF OAuth WG 現行ベストプラクティス [OAuth 2.0 for Browser-Based Apps](https://www.ietf.org/archive/id/draft-ietf-oauth-browser-based-apps-26.html)〔RFC 未確定の Internet-Draft〕§6.1: 「strongly recommended for business applications, sensitive applications, and applications that handle personal data」。SPA 直(Public Client)は PKCE 必須。
 
 ### パターン 2: LB(ALB) + ECS(コンテナ)
 
@@ -176,9 +178,10 @@ flowchart LR
 flowchart LR
   U["ブラウザ"]
   subgraph EDGE["他組織エッジ"]
-    CFB["CloudFront + WAF"]
+    CFB["アプリ用 CloudFront + WAF(app.)"]
+    ACF2["認証用 CloudFront + WAF<br/>(auth.basis・CachingDisabled)"]
   end
-  subgraph AUTH["認証基盤 Broker(auth.basis)"]
+  subgraph AUTH["認証基盤 Broker"]
     AZ2["OIDC 標準エンドポイント<br/>authorize / token / JWKS / logout"]
   end
   subgraph APP2["App Acct(パターン2: コンテナ)"]
@@ -189,32 +192,81 @@ flowchart LR
     end
   end
   U -->|"1 アクセス"| CFB --> ALB --> MW
-  U -.->|"2 ログイン(frontchannel)"| AZ2
-  MW -.->|"3 code→token / refresh<br/>(VPC内・B-I2)"| AZ2
-  MW -.->|"JWKS 取得(VPC内・キャッシュ)"| AZ2
+  U -.->|"2 ログイン(frontchannel)<br/>auth.→認証CF"| ACF2 -.-> AZ2
+  MW -.->|"3 code→token/refresh<br/>(VPC内・B-I2・CF経由せず)"| AZ2
+  MW -.->|"JWKS(VPC内・キャッシュ)"| AZ2
   MW -->|"offline 検証OK"| BIZ
 ```
 
 - ECS アプリは **OIDC ミドルウェア**(言語フレームワークのライブラリ)or **oauth2-proxy 等の sidecar/リバースプロキシ**で「ログイン(OIDC クライアント)」と「毎リクエストの JWT 検証(オフライン)」の両方を担う。API Gateway / Lambda Authorizer は使わず、**検証はアプリ内(またはサイドカー)**で行う。
 - 内部マイクロサービス間の伝播が必要なら Token Exchange(RFC 8693、[U5 §5.3](05-token-session-authz-design.md))を Broker に要求する経路が加わる。
 
+### フロントチャネル(ログイン)は「認証用 CloudFront」を通る(2026-07-28 追記)
+
+図の「ログイン(frontchannel)」の線は **Broker に直結ではなく、認証用 CloudFront(auth.basis) を経由**する。整理すると経路は **発生元** で 2 分される:
+
+| トラフィック | 発生元 | 経路 |
+|---|---|---|
+| ログイン(authorize/login)/ SPA 直の `code→token` / SPA 直の logout | **ブラウザ発** | **認証用 CloudFront(auth.basis)** → エッジ(ALB/NLB)→ TGW → Broker |
+| BFF の `code→token`/refresh / Lambda Authorizer・ミドルウェアの JWKS 取得 / idm-api | **サーバー発** | **VPC 内(B-I2、[ADR-012](../adr/012-vpc-lambda-authorizer-internal-jwks.md))・CloudFront は経由しない** |
+
+- **Route53 で `auth.basis` を認証用 CloudFront のドメインに CNAME(Alias)するのは合理的**([§A.0](#a0-本書の位置づけ) の DNS 方針どおり)。理由: ① DNS は弊社(Broker Acct Route53)統制・エッジ実体は他組織(P-18 の分担と一致)② **auth. は全アプリ共通の単一ドメイン**(SSO Cookie ドメインの一貫性・アプリごとに認証ドメインが割れない)③ WAF / Shield / TLS 終端 / ログイン Theme 静的アセットのキャッシュをエッジで得られる。Auth0/Okta 等も認証エンドポイントを CDN 前段に置く標準構成。
+- ⚠ **認証用 CloudFront は各アプリの CloudFront とは別ディストリビューション**。かつ **authorize/token 等の動的レスポンスは必ず `CachingDisabled`(または `UseOriginCacheControlHeaders`)の behavior を割り当てる** — `CachingOptimized` 等 min TTL>0 のポリシーは `Cache-Control: no-store` を無視して最低 TTL 分キャッシュし、**認可コード/トークンのキャッシュ漏洩**という重大事故になり得る([CloudFront managed cache policies](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/using-managed-cache-policies.html) の CachingDisabled 警告)。
+- ⚠ **CloudFront 前段によりオリジンから見た送信元 IP が CloudFront IP になる**(`X-Forwarded-For` 参照が必要)。IdP 側の IP ベース制御・レート制御・監査ログの送信元 IP 記録に影響するため、認証系の proxy-headers / XFF 信頼チェーン(U6 §6.7.2 In-B と同じ論点)を確認する。
+
 ### 「認証基盤に来るもの」= 役割・エンドポイント・頻度(両パターン共通)
 
 | # | 何が来るか(呼ぶ側) | 役割 | 叩く先 | 経路 | 頻度 |
 |---|---|---|---|---|---|
-| 1 | **ブラウザ** | ユーザ認証(ログイン画面) | `authorize` / login | 公開(他組織エッジ、frontchannel) | ログイン時のみ |
-| 2 | **BFF / ECS ミドルウェア**(= OIDC クライアント) | コード→トークン交換・リフレッシュ | `token` | **VPC 内(B-I2、ADR-012)**。SPA 直のみ公開経路 | ログイン / リフレッシュ時 |
-| 3 | **Lambda Authorizer / ECS ミドルウェア**(= JWT 検証器) | 署名検証用の公開鍵取得 | `JWKS` | **VPC 内・1h キャッシュ(ADR-012)** | 定期(**リクエスト毎ではない**) |
+| 1 | **ブラウザ** | ユーザ認証(ログイン画面) | `authorize` / login | **認証用 CloudFront(auth.basis)経由**(他組織エッジ、frontchannel) | ログイン時のみ |
+| 2 | **BFF / ECS ミドルウェア**(= OIDC クライアント) | コード→トークン交換・リフレッシュ | `token` | **BFF/サーバー発 = VPC 内(B-I2)・CF 経由せず。SPA 直(ブラウザ発)は認証用 CloudFront 経由** | ログイン / リフレッシュ時 |
+| 3 | **Lambda Authorizer / ECS ミドルウェア**(= JWT 検証器) | 署名検証用の公開鍵取得 | `JWKS` | **VPC 内・1h キャッシュ + `kid` 不一致時更新(ADR-012)** | 定期(**リクエスト毎ではない**) |
 | 4 | (任意) アプリ Backend | 組織コンテキスト / エンタイトルメント取得 | idm-api `/api/me/context`([U3 D3-16](03-identity-provisioning-design.md)) | VPC 内 | 認可判断時(短 TTL キャッシュ可) |
 
 → **JWT の検証そのもの(iss/aud/exp/tenant_id/署名)はアプリ側でオフライン完結**し、この表の 1〜4 のどれも「リクエスト毎に認証基盤を叩く」ものではない。認証基盤は per-request の経路に立たない(= スケール・可用性のボトルネックにならない)。
 
 ### 「Lambda Authorizer なのか認証アプリなのか」への回答
 
-- **Lambda Authorizer は "アプリ側の JWT 検証器"** であって「認証基盤が各アプリのために動かす認証アプリ」ではない。**オフライン検証**(キャッシュ JWKS + クレーム検証)を行い、結果を API Gateway がキャッシュする。認証基盤へ毎回問い合わせているわけではない。
+- **Lambda Authorizer は "アプリ側の JWT 検証器"** であって「認証基盤が各アプリのために動かす認証アプリ」ではない([AWS 公式](https://docs.aws.amazon.com/apigateway/latest/developerguide/apigateway-use-lambda-authorizer.html): 「Use a Lambda authorizer to implement a custom authorization scheme」)。**オフライン検証**(キャッシュ JWKS + クレーム検証)を行い、認証基盤(JWKS)へ行くのは JWKS キャッシュミス時のみ。**キャッシュは 2 段で別物** — ① API Gateway の**認可結果キャッシュ**(`authorizerResultTtlInSeconds`、既定 300s / 最大 3600s)② Lambda 内の **JWKS キャッシュ**(署名鍵)。①の TTL 期間中は Lambda が再呼出されず**トークン失効・改ざん検知が遅延**するため、短 TTL(や TOKEN でなく REQUEST authorizer)を選ぶ。認証基盤へ毎回問い合わせているわけではない。
 - **認証基盤側にアプリごとの "認証アプリ" は存在しない**。認証基盤は標準 OIDC エンドポイントを提供するだけで、RP(OIDC クライアント + 検証器)は各 App Acct 側の実装。検証器の実体がパターン 1 では Lambda Authorizer、パターン 2 では ECS の OIDC ミドルウェア / oauth2-proxy sidecar、という違いだけ。
 - リアルタイム失効(退職者即遮断)が要る規制ケースのみ、Phase 3 で **API GW での Token Introspection**(オンライン検証)を選択肢に加える([U5 §5.2.4 Z-4](05-token-session-authz-design.md))。Phase 1 はオフライン検証 + 短 TTL が既定。
 - RP 実装の必須事項(state+PKCE / Bearer 検証 / aud・tenant_id 検証 / リフレッシュ実装 / Back-Channel Logout 受信)は [U5 §5.6 RP 実装ガイド](05-token-session-authz-design.md)、認証実装漏れの検知は [Central Canary(ADR-059 / U9 §9.8)](09-operations-observability-design.md)。
+
+### アプリ inbound と Network Firewall の関係(静的/API の経路分離、2026-07-28 追記・公式検証済み)
+
+「CloudFront + WAF → Network Firewall → NLB/ALB → S3/API GW」を検討する際の**構造的制約**を明記する。
+
+**前提**: **Network Firewall は VPC のルートテーブルで firewall endpoint に向けた通信のみ検査する**([AWS 公式](https://docs.aws.amazon.com/network-firewall/latest/developerguide/how-it-works.html): 「you modify your Amazon VPC route tables to send your network traffic through the Network Firewall firewall endpoints」)。**S3 / パブリック API Gateway は VPC 外のマネージドサービス**なので、CloudFront→S3/APIGW の通信は既定では VPC を通らず NFW 経路外。
+
+**難所 = 「LB → S3/APIGW」は native 接続できない**: **ALB/NLB のターゲットは instance/IP/Lambda(ALB)・instance/IP/ALB(NLB)で、S3 は target type に存在しない**([ALB 公式](https://docs.aws.amazon.com/elasticloadbalancing/latest/application/load-balancer-target-groups.html))。よって:
+
+| 対象 | LB 経由で NFW に通せるか | 方法 |
+|---|---|---|
+| **API Gateway** | ✅ 可能 | **Private API 化**(execute-api Interface Endpoint)→ その **ENI IP を ALB の IP ターゲット**に登録([AWS 公式ブログ](https://aws.amazon.com/blogs/compute/accessing-private-amazon-api-gateway-endpoints-through-custom-amazon-cloudfront-distribution-using-vpc-origins/))。⚠ **ENI IP は固定でなく Lambda カスタムリソース等で動的追従が必要** |
+| **S3 静的** | ⚠ プロキシ必須 | ALB → **プロキシ(ECS/nginx or Lambda)** → S3(エンドポイント経由)。静的配信のために常時稼働層が増え、サーバーレスの旨味が消える |
+
+**推奨 = リスクで経路を分ける(全部を NFW に通さない)**:
+
+| 通信 | 経路 | 根拠 |
+|---|---|---|
+| **静的 SPA(S3)** | CloudFront + WAF + **OAC**(NFW 経路外) | 公開読み取り専用の静的ファイルは低リスク。**S3 は LB 経由でなく OAC 直結が AWS 公式推奨**([OAC](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/private-content-restricting-access-to-s3.html)) |
+| **API(動的・機密)** | CloudFront →(VPC オリジン)監査 ALB → **NFW** → **Private API GW**(Interface Endpoint) | 検査したい本命だけ NFW に通す。CloudFront VPC origins でプライベート LB をオリジンにできる([2024 GA](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/private-content-vpc-origins.html)) |
+
+⚠ **CloudFront VPC origins と NFW の共存**: VPC origins の CloudFront→オリジン通信を NFW 経路に載せるには **VPC ルートテーブル設計が別途必要**(VPC origins は **NACL 非評価** / **TLS リスナー付き NLB 不可**の仕様に注意)。「CloudFront→NFW→ALB」を素直に描くと、どのルートテーブルで firewall endpoint を通すかは実装時要検証(**O-APP-1 として U6 へ引き渡し**)。
+
+⚠ **API GW を CloudFront 限定にする手段のレイヤ差**: マネージドプレフィックスリスト `com.amazonaws.global.cloudfront.origin-facing` は **SG/ルートテーブルで参照**するもので、**API GW リソースポリシー JSON 内では参照できない**。REST API のリソースポリシーで CloudFront に絞るなら**秘密ヘッダ検証(WAF/リソースポリシー)**または CloudFront IP レンジの `aws:SourceIp` 列挙を使う。
+
+**P-18 の含意**: エッジ(CloudFront+WAF+NFW+LB)は他組織管理の監査 Acct のため、「監査 Acct の LB → 案件 Acct の Private API GW」には**他組織側へ VPC ピアリング/TGW + IP ターゲット追従の要求仕様(REQ-IN 追加)**が要る。静的 S3 を NFW に通す(プロキシ)より、上記の静的/API 分離が他組織依存も最小で素直。
+
+> **⚠ 認証 ROSA パスにも同じ NFW ルート論点(2026-07-29 追記、[U6 REQ-IN-13](06-infra-network-design.md))**: 上記は app のサーバーレスパターンを例にしたが、**認証パス(CloudFront → エッジ LB + NFW → TGW → ROSA)にも「NFW は VPC ルート設計をしないと通らない」が同じく当てはまる**。むしろ P-18 の露出最小化志向でエッジ LB をプライベート(**VPC origins**)にする場合、**「VPC origins × NFW 共存」(管理 ENI 経由・NACL 非評価)は認証パスにこそ本命で効く**。ただし NFW は他組織(NW監査 Acct)の VPC 内にあり、そのルート設計は他組織の実装責任 → **CloudFront→エッジ LB の到達方式 + NFW ingress ルート設計を [U6 REQ-IN-13](06-infra-network-design.md) として要求仕様化**(In-A/In-B の TLS 終端位置とは別軸、[U6 §6.7.2](06-infra-network-design.md))。
+
+**一次資料(2026-07-28 検証、6 主張すべて ✅)**:
+- JWT オフライン検証(署名 + iss/aud/exp のローカル確認): [RFC 9068 §4](https://www.rfc-editor.org/rfc/rfc9068.html) / opaque は Introspection = オンライン [RFC 7662](https://www.rfc-editor.org/rfc/rfc7662.html)
+- Lambda Authorizer はアプリ側実装 + 結果 TTL キャッシュ: [Use Lambda authorizers](https://docs.aws.amazon.com/apigateway/latest/developerguide/apigateway-use-lambda-authorizer.html) / [CreateAuthorizer(`authorizerResultTtlInSeconds` 既定 300 / 最大 3600)](https://docs.aws.amazon.com/apigateway/latest/api/API_CreateAuthorizer.html)
+- JWKS はキャッシュ + kid 不一致時リフレッシュ(AWS ベストプラクティス): [Verifying a JWT (Cognito)](https://docs.aws.amazon.com/cognito/latest/developerguide/amazon-cognito-user-pools-using-tokens-verifying-a-jwt.html)
+- BFF 推奨 + PKCE(IETF 現行 BCP、RFC 未確定): [OAuth 2.0 for Browser-Based Apps](https://www.ietf.org/archive/id/draft-ietf-oauth-browser-based-apps-26.html)
+- oauth2-proxy = OIDC リバースプロキシ + ヘッダ注入 / Keycloak 対応: [oauth2-proxy 公式](https://oauth2-proxy.github.io/oauth2-proxy/) / [Keycloak OIDC provider](https://oauth2-proxy.github.io/oauth2-proxy/configuration/providers/keycloak_oidc/)
+- Keycloak の OIDC エンドポイント群(auth/token/certs/logout/userinfo): [Keycloak Securing apps](https://www.keycloak.org/securing-apps/oidc-layers)
 
 ## A.2 ROSA HCP クラスタ内部詳細(Broker/IdP-KC 共通、差分は §A.2.2)
 
@@ -497,6 +549,9 @@ flowchart TB
 ## 改訂履歴
 
 - 2026-07-24: 初版。ユーザー提供のフロー表(B-*/I-* 系)を全量反映 + 抜け 8 系統を追加 + ROSA 内部詳細図(初出)+ OVN IP レンジ表。
+- 2026-07-29 (v1.6): NFW ルート論点が**認証 ROSA パスにも同じく効く**(VPC origins 採用なら本命)ことを §A.1.1 に注記 + U6 REQ-IN-13(CloudFront→エッジ LB 到達方式 + NFW ingress ルート設計)/ §6.7.2 注記(In-A/In-B とは別軸)と連動。
+- 2026-07-28 (v1.5): §A.1.1 **フロントチャネルは認証用 CloudFront 経由に図修正**(ブラウザ発 = 認証 CF / サーバー発 = VPC 内の 2 分)+ Route53 CNAME 合理性 + **CachingDisabled 必須・XFF 注意** + **アプリ inbound と NFW の関係**(静的=OAC 直結で NFW 経路外 / API=Private API GW を NFW 経路に、VPC origins×NFW ルート設計は O-APP-1)。公式裏取り 7 主張 ✅。
+- 2026-07-28 (v1.4): §A.1.1 に**公式一次資料 6 件**を追記 + 3 点精密化(原則文に「JWS オフライン検証を採る限り」の限定 / JWKS は「1h + kid 不一致時更新」/ API GW 結果キャッシュと JWKS キャッシュの 2 段区別 + TTL 期間の失効遅延 / BFF 推奨の出典を IETF draft〔RFC 未確定〕と明示)。
 - 2026-07-28 (v1.3): **§A.1.1 新設 — アプリ側(RP)の構成 2 パターン**(パターン1 CloudFront+WAF+S3 / API GW + Lambda Authorizer、パターン2 ALB+ECS + OIDC ミドルウェア/oauth2-proxy)+ 「認証基盤に来るもの」の役割・頻度表 + 「Lambda Authorizer = アプリ側のオフライン検証器であって認証基盤の per-request 経路ではない」を明確化。
 - 2026-07-24 (v1.2): **§A.5 IP アドレス割当計画(第 1 案)新設** — 東京 10.64/13・大阪 10.72/13・アプリ 10.68/14 の採番方針、アカウント別 VPC 表(/21 × 4 + 予備)、サブネット 6 層割付(Worker /24・ALB /26・**Lambda 統合 /26(Webhook/idmap λ の VPC アタッチ用に新設)**・Aurora /27・VPCE /27・TGW /28)、4 クラスタの Pod/Service CIDR ずらし案(A6a-2 の推奨解)、禁止・照会リスト。新未決 A6a-5(CIDR 照会・凍結)/ A6a-6(同居アプリ実行形態)。
 - 2026-07-24 (v1.1): **公式ドキュメント・ファクトチェック反映**(16 項目検証、❌1 + ⚠5)— OLM 本体は RH 側 CP(Worker は導入 Operator のみ)/ SRE=backplane JIT(break-glass は顧客側機能の名称)/ UWM 新規クラスタ既定無効 → Day-2 有効化必須 / maxPods 250 追記 / OVN 内部予約レンジ(100.64/16・100.88/16・169.254/17・172.20.0.1)追加 / **NLB ヘアピン制限とクラスタ内 Service 原則の明文化(§A.2.1b)**。
