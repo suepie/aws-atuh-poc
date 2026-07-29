@@ -1165,6 +1165,31 @@ flowchart LR
 
 **結論**：**認証だけなら OIDC も動く**が、**本設計の肝（JIT 自動作成 + employee_number 突合 + 履歴保全 + 属性マッピング）を確実に回すには SAML が枯れていて安全**。これが「SN=SAML、"少し不安"の実体は OIDC の JIT/属性層」の実証的根拠。API 認可は L2=SAML でも OIDC JWT で貫通（§L.10）で不変。
 
+##### L.9.1.1 「設定すれば良い」では済まない構造的理由（2026-07-29 深掘り）
+
+> コミュニティのやり取りは「Data Source + Transform Map + property を設定すれば動く」に見えるが、**これは初回設定の話で、構造的な脆さは残る**。核心は **「OIDC は汎用 ETL パイプラインを流用、SAML は SSO ハンドラにネイティブ統合」** という機構差。
+
+**機構の差（一次情報）**:
+
+| | SAML（ネイティブ統合） | OIDC（汎用 ETL 流用） |
+|---|---|---|
+| 機構 | IdP レコードの「Auto Provisioning」チェックボックス → **自動生成 transform map**、SSO ハンドラ内で完結 | **Data Source + Import Set テーブル + Transform Map** を手動組立、汎用 Import/ETL 基盤に載せる |
+| 突合（coalesce） | **SSO 設定に matching field 組込** | **Transform Map の coalesce を自前設定**（公式手順に matching 明示なし） |
+
+出典: [SAML user provisioning（公式）](https://www.servicenow.com/docs/r/platform-security/authentication/c_SAMLUserProvisioning.html) / [OIDC autoprovisioning（Data Source+Import Set+Transform Map）](https://www.servicenow.com/community/community-resources/configure-user-autoprovisioning-in-oidc-single-sign-on-sso-in/ta-p/2779595)
+
+**構造的問題 5 点（＝設定後も残る脆さ）**:
+
+1. **疎結合な 3 サブシステム跨ぎ**：SSO ハンドラ + Import Set + Transform Map。継ぎ目が独立に壊れる。SAML は単系統。
+2. **Import スキーマが実行時に受信クレームから自動生成**（初回ログインで列生成、列は ID Token/UserInfo に一致必須）→ **IdP のクレーム変更でサイレントにズレる**。**署名付き JWT の UserInfo で破綻**（plain JSON 前提）はこの脆さの症状。
+3. **失敗が分裂・遅延型**：**認証は成功するがプロビジョニングだけ失敗**（「既存は通るが新規が作られない」）→ ログインが"動いて見える"のに sys_user が無い/属性欠落 → 発見が遅れ運用事故化。クリーンな失敗より悪い。
+4. **突合（coalesce）が非ネイティブ**：Transform Map の coalesce を自前で正しく組む必要。**間違えると重複 sys_user → 履歴分断**（§10.1.3 の最悪シナリオ）。SAML は SSO 設定にネイティブ。
+5. **障害切り分けが 2 系統跨ぎ**（SSO ログ + Import Set ログ + Transform Map ログ）。RCA コストが構造的に高い。
+
+**なぜ本設計に特に効くか**: 本設計の肝は **「既存 sys_user を coalesce 突合 + sys_id 保全 + 履歴保全 + 属性マッピング」**（§10.1.3）。**OIDC はまさにその肝を脆い汎用 ETL 経路に載せ、しかも失敗が分裂型（認証 OK・履歴分断）**。→ **リスクが最敏感点に集中**。SAML はそこがネイティブで枯れている。
+
+**balance（正直な整理）**: OIDC も正しく組めば動く（不可能ではない）。問題は**「構造的に脆い + IdP 変更/SN アップグレード/属性追加のたびに ETL 経路が壊れうる継続リスク + 失敗が分裂型 + 突合が非ネイティブ」が、我々の壊れてはいけない部分（sys_id 保全/履歴）に重なる**こと。「1 回設定して終わり」ではない。
+
 ### L.10 【2026-07-23 追加】L2 = SAML でも API 認可は OIDC で貫通させる設計
 
 **核心**：SN は SAML で認証するが、**本基盤 → 業務アプリ → API の連鎖では OIDC / JWT を使う**。両者は共存可能。
