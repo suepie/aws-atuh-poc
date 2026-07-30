@@ -8,16 +8,14 @@
   <path d="M118.5 56 l2.5 2.5 l4.5 -5" stroke="#ffffff" stroke-width="1.6" fill="none"/>
   <text x="136" y="60" font-size="12" fill="#1a7f37">回答済み</text>
 
-  <text x="44" y="96" font-size="16" font-weight="bold" fill="#1f2328">開発環境のGCEからオンプレのファイルサーバに繋がらない</text>
+  <text x="44" y="96" font-size="16" font-weight="bold" fill="#1f2328">開発環境にオンプレDB向けのFirewallを追加したい</text>
   <text x="44" y="116" font-size="12" fill="#57606a">support · Discussions #58 · anken-a-tanaka さんが2時間前に投稿</text>
 
-  <!-- question card -->
   <rect x="44" y="132" width="672" height="72" rx="8" fill="#ffffff" stroke="#d0d7de"/>
   <text x="58" y="154" font-size="11.5" fill="#57606a">anken-a-tanaka</text>
-  <text x="58" y="176" font-size="13" fill="#1f2328">開発環境のGCE（10.20.x.x）からオンプレのファイルサーバ（203.0.x.x）にSMBで繋がりません。</text>
-  <text x="58" y="194" font-size="13" fill="#1f2328">タイムアウトになります。確認すべき点はありますか？</text>
+  <text x="58" y="176" font-size="13" fill="#1f2328">案件Aの開発環境から、新規にオンプレDB（203.0.113.20 : TCP/1433）へ接続する必要が出ました。</text>
+  <text x="58" y="194" font-size="13" fill="#1f2328">Firewallの追加はどのように依頼すればよいですか？必要な情報も知りたいです。</text>
 
-  <!-- bot answer card -->
   <rect x="44" y="220" width="672" height="228" rx="8" fill="#f1f8ff" stroke="#54aeff"/>
   <circle cx="66" cy="246" r="10" fill="#ddf4ff"/>
   <text x="66" y="250" font-size="9.5" fill="#0969da" text-anchor="middle">AI</text>
@@ -26,15 +24,14 @@
   <path d="M582.5 246 l2.5 2.5 l4.5 -5" stroke="#ffffff" stroke-width="1.6" fill="none"/>
   <text x="600" y="250" font-size="11.5" fill="#1a7f37">回答としてマーク済み</text>
 
-  <text x="66" y="282" font-size="13" fill="#1f2328">オンプレ向け通信で確認すべき点は2つです。</text>
-  <text x="66" y="310" font-size="13" fill="#1f2328">1. 開発環境の基盤VPCに当該宛先へのFirewall許可があるか。未申請なら申請が必要です</text>
-  <text x="82" y="330" font-size="13" fill="#0969da" text-decoration="underline">ガイド 3.2: FW申請の流れ</text>
-  <text x="66" y="358" font-size="13" fill="#1f2328">2. プロキシ経由が必要な宛先か</text>
-  <text x="82" y="378" font-size="13" fill="#0969da" text-decoration="underline">FAQ-042: プロキシ経由が必要な通信一覧</text>
-  <text x="66" y="410" font-size="12" fill="#57606a">解決しない場合はこちらから起票できます →</text>
-  <text x="320" y="410" font-size="12" fill="#0969da" text-decoration="underline">Issue Form（この質問の要約を入力済み）</text>
+  <text x="66" y="282" font-size="13" fill="#1f2328">Firewallの追加は Issue Form の「Firewallルール申請」から依頼できます。</text>
+  <text x="66" y="310" font-size="13" fill="#1f2328">・必要な情報: 送信元Subnet / 宛先IP / ポート / プロトコル / 目的 / 希望日</text>
+  <text x="82" y="330" font-size="13" fill="#0969da" text-decoration="underline">ガイド 3.2: FW申請の流れと記入例</text>
+  <text x="66" y="358" font-size="13" fill="#1f2328">・まず開発環境へ適用し動作確認後、本番は別途申請となります（環境昇格フロー）</text>
+  <text x="82" y="378" font-size="13" fill="#0969da" text-decoration="underline">FAQ-051: 開発→本番の反映の流れと所要日数</text>
+  <text x="66" y="410" font-size="12" fill="#57606a">このまま申請する場合はこちら →</text>
+  <text x="272" y="410" font-size="12" fill="#0969da" text-decoration="underline">Issue Form: Firewallルール申請（この内容を入力済み）</text>
 
-  <!-- reply -->
   <rect x="44" y="472" width="600" height="40" rx="8" fill="#ffffff" stroke="#d0d7de"/>
   <text x="58" y="497" font-size="13" fill="#8c959f">スレッドに返信して追加質問できます</text>
   <rect x="656" y="472" width="60" height="40" rx="8" fill="#1f883d"/>

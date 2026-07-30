@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 430" font-family="'Hiragino Sans','Noto Sans JP',sans-serif">
+  <rect width="760" height="430" fill="#f6f8fa"/>
+  <rect x="20" y="20" width="720" height="390" rx="10" fill="#ffffff" stroke="#d0d7de"/>
+
+  <text x="44" y="58" font-size="17" font-weight="bold" fill="#1f2328">firewall(dev): 案件A オンプレDB向けルールを追加</text>
+  <text x="676" y="58" font-size="14" fill="#57606a">#412</text>
+
+  <rect x="44" y="72" width="64" height="24" rx="12" fill="#1f883d"/>
+  <text x="76" y="88" font-size="12" fill="#ffffff" text-anchor="middle">Open</text>
+  <text x="118" y="89" font-size="12.5" fill="#57606a">anken-a-tanaka さんが</text>
+  <rect x="262" y="74" width="196" height="20" rx="4" fill="#ddf4ff"/>
+  <text x="360" y="88" font-size="11.5" fill="#0969da" text-anchor="middle">anken-a/fw-add-onprem-db</text>
+  <text x="466" y="89" font-size="12.5" fill="#57606a">から</text>
+  <rect x="496" y="74" width="52" height="20" rx="4" fill="#ddf4ff"/>
+  <text x="522" y="88" font-size="11.5" fill="#0969da" text-anchor="middle">main</text>
+  <text x="556" y="89" font-size="12.5" fill="#57606a">へのマージを希望</text>
+
+  <!-- Gemini plan summary comment -->
+  <rect x="44" y="112" width="672" height="120" rx="8" fill="#f1f8ff" stroke="#54aeff"/>
+  <circle cx="66" cy="136" r="10" fill="#ddf4ff"/>
+  <text x="66" y="140" font-size="9.5" fill="#0969da" text-anchor="middle">AI</text>
+  <text x="84" y="140" font-size="12" fill="#0969da">kiban-ai-bot — plan影響サマリ（自動コメント）</text>
+  <text x="66" y="166" font-size="13" fill="#1f2328">このPRで新たに許可される通信: 1件（開発環境）</text>
+  <text x="66" y="188" font-size="13" fill="#1f2328">・subnet-anken-a-dev → 203.0.113.20 : TCP/1433（目的: オンプレDB接続 / 申請 support#231）</text>
+  <text x="66" y="210" font-size="12" fill="#57606a">削除・変更なし。0.0.0.0/0 を含むルールなし。台帳整合: OK（review_by: 2027-08-01）</text>
+
+  <!-- checks -->
+  <rect x="44" y="248" width="672" height="118" rx="8" fill="#ffffff" stroke="#d0d7de"/>
+  <text x="60" y="272" font-size="13" font-weight="bold" fill="#1f2328">All checks have passed</text>
+  <circle cx="68" cy="296" r="7" fill="#1a7f37"/><path d="M64.5 296 l2.5 2.5 l4.5 -5" stroke="#fff" stroke-width="1.6" fill="none"/>
+  <text x="84" y="300" font-size="12.5" fill="#1f2328">terraform plan（firewall-dev） — 差分 +1 / ~0 / -0</text>
+  <circle cx="68" cy="320" r="7" fill="#1a7f37"/><path d="M64.5 320 l2.5 2.5 l4.5 -5" stroke="#fff" stroke-width="1.6" fill="none"/>
+  <text x="84" y="324" font-size="12.5" fill="#1f2328">policy check（OPA） — 禁止パターンなし</text>
+  <circle cx="68" cy="344" r="7" fill="#d4a72c"/><text x="68" y="348" font-size="10" fill="#fff" text-anchor="middle">!</text>
+  <text x="84" y="348" font-size="12.5" fill="#1f2328">Review required — CODEOWNERS（基盤チーム）の承認が必要です</text>
+
+  <text x="44" y="392" font-size="11.5" fill="#57606a">※マージ後も即反映されず、GitHub Environments（firewall-dev）の承認後にapplyされます</text>
+</svg>
