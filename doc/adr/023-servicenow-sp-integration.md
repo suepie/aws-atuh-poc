@@ -1180,7 +1180,7 @@ flowchart LR
 
 **構造的問題 5 点（＝設定後も残る脆さ）**:
 
-1. **疎結合な 3 サブシステム跨ぎ**：SSO ハンドラ + Import Set + Transform Map。継ぎ目が独立に壊れる。SAML は単系統。
+1. **疎結合なサブシステム跨ぎ**：SSO ハンドラ + Data Source + Import Set + Transform Map（+ 出口 sys_user）。継ぎ目が独立に壊れる。SAML は単系統。→ 具体は下記 L.9.1.2。
 2. **Import スキーマが実行時に受信クレームから自動生成**（初回ログインで列生成、列は ID Token/UserInfo に一致必須）→ **IdP のクレーム変更でサイレントにズレる**。**署名付き JWT の UserInfo で破綻**（plain JSON 前提）はこの脆さの症状。
 3. **失敗が分裂・遅延型**：**認証は成功するがプロビジョニングだけ失敗**（「既存は通るが新規が作られない」）→ ログインが"動いて見える"のに sys_user が無い/属性欠落 → 発見が遅れ運用事故化。クリーンな失敗より悪い。
 4. **突合（coalesce）が非ネイティブ**：Transform Map の coalesce を自前で正しく組む必要。**間違えると重複 sys_user → 履歴分断**（§10.1.3 の最悪シナリオ）。SAML は SSO 設定にネイティブ。
@@ -1189,6 +1189,29 @@ flowchart LR
 **なぜ本設計に特に効くか**: 本設計の肝は **「既存 sys_user を coalesce 突合 + sys_id 保全 + 履歴保全 + 属性マッピング」**（§10.1.3）。**OIDC はまさにその肝を脆い汎用 ETL 経路に載せ、しかも失敗が分裂型（認証 OK・履歴分断）**。→ **リスクが最敏感点に集中**。SAML はそこがネイティブで枯れている。
 
 **balance（正直な整理）**: OIDC も正しく組めば動く（不可能ではない）。問題は**「構造的に脆い + IdP 変更/SN アップグレード/属性追加のたびに ETL 経路が壊れうる継続リスク + 失敗が分裂型 + 突合が非ネイティブ」が、我々の壊れてはいけない部分（sys_id 保全/履歴）に重なる**こと。「1 回設定して終わり」ではない。
+
+##### L.9.1.2 跨ぐサブシステムと各段のエラー（2026-07-29 具体化）
+
+OIDC プロビジョニングは **4 段の ETL コンポーネント + 出口 sys_user** を直列で通り、**各段が別々のエラーとログを持つ**:
+
+```
+顧客 IdP(OIDC) → ① SSO/OIDC ハンドラ → ② Data Source → ③ Import Set(staging) → ④ Transform Map+coalesce → ⑤ sys_user
+```
+
+| # | サブシステム | 典型エラー | 出るログ/場所 | **認証は成功するか** |
+|---|---|---|---|---|
+| ① | OIDC/SSO ハンドラ | トークン検証失敗 / **署名 JWT の UserInfo をパース不可**（plain JSON 前提）/ `glide.authenticate.multisso.user.autoprovision` 未設定でプロビジョ非発火 | 認証/SSO トランザクションログ | 検証失敗なら**認証も失敗**。UserInfo パース失敗は**認証成功・プロビジョだけ失敗** |
+| ② | Data Source | 未作成 / IdP 未リンク / provision method 不整合 | `sys_data_source` / import ログ | **認証成功・プロビジョ非発火** |
+| ③ | Import Set テーブル(staging) | **テーブル未生成** / **クレーム変更で列ドリフト** | `sys_import_set_row` / staging テーブル | **認証成功・staging 空/ズレ** |
+| ④ | Transform Map + coalesce | **coalesce 誤設定 → 重複 sys_user/履歴分断** / field map 不一致 → 属性欠落 / script エラー | `sys_transform_map` / transform 実行履歴 | **認証成功・sys_user 重複 or 欠落** |
+| ⑤ | sys_user（出口） | 重複 / 空レコード / **ロール無し**（KB2709821） | `sys_user` | 症状の出口 |
+
+**なぜ厄介か**:
+- **失敗が下流ほど分裂型**：②③④ で落ちても①の認証は成功 → 「ログインは動くのに sys_user が無い/重複/属性欠落」で**エラー画面が出ず気づけない**。
+- **RCA が 4 ログ横断**：`認証ログ → sys_data_source → sys_import_set_row → sys_transform_map/実行履歴 → sys_user` を突合。**どの段で落ちたか 1 画面で分からない**。
+- **段ごとに別の管理概念**：SAML SSO 経験しかない SN 管理者（§L.9 の 90%）はこの ETL 群を扱えない。
+
+**SAML（対比）は 1 系統**: `顧客 IdP(SAML) → Multi-Provider SSO ハンドラ（Auto Provisioning チェックボックス = 自動生成 transform map + matching field 組込）→ sys_user`。Data Source も Import Set も手で組まず、**失敗面は認証/SSO ログの単系統・管理者知識も 1 つ**。→ これが「SAML は枯れている」の機構的な実体。
 
 ### L.10 【2026-07-23 追加】L2 = SAML でも API 認可は OIDC で貫通させる設計
 
