@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 540" font-family="'Hiragino Sans','Noto Sans JP',sans-serif">
+  <rect width="760" height="540" fill="#f6f8fa"/>
+  <rect x="20" y="20" width="720" height="500" rx="10" fill="#ffffff" stroke="#d0d7de"/>
+  <text x="44" y="56" font-size="16" font-weight="bold" fill="#1f2328">FAQ検索チャット</text>
+  <text x="716" y="56" font-size="12" fill="#57606a" text-anchor="end">出典必須・公開用ナレッジのみ参照</text>
+
+  <!-- user bubble -->
+  <circle cx="60" cy="100" r="16" fill="#eaeef2"/>
+  <text x="60" y="105" font-size="11" fill="#1f2328" text-anchor="middle">案A</text>
+  <rect x="88" y="82" width="560" height="40" rx="8" fill="#f6f8fa" stroke="#d0d7de"/>
+  <text x="102" y="107" font-size="13" fill="#1f2328">開発環境のGCEからオンプレのファイルサーバに繋がりません。何を確認すればいいですか？</text>
+
+  <!-- bot bubble -->
+  <circle cx="60" cy="168" r="16" fill="#ddf4ff"/>
+  <text x="60" y="173" font-size="11" fill="#0969da" text-anchor="middle">AI</text>
+  <rect x="88" y="146" width="628" height="196" rx="8" fill="#ffffff" stroke="#54aeff"/>
+  <text x="104" y="174" font-size="13" fill="#1f2328">オンプレ向け通信でよくある原因は次の2つです。</text>
+  <text x="104" y="202" font-size="13" fill="#1f2328">1. Firewallの通信許可が未申請 — 開発環境向けの申請手順は</text>
+  <text x="118" y="222" font-size="13" fill="#0969da" text-decoration="underline">ガイド 3.2: FW申請の流れ</text>
+  <text x="104" y="250" font-size="13" fill="#1f2328">2. プロキシ経由が必要な宛先 — 対象一覧は</text>
+  <text x="118" y="270" font-size="13" fill="#0969da" text-decoration="underline">FAQ-042: プロキシ経由が必要な通信</text>
+  <rect x="104" y="292" width="104" height="26" rx="13" fill="#f6f8fa" stroke="#d0d7de"/>
+  <text x="156" y="309" font-size="11.5" fill="#57606a" text-anchor="middle">出典: FAQ-042</text>
+  <rect x="216" y="292" width="110" height="26" rx="13" fill="#f6f8fa" stroke="#d0d7de"/>
+  <text x="271" y="309" font-size="11.5" fill="#57606a" text-anchor="middle">出典: ガイド 3.2</text>
+
+  <!-- input -->
+  <rect x="44" y="366" width="600" height="40" rx="8" fill="#ffffff" stroke="#d0d7de"/>
+  <text x="58" y="391" font-size="13" fill="#8c959f">続けて質問（例: 申請から反映までどのくらいかかりますか）</text>
+  <rect x="656" y="366" width="60" height="40" rx="8" fill="#0969da"/>
+  <text x="686" y="391" font-size="13" fill="#ffffff" text-anchor="middle">送信</text>
+
+  <!-- footer -->
+  <line x1="44" y1="434" x2="716" y2="434" stroke="#d0d7de"/>
+  <text x="44" y="466" font-size="13" fill="#57606a">解決しませんでしたか？ この会話の要約を引き継いで起票できます。</text>
+  <rect x="512" y="478" width="204" height="34" rx="6" fill="#ffffff" stroke="#d0d7de"/>
+  <text x="614" y="500" font-size="13" fill="#1f2328" text-anchor="middle">問い合わせを起票（要約入力済み）</text>
+</svg>

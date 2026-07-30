@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 560" font-family="'Hiragino Sans','Noto Sans JP',sans-serif">
+  <rect width="760" height="560" fill="#f6f8fa"/>
+  <rect x="20" y="20" width="720" height="520" rx="10" fill="#ffffff" stroke="#d0d7de"/>
+  <text x="44" y="58" font-size="17" font-weight="bold" fill="#1f2328">共通基盤への申請・問い合わせ</text>
+  <text x="44" y="80" font-size="12.5" fill="#57606a">supportリポジトリ / New issue — 送信すると自動で一次確認と担当への通知が行われます</text>
+
+  <text x="44" y="116" font-size="13" font-weight="bold" fill="#1f2328">種別 <tspan fill="#cf222e">*</tspan></text>
+  <rect x="44" y="126" width="672" height="34" rx="6" fill="#f6f8fa" stroke="#d0d7de"/>
+  <text x="58" y="148" font-size="13" fill="#1f2328">VPC-SC ルール申請（Ingress/Egress追加・変更）</text>
+  <path d="M694 138 l7 8 l7 -8" stroke="#57606a" stroke-width="1.6" fill="none"/>
+
+  <text x="44" y="192" font-size="13" font-weight="bold" fill="#1f2328">Project ID <tspan fill="#cf222e">*</tspan></text>
+  <rect x="44" y="202" width="324" height="34" rx="6" fill="#ffffff" stroke="#d0d7de"/>
+  <text x="58" y="224" font-size="13" fill="#8c959f">prj-anken-a-prod</text>
+
+  <text x="392" y="192" font-size="13" font-weight="bold" fill="#1f2328">環境 <tspan fill="#cf222e">*</tspan></text>
+  <rect x="392" y="202" width="324" height="34" rx="6" fill="#f6f8fa" stroke="#d0d7de"/>
+  <text x="406" y="224" font-size="13" fill="#1f2328">本番</text>
+  <path d="M694 214 l7 8 l7 -8" stroke="#57606a" stroke-width="1.6" fill="none"/>
+
+  <text x="44" y="268" font-size="13" font-weight="bold" fill="#1f2328">事象・要件の詳細 <tspan fill="#cf222e">*</tspan></text>
+  <rect x="44" y="278" width="672" height="110" rx="6" fill="#ffffff" stroke="#d0d7de"/>
+  <text x="58" y="302" font-size="13" fill="#8c959f">通信元/通信先、目的、エラーメッセージなどを記載</text>
+  <text x="44" y="408" font-size="12" fill="#57606a">エラーの場合は発生時刻とログの抜粋があると調査が早くなります。</text>
+
+  <rect x="44" y="428" width="16" height="16" rx="3" fill="#ffffff" stroke="#d0d7de"/>
+  <text x="68" y="441" font-size="13" fill="#1f2328">FAQ・ガイドを確認しました</text>
+
+  <line x1="44" y1="468" x2="716" y2="468" stroke="#d0d7de"/>
+  <rect x="452" y="486" width="100" height="36" rx="6" fill="#ffffff" stroke="#d0d7de"/>
+  <text x="502" y="509" font-size="13" fill="#1f2328" text-anchor="middle">キャンセル</text>
+  <rect x="564" y="486" width="152" height="36" rx="6" fill="#1f883d"/>
+  <text x="640" y="509" font-size="13" fill="#ffffff" text-anchor="middle">Submit new issue</text>
+</svg>
