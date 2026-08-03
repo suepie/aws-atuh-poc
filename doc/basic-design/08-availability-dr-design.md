@@ -6,6 +6,10 @@
 上位文書: [00-basic-design-plan.md](00-basic-design-plan.md) U8
 物理配置の前提: [06-infra-network-design.md](06-infra-network-design.md)（D-U6-03/05/07、§6.8.2 の U8 引き渡し）
 
+> 🚨 **2026-07-30 DR 方針の全面転換による改訂待ち（[00a §0 決定ログ](00a-remaining-tasks-and-effort.md) / D-18、G-EDGE-DR）**:
+> 従前の **ピロットライト・RTO 1h・大阪ウォーム待機・エッジ自動切替（REQ-DR-01/02）は廃止**。新方針 = **手動コールド DR / RTO ≈ 14 日 / 大阪は平時プロビジョニングなし・被災時にオンデマンド再構築 / RPO は Aurora バックアップ・スナップショット依存**（P-05・P-15 転換）。
+> **本書の §8.4（RTO 積み上げ）/ §8.5〜8.7（ピロットライト）/ D-U8-05/07/09 / ADR-051 は D-18 で全面改訂予定**。本文は改訂まで旧前提のまま。新論点 = ① 大阪オンデマンド再構築 Runbook（RB-DR 改訂）② **リストア Runbook**（Aurora PITR / イミュータブルスナップショット）③ **2 障害シナリオの区別**（リージョン災害=再構築+リストア / 論理破壊・IdP データ破壊・ランサム=PITR・イミュータブルスナップショットからその場リストア）。**イミュータブルスナップショット = AWS Backup Vault Lock（Compliance mode）or 別 Acct コピーで削除権限分離**。
+
 ---
 
 ## 8.0 背景・なぜここで決めるか・スコープ
@@ -92,10 +96,10 @@ ADR-051 の骨格は維持する（変更するのは復元戦略 §8.3 と待�
 | 項目 | 決定 | 変更有無 |
 |---|---|---|
 | モデル | **Active-Passive（東京 Primary → 大阪 DR）、自動化 80% + データ層 Cross-Region は手動承認 20%**（Split-Brain 防止） | 維持（ADR-051 §E） |
-| Tier 2（標準・P-05） | **RTO 1h / RPO 1min** — 成立性検証は §8.4.3 | 維持 |
+| Tier（標準・P-05、**2026-07-30 D-18 転換**） | **RTO ≈ 14 日（手動コールド DR）/ RPO は Aurora バックアップ・スナップショット依存**（D-U8-14）。旧 RTO 1h / RPO 1min（§8.4.3 の積み上げ）は**廃止・旧参考** | **変更** |
 | Tier 1（規制業種オプション） | RTO 30 分。**パイロットライトでは不成立**（§8.4.4）→ Hot Standby 前提の Phase 2 オプションとして棚上げ | 位置づけ明確化 |
 | Tier 3 | RTO 4h / RPO 15min | 維持 |
-| 待機形態 | **パイロットライト（インフラ Warm + KC Scale 0）**。旧「Warm Standby KC Scale 1」は Aurora Secondary read-only 制約により**不成立のため修正** | **変更**（§8.6、§8.0.1） |
+| 待機形態（**2026-07-30 D-18 転換**） | **手動コールド DR = 大阪は平時プロビジョニングなし、被災時に ROSA をオンデマンド再構築 + データリストア**。旧パイロットライト（インフラ Warm + KC Scale 0）は廃止（常時コスト削除、U6 §6.2 / D-U8-14） | **変更**（§8.6 は旧参考、D-U8-14） |
 | Active-Active | 不採用継続 — 東阪レイテンシは公式要件（<10ms）上限で保証不能 + External Infinispan 復活は multi-cluster v2 の簡素化に逆行（[keycloak-dr-aurora-sync §5.1](../reference/keycloak-dr-aurora-sync.md)） | 維持 |
 
 ### 8.2.2 データ分類と DR 手段（SSOT 表）
@@ -125,8 +129,8 @@ ADR-051 の骨格は維持する（変更するのは復元戦略 §8.3 と待�
 
 | 復元経路 | 対象障害 | 手段 | 構成の SSOT |
 |---|---|---|---|
-| **経路 1: リージョン障害** | 東京全損・Aurora Primary 到達不能 | **Aurora Global DB Promote のみ**。realm 構成もユーザも DB に一体で複製済みのため、大阪 KC は昇格後の DB を読むだけで**構成再投入は一切不要** | Aurora（= Git と一致していることをドリフト検知で担保） |
-| **経路 2: 論理破壊** | Realm 誤削除・構成破損・ランサムウェア・不正変更（リージョンは健在） | **(a) Aurora PITR**（粒度 5 分 / 保持 35 日、§NFR-5.4）で破壊直前へ巻き戻し、**(b) 直近の正当変更分は IaC 再適用で再生**: 基盤層 = Terraform（Realm 設定/Flow/SPI 配備/共通 Scope、単一 state — 分割の最終形は U9 D-U9-09）、テナント層 = **オンボーディングパイプライン（自作オンボーディング API による Admin API 差分適用、テナント単位宣言ファイル。keycloak-config-cli は K-1〔realm representation 禁止、U2 §2.7.4〕と原理衝突のため不採用 — U9 D-U9-10）**で該当テナントのみ再生 | **Git**（Terraform + テナント宣言ファイル） |
+| **経路 1: リージョン障害** | 東京全損・Aurora Primary 到達不能 | **① 大阪 ROSA をオンデマンド再構築（IaC、RTO ≈ 14 日、D-U8-14）② データをリストア/Promote**（realm 構成もユーザも DB に一体複製済のため、再構築した大阪 KC は復元後 DB を読むだけで構成再投入不要） | Aurora（= Git と一致をドリフト検知で担保） |
+| **経路 2: 論理破壊** | Realm 誤削除・構成破損・ランサムウェア・不正変更（リージョンは健在） | **(a) Aurora PITR**（粒度 5 分 / 保持 35 日、§NFR-5.4）で破壊直前へ巻き戻し、**(b) 直近の正当変更分は IaC 再適用で再生**: 基盤層 = Terraform（Realm 設定/Flow/SPI 配備/共通 Scope、単一 state — 分割の最終形は U9 D-U9-09）、テナント層 = **オンボーディングパイプライン（自作オンボーディング API による Admin API 差分適用、テナント単位宣言ファイル。keycloak-config-cli は K-1〔realm representation 禁止、U2 §2.7.4〕と原理衝突のため不採用 — U9 D-U9-10）**で該当テナントのみ再生。さらにランサム・悪意削除で PITR/自動バックアップ自体が消される事態に備え、イミュータブルスナップショット（AWS Backup Vault Lock Compliance / 別 Acct コピー、D-U8-14）からのリストア経路を必ず併設** | **Git**（Terraform + テナント宣言ファイル） |
 
 - 経路 2 で「全 1000+ IdP を Git から一括再生」は行わない（Admin API 負荷 + 時間の点で非現実的、U2 §2.7.5 と同根）。**PITR を主、IaC 再生は差分（破壊時刻以降の正当変更）に限定**する。破壊時刻の特定は Admin Events + 監査ログ（監査 Acct S3、改変不能）による。
 - 旧 ADR-051 §A.2「Keycloak Realm 破損 = Realm Export Restore、RPO 24 時間」は「**PITR + 差分 IaC 再生、RPO 5 分（PITR 粒度）**」に置き換わる — RPO が 24h → 5min へ**大幅改善**する点は改訂の副次効果として明記する。
@@ -144,6 +148,30 @@ flowchart TB
     R2B --> R2E["全 1000+ IdP の Git 一括再生はしない<br/>SSOT = Git (Terraform + テナント宣言ファイル)"]
 ```
 
+### 8.3.1a 決定 D-U8-14: バックアップ／イミュータブルスナップショット戦略と大阪オンデマンド再構築（2026-07-30 D-18 新設）
+
+DR のコールド化（パイロットライト廃止）に伴い、**「コンピュートは平時ゼロ、データは保全」**を原則とする。2 障害シナリオを明確に分ける:
+
+| シナリオ | 復元方式 | RTO | RPO |
+|---|---|---|---|
+| **① リージョン災害**（東京全損） | 大阪 ROSA を **IaC でオンデマンド再構築** → Aurora を大阪でリストア/Promote → エッジ切替 | **≈ 14 日**（手動、事業許容） | データ保全方式に依存（下記） |
+| **② 論理破壊**（IdP データ破壊・誤削除・ランサム・不正変更、リージョンは健在） | **その場で**リストア（再構築不要）: 非悪意は **Aurora PITR（1 秒精度・35 日）**、ランサム/内部不正は **不変スナップショット（Vault Lock）** | 数時間 | L2 PITR = 1 秒精度 / **L3 不変スナップショット = 取得間隔** |
+
+**データ保全設計 = 3 層**（2026-07-30 AWS 公式裏取り反映）。⚠ **重要な AWS 制約**: **Aurora の PITR（continuous backup）は Vault Lock で不変化できず、別リージョン/別アカウントにもコピーできない**（[AWS 公式](https://docs.aws.amazon.com/aws-backup/latest/devguide/point-in-time-recovery.html): 「Aurora continuous backups cannot be placed in a backup vault for immutability (vault lock) ... use periodic snapshot backups instead」）。よって**不変・隔離が要る対策は periodic snapshot に置く**:
+
+| 層 | 手段 | 守る対象 | 不変/隔離 | RPO |
+|---|---|---|---|---|
+| **L1** リージョン災害 | **Aurora Global DB**（大阪 Secondary、非同期複製） | 東京全損 | — | ~1 秒（[公式](https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/aurora-global-database.html)） |
+| **L2** 論理復元（細粒度） | **Aurora PITR**（1〜35 日・1 秒精度） | 誤削除・破損の巻き戻し | **不可**（Aurora サービス内に留まり攻撃者が消せる） | 1 秒 |
+| **L3** ランサム/内部不正の最終防衛線 | **AWS Backup 定期スナップショット** → **Vault Lock（Compliance mode）** + **別リージョン & 別アカウントコピー** | 悪意の削除・暗号化 | **不変（ルートでも保持期間内削除不可）+ 隔離**（[Vault Lock](https://docs.aws.amazon.com/aws-backup/latest/devguide/vault-lock.html)） | 取得間隔 |
+
+- **L2/L3 の役割分担が肝**: PITR は細かく戻せるが攻撃者が消せる → **L3 の不変スナップショットが「消されても残る最後の砦」**。L3 の RPO は取得間隔（例 6〜24h）で L2 より粗い。
+- **KC イメージ・Custom SPI 成果物**は東西 ECR へ CI で常時 push（再構築時 pull 可能、コンピュートは起動しない）。
+- ⚠ **Vault Lock Compliance mode 運用注意**: 一度ロックすると**解除不可**（grace time = cooling-off 最小 3 日、この間のみ変更可）。保持 "Always" は永久課金なので避け短保持で先行検証。**別アカウントコピーは AWS Organizations 同一組織 + 顧客管理 KMS 共有 + 宛先非デフォルト Vault** が前提。**アカウントクローズ 90 日で Vault Lock も無効化**される点を BCP に織込む。
+- ⚠ **Aurora はクロスリージョン自動バックアップレプリケーション非対応** → 別リージョン保全は AWS Backup のコピー機能で行う。不変スナップショットは **Primary（東京）クラスタで取得**が素直（Secondary スナップショットの可否は公式未明示）。
+
+⚠ **要確認（サブ決定、O-U8-10）**: リージョン災害の RPO をどこまで詰めるか — **(A) Aurora Global DB を維持**（ストレージのみ常時複製、RPO < 1 分、コンピュートは cold のまま）/ **(B) 定期スナップショットのクロスリージョンコピーのみ**（RPO = 取得間隔、より低コスト）。**推奨 = (A)**（データ保全は薄く常時・コンピュートだけ cold が「IdP が壊れても戻せる」要件と最も整合）。最終はコストと RPO 許容値で U6 と合同決定。
+
 ### 8.3.2 決定 D-U8-07: 整合性検証 = IaC ドリフト検知（Git ⇔ 稼働 KC の突合）
 
 経路 1 が成立する条件は「Aurora の中身 = Git の宣言」が常時保たれていることである。手当てを設計制約にする:
@@ -157,7 +185,9 @@ flowchart TB
 
 ---
 
-## 8.4 フェイルオーバー手順と RTO 1h の積み上げ検証
+## 8.4 フェイルオーバー手順（コールド DR、RTO ≈ 14 日）
+
+> **2026-07-30 D-18 でコールド DR に改訂済み**（本節は現行）。旧「パイロットライト / RTO 1h / 50 分積み上げ」の分析は Phase 2（Warm/Hot 復活）検討時の出発点として §8.4.4 に要約を残す。
 
 ### 8.4.1 決定 D-U8-08: フェイルオーバー判断基準（自動 80% / 手動承認 20%）
 
@@ -172,67 +202,48 @@ ADR-051 §E.1 の区分を維持しつつ、判断を早めるため**リージ�
 
 手動承認（Aurora Global Promote / DR 全体切替 / Failback）は IR Lead 起案 → CTO 承認（ADR-051 §E.2 フロー維持）。**承認 SLA = 検知から 15 分以内**を運用目標とし、Game Day で計測する。
 
-### 8.4.2 フェイルオーバータイムライン（Tier 2 想定、worst-case 積み上げ）
+### 8.4.2 コールド DR フェイルオーバー手順（リージョン災害）
 
-並行化可能な作業（ノード増設は DB 昇格を待たない）を明示した設計タイムライン:
+大阪は平時ノードを持たない（D-U8-11 改訂 / U6 §6.2.4）ため、フェイルオーバーは **「オンデマンド再構築 → データ復元 → 構成整合・検証 → エッジ切替」** の順で行う。RTO は日オーダー（≈ 14 日、B-DR-5 の事業許容）で、律速は**ノード供給でなく構築・整合検証の総工程**。
 
-| 時刻 | トラック | アクション | 所要（worst） |
+| フェーズ | 主なアクション | 目安 | Runbook |
 |---|---|---|---|
-| T+0 | 検知 | 障害発生。外形監視・R53 Health Check（3 回 × 10s）異常 | — |
-| T+3 | 検知 | 複合アラーム確定 → PagerDuty → SRE Lead | 3 min |
-| T+3〜10 | 判断 | RB-DR-00 チェックリスト判定 + War Room 招集 | 7 min |
-| T+10〜20 | 判断 | CTO 承認（**手動 20% 部分**。目標 15 分、worst 20 分） | 10 min |
-| T+20〜25 | **A: DB** | RB-DR-01: Aurora Global **unplanned Managed Failover**（Secondary detach & promote）× 2 系統（Broker / IdP-KC 並行実行） | 5 min |
-| T+20〜35 | **B: 基盤**（A と並行） | RB-DR-03: 大阪 Machine Pool スケールアップ 2 → 6 ノード（c7g.large → xlarge 系プール、事前定義済み）。HCP ノード供給 12-15 min | 15 min |
-| T+25〜38 | **A→B 合流** | KC Scale 0 → 3+（Broker/IdP-KC）: 昇格済み Writer へ接続、jdbc-ping 登録、JVM 起動 + キャッシュ初期ロード（イメージは ECR レプリケーション済み・ノードに pre-pull） | 8-13 min |
-| T+38〜45 | 検証 | 合格基準チェック: ログイン成功（フェデ/ローカル各 1）、JWKS 応答・kid 一致、token/refresh、Broker→IdP-KC PrivateLink 疎通（大阪側複製済み、U6 §6.8.2）、`idmap` 参照 | 7 min |
-| T+45〜50 | DNS/エッジ | RB-DR-02: Route 53 Failover（弊社管理レコード、TTL 30s）+ **他組織エッジのオリジン切替**（事前設定 Origin Group なら自動 / 手動なら REQ-DR-01 の SLA 内） | 5 min |
-| **T+50** | 完了 | 全面切替宣言・顧客通知。**バッファ 10 分** | — |
-
-上表の時系列と並行トラック（A: DB / B: 基盤）をシーケンスで図示する（2026-07-26 図示追加）:
+| P0 判定・承認 | RB-DR-00 判定（**リージョン災害か論理破壊かの切り分け** + ITDR 抑制/強化フラグ）→ CTO 承認（SLA 15 分）→ 大阪 DR 宣言 | 〜1h | RB-DR-00 |
+| P1 大阪 ROSA 再構築 | IaC で VPC（CIDR 事前確保済）/ ROSA HCP × 2 / Machine Pool / RHBK Operator / KC CR / Custom SPI / SCIM Facade を新規適用 | 数日 | RB-DR-03 |
+| P2 データ復元 | **(A) Aurora Global を大阪で Promote**（維持時、O-U8-10 推奨）/ **(B) 不変スナップショット + PITR から大阪 Aurora を復元** → KC 接続先を大阪へ | 半日〜1 日 | RB-DR-01 |
+| P3 構成整合 | IaC ドリフト検知で Git ⇔ 稼働 KC 突合（realm / Flow / Client / 1000+ IdP）、テナント層オンボーディング再生の差分確認 | 半日〜1 日 | RB-DR-03 |
+| P4 検証 | ログイン（フェデ/ローカル各 1）、JWKS・kid 一致、token/refresh、Broker→IdP-KC PrivateLink 疎通、`idmap` 参照、外形監視グリーン | 半日 | RB-DR-03 |
+| P5 エッジ切替 | 他組織エッジのオリジンを大阪へ切替（**手動でよい = RTO 日オーダーのため事前自動化不要**）+ R53 切替 | 〜数h | RB-DR-02 |
+| P6 完了 | 全面切替宣言・顧客通知（**全ユーザー再認証の案内**含む、§8.5） | — | — |
 
 ```mermaid
-sequenceDiagram
-    participant Mon as 外形監視
-    participant SRE as SRE/IR Lead
-    participant CTO as CTO
-    participant DB as Aurora Global
-    participant OSK as 大阪 ROSA/KC
-    participant Edge as R53/他組織エッジ
-
-    Note over Mon: T+0 障害発生 (R53 Health Check 3 回 × 10s 異常)
-    Mon->>SRE: T+3 複合アラーム確定 → PagerDuty
-    SRE->>SRE: T+3〜10 RB-DR-00 判定チェックリスト<br/>(ITDR 抑制/強化フラグ切替を含む) + War Room 招集
-    SRE->>CTO: リージョン障害宣言・承認起案
-    CTO-->>SRE: T+10〜20 手動承認 (手動 20% 部分。SLA 15 分 / worst 20 分)
-    par トラック A: DB
-        SRE->>DB: T+20〜25 RB-DR-01 unplanned Managed Failover<br/>(Secondary detach & promote) × 2 系統並行
-    and トラック B: 基盤 (A と並行)
-        SRE->>OSK: T+20〜35 RB-DR-03 Machine Pool 2→6 ノード<br/>(HCP ノード供給 12-15 分)
-    end
-    SRE->>OSK: T+25〜38 KC Scale 0→3+ (昇格済み Writer へ接続、<br/>jdbc-ping 登録、JVM 起動 + キャッシュ初期ロード)
-    SRE->>OSK: T+38〜45 検証 (ログイン / JWKS・kid 一致 /<br/>token・refresh / PrivateLink 疎通 / idmap 参照)
-    SRE->>Edge: T+45〜50 RB-DR-02 R53 Failover (TTL 30s)<br/>+ 他組織エッジのオリジン切替 (REQ-DR-01/02)
-    Note over Mon,Edge: T+50 全面切替宣言・顧客通知。バッファ 10 分 → RTO 1h (条件付き成立 §8.4.3)
+flowchart LR
+  P0["P0 判定・承認<br/>RB-DR-00"] --> P1["P1 大阪 ROSA 再構築<br/>IaC・数日・RB-DR-03"] --> P2["P2 データ復元<br/>Aurora Promote or 不変SS+PITR<br/>RB-DR-01"] --> P3["P3 構成整合<br/>ドリフト検知"] --> P4["P4 検証"] --> P5["P5 エッジ切替<br/>手動・RB-DR-02"] --> P6["P6 完了・顧客通知"]
 ```
 
-補足: 静的資産（Sorry/SPA）は CloudFront Origin Failover により T+数分で先行復旧（部分復旧）。ADR-051 §H.1 の 40 分想定に対し、本書は KC 起動遅延（JVM + キャッシュ）と他組織エッジ調整を織り込んで 50 分とした。
+**論理破壊の場合はこの手順ではない**（大阪再構築は不要）: リージョンは健在なので**東京でその場リストア**する（P2 のデータ復元のみ = L2 PITR で細粒度巻き戻し / ランサム時は L3 不変スナップショットから復元、D-U8-14）。判定 P0 でどちらのシナリオかを切り分ける。
 
-### 8.4.3 決定 D-U8-09: **RTO 1h は「条件付き成立」**（結論）
+### 8.4.3 決定 D-U8-09（改訂）: RTO ≈ 14 日の内訳と成立条件
 
-worst-case 積み上げ 50 分 + バッファ 10 分で **Tier 2 RTO 1h は成立する**。ただし以下 5 条件が前提であり、いずれかが欠けると成立しない。各条件はゲート/要求仕様として追跡する:
+コールド DR の RTO は日オーダー。旧「RTO 1h（パイロットライト前提）」の 50 分積み上げは**廃止**（2026-07-30 D-18）。
 
-| # | 成立条件 | 欠落時の影響 | 担保手段 |
-|---|---|---|---|
-| 1 | 手動承認が T+20 までに完了 | +10〜30 min | 承認 SLA 15 分 + Game Day 実測（§8.7） |
-| 2 | 大阪の EC2 在庫・vCPU クォータ事前確保 | ノード供給不能 = RTO 崩壊 | **G-OSAKA**（U1 §1.5。クォータは東京ピーク同等値を事前申請） |
-| 3 | KC イメージ・SPI 成果物が大阪 ECR に常時レプリケーション済み + パイロットライトノードへ pre-pull | +5〜10 min | §8.6 平時同期、CI で東西同時 push |
-| 4 | **他組織エッジの DR 切替が「事前設定済み自動」または切替 SLA ≤ 10 分** | DNS/エッジで律速 → RTO 未達 | **REQ-DR-01〜03**（§8.4.5、要求仕様） |
-| 5 | PrivateLink（Broker→IdP-KC）大阪側の事前複製 | 2-tier ログイン不能 | U6 §6.8.2 で配置確定済み。訓練で疎通確認 |
+| 内訳 | 目安 | 支配要因 |
+|---|---|---|
+| 判定・承認 | 〜1h | RB-DR-00 + CTO 承認（SLA 15 分） |
+| 大阪 ROSA 再構築（P1） | 数日 | ROSA クラスタ新規作成 + Operator/CR/SPI/Facade 適用の総工程 |
+| データ復元（P2） | 半日〜1 日 | Aurora Promote（維持時は短い）or スナップショット復元サイズ |
+| 構成整合・検証（P3/P4） | 1〜2 日 | 1000+ IdP の突合、テナント再生差分 |
+| エッジ切替・緩衝（P5） | 〜1 日 | 他組織調整 + 予備 |
+| **合計** | **≈ 14 日（十分な緩衝込み）** | 事業許容 RTO（B-DR-5 = 手動 14 日で合意方向） |
 
-### 8.4.4 Tier 1（RTO 30 分）はパイロットライトでは不成立
+**成立条件**: ① CIDR 事前確保（U6 §6.2.4）② IaC 常時 apply 可能（東西 overlay の日次 plan、§8.6.2）③ KC/SPI/Facade イメージの東西 ECR 常時 push ④ データ保全 L1/L3（D-U8-14）⑤ 再構築 Runbook（RB-DR-03）の Game Day 実証。**旧 5 条件のうち「他組織エッジの自動/10 分切替」は RTO が日オーダーのため不要化**（手動切替で足りる、§8.4.5）。
 
-積み上げ上、T+20 承認 + T+35 ノード供給の時点で 30 分を超過する。Tier 1 は **Hot Standby（大阪 KC 常時稼働）が必須だが、Aurora Global Secondary read-only 制約により「大阪 KC を東京 Writer にクロスリージョン接続で常時稼働」等の別方式検討が必要**であり、Phase 1 では**提供しない**（規制業種顧客の契約要求が発生した時点で Phase 2 検討、ADR-051 §G.2 のコスト前提も再試算）。
+### 8.4.4 短 RTO（Tier 1/2）は Phase 1 では提供しない（旧パイロットライト分析の格納）
+
+コールド DR（RTO ≈ 14 日 = Tier 3+ 相当）を Phase 1 標準とする。短 RTO は Hot/Warm Standby が前提で Phase 1 では提供しない:
+
+- **Tier 2（RTO 1h）** — 旧設計（パイロットライト = インフラ Warm + KC Scale 0、worst 50 分積み上げ + バッファ 10 分）。**大阪 KC 常時待機 + エッジ自動切替（旧 REQ-DR-01/02）+ 大阪 ECR pre-pull** が前提だった。Aurora Global Secondary が read-only で KC は起動不能なため「Scale 0 待機」だった点も含め、Warm/Hot 復活時はこの分析（旧 §8.4.2/§8.4.3、Git 履歴参照）が出発点。
+- **Tier 1（RTO 30 分）** — Hot Standby（大阪 KC 常時稼働）必須。Aurora Secondary read-only 制約により別方式（東京 Writer へのクロスリージョン常時接続等）の検討が要る。規制業種顧客の契約要求が発生した時点で Phase 2 検討（ADR-051 §G.2 コスト再試算）。
 
 ### 8.4.5 DNS 切替・エッジ DR の要求仕様（他組織管理 — B 部）
 
@@ -240,13 +251,13 @@ P-18 により公開エッジ（CloudFront + WAF + ALB/NLB + NFW）は他組織�
 
 | # | 要求 | 内容 |
 |---|---|---|
-| REQ-DR-01 | **大阪オリジンの事前登録** | 弊社の各公開ドメイン（auth / idp / admin-SPA / scim-* / launchpad）の CloudFront に、大阪側 Internal ALB（または NLB）を**セカンダリオリジンとして平時から登録**（Origin Group、failover_criteria 5xx）。切替は自動化され人手を要さないこと |
-| REQ-DR-02 | 手動切替のフォールバック SLA | Origin Group 構成が不可の場合、弊社の DR 宣言から**オリジン切替完了まで ≤ 10 分**の対応 SLA を合意すること（24/365） |
+| REQ-DR-01 | 大阪オリジンの切替（**コールド化で緩和**） | **2026-07-30 D-18: RTO 日オーダーのため事前 Origin Group 自動切替は不要**。DR 宣言後に大阪オリジンへ**手動切替できること**（事前登録は任意の最適化）。大阪 ALB/NLB は再構築後に生成される点に留意 |
+| REQ-DR-02 | 手動切替の対応 | **2026-07-30 D-18: ≤ 10 分の厳格 SLA は不要**（RTO 日オーダー）。DR 宣言後、大阪再構築完了に合わせて数営業時間内にオリジン切替対応で足りる |
 | REQ-DR-03 | DR 時の Egress 同等性 | 大阪側 Broker KC CIDR からの顧客 IdP 向け Egress（1000+ FQDN、REQ-OUT-01 のルールグループ）が**東京と同一内容で大阪側 NFW にも平時から適用**されていること（Failover 後に申請が必要な構成は不可） |
 | REQ-DR-04 | エッジ可用性 | エッジ経路全体の可用性 99.95% 以上（§8.1.1 の直列成立条件） |
 | REQ-DR-05 | DR 訓練参加 | 年 1 回以上、弊社 Game Day（§8.7）への切替訓練参加（最低限 Origin Failover の実動確認） |
 
-**REQ-DR-01/02 のいずれも合意できない場合、RTO 1h は保証できない**（条件 4 欠落）→ 顧客 SLA 記述を「RTO 1h（エッジ切替を除く）」へ改める必要があり、契約前に決着させる（§8.9 未決 O-U8-1。**G-EDGE-DR** として U1 §1.5 登録済み — REQ-DR-01 or 02 合意なしに RTO 1h を SLA 記載禁止）。
+**2026-07-30 D-18: G-EDGE-DR は「手動 DR / RTO ≈ 14 日」で解決**（手動切替で足りるため、旧「エッジ自動切替 or ≤10 分 SLA なしでは RTO 1h 非保証」の制約は消滅）。顧客 SLA には「RTO ≈ 14 日（手動コールド DR）」を記載する。REQ-DR-03（Egress 同等性）は再構築時に必要なため維持。
 
 ---
 
@@ -287,67 +298,69 @@ jdbc-ping + multi-cluster v2 前提では**リージョン間で共有される�
 
 ---
 
-## 8.6 パイロットライト詳細（大阪）
+## 8.6 大阪 DR 待機態勢（コールド） — 平時に何を維持するか
 
-### 8.6.1 決定 D-U8-11: 平時の大阪最小構成
+> **2026-07-30 D-18 でコールド DR に改訂済み**（本節は現行）。大阪は平時に ROSA を持たず、被災時にオンデマンド再構築する（D-U8-11 改訂 / D-U8-14）。「腐らない DR」のためデータ層・成果物・IaC は平時から維持する。
 
-U6 §6.2.3 のコスト前提（cluster fee + 最小 worker）を構成として確定する:
+### 8.6.1 決定 D-U8-11（改訂）: 大阪の平時態勢 = コンピュートゼロ・データ/成果物は維持
 
-| レイヤ | 平時の状態 | Failover 時 |
+大阪は**平時に ROSA クラスタを持たない**（常時コスト $0、U6 §6.2.3）。ただし「腐らない DR」のため以下は平時から維持し、被災時に IaC で再構築する:
+
+| レイヤ | 平時（コールド） | 被災時 |
 |---|---|---|
-| ROSA HCP × 2（Broker / IdP-KC） | **クラスタ稼働**（cluster fee $182.5/月 × 2）+ infra Pool **c7g.large × 2 ノード/クラスタ**（テイントなし、Operator 群・監視エージェントのみ稼働） | **KC 専用 Pool（labeled/tainted、min 0 で事前定義 — U6 §6.2.4、2026-07-24 明確化: KC Pod は toleration/nodeSelector を持つため infra ノードには載らない）** を 0 → 6+ ノード（c7g.xlarge/2xlarge）へ |
-| RHBK Operator / KC CR | **導入済み・KC CR replicas=0**（Aurora Secondary read-only のため起動不能 = 起動させない）。KC イメージは 2 ノードへ pre-pull（DaemonSet or ImageCache） | replicas 0 → 3+（東京と同一 CR 定義、接続先は大阪 Aurora エンドポイント — 環境差分は Kustomize overlay 1 点のみ） |
-| Aurora | Global Secondary Reader × 1 / 系統（Warm） | Promote → Writer + Reader 増設（事後） |
-| Internal ALB / PrivateLink / VPC Endpoint 群 | **事前作成・常時稼働**（Region 内リソースのため東京と別個に作成済み、U6 §6.8.2） | そのまま利用 |
-| Secrets / KMS | Secrets Manager マルチリージョンレプリカ（**複製先暗号鍵は大阪側 Regional CMK — U7 D-U7-01 のとおり Secrets 系 CMK は MRK 化しない**）+ Aurora/監査ログ系のみ KMS MRK レプリカ（U7 §7.1.1 の MRK 対象表参照） | そのまま利用 |
-| DynamoDB / S3 | Global Tables / CRR で受動同期 | そのまま利用 |
-
-パイロットライトの平時 / Failover 時の状態遷移を対比で図示する（2026-07-26 図示追加）:
+| ROSA HCP / KC / SPI / Facade | **なし** | IaC で新規作成（RB-DR-03、数日） |
+| Aurora | **Global Secondary Reader × 1 を維持**（データ層のみ、RPO ~1s。O-U8-10 で (A) 維持を推奨）or 不変スナップショットのみ (B) | Promote or スナップショット復元（RB-DR-01） |
+| 不変スナップショット | **AWS Backup 定期スナップショット → Vault Lock（Compliance）+ 大阪クロスリージョン & 別 Acct コピー**（D-U8-14 L3） | 論理破壊/ランサム時の復元元 |
+| KC/SPI/Facade イメージ | **東西 ECR へ CI 常時 push**（コンピュートは起動しない） | 再構築時に pull |
+| IaC（Git） | 東西 overlay 維持、**大阪 overlay の日次 plan**で陳腐化検知 | apply して再構築 |
+| KMS / Secrets | Aurora/監査系 CMK は MRK レプリカ、Secrets 系は大阪 Regional CMK（U7 D-U7-01） | そのまま利用 |
+| CIDR / サブネット | **再構築先として予約**（install 後不変ゆえクラスタが無くても IP レンジ確保、U6 §6.2.4） | 再構築で使用 |
+| 監視 | 平時は東京から大阪リージョン到達性のみ | 再構築後に大阪外形監視・Aggregator を有効化 |
 
 ```mermaid
 flowchart LR
-    subgraph NORM["平時 (パイロットライト = インフラ Warm + KC Scale 0)"]
-        N1["ROSA HCP × 2 クラスタ稼働<br/>infra Pool c7g.large × 2 ノードのみ<br/>(Operator 群・監視エージェント)"]
-        N2["KC 専用 Pool min 0<br/>(labeled/tainted、事前定義済み)"]
-        N3["KC CR replicas=0<br/>(Aurora Secondary read-only のため起動不能)<br/>KC イメージは pre-pull 済み"]
-        N4["Aurora Global Secondary<br/>Reader × 1 / 系統 (Warm)"]
-        N5["Internal ALB / PrivateLink / VPCE 群<br/>事前作成・常時稼働"]
+    subgraph NORM["平時 (コールド = コンピュートゼロ)"]
+        N1["ROSA / KC: なし"]
+        N2["Aurora Global Secondary<br/>(データ層・RPO ~1s)"]
+        N3["不変スナップショット<br/>(Vault Lock + 別 Acct)"]
+        N4["ECR イメージ / IaC(Git)<br/>常時最新・CIDR 予約"]
     end
-    subgraph FO["Failover 時"]
-        F1["infra Pool 継続稼働"]
-        F2["KC Pool 0 → 6+ ノード<br/>(c7g.xlarge/2xlarge)"]
-        F3["KC CR replicas 0 → 3+<br/>(東京と同一 CR、差分は Kustomize overlay 1 点<br/>= 大阪 Aurora エンドポイント)"]
-        F4["Promote → Writer<br/>+ Reader 増設 (事後)"]
-        F5["そのまま利用"]
+    subgraph FO["被災時 (オンデマンド再構築)"]
+        F1["IaC apply → ROSA/KC/SPI/Facade 新規作成"]
+        F2["Aurora Promote or SS 復元"]
+        F3["構成整合・検証 → エッジ切替"]
     end
     N1 --> F1
     N2 --> F2
-    N3 --> F3
-    N4 --> F4
-    N5 --> F5
+    N3 --> F2
+    N4 --> F1
+    F1 --> F3
+    F2 --> F3
 ```
 
-### 8.6.2 平時の同期対象（「大阪が腐らない」ための定常運用）
+### 8.6.2 平時に維持する対象（「大阪が腐らない」ための定常運用）
+
+コンピュートは持たないが、**再構築を 14 日で完走できる状態**を平時から保つ:
 
 | 対象 | 方式 | 検証 |
 |---|---|---|
-| ユーザ + realm 構成 | Aurora Global（ストレージレベル連続複製） | lag 監視（§8.5.2） |
-| KC イメージ / SPI | CI が東西 ECR へ同時 push（ECR レプリケーションルール） | CI で東西 digest 一致検査 |
+| ユーザ + realm 構成（データ層） | Aurora Global（ストレージ連続複製、O-U8-10 (A) 維持時） | lag 監視（§8.5.2） |
+| 不変スナップショット | AWS Backup 定期スナップショット → Vault Lock + クロスリージョン/別 Acct コピー | 復元テスト（Game Day H2） |
+| KC / SPI / Facade イメージ | CI が東西 ECR へ同時 push（ECR レプリケーションルール） | CI で東西 digest 一致検査 |
 | IaC | 同一 Git。**東京 apply 成功 = 大阪 overlay の plan 実行（apply はしない）を CI に組込み**、大阪定義の陳腐化を検知 | 日次 CI |
-| DNS / エッジ | 大阪オリジン事前登録（REQ-DR-01）、R53 Failover レコード事前定義（Secondary 側 Health Check は KC 非依存の ALB 疎通に設定 — KC Scale 0 で常時 unhealthy になる誤設計を禁止） | Game Day |
-| 監視 | 大阪側の外形監視・アラームも平時から稼働（「DR 側の監視が死んでいた」を防ぐ） | U9 |
-| Log scrubbing | **大阪側にも Fluent Bit Aggregator・マスキング経路（U7 §7.3.1）を平時配備**（Failover 後に平文ログが流れる構成を禁止） | U7/U9 |
+| CIDR / サブネット | 再構築先として予約（東京同等スケール収容、U6 §6.2.4） | 台帳突合 |
+| DNS / エッジ | R53 の切替先レコードを定義（切替は手動、§8.4.5）。大阪 ALB/NLB は再構築後に生成 | Game Day |
 
-### 8.6.3 起動時間見積り（RTO 内訳の根拠）
+### 8.6.3 再構築時間見積り（RTO ≈ 14 日の内訳の根拠）
 
-| ステップ | 見積り | 根拠 |
+| ステップ | 見積り | 根拠 / 実測 |
 |---|---|---|
-| Machine Pool スケールアップ（2 → 6 ノード） | **12-15 min** | ROSA HCP ノード供給の一般値。**Game Day で実測し本表を更新**（初回訓練の必須計測項目） |
-| KC Pod 起動（replicas 0→3、イメージ pre-pull 済み） | 2-3 min/Pod（JVM 起動 + DB 接続 + jdbc-ping 登録） | PoC 実測レンジ |
-| キャッシュ初期ロード（realms 200k entries 設計、U6 D-U6-10） | 初回リクエスト負荷で漸進ロード。**ウォームアップ時間は PoC P-4 の測定対象**（U2 §2.7.6 — DR 切替時間に直結と明記済み） | G-IdP-Scale P-4 |
-| 合計（KC サービスイン） | **20-25 min**（承認完了から） | §8.4.2 の T+20 → T+45 と整合 |
-
----
+| ROSA HCP クラスタ新規作成 × 2 + Machine Pool | 1〜2 日 | ROSA HCP プロビジョニング + ノード供給。**Game Day で実測し本表更新** |
+| RHBK Operator / KC CR / Custom SPI / SCIM Facade 適用 | 半日〜1 日 | IaC apply + イメージ pull（ECR から） |
+| データ復元（Aurora Promote or スナップショット復元） | 半日〜1 日 | Promote は短い / スナップショットは復元サイズ依存 |
+| 構成整合（1000+ IdP 突合）+ キャッシュウォームアップ | 1〜2 日 | ウォームアップは PoC P-4 の測定対象（U2 §2.7.6） |
+| 検証 + エッジ切替 + 緩衝 | 1〜数日 | 他組織調整 + 予備 |
+| **合計** | **≈ 14 日（緩衝込み）** | §8.4.3 と整合。初回 Game Day（H1）で実測し短縮余地を評価 |
 
 ## 8.7 フェイルバック手順と DR 訓練計画
 
@@ -370,13 +383,13 @@ keycloak-dr-aurora-sync §5.5 の手順を正式化する（大阪 Primary 継�
 
 | 回 | 内容 | 方式 | 合格基準 |
 |---|---|---|---|
-| H1（上期） | **S-07 リージョン障害フル切替**（ADR-044 S-07） | Aurora **計画 Switchover**（RPO 0、顧客影響を再認証のみに限定）+ 大阪スケールアップ + エッジ切替（REQ-DR-05 で他組織参加） | RTO ≤ 60 min 実測 / §8.4.2 各トラック実測値の採取（特に初回: Machine Pool 供給時間・キャッシュウォームアップ）/ 昇格後構成 = Git 突合（§8.3.2 #4）/ フェイルバック完走 |
-| H2（下期） | **経路 2 復元訓練**（論理破壊）+ Runbook 検証 | Staging で realm 構成破壊 → PITR + 差分 IaC 再生（RB-DR-04'） | 復元 RPO ≤ 5 min / テナント単位再生の完走 / RB-DR-00〜05 の完走率 100% |
+| H1（上期） | **S-07 リージョン災害 = 大阪オンデマンド再構築**（ADR-044 S-07、2026-07-30 D-18 反映） | Staging/隔離環境で **IaC による大阪 ROSA 再構築 + データ復元 + 構成整合・検証 + 手動エッジ切替**（REQ-DR-05 で他組織参加） | **再構築 RTO の実測（≈ 14 日の各フェーズ P1〜P5、§8.4.3/§8.6.3）** / 昇格・復元後構成 = Git 突合（§8.3.2 #4）/ 短縮余地の評価 |
+| H2（下期） | **経路 2 復元訓練**（論理破壊）+ Runbook 検証 | Staging で realm 構成破壊/削除 → **L2 PITR で細粒度巻き戻し** + **L3 不変スナップショット（Vault Lock）からの復元**を両方検証 + 差分 IaC 再生（RB-DR-04） | L2 復元 RPO ≤ 5 min / **L3 不変スナップショット復元の完走（Vault からの取り出し + 別 Acct コピー経由）** / テナント単位再生の完走 / RB-DR-00〜05 完走率 100% |
 | 通年 | 技術 Tabletop（四半期、ADR-044 B）のうち 1 回を「承認フロー 15 分以内」の机上検証に充当 | 机上 | 承認 SLA 達成 |
 
 - 通知: アプリ運用へ 2 週間前・顧客へ 3 営業日前（§NFR-5.5）。アプリ側確認項目（ログイン/JWT 検証/Refresh/JWKS）は §NFR-5.5 の役割分担表に従う。
 - KPI: 演習 RTO 達成率 90%+ / RPO 達成率 100% / Runbook 完走率 100% / AAR Action 90 日完了率 100%（ADR-051 §F.2 維持）。
-- Runbook 体系（U9 起草、本書が仕様）: RB-DR-00 判定チェックリスト（**新設**）/ RB-DR-01 Aurora Promote × 2 系統 / RB-DR-02 DNS・エッジ切替（REQ-DR-02 の連絡手順含む）/ RB-DR-03 大阪スケールアップ + KC 起動 + 検証 / **RB-DR-04' PITR + 差分 IaC 再生（旧 Realm Restore を置換）** / RB-DR-05 フェイルバック（禁止 3 操作を冒頭に明記）。
+- Runbook 体系（U9 起草、本書が仕様。**2026-07-30 D-18 コールド DR 反映**）: **RB-DR-00** 判定チェックリスト（リージョン災害か論理破壊かの切り分け + ITDR フラグ）/ **RB-DR-01** データ復元（(A) Aurora Global Promote × 2 系統 / (B) 不変スナップショット + PITR 復元）/ **RB-DR-02** DNS・エッジ**手動**切替（他組織連絡手順。コールド化で自動不要）/ **RB-DR-03** 大阪オンデマンド再構築（IaC: VPC/ROSA×2/Machine Pool/Operator/KC CR/SPI/Facade + 構成整合 + 検証）/ **RB-DR-04** 論理破壊リストア（L2 PITR 細粒度 / L3 不変スナップショットからの復元）/ **RB-DR-05** フェイルバック（計画 Switchover、禁止 3 操作を冒頭）。
 
 ---
 
@@ -392,7 +405,7 @@ keycloak-dr-aurora-sync §5.5 の手順を正式化する（大阪 Primary 継�
 | 4 | §A.2 表「Keycloak Realm 破損」行 | 「Realm Export Restore + 手動 / RTO 30 分-2h / RPO 24h」→ **「Aurora PITR + 差分 IaC 再生 / RTO 1-2h / RPO 5 分」**（改善として明記） |
 | 5 | §C 全体（C.1〜C.4） | 全面書換: C.1 戦略表に「E. Aurora Global 一体復元 + IaC（本書）」を追加し採用、旧 B 案の Export 部分を廃止。C.2 表の「Realm 設定 = GitOps Export 日次 / RPO 24h」行を削除し §8.2.2 の SSOT 表へ差替。C.3 は §8.3 参照に置換（keycloak provider の全 Realm IaC 化例示は 1000+ IdP で不成立のため削除、2 層 IaC へ）。C.4 は §8.5 参照へ |
 | 6 | §D / 全文の EKS 表記 | 「EKS Keycloak Replicas 6 / EKS DR Scale Up」→ ROSA HCP Machine Pool + KC CR replicas 表記へ読み替え確定（図の差替は任意、本書 §8.4.2 参照で可） |
-| 7 | §E.3 Runbook 表 | RB-DR-00 新設 / RB-DR-04 → **RB-DR-04'（PITR + 差分 IaC 再生）**へ置換 / RB-DR-02 に他組織エッジ連絡手順（REQ-DR-02）を追加（§8.7.2） |
+| 7 | §E.3 Runbook 表 | **2026-07-30 D-18 コールド DR 反映**: RB-DR-01 = データ復元（Promote / 不変スナップショット+PITR）/ RB-DR-03 = 大阪オンデマンド再構築（旧スケールアップを置換）/ RB-DR-04 = 論理破壊リストア（L2 PITR / L3 不変スナップショット）/ RB-DR-02 = 手動エッジ切替（§8.7.2） |
 | 8 | §G コスト | EKS 行を ROSA HCP 4 クラスタ実額（U6 §6.2.3 ≈ **$2,032/月**（infra Pool 別建て込み、うち大阪パイロットライト 2 クラスタ ≈ $602/月））参照へ差替。Tier 1 Hot Standby 行に「方式再検討要（read-only 制約）、Phase 2」と注記（§8.4.4） |
 | 9 | §H シミュレーション | §8.4.2 のタイムライン（T+50、条件 5 点付き成立）へ差替。「他組織エッジ切替」ステップの明示追加 |
 | 10 | Consequences | Positive「Realm Export 日次自動で設定同期」を「realm 構成も Aurora Global で RPO<1min 同期（Export 廃止で運用負荷減）」へ、Negative「Realm Export RPO 24 時間」を削除し「論理破壊時 RPO 5 分（PITR）」へ。**新 Negative: DR 切替最終段（エッジ）が他組織依存（REQ-DR-01/02 未合意時は RTO 1h 非保証）** |
@@ -415,6 +428,7 @@ keycloak-dr-aurora-sync §5.5 の手順を正式化する（大阪 Primary 継�
 | O-U8-6 | multi-cluster v2 の RHBK サポート版数 | research 残 TBD。未サポートなら upstream 手順（keycloak-benchmark cross-site-rosa）とのサポート切り分けを Red Hat に確認 | RHBK 26.4 導入前 |
 | O-U8-7 | Tier 1（RTO 30 分）方式 | read-only 制約下の Hot Standby 代替方式（Phase 2。規制業種契約が発生した場合のみ） | Phase 2 |
 | O-U8-8 | B-DR-1〜5（ヒアリング） | RTO/RPO/Tier 1 要否/訓練頻度/DR リージョンの顧客確定。本書は推奨デフォルト（Tier 2/年 2 回/大阪）で凍結済み、回答で差分改訂 | ヒアリング |
+| O-U8-10 | **リージョン災害 RPO のサブ決定（D-U8-14）** | (A) Aurora Global DB 維持〔RPO < 1 分・ストレージ常時複製・コンピュートは cold〕vs (B) 定期スナップショットのクロスリージョンコピーのみ〔RPO = 取得間隔・低コスト〕。**推奨 = (A)**。U6 と合同でコスト×RPO 許容値により確定 | U6 合同（Phase 1 実装前） |
 | O-U8-9 | **ITDR DynamoDB の大阪側方式 + Break-Glass 大阪側実体** | ITDR DynamoDB の大阪側方式（Global Tables 継続 vs 再構築許容 — 履歴 7 日分の消失可否）+ Break-Glass 大阪側実体（金庫・FIDO2・Regional 鍵）を **U7 O-U7-7 と合同で確定**。暫定 = Global Tables（ADR-051 §B.2 踏襲、§8.2.2） | U7 と合同（Phase 1 実装前） |
 
 ### 8.9.2 U9（運用・監視・IaC）への引き渡し
@@ -432,15 +446,16 @@ keycloak-dr-aurora-sync §5.5 の手順を正式化する（大阪 Primary 継�
 | D-U8-02 | 3 AZ + PDB maxUnavailable=1 + HPA（IdP-KC は予兆トリガ優先） | §8.1.2 |
 | D-U8-03 | リージョン内 DB Failover は自動（<1 分）、KC 再接続時間を O-U8-5 で追跡 | §8.1.3 |
 | D-U8-04 | パッチ = Operator Auto ローリング（ゼロダウン）/ マイナー = メンテ窓 + 1000 IdP 回帰 | §8.1.4 |
-| D-U8-05 | ADR-051 骨格維持（A-P / 80-20 / Tier 2 標準）、待機形態のみパイロットライトへ修正 | §8.2.1 |
-| D-U8-06 | **Realm Export 全廃**。復元 2 経路 = リージョン障害: Aurora Global 一体復元 / 論理破壊: PITR + 差分 IaC 再生（RPO 24h → 5min に改善） | §8.3.1 |
-| D-U8-07 | パイロットライト = インフラ Warm + **KC Scale 0**（Aurora Secondary read-only 制約） | §8.6.1 |
+| D-U8-05 | **2026-07-30 D-18 転換: 手動コールド DR / RTO ≈ 14 日 / 大阪平時プロビジョニングなし**（旧 Tier 2 RTO 1h・パイロットライトは廃止） | §8.2.1 |
+| D-U8-06 | **Realm Export 全廃**。復元 2 経路 = リージョン障害: 大阪再構築 + データリストア / 論理破壊: PITR + **イミュータブルスナップショット** + 差分 IaC 再生 | §8.3.1 |
+| ~~D-U8-07~~ | ~~パイロットライト = インフラ Warm + KC Scale 0~~ **廃止（2026-07-30 D-18、コールド化）→ D-U8-14 へ** | §8.3.1a |
 | D-U8-08 | RB-DR-00 判定基準 + 承認 SLA 15 分 | §8.4.1 |
-| D-U8-09 | **RTO 1h = 条件付き成立**（worst 50 分 + バッファ 10 分、成立条件 5 点） | §8.4.3 |
+| ~~D-U8-09~~ | ~~RTO 1h = 条件付き成立~~ **廃止（2026-07-30 D-18）→ RTO ≈ 14 日コールド DR（D-U8-05/14）**。旧積み上げは §8.4.3 に旧参考として保存 | §8.4.3 |
 | D-U8-10 | 全ユーザー再認証を製品仕様として明文化（Persistent sessions の継続は保証しないアップサイド） | §8.5.1 |
-| D-U8-11 | 大阪最小構成・平時同期対象・起動時間見積り | §8.6 |
+| ~~D-U8-11~~ | ~~大阪最小構成・平時同期対象~~ **廃止（2026-07-30 D-18、大阪は平時プロビジョニングなし）→ D-U8-14** | §8.6（旧参考） |
 | D-U8-12 | フェイルバック = 計画 Switchover（RPO 0）+ 禁止 3 操作 | §8.7.1 |
-| D-U8-13 | DR 訓練 = Game Day 年 2 回（H1 フル切替 / H2 論理破壊復元） | §8.7.2 |
+| D-U8-13 | DR 訓練 = Game Day 年 2 回（**H1 大阪オンデマンド再構築+リストア / H2 論理破壊 = PITR・イミュータブルスナップショット復元**、2026-07-30 D-18 反映） | §8.7.2 |
+| **D-U8-14** | **バックアップ/イミュータブルスナップショット戦略 + 大阪オンデマンド再構築**（2 障害シナリオ、Backup Vault Lock、RPO サブ決定 O-U8-10） | §8.3.1a |
 
 ---
 

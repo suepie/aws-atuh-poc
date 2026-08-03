@@ -1,5 +1,10 @@
 # PCI DSS v4.0.1 + APPI 準拠ギャップ分析 — 一次資料引用集 + 必須対応リスト
 
+> ⚠ **2026-07-30 更新: PCI DSS 部分は Phase 1 対象外、APPI 部分は継続有効**。
+> - **PCI DSS 部分（§1 サマリ / §2・§2.A スコープ判定 / §3 v4.0.1 引用 / §5 PCI マッピング / §7 の PCI 行 / §8 / §9 / Stage B/C の PCI 項目）は Phase 1 対象外**（B-PCI-1 = No、削除でなく凍結、将来 PCI 顧客受入時に再開）。
+> - **APPI 部分（§4 法 22-35 引用 / §4.6 法 28 外国第三者提供 / §6 APPI マッピング / §4.5 漏えい報告）は引き続き有効** — Red Hat SRE の越境閲覧に関する APPI 28 対応（クラウド利用の同意取得方針、[G-DPA](../basic-design/01-architecture-baseline.md)）は継続中。
+> 関連: [Baseline §1.4a](../basic-design/01-architecture-baseline.md) / [00a C-7](../basic-design/00a-remaining-tasks-and-effort.md)。
+
 > **作成日**: 2026-06-08
 > **最終更新**: **2026-07-15 §11 追加**（実装ガイド reference doc 導入 + 5 従業員類型 + Cat 分類フレーム + 12.9.2 契約条項の 4 主要更新）+ 2026-07-08 §2.A / §3.2.0 追記（Consumer / Cashier アカウント除外の判定 + Req 8 Applicability Notes verbatim 引用 + 3 シナリオ比較 + 業界事例）
 > **対象**: AWS 認証基盤 PoC（Keycloak v26.2、Stage A 完了状態）

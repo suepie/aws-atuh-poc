@@ -1,5 +1,7 @@
 # PCI DSS v4.0.1 適用範囲・実装ガイド（認証基盤事業者向け）
 
+> 🚫 **2026-07-30 更新: 本書は Phase 1 対象外（アーカイブ）**。**B-PCI-1 = No**（顧客に CHD 取扱なし）により PCI DSS 対応は不要と決定。本書の内容は**将来 PCI 対応顧客を受け入れる場合の参照用に保存**する（削除しない）。現行 Phase 1 の設計・契約はこの実装ガイドに従わない。関連: [Baseline §1.4a](../basic-design/01-architecture-baseline.md) / [00a C-7](../basic-design/00a-remaining-tasks-and-effort.md) / hearing B-PCI-1。
+
 > **目的**: 本基盤（Keycloak ベース B2B SaaS 認証基盤、CHD 非保持）における PCI DSS v4.0.1 適用範囲、5 従業員類型、Segmentation 3 パターン、責任分担、Trust Portal 設計、契約条項テンプレート、Phase 1-3 移行計画を集約する実装リファレンス。
 > **対象読者**: プラットフォーム設計者 / セキュリティ担当 / コンプラ担当 / 法務 / 監査対応担当
 > **位置付け**: [common/pci-dss-appi-compliance-gap.md](../common/pci-dss-appi-compliance-gap.md) の v4.0.1 準拠実装ガイド。既存 doc は v4.0.1 verbatim 引用と gap 分析、本 doc は**実装への具体マッピング**を担う。

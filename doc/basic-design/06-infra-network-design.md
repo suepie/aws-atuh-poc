@@ -147,7 +147,7 @@ flowchart TB
 |------|------|------|------|
 | 形態 | ROSA HCP（Classic 不採用: 新規作成期限公式化） | 同左 | P-01、[research](research/rosa-hcp-adoption-research.md) #1 |
 | SLA | 99.95%（P-04 の 99.9% を上回る） | 同左 | research #1 |
-| リージョン | 東京 ap-northeast-1（+ 大阪パイロットライト、§6.2.4） | 同左 | P-15 |
+| リージョン | 東京 ap-northeast-1（+ 大阪は**コールド DR** = 平時 ROSA なし・Aurora Global Secondary のみ、§6.2.4、2026-07-30 D-18） | 同左 | P-15 |
 | Multi-AZ | **3 AZ**。HCP の Machine Pool は AZ 単位のため **AZ ごとに 1 Machine Pool × 3** を作成 | 同左 | P-04/P-05 |
 | KC 配布 | RHBK Operator（OperatorHub、追加サブスク不要） | 同左 | research #3 |
 | Control Plane | **Red Hat サービスアカウント内**（API server × 2 + etcd × 3、3 AZ 冗長）。顧客 VPC には出ない。Worker → CP は顧客 VPC 内の **PrivateLink Endpoint** 経由。CP のサイジングは Worker 数に応じ **Red Hat が自動管理**（顧客関与なし） | 同左 | 2026-07-23 ユーザー検討（[research note](research/rosa-hcp-machine-pool-egress-notes.md)） |
@@ -190,7 +190,9 @@ Tier ごとに CPU プロファイルが 10-30 倍異なる（Broker = JWT/SAML 
 - **Machine Pool 名の実体（2026-07-24 注記）**: HCP はクラスタ作成時にサブネットごとの pool（`workers` / `workers-2`…）を自動作成する。本書の `default-az1/2/3` / `kc-az1/2/3` は論理名であり、IaC 上は「自動作成 pool（infra 役）+ 追加作成 pool（KC 役）」に対応付ける。
 - **アップグレード順序制約（U9 引き渡し）**: CP と Machine Pool は独立アップグレードで **CP を先行**、pool は CP から 2 マイナー版以内に維持（U9 §9.6 の KC 昇格ゲートと合わせて Runbook 化）。将来オプション: **AutoNode（Karpenter v1.9 ベース、2026Q2 に HCP 対応）**は Pool 事前定義不要の動的プロビジョニング — 本設計の準静的 infra + 動的 KC には従来型 Autoscaler が適合するため Phase 1 不採用、Phase 2 で再評価。
 
-### 6.2.3 決定 D-U6-05: コスト表（HCP cluster fee 前提、東京 2 + 大阪パイロットライト 2）
+### 6.2.3 決定 D-U6-05: コスト表（HCP cluster fee 前提、東京 2 + **大阪は平時 ROSA なし = コールド DR**）
+
+> **2026-07-30 D-18 転換**: DR をコールド化（U8 D-U8-14）。**大阪の常時 ROSA クラスタ（旧パイロットライト 2 × $301 = $602/月）を廃止**し、大阪の平時コストは Aurora Global Secondary ストレージ + バックアップ/クロスリージョンスナップショット + ECR ミラーのみ（データ層のみ常時、コンピュートは被災時にオンデマンド再構築）。下表の大阪パイロットライト 2 行は旧・参考。
 
 前提: HCP cluster fee $0.25/h ≈ $182.5/月/クラスタ、Worker ROSA fee $0.171/4vCPU/h（3y 契約 55% 引はパートナーチーム経由・**見積未取得**）、EC2 は 3y RI 単価（[sizing-guide §8](../reference/keycloak-cpu-bottleneck-sizing-guide.md)）。**概算 ±30%、Phase 1 ベースライン（c7g.xlarge × 3/クラスタ）時点**。
 
@@ -200,8 +202,8 @@ Tier ごとに CPU プロファイルが 10-30 倍異なる（Broker = JWT/SAML 
 | 東京 Broker infra Pool（c7g.large × 3） | — | $93 | $84 | **$177** |
 | 東京 IdP-KC（KC Pool c7g.xlarge × 3） | $182.5 | $186 | $169 | **$538** |
 | 東京 IdP-KC infra Pool（c7g.large × 3） | — | $93 | $84 | **$177** |
-| 大阪 Broker パイロットライト（**infra Pool: c7g.large × 2〔テイントなし〕+ KC 専用 Pool: min 0〔labeled/tainted、事前定義・平時ノードなし〕**） | $182.5 | $62 | $56 | **$301** |
-| 大阪 IdP-KC パイロットライト（同左） | $182.5 | $62 | $56 | **$301** |
+| ~~大阪 Broker パイロットライト~~ **廃止（2026-07-30 D-18、平時 ROSA なし）→ 常時 $0**（被災時オンデマンド再構築） | ~~$182.5~~ | — | — | **$0** |
+| ~~大阪 IdP-KC パイロットライト~~ **廃止（2026-07-30 D-18）→ 常時 $0** | ~~$182.5~~ | — | — | **$0** |
 | **ROSA 合計（4 クラスタ）** | $730 | $682 | $618 | **≈ $2,032/月** |
 
 - **2026-07-23 改訂**: HCP に Infra Node が無い帰結として infra Pool（東京 × 2 クラスタ分 ≈ +$354/月）を別建て加算（旧試算 $1,678 → **$2,032**）。大阪パイロットライトは最小 2 ノード(テイントなし)が infra を兼ねるため増分なし。
@@ -213,7 +215,9 @@ Tier ごとに CPU プロファイルが 10-30 倍異なる（Broker = JWT/SAML 
 
 ### 6.2.4 大阪（DR）側の扱い
 
-- 東京 + 大阪の **ROSA HCP 対称構成が成立**（AWS 公式リージョン表で確認済み、ADR-051 2026-07-23 更新）。
+> **2026-07-30 D-18 転換（コールド DR）**: 大阪は**平時 ROSA クラスタを持たない**。被災時に IaC で**オンデマンド再構築**（RTO ≈ 14 日、U8 D-U8-14）。以下の「大阪パイロットライト（平時 2 ノード + Aurora Global Secondary）」記述のうち **ROSA 常時ノード分は廃止**。**Aurora Global Secondary（データ層）は維持**（U8 D-U8-14 推奨 A、RPO < 1 分・ストレージのみ）。**CIDR/サブネットは再構築先として事前確保**（install 後不変制約のため、平時クラスタが無くても IP レンジは予約）。
+
+- 東京 + 大阪の **ROSA HCP 対称構成が成立**（AWS 公式リージョン表で確認済み、ADR-051 2026-07-23 更新。**平時は東京のみ稼働、大阪はオンデマンド再構築先**）。
 - 残: **G-OSAKA** — 大阪側の該当インスタンスタイプ在庫 + vCPU クォータの実確認（U1 §1.5 ゲート、§6.8）。
 - **大阪の Machine Pool 構成（2026-07-24 明確化）**: infra Pool（c7g.large × 2、テイントなし）+ **KC 専用 Pool（labeled/tainted、min 0、東京と同一のテイント/ラベル定義で事前作成）**。CIDR・サブネットも Failover 後の東京同等スケール（KC Pool max 9/18）を収容できるサイズで事前確保する（§6.2.1 サブネット設計参照）。
 - DR の Failover 手順・RTO/RPO 設計は U8（本書は「Broker/IdP-KC それぞれ大阪にパイロットライト・クラスタと Aurora Global Secondary を持つ」という物理配置のみ確定）。
@@ -266,7 +270,7 @@ Tier ごとに CPU プロファイルが 10-30 倍異なる（Broker = JWT/SAML 
 | クラスタ | Broker DB / IdP-KC DB の **2 系統**（各 Acct 内、共有しない） | ADR-033 §E-1 |
 | 東京構成 | Writer + Reader × 2（Multi-AZ）、I/O-Optimized（Write IOPS 14,000-42,000 見込み） | ADR-033 §A |
 | インスタンス | Broker: db.r7g.xlarge × 3 / IdP-KC: db.r7g.xlarge × 2（Phase 1。10M ピーク帯で Broker db.r7g.2xlarge 化を再評価） | ADR-033 §G、ADR-051 §B.1 |
-| DR | Aurora Global Database（大阪 Secondary Reader × 1、RPO < 1 min）。Failover 手順は U8 | ADR-051 §B.1、P-05 |
+| DR | Aurora Global Database（大阪 Secondary Reader × 1、RPO < 1 min）。**2026-07-30 D-18: コンピュート（ROSA）はコールド化するが Aurora Global〔データ層〕は維持**（D-U8-14 推奨 A、O-U8-10 で最終確定）+ イミュータブルスナップショット併用。Failover 手順は U8 | ADR-051 §B.1、P-05 |
 | 暗号化 | KMS MRK（CMK は Acct ごと。IdP-KC DB は PW ハッシュ保有のためバックアップ暗号化必須） | ADR-045、ADR-033 §H |
 | 接続 | **KC Pod SG → Aurora SG の直接続**（HCP でも worker は自 Acct VPC 内のため PrivateLink 不要 — 旧調査の「PrivateLink 経由」は CP↔worker 間の話） | research #8 |
 | `idmap` 補助 DB | **Broker Acct Aurora の別 DB（KC スキーマと分離）に暫定配置**（U3-OP-2、§6.8.1 O-8）。更新は Broker Acct 側ハンドラ経由のみ（D1 発は EventBridge クロスアカウントイベント、§6.1.2 経路 5） | U3 D3-03/D3-11 |

@@ -268,6 +268,27 @@ flowchart LR
 - oauth2-proxy = OIDC リバースプロキシ + ヘッダ注入 / Keycloak 対応: [oauth2-proxy 公式](https://oauth2-proxy.github.io/oauth2-proxy/) / [Keycloak OIDC provider](https://oauth2-proxy.github.io/oauth2-proxy/configuration/providers/keycloak_oidc/)
 - Keycloak の OIDC エンドポイント群(auth/token/certs/logout/userinfo): [Keycloak Securing apps](https://www.keycloak.org/securing-apps/oidc-layers)
 
+## A.1.2 App Acct 側 連携要件（集約チェックリスト、2026-07-30 新設）
+
+各アプリチーム/顧客アプリが **App Acct 側で用意すべき事項の集約点**。コード面の詳細は [U5 §5.6](05-token-session-authz-design.md)、JWKS/Authorizer の VPC 判断は [ADR-012 R.3](../adr/012-vpc-lambda-authorizer-internal-jwks.md) を正とし、本節はネットワーク/接続を中心に横断整理する。将来 U5 §5.6 の「Basis Integration Guide（Phase 1 成果物）」へ昇格させる土台。
+
+| 分類 | 必要事項 | 参照 |
+|---|---|---|
+| **A. 構成選択** | パターン 1（S3+APIGW+Lambda）or パターン 2（ALB+ECS、§A.1.1）。**BFF あり（推奨）or SPA-direct** の選択 | §A.1.1 |
+| **B. ドメイン（選択の余地なし）** | **BFF/Authorizer/セッション Cookie は必ずアプリドメイン（ファーストパーティ）**。`auth.basis`（Broker）はログイン redirect + JWKS のみ触る。Cookie は HttpOnly + Secure + SameSite | Curity token-handler |
+| **C. RP コード** | OIDC クライアント（`response_type=code` + state + nonce + PKCE、redirect_uri 完全一致）/ JWT 検証 6 点（ES256/JWKS、iss/aud/exp/azp/tenant_id）/ BFF は Confidential Client・トークンをブラウザに置かない / ログアウト（RT revoke・RP-Initiated・BFF は L4 Back-Channel 受信）/ 403 → Sorry redirect 規約 | **U5 §5.6** |
+| **D. VPC 内/外（選択）** | **アプリのリソース依存 + Egress ポスチャで決める（認証では決めない）**。BFF はバックエンド前段のため VPC 内が多い / Authorizer は非 VPC or ネイティブ（API GW JWT / ALB OIDC）が既定 | **ADR-012 R.3** |
+| **E. Broker への到達（重要）** | **バックチャネル（BFF の token 交換・Authorizer の JWKS）= Split-horizon DNS で `auth.basis` を内部 ALB に解決 + TGW で私設直通**。**外（Egress）へ出して公開エッジから入れ直さない（ヘアピン禁止）**。フロントチャネル（ブラウザ authorize）だけ公開 CloudFront 経由。`iss` はホスト名一貫・解決先のみ内外で分岐 | §A.1（B-I2）/ ADR-012 R.3 |
+| **F. JWKS** | **公開（RP 側 1h ローカルキャッシュ + kid 不一致時 refetch）が既定**。Zero-egress アプリのみ私設（TGW / S3 ミラー）。ネイティブ authorizer は公開 JWKS 到達時のみ可 | ADR-012 R.3 |
+| **G. DNS 配管** | App Acct VPC が `auth.basis` を**私設解決**できること（Broker Acct PHZ のクロスアカウント関連付け〔RAM〕or Route 53 Resolver ルール） | REQ-OUT-04 |
+| **H. アプリ公開エッジ** | 静的 = CloudFront + WAF + S3（OAC）→ **NFW 経路外**（通せない・通す必要なし、WAF で防御）。API = 公開 API GW（WAF）or **Private API GW（VPC Endpoint 経由で NFW 経路に乗る、O-APP-1）** | §A.1.1 / O-APP-1 |
+| **I. 前提確認（D/E/F の入力）** | ① App Acct → Broker Acct の **TGW 私設経路の有無** ② アプリが **Zero-egress か否か**（公開 JWKS/token に到達できるか） | — |
+
+**要点**:
+- **ドメイン（B）は必須要件**、**VPC（D）はアプリ都合の選択**、の 2 軸を混同しない。
+- **E が今回の確定事項**：VPC 内 BFF でも **TGW 私設直通（split-horizon DNS）**で Broker に到達。**Egress→公開→インバウンドの往復（ヘアピン）はしない**。
+- **認証を理由に VPC 内固定しない**（ADR-012 R.3）。Zero-egress アプリのみ E/F を私設化。
+
 ## A.2 ROSA HCP クラスタ内部詳細(Broker/IdP-KC 共通、差分は §A.2.2)
 
 **この粒度の図は本書が初出**(U6 §6.1.1 はアカウントレベル、doc/common/drawio は EKS 前提で未改版)。

@@ -7,7 +7,7 @@
 
 ## 3.0 背景・なぜここで決めるか / スコープ
 
-本基盤は **IdP フェデレーション専用**（P-07 γ シナリオ：管理者層のみローカル、P-3 は原則フェデ強制）であり、ユーザーレコードは「アプリが登録する」のではなく「JIT / SCIM / LDAP / 管理者 / アプリ発 CRUD の 5 経路から流入する」。経路ごとに SoT（Source of Truth）が異なるため、**識別子のデータモデルとライフサイクル（作成 → 無効化 → 物理削除）を経路横断で 1 冊に固定しないと、90 日バッチの誤削除・SCIM 削除済みユーザーの誤復活・マッピング DB の FK 崩壊が実装フェーズで必ず起きる**。要件定義フェーズで [jit-scim-coexistence-keycloak.md §10.4](../common/jit-scim-coexistence-keycloak.md)（以下 jit-scim）に G〜L 節として蓄積された決定を、基本設計として再構成・確定するのが本書である。
+本基盤は **IdP フェデレーション専用**（P-07 = 全顧客ユーザー〔テナント管理者 P-2 含む〕はフェデ、Broker ローカルは基盤運用者 P-1 のみ。2026-07-30 D-17）であり、ユーザーレコードは「アプリが登録する」のではなく「JIT / SCIM / 管理者 / アプリ発 CRUD の各経路から流入する」（**LDAP 経路は 2026-07-30 に Phase 1 対象外化**）。経路ごとに SoT（Source of Truth）が異なるため、**識別子のデータモデルとライフサイクル（作成 → 無効化 → 物理削除）を経路横断で 1 冊に固定しないと、90 日バッチの誤削除・SCIM 削除済みユーザーの誤復活・マッピング DB の FK 崩壊が実装フェーズで必ず起きる**。要件定義フェーズで [jit-scim-coexistence-keycloak.md §10.4](../common/jit-scim-coexistence-keycloak.md)（以下 jit-scim）に G〜L 節として蓄積された決定を、基本設計として再構成・確定するのが本書である。
 
 ### U2 / 他単元との境界
 
@@ -108,14 +108,14 @@ CREATE TABLE idmap.external_id_history (
 
 ### D3-04: 5 経路と `provisioned_by` 値体系の確定
 
-Keycloak でユーザーレコードが生まれる経路を次の 5 つに限定し、**経路マーカー `provisioned_by` を全経路で必ず刻む**（[jit-scim §10.4.B.1](../common/jit-scim-coexistence-keycloak.md) の 5 経路事実に P-17 の ⑤ を追加した設計）。
+Keycloak でユーザーレコードが生まれる経路を次に限定し（**③ LDAP は 2026-07-30 に Phase 1 対象外**、実質 ①②④⑤ + 移行）、**経路マーカー `provisioned_by` を全経路で必ず刻む**（[jit-scim §10.4.B.1](../common/jit-scim-coexistence-keycloak.md) の 5 経路事実に P-17 の ⑤ を追加した設計）。
 
 | # | 経路 | 対象 KC | SoT | `provisioned_by` | 書込者 | federated_identity | 90 日バッチ | Re-Activation |
 |---|---|---|---|---|---|:---:|:---:|:---:|
 | **①** | JIT（フェデ初回ログイン） | Broker | 顧客 IdP | `jit` | First Broker Login SPI（未設定時のみセット） | ✅ | **対象** | **対象** |
 | **②** | SCIM 受信（顧客 IdP → Broker: D2 / 顧客 HRIS → IdP-KC: D1） | Broker / IdP-KC | 顧客 IdP / HRIS | `scim` + `scim_active=true` | SCIM Facade（§3.5） | ログイン後に追加 | 対象外（SoT 尊重） | **禁止** |
-| **③** | LDAP User Federation | Broker | 顧客 AD/LDAP | `ldap`（+ `federation_link` 自動） | LDAP Provider 設定 | ❌（federation_link で判別） | 対象外（LDAP Sync が AD 側 Disable を反映、[ADR-025 §H.4.B](../adr/025-scim-positioning-and-receive-stance.md)） | 禁止（LDAP Sync 委譲） |
-| **④** | 管理者ローカル作成 = **非 IdP テナント mode A を含む**（§3.8 D3-17） | Broker / IdP-KC | 本基盤運用 / **非 IdP はテナント管理者（管理画面 = SoT）** | `local-admin`（**⚠ 未決: テナント管理者 portal 作成に新値 `portal` を切るか — D3-17**） | 管理者操作（Tenant Admin Portal / ADR-038） | ❌ | 対象外 | **禁止**（管理者操作待ち） |
+| ~~③~~ | **❌ Phase 1 対象外（2026-07-30、LDAP 顧客なし。`provisioned_by=ldap` は将来用に予約）** ~~LDAP User Federation~~ | Broker | 顧客 AD/LDAP | `ldap`（+ `federation_link` 自動） | LDAP Provider 設定 | ❌（federation_link で判別） | 対象外（LDAP Sync が AD 側 Disable を反映、[ADR-025 §H.4.B](../adr/025-scim-positioning-and-receive-stance.md)） | 禁止（LDAP Sync 委譲） |
+| **④** | 管理者作成（**P-1 運用者 = Broker/IdP-KC ローカル**、踏み台 / **フェデした P-2 テナント管理者が portal 経由で作る非 IdP テナント mode A ユーザ = IdP-KC ローカル PW**）（§3.8 D3-17、2026-07-30 D-17 精緻化） | Broker / IdP-KC | 本基盤運用 / **非 IdP はテナント管理者（管理画面 = SoT）** | `local-admin`（**⚠ 未決: テナント管理者 portal 作成分に新値 `portal` を切るか — D3-17**） | **P-1 運用者操作（踏み台）/ P-2 テナント管理者操作（Tenant Admin Portal / ADR-038、操作者自身はフェデ）** | ❌ | 対象外 | **禁止**（管理者操作待ち） |
 | **⑤** | **アプリ発 CRUD（P-17 新規）** | **IdP-KC** | **同居アプリ** | **`app`** + `provisioned_app=<client_id>` | 専用 API 層（D3-05） | ❌ | 対象外（アプリが SoT、下記） | **禁止**（アプリ操作待ち） |
 | — | Realm Import（移行時のみ） | 両方 | 旧システム | `realm_import` | 移行バッチ | JSON 次第 | 人間レビュー | 禁止 |
 

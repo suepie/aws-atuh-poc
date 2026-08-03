@@ -1,7 +1,7 @@
 # ADR-051: Multi-Region DR / Failover 詳細設計（Aurora Global + KMS MRK + IaC 再適用（Git SSOT））
 
 - **ステータス**: Proposed（要件定義フェーズで Accepted に昇格予定）
-- **日付**: 2026-06-23 作成、**2026-07-23 更新（ROSA HCP 転換: 大阪対称構成の成立確認 + multi-cluster v2 追記 + 基本設計 [U8](../basic-design/08-availability-dr-design.md) §8.8 に基づく正式改訂: Realm Export 全廃 → 復元 2 経路（IaC 再適用 + Aurora Global DB）/ パイロットライト（KC Scale 0）/ Tier 1 Phase 2 化 / コスト ROSA 実額化）**、**2026-07-24 更新（基本設計 Wave 3 [U9](../basic-design/09-operations-observability-design.md) 確定: テナント層 IaC 再生手段を「keycloak-config-cli / オンボーディング API」併記から自作オンボーディング API による Admin API 差分適用に一本化 — U9 D-U9-10）**
+- **日付**: 2026-06-23 作成、**2026-07-23 更新（ROSA HCP 転換: 大阪対称構成の成立確認 + multi-cluster v2 追記 + 基本設計 [U8](../basic-design/08-availability-dr-design.md) §8.8 に基づく正式改訂: Realm Export 全廃 → 復元 2 経路（IaC 再適用 + Aurora Global DB）/ パイロットライト（KC Scale 0）/ Tier 1 Phase 2 化 / コスト ROSA 実額化）**、**2026-07-24 更新（U9 確定: テナント層 IaC 再生を自作オンボーディング API に一本化 — U9 D-U9-10）**、**2026-07-30 更新（D-18: DR をパイロットライト → 手動コールド DR〔RTO ≈ 14 日・大阪オンデマンド再構築〕へ転換 + イミュータブルスナップショット追加。冒頭バナー参照、U8 D-U8-14 が SSOT）**
 
 > **2026-07-23 実行基盤転換に伴う追記（[ADR-056](056-rosa-adoption-decision.md) 逆転）**:
 > - **大阪（ap-northeast-3）は ROSA HCP 対応済み**（AWS 公式リージョン表 2026-07-23 確認）→ **東京 + 大阪の ROSA HCP 対称 DR 構成が成立**。本文の実行基盤記述（EKS/ECS 前提箇所）は ROSA HCP に読み替え。残 TBD: 大阪側インスタンス在庫・vCPU クォータの実確認
@@ -21,6 +21,9 @@
   - [§NFR-5 DR](../requirements/proposal/nfr/05-dr.md)
 
 ---
+
+> 🚨 **2026-07-30 D-18 転換（コールド DR）— 本 ADR は要改訂、[U8](../basic-design/08-availability-dr-design.md) D-U8-05/06/14 が SSOT**:
+> 従前の**パイロットライト（インフラ Warm + KC Scale 0）・RTO 1h・大阪常時最小構成は廃止**。新方針 = **手動コールド DR / RTO ≈ 14 日 / 大阪は平時 ROSA プロビジョニングなし・被災時にオンデマンド再構築（IaC）**。**Aurora Global DB（データ層）は維持**（RPO < 1 分、コンピュートのみ cold。最終は U8 O-U8-10 でサブ決定）。**2 障害シナリオを分離**: ① リージョン災害 = 大阪再構築 + データリストア / ② 論理破壊（IdP データ破壊・誤削除・ランサム）= **Aurora PITR + イミュータブルスナップショット（AWS Backup Vault Lock Compliance mode / 別 Acct コピーで削除権限分離）**からその場リストア。以下本文の「パイロットライト / RTO 1h / 大阪常時 2 ノード」記述は**旧・参考**（U8 が正）。
 
 ## Context
 
@@ -76,13 +79,13 @@
 
 ### 採用方針
 
-**「Active-Passive パイロットライト（インフラ Warm + KC Scale 0）+ Region 単位 Failover + 自動化 80% + 手動承認 20%」**を採用。RTO 1 時間 / RPO 1 分を標準目標。**Tier 1（RTO 30 分）は Phase 2 検討（Phase 1 は提供しない、[U8 §8.4.4](../basic-design/08-availability-dr-design.md) — パイロットライトでは不成立）**。（2026-07-23 改訂: 旧「Warm Standby（KC Scale 1）」は Aurora Global Secondary が read-only で Keycloak が起動できないため不成立 — U8 D-U8-07）
+**（⚠ 2026-07-30 D-18 で置換 — 以下は旧。新 = 手動コールド DR / RTO ≈ 14 日 / 大阪オンデマンド再構築、U8 D-U8-14）** **「Active-Passive パイロットライト（インフラ Warm + KC Scale 0）+ Region 単位 Failover + 自動化 80% + 手動承認 20%」**を採用（旧）。RTO 1 時間 / RPO 1 分を標準目標（旧）。**Tier 1（RTO 30 分）は Phase 2 検討（Phase 1 は提供しない、[U8 §8.4.4](../basic-design/08-availability-dr-design.md) — パイロットライトでは不成立）**。（2026-07-23 改訂: 旧「Warm Standby（KC Scale 1）」は Aurora Global Secondary が read-only で Keycloak が起動できないため不成立 — U8 D-U8-07）
 
 | 項目 | 採用方針 |
 |---|---|
 | **プライマリ Region** | **ap-northeast-1（東京）** |
 | **DR Region** | **ap-northeast-3（大阪）** |
-| **Failover モデル** | **Active-Passive パイロットライト（インフラ Warm + KC Scale 0）**（Active-Active は Split-Brain リスク、運用負荷大。旧 Warm Standby（KC Scale 1）は Aurora Secondary read-only 制約で不成立 — U8 D-U8-07）|
+| **Failover モデル** | **2026-07-30 D-18: 手動コールド DR（大阪平時プロビジョニングなし・オンデマンド再構築、RTO ≈ 14 日）**（旧: パイロットライト インフラ Warm + KC Scale 0 は廃止、U8 D-U8-14）|
 | **RTO 標準** | **1 時間**（一般顧客）/ Tier 1（30 分）は **Phase 2 検討**（Phase 1 は提供しない、U8 §8.4.4）|
 | **RPO 標準** | **1 分**（Aurora Global Database / DynamoDB Global Tables 採用）|
 | **MTPD** | 4 時間（業界標準）|
@@ -90,8 +93,8 @@
 | **DynamoDB** | **Global Tables**（ITDR / Adaptive Auth / Tenant Admin Audit / DSAR Requests）|
 | **S3** | **Cross-Region Replication**（監査ログ / SPA bundle / エラー / 案内画面 SPA / DSAR Export 一時保管。**Realm Export 一時保管は廃止** — U8 D-U8-06）|
 | **KMS** | **Multi-Region Keys (MRK)**（[ADR-045](045-cryptographic-key-management-strategy.md)）|
-| **Keycloak** | **ROSA HCP 東西対称配置、DR はパイロットライト（インフラ Warm + KC CR replicas=0 — Aurora Secondary read-only のため KC は起動不能）**（U8 D-U8-07 / D-U8-11）|
-| **Realm 設定** | **Aurora Global DB（realm 構成は DB に一体複製、リージョン障害時は Promote のみで復元完了）+ IaC 再適用（論理破壊時: PITR 主 + 差分再生。基盤層 Terraform + テナント層は自作オンボーディング API による Admin API 差分適用に一本化〔keycloak-config-cli は K-1〔realm representation 禁止〕と原理衝突のため不採用 — U9 D-U9-10、2026-07-24 確定〕）。Realm Export は全用途で禁止**（U2 §2.7.4 / U8 D-U8-06）|
+| **Keycloak** | **2026-07-30 D-18: 平時は東京のみ稼働、大阪は被災時にオンデマンド再構築（IaC）**（旧: 東西対称パイロットライト KC replicas=0 は廃止、U8 D-U8-14）|
+| **Realm 設定** | **Aurora Global DB（realm 構成は DB に一体複製、リージョン障害時は Promote のみで復元完了）+ IaC 再適用（論理破壊時: PITR 主 + **イミュータブルスナップショット（Backup Vault Lock、2026-07-30 D-18 追加）** + 差分再生。基盤層 Terraform + テナント層は自作オンボーディング API による Admin API 差分適用に一本化〔keycloak-config-cli は K-1〔realm representation 禁止〕と原理衝突のため不採用 — U9 D-U9-10、2026-07-24 確定〕）。Realm Export は全用途で禁止**（U2 §2.7.4 / U8 D-U8-06）|
 | **CloudFront** | **Multi-Origin Failover**（自動）+ 全 Acct 共通 |
 | **Route 53** | **Health Check + Failover Routing**（DNS TTL 30 秒）|
 | **ROSA HCP / Lambda / Step Functions** | **両 Region に IaC で配置**、DR Region は最小構成（U8 §8.6.1）|

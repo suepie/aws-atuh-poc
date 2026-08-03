@@ -32,7 +32,7 @@
 
 ### 2.0.3 本書の前提（Baseline v1 からの主参照）
 
-P-01（ROSA HCP + RHBK）/ P-02（10M MAU）/ P-06（L2 単一 Realm + Organizations + tenant_id）/ P-07（γ: 管理者層のみローカル）/ P-08（3 階層識別子）/ P-10（JWT Stage 1 最小・PII 非搭載）/ P-12（JIT + SCIM 併用、SPI 案 B、3 系統 Flow 配置）/ P-16（1000+ IdP 条件付き成立）/ P-17（IdP-KC 別 Acct・2 クラスタ）。
+P-01（ROSA HCP + RHBK）/ P-02（10M MAU）/ P-06（L2 単一 Realm + Organizations + tenant_id）/ P-07（全ユーザーフェデ化: 顧客ユーザ〔テナント管理者含む〕はフェデ、ローカルは基盤運用者 P-1 のみ。2026-07-30 D-17）/ P-08（3 階層識別子）/ P-10（JWT Stage 1 最小・PII 非搭載）/ P-12（JIT + SCIM 併用、SPI 案 B、3 系統 Flow 配置）/ P-16（1000+ IdP 条件付き成立）/ P-17（IdP-KC 別 Acct・2 クラスタ）。
 
 ---
 
@@ -194,7 +194,7 @@ flowchart LR
 
 > **全系統共通の設計制約（PoC F-6、[jit-scim §10.4.F.3](../common/jit-scim-coexistence-keycloak.md)）**: Keycloak のフロー評価は「同一レベルに REQUIRED があると同レベルの ALTERNATIVE が無視される」。`requiresUser()=true` の Custom SPI を **top-level に REQUIRED で置いてはならない**。必ず forms サブフロー内（Username Password Form の後）または Broker Flow 末尾に配置する。本制約は IaC レビューのチェック項目（U9）に必ず含める。
 
-### 2.3.1 系統①: ローカル認証（Browser Flow、管理者のみ）
+### 2.3.1 系統①: ローカル認証（Browser Flow、基盤運用者 P-1 のみ）
 
 **採用**: カスタム Browser Flow **`browser-std`**（Realm `broker` の既定 Browser Flow に設定）:
 
@@ -210,12 +210,12 @@ browser-std
     └── Last Login Tracker（Custom SPI ①）   (REQUIRED)      ← PoC V3' 実測位置
 ```
 
-- **対象**: P-07 γ シナリオにより、ローカル PW 認証に到達するのは**管理者層のみ**（`provisioned_by=local-admin`、Platform Admin + IdP なしテナントの Tenant Admin）。一般ユーザ（P-3/P-4）は HRD で必ずフェデ経路（顧客 IdP or IdP-KC）へ流れる。
-- **管理者 MFA**: WebAuthn/Passkey 必須（§FR-3.4、broker-data-model §5）。IdP-KC 側 Realm `idp` の Browser Flow も同型（HRD Authenticator は不要、Organization Identity-First + forms のみ）。**PW ポリシー length(12) と WebAuthn Policy（attestation / user verification）の具体値は U7 §7.7.2 / §7.8.1 参照**。
+- **対象（2026-07-30 D-17 改訂）**: Broker の `browser-std` ローカル PW 認証に到達するのは**基盤運用者 P-1 のみ**（`provisioned_by=local-admin`、Platform Admin + Break-Glass）。**アクセスは踏み台/SSM のクローズド接続に限定**（/admin 3 層防御 = U6 D-U6-11/12・U7 D-U7-12）。**顧客テナント管理者（P-2）は Broker ローカルではなくフェデ**: 顧客 IdP 保有テナント = 顧客 IdP、非保有テナント = **IdP-KC 収容**（Broker からは idpkc-oidc01 経由のフェデ）。よって一般ユーザ（P-3）もテナント管理者（P-2）も HRD で必ずフェデ経路へ流れ、**Broker の browser-std には到達しない**。
+- **運用者 MFA**: P-1 は WebAuthn/Passkey 必須（§FR-3.4、broker-data-model §5）。**IdP-KC 側 Realm `idp` の Browser Flow は 2 用途を担う**（HRD Authenticator 不要、Organization Identity-First + forms のみの同型）: ① IdP-KC 自身の運用者 P-1 のローカル認証（踏み台）② **IdP なしテナントのエンドユーザ・テナント管理者のローカル PW 認証（通常 Web ログイン、Broker からはフェデ）**。②の MFA（WebAuthn/TOTP エンロール強制）は IdP-KC 側で強制（U4 D-U4-04 ケース B/C、U7 D-U7-14）。**PW ポリシー length(12) と WebAuthn Policy（attestation / user verification）の具体値は U7 §7.7.2 / §7.8.1 参照**。
 - **Composite Role 2 状態（U7 引き渡しの受領）**: PAM L3 の JIT 昇格モデルとして **`<role>-eligible` / `<role>-active` の 2 状態 Composite Role（ADR-040 / U7 §7.6）を両 Realm（`broker` / `idp`）の Role 設計に含める**（例: `realm-admin-eligible` / `realm-admin-active`。昇格 API + EventBridge 自動剥奪は U7 §7.6.1）。
 - **根拠**: PoC V3' PASS 構成をそのまま採用（forms 内 REQUIRED 配置）。
 - **代替案**: 管理者専用 Realm 分離 — Realm 数増と ADR-017 の趣旨に反するため不採用。管理者ログインは /admin 保護（U6、ADR-039 §E）+ 専用 client で境界を作る。
-- **未決事項**: 管理者の IdP フェデ化（弊社内 IdP、P-1）が確定すればローカル PW は縮退。B-ADM 系ヒアリング待ち。
+- **決定（2026-07-30 D-17）**: 顧客テナント管理者（P-2）はフェデ確定（Broker ローカルから除外）。Broker ローカルは基盤運用者 P-1 + Break-Glass のみに縮退。**残: P-1 運用者自身を将来弊社内 IdP でフェデ化するか**は B-ADM 系ヒアリング待ち（確定すれば Broker ローカルは Break-Glass のみへ更に縮退）。
 
 ### 2.3.2 系統②: フェデレーション（First Broker Login + Post Broker Login）
 
@@ -251,7 +251,7 @@ post-broker-std（Post Broker Login Flow）
 |---|---|---|
 | `acme-001234`（ハイフンあり・@なし） | HRD SPI: `getByAlias("acme")` → Org リンク IdP 解決 | `kc_idp_hint` AuthNote 設定 → Identity Provider Redirector が IdP へ 302。`login_hint=<userid>` 転送 |
 | `alice@acme.com`（@あり） | HRD SPI は attempted() で降格 → Organization Identity-First Login（v26 標準）が domain → Org → IdP 解決 | IdP 複数リンク時はテナント限定セレクター（hrd-implementation §4 パターン B、v26 自動動作） |
-| 解決不能（Org なし / IdP リンクなし） | フォールバック | Username Password Form へ降格（= 管理者ローカルのみ通過し得る。一般ユーザは認証失敗で終端） |
+| 解決不能（Org なし / IdP リンクなし） | フォールバック | Username Password Form へ降格（= 運用者ローカル P-1 のみ通過し得る。顧客ユーザ〔P-2/P-3〕は認証失敗で終端） |
 
 上表の判定を時系列のフローチャートとして図示する（2026-07-26 図示追加）:
 
@@ -260,7 +260,7 @@ flowchart TB
     IN["画面 1 の入力値"] --> Q1{"@ を含む?"}
     Q1 -->|"はい (email 形式)"| A1["HRD SPI は attempted() 降格<br/>Organization Identity-First (v26 標準) が<br/>domain から Org を解決"]
     Q1 -->|"いいえ"| Q2{"ハイフンを含む?"}
-    Q2 -->|"いいえ"| FB["フォールバック:<br/>Username Password Form へ降格<br/>(管理者ローカルのみ通過し得る)"]
+    Q2 -->|"いいえ"| FB["フォールバック:<br/>Username Password Form へ降格<br/>(運用者ローカル P-1 のみ通過)"]
     Q2 -->|"はい"| P["最初のハイフンで parse<br/>→ tenant / userid"]
     P --> Q3{"getByAlias(tenant)<br/>で Org 解決?"}
     Q3 -->|"不在"| FB
@@ -278,7 +278,7 @@ flowchart TB
 - **HRD モード制御**: Org attribute `hrd_mode`（`identifier` / `email` / `both`、既定 `both`）で顧客ごとの受入経路を宣言（U4 の画面文言と連動）。
 - **根拠**: ADR-055（P3: ハイフン区切り + 薄い SPI + Organizations 内部データ、外部 DB なし）、ADR-020（ヒントキー戦略）、§FR-1.2.0.D。**HRD による IdP 一覧非表示は UX 選好ではなく 1000+ IdP の性能成立条件**（§2.7.2、research 必須対策 2）。
 - **代替案**: 方式 C（顧客別 URL + CloudFront Function）は Phase 2 の大口顧客オプション（ADR-055 §F）。方式 B（SPA 主導 kc_idp_hint）はポータル・ディープリンク限定の補助（Universal Login 原則維持）。
-- **未決事項**: HRD SPI が `requiresUser()=false` で forms 先頭 REQUIRED に置けることの Flow 互換確認（F-6 は requiresUser()=true の SPI で実測。HRD SPI の同位置動作は G-SPI-Compat の PoC 項目に追加）。ハイフンなし・@なし入力（素の userid）の扱い（エラー文言 vs 管理者ローカル試行）は U4。
+- **未決事項**: HRD SPI が `requiresUser()=false` で forms 先頭 REQUIRED に置けることの Flow 互換確認（F-6 は requiresUser()=true の SPI で実測。HRD SPI の同位置動作は G-SPI-Compat の PoC 項目に追加）。ハイフンなし・@なし入力（素の userid）の扱い（エラー文言 vs 運用者ローカル試行）は U4。
 
 ### 2.3.4 系統④: ステップアップ認証（acr / LoA）
 

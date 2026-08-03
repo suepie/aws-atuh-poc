@@ -80,6 +80,7 @@ flowchart LR
 | バルクインポート | **Should**（初期移行用） |
 | 段階的取り込み | JIT or SCIM |
 | 移行検証 | テストユーザーで事前確認 |
+| **バルク投入バッチ規約**（2026-08-03 追記、是正 2 / FC-4）| **Partial Import API は 1 コール 1000 ユーザーが上限**（[keycloak.org importExport](https://www.keycloak.org/server/importExport)）。数千名/顧客 × 複数顧客を繰り返すため、**投入は 1000 件バッチに分割 + 冪等リトライ + 件数照合**を標準とする。Realm Import（起動時 JSON 一括）は初期構築時のみ、運用中の追加投入は Partial Import / Admin API バッチを用いる |
 
 ### TBD / 要確認
 

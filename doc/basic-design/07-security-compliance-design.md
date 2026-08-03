@@ -5,6 +5,13 @@
 **前提: [01-architecture-baseline.md](01-architecture-baseline.md) Baseline v1（P-01〜P-18、特に P-03 / P-17 / P-18）**
 上位文書: [00-basic-design-plan.md](00-basic-design-plan.md) §U7
 
+> ⚠ **2026-07-30 意思決定による改訂待ち（[00a §0 決定ログ](00a-remaining-tasks-and-effort.md) / C-7・D-17）**:
+> - **PCI DSS は対応不要（B-PCI-1）** → 本書の PCI 関連（§7.7.2 B-MFA-PCI-1 / §7.8.1 G-PCI-WAF ほか）は **Phase 1 対象外に降格**予定（削除でなく無効化注記、将来再開可）。
+> - **FIPS 140-2 は不要で確定（C-201）**（P-03 確定）。
+> - **全ユーザーフェデ化（A-5-2）** → **D-U7-14 の「管理者 = ローカル PW+WebAuthn 必須」は要見直し**（運用者=ローカル / テナント管理者=フェデ〔顧客 IdP なら MFA は顧客責任・IdP-KC 収容なら IdP-KC が強制〕）。
+> - **APPI 28（G-DPA）** = クラウド利用の同意は取得方針、残は Red Hat SRE 越境閲覧の確認中。
+> 本文の該当節は D-17/C-7 改訂までは旧前提のまま。
+
 ---
 
 ## 7.0 背景・なぜここで決めるか・スコープ
@@ -446,14 +453,14 @@ flowchart LR
 - **代替**: Governance mode — 特権による解除が可能で WORM 主張が弱く、QSA 説明性で劣後。Security Lake — Phase 1 は過剰、OCSF 移行（ITDR Phase 5）時に再評価。
 - **未決**: OpenSearch のサイジング（ログ量実測後、U9）。
 
-### 7.7.2 決定 D-U7-14: Phishing-resistant MFA（PCI Req 8.4/8.5.1）— WebAuthn を管理系必須・D-U4-04 整合
+### 7.7.2 決定 D-U7-14: Phishing-resistant MFA — WebAuthn を管理系必須・D-U4-04 整合（2026-07-30 D-17 反映。PCI 参照は対象外化だが WebAuthn 必須はセキュリティベースラインとして維持）
 
 **採用**: TOTP の replay 窓（±30s）を踏まえ、**WebAuthn（FIDO2 / Passkeys）を次の範囲で必須化**する:
 
 | 対象 | Phase 1 要件 | U4 との整合 |
 |---|---|---|
-| P-1 弊社運用者 | **WebAuthn 必須**（PW + WebAuthn、TOTP 不可） | D-U4-04 ケース D（管理者 PW+WebAuthn）そのまま |
-| P-2 テナント管理者 | **WebAuthn 必須**（初回ログイン時エンロール強制） | D-U4-04 ケース B + エンロール強制 |
+| P-1 弊社運用者（**Broker/IdP-KC ローカル・踏み台/SSM 接続**） | **WebAuthn 必須**（PW + WebAuthn、TOTP 不可） | D-U4-04 ケース D（基盤運用者 P-1）そのまま |
+| P-2 テナント管理者（**2026-07-30 D-17: フェデ化により 2 分岐**） | ① 顧客 IdP 保有テナント = **顧客 IdP 側 MFA を信頼**（`mfa_indicator` 記録・監視、基盤は補完しない）② 非 IdP テナント = **IdP-KC 収容で WebAuthn 必須**（初回エンロール強制） | ① D-U4-04 ケース A' / ② ケース B + エンロール強制 |
 | P-4 ローカルフェデなし従業員 | WebAuthn 推奨・TOTP 許容（ケース C フォールバック） | D-U4-04 ケース B/C |
 | P-3 フェデ従業員 | 顧客 IdP 側 MFA を信頼（`mfa_indicator` 評価、ADR-031）。**顧客 IdP の MFA 品質は契約の Responsibility Matrix で顧客責任と明記**（§7.7.4） | D-U4-04 ケース A |
 | Break-Glass | FIDO2 ハードウェアキー必須（ADR-040 §C.2） | — |
@@ -586,7 +593,7 @@ flowchart TB
 | D-U7-11 | PAM 4 層の写像確定: IIC = 6 Acct 読み替え + Broker/IdP-KC 同時昇格排他、Composite Role 2 状態を両 Realm（U2 引き渡し）、Break-Glass は自管理 3 Acct のみ | §7.6.1 |
 | D-U7-12 | /admin = D-U6-11 3 層で P1-01 を読み替え、特権経路 = IIC→SSM→内部ホスト名、監査ログ集約先 = 監査 Acct 一元（WORM 7 年）、B-PAM-1〜4 ゲート参照 | §7.6.2 |
 | D-U7-13 | 監査ログ = CW 90 日（即時 3 ヶ月充足）+ Firehose → S3 **Object Lock Compliance 7 年** + Athena、全ソース scrubbing 通過後保存 | §7.7.1 |
-| D-U7-14 | Phishing-resistant MFA = **WebAuthn を P-1/P-2 必須**、P-3 = **IdP 実施 + 基盤は記録のみ（2026-07-26 改訂、補完撤去。PCI 8.4.2 リスク明示 → 契約ゲート B-MFA-PCI-1）**、Req 8.3.9 適用外化は同ゲート依存 | §7.7.2 |
+| D-U7-14 | Phishing-resistant MFA = **WebAuthn を P-1（基盤運用者・踏み台）+ 非 IdP テナントの P-2（IdP-KC 収容）で必須**、顧客 IdP 保有テナントの P-2・P-3 = **顧客 IdP 実施 + 基盤は記録のみ**（2026-07-30 D-17）。**※PCI 対応は対象外化（B-PCI-1）につき PCI 8.4.2/8.3.9・B-MFA-PCI-1 は廃止、WebAuthn 必須はセキュリティベースラインとして維持** | §7.7.2 |
 | D-U7-15 | 漏えい報告 SOP 7 ステップ（速報 3-5 日 / 確報 30・60 日、規則 7 条 4 類型判定表、ITDR L3/L4 と接続）+ Red Hat DPA = Phase 1 契約前ゲート | §7.7.3-4 |
 | D-U7-16 | zero-egress 案 B を**セキュリティ観点で採用推奨**（ECR ミラー = サプライチェーン単一検証点 + Egress 統制単純化）、最終決定は U6 O-10 | §7.7.5 |
 | D-U7-17 | Bot/DDoS 分離 = WAF Bot Control/ATP/Rate Limit は要求仕様（REQ-IN-01 明細 + REQ-OUT-05 ログ共有）、自管理最低線 = KC Brute Force + Enumeration 対策 + ITDR。REQ-IN-01 不成立のまま PCI 顧客契約禁止 | §7.8.1 |
