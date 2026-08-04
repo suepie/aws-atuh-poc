@@ -465,6 +465,7 @@ Broker 内部 username は `<orgAlias>-<userid>`（Username Template Importer �
 1. **F-3**: `unmanagedAttributePolicy` は **realm 属性では無効**。必ず User Profile API/config で設定する。
 2. **F-8**: User Profile JSON に **`_comment` 等の未定義キーを入れると拒否される**。IaC テンプレートにコメントを書かない（コメントは IaC 側コードコメントで）。
 3. ライフサイクル属性（`scim_active` 等）の permissions は admin のみ（`ADMIN_EDIT` 相当）。SPI 書込属性のポリシーは [jit-scim §10.4.F.4.4](../common/jit-scim-coexistence-keycloak.md) に従い `ENABLED` を既定とし、`ADMIN_EDIT` で足りるかは G-SPI-Compat で実測確定する。
+4. **`email(optional)` 宣言の実機成立性（2026-08-03 追加、FC-5 → G-UProfile-Email）**: 上表は `email` を必須にしない（§FR-1.2.0.D、email 非保有=工場系顧客を収容）。しかし Keycloak には (a) Declarative User Profile で email を optional にすると **firstName/lastName 等の依存属性のバリデーションが失敗**する既知不具合（[keycloak#21265](https://github.com/keycloak/keycloak/issues/21265)）、(b) **`UPDATE_EMAIL` Required Action / Verify Profile 画面が optional 指定を無視し email 必須のまま**振る舞う不具合（[keycloak#33497](https://github.com/keycloak/keycloak/issues/33497)）がある。**email 非保有前提の本基盤では必ず踏む地雷**のため、`email(optional)` 宣言が (a)(b) を回避して 3 経路（新規登録 / JIT Importer / Admin 作成）で完走することを Phase 1 前 PoC ゲート **G-UProfile-Email**（§2.8.1）で確認する。
 
 - **根拠**: [jit-scim §10.4.F.4.4](../common/jit-scim-coexistence-keycloak.md)（User Profile 明示宣言は Phase 1 必須）、broker-data-model §2 ③、ADR-033 §G.3 Minimum Storage L2（宣言属性を上表に限定 = 保有データ最小化の物理的強制）。
 - **代替案**: `unmanagedAttributePolicy=ADMIN_EDIT` で未宣言属性を許容 — 属性のサイレント増殖と PII 混入を防げないため不採用（Minimum Storage 方針に反する）。
@@ -546,6 +547,7 @@ Broker 内部 username は `<orgAlias>-<userid>`（Username Template Importer �
 | **G-IdP-Scale P-6** | Terraform 単一 vs 分割 state の plan 時間 | 分割閾値決定 | §2.7.5 |
 | **G-IdP-Scale P-7** | パッチアップグレード（26.x→26.x+1）を 1000 IdP データセットで実施 | リグレッション検知手順確立 | §2.7.1 |
 | **G-SPI-Compat** | RHBK 26.4 × upstream 26.x Custom SPI 互換（SPI ①②③④ 全数 + HRD SPI の forms 先頭配置動作） | 全 SPI 動作 + API 差分ゼロ or 修正済 | §2.4 全体 |
+| **G-UProfile-Email** | `email(optional)` 宣言の実機検証（FC-5）: 依存属性 firstName/lastName の検証失敗（[kc#21265](https://github.com/keycloak/keycloak/issues/21265)）と `UPDATE_EMAIL`/Verify Profile の optional 無視（[kc#33497](https://github.com/keycloak/keycloak/issues/33497)）を回避し、email 非保有ユーザーが登録・ログイン・プロフィール更新を完走できる | 3 経路（新規登録 / JIT Importer / Admin 作成）で email 空のまま完走 | §2.6 設計制約 4 |
 
 ### 2.8.2 U2 に影響する他ゲート（他単元主管）
 
@@ -588,11 +590,13 @@ Broker 内部 username は `<orgAlias>-<userid>`（Username Template Importer �
 | 9 | AAL2/3 要求操作の一覧・max_age 最終値 | U5 |
 | 10 | Adaptive Phase 2 の Flow 挿入設計 | U7 + 本書改訂 |
 | 11 | SPI 書込属性の unmanagedAttributePolicy（`ENABLED` 既定で `ADMIN_EDIT` に絞れるか、§2.6 設計制約 3） | G-SPI-Compat |
+| 12 | User Profile で `email` 任意化時の依存属性・`UPDATE_EMAIL` 不具合回避（FC-5、§2.6 設計制約 4） | G-UProfile-Email |
 
 ---
 
 ## 改訂履歴
 
+- 2026-08-03 (v1.5): **§2.6 に設計制約 4（`email(optional)` 実機成立性、FC-5）を追加** — Declarative User Profile で email 任意化時の Keycloak 既知不具合（依存属性検証失敗 [kc#21265] / `UPDATE_EMAIL`・Verify Profile の optional 無視 [kc#33497]）を回避することを **新規 PoC ゲート G-UProfile-Email**（§2.8.1）で確認。email 非保有=工場系顧客収容の前提条件。§2.8.4 に未決 12 を追加、Baseline §1.5 にゲート登録。
 - 2026-07-26 (v1.4): 可読性向上のため mermaid 図 3 点を追加（§2.2.4 Realm/Org/IdP/Client 構成対応図 / §2.3.3 HRD 解決フローチャート / §2.4 SPI 3 JAR・4 機能配置図）。決定内容の変更なし（図示のみ）。
 - 2026-07-24 (v1.3): **§2.2.5 新設 — 2-tier セッション・ログアウト・再認証の整合（02a GAP-1〜5 解消）**: idpkc-oidc01 の logout 連鎖既定 ON（backchannelSupported）/ IdP-KC Realm TTL を Broker 同値に固定（IaC 共通変数化）/ AAL3 の acr_values+prompt=login 転送仕様 / prompt・max_age は IdP-KC のみ転送（外部 IdP は Broker 側 max_age 評価で代替）/ login_hint 書式契約（<userid> 正 + 完全形寛容受理）。G-SPI-Compat に storeToken=false × logout id_token_hint 検証を追加。
 

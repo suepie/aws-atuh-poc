@@ -86,6 +86,7 @@ ADR-039 の 5 アカウント体系を Broker/IdP-KC 分割で **6 アカウン�
 |--------|------|---------|
 | G-IdP-Scale | 1000/2000 IdP 実測 PoC P-1〜P-7。**2026-07-30: 実測困難のため仮定値で設計継続 → ブロッカーでなく「後追い検証」に格下げ** | U2 |
 | G-SPI-Compat | RHBK 26.4 × upstream 26.x Custom SPI 互換(HRD/Re-Activation) | U2 |
+| G-UProfile-Email | **2026-08-03 追加(FC-5)**: User Profile で `email` を任意化した際の Keycloak 既知不具合(依存属性 firstName/lastName の検証失敗 [kc#21265]・`UPDATE_EMAIL`/Verify Profile の optional 無視 [kc#33497])を回避し、email 非保有ユーザーが登録/ログイン/更新を完走できるか実機検証。**email 非保有顧客(工場系)収容の前提条件**(U2 §2.6 設計制約 4 / §2.8.1) | U2 |
 | G-SCIM | SCIM Facade の SCIM 2.0 準拠検証(Entra/Okta SCIM Validator + D1/D2 E2E + Soft Delete 写像 + deprovisioned_at セット確認。U3 §3.7.2 で再定義。旧 Metatavu 3 点は Metatavu 採用判断時のみ)。**2026-07-24 拡張(U3 §3.8)**: ① スケール次元(500/1000 テナント externalId 検索 p99 / バルク 5 万件中の他テナント遅延 / Writer 流量制御下 Aurora 負荷 — G-IdP-Scale と同一データセット併走)② 非 IdP E2E(D1 SCIM→EventBridge→統合射影→初回ログイン sub バックフィル + 読取 p99) | U3 |
 | ~~G-LDAP~~ | ❌ **廃止(2026-07-30、LDAP 顧客なし)** — B-SCIM-13 も不要 | — |
 | G-OSAKA | 大阪インスタンス在庫・vCPU クォータ実確認 | U6 |
@@ -102,5 +103,6 @@ U2(Keycloak 論理設計)/ U3(ID・プロビジョニング)/ U6(インフラ・
 
 ## 改訂履歴
 
+- 2026-08-03: §1.5 ゲート表に **G-UProfile-Email** 追加（FC-5、email 非保有ユーザー収容のための User Profile `email` 任意化の実機検証。U2 §2.6 設計制約 4 / §2.8.1）。あわせて移行系の是正 4 件を各書へ反映（ADR-019 §B 方式②前提+方式①フォールバック / §NFR-9.1 Partial Import 1000 件バッチ規約 / §FR-2.3.2.B email 非保有版 周知差分 / ADR-038 §C 資格情報配布モード）。
 - 2026-07-30: **ユーザー意思決定 10 件を反映**（§1.4a 新設）。P-03 FIPS 不要確定 / P-05・P-15 DR を手動 14 日・大阪オンデマンド再構築へ転換 / P-07 全ユーザーフェデ化（管理者ローカル前提の U2/U3/U4/U7 要改訂 D-17）/ P-12 LDAP 対象外 / P-16 G-IdP-Scale 仮定値化。ゲート表: G-LDAP・G-PCI-WAF 廃止 / G-DPA・G-EGRESS 軟化・合意方向 / G-EDGE-DR 転換（D-18）。
 - 2026-07-23: Wave 2 整合性レビュー反映 — §1.5 ゲート表に G-PCI-WAF / G-DPA / G-EDGE-DR の 3 行追加(M-11)、L1〜L4 用語注意の 1 行追加(L-7)。Baseline v1 の凍結前提(P-01〜P-18)自体は変更なし。
