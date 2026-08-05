@@ -1,13 +1,13 @@
-# central-canary-puppeteer — Central Auth Check Canary（本体）
+# central-probe-lib — Central Probe（認証 probe 本体）
 
 前提: [../README.md](../README.md)（データ契約）/ [ADR-059](../../../../adr/059-central-auth-check-canary-architecture.md) / [§C-6.6.8](../../../proposal/common/06-external-api-auth-architecture.md)
-Runtime: **`syn-nodejs-puppeteer-16.1`**（Lambda Node.js 22.x、namespace `@aws/synthetics-puppeteer`、AWS SDK v3）
+Runtime: **Lambda（Node.js 22.x / AWS SDK v3）**。synthetics 抽象は https 実装で注入（Synthetics runtime は将来オプション、[18 章 §18.4.1](../../18-scan-modes-and-scheduling.md)）
 
 > ⚠ 参照実装。Region / アカウント ID / ドメインは環境に合わせ、Phase 4 PoC で検証すること。
 
 ## 役割
 
-ネットワーク監査 Acct に配置する **Central Canary**。5min 周期で全アプリの認証を外形監視する（Pattern β）。各アプリに canary を配らず、App Registry への登録で自動追随する。
+ネットワーク監査 Acct に配置する **Central Probe（Lambda）**。**M1 デプロイ差分（自動）/ M3 フル監査（手動）**（[18 章](../../18-scan-modes-and-scheduling.md)）で全アプリの認証を外形監視する（Pattern β）。各アプリに probe を配らず、App Registry への登録で自動追随する。
 
 ## 処理フロー
 
@@ -22,7 +22,7 @@ handler (index.js)
       ├ classify(neg, pos, authPattern)     … 4×4 真偽値表（lib/classify.js）
       ├ putMetrics(app, counts)             … CloudWatch Metrics（lib/emit.js）
       └ severity!=OK → invokeAlertRouter()  … Alert Router Lambda へ
-  └ CRITICAL があれば canary を throw で FAIL（SuccessPercent アラーム発火）
+  └ CRITICAL があれば AuthCheckCritical メトリクス発火（CloudWatch アラーム > 0、18 章 §18.4）
 ```
 
 ## ファイル構成
@@ -47,29 +47,34 @@ handler (index.js)
 | `ALERT_ROUTER_FN` | ✅ | Alert Router Lambda 名/ARN |
 | `ENV_FILTER` | — | 監視対象環境の絞込（例 `prod`）|
 
-## Canary 実行ロールに必要な権限
+## 実行ロール（`CentralProbeRole`）に必要な権限
 
 - `dynamodb:Scan`（App Registry）
 - `s3:GetObject`（OpenAPI Registry）
 - `secretsmanager:GetSecretValue` / `secretsmanager:DescribeSecret`（test token、CMK なら `kms:Decrypt`）
 - `cloudwatch:PutMetricData`（Namespace `APIPlatform/AuthCheck`）
 - `lambda:InvokeFunction`（Alert Router）
-- CloudWatch Logs / S3 artifact（Synthetics 標準）
+- CloudWatch Logs（Lambda 標準）
 
-## デプロイ（CLI 例）
+## デプロイ（CLI 例、probe Lambda）
 
 ```bash
 # lib/ を含めて zip 化（node_modules は同梱 or Lambda Layer）
-zip -r canary.zip index.js lib/ node_modules/
-aws synthetics create-canary \
-  --name central-auth-check \
-  --runtime-version syn-nodejs-puppeteer-16.1 \
-  --execution-role-arn arn:aws:iam::<network-audit-acct>:role/CentralCanaryRole \
-  --schedule Expression="rate(5 minutes)" \
-  --artifact-s3-location s3://<artifact-bucket>/central-auth-check/ \
-  --code Handler=index.handler,S3Bucket=<code-bucket>,S3Key=canary.zip \
-  --run-config EnvironmentVariables="{REGISTRY_TABLE=app-registry,OPENAPI_BUCKET=openapi-registry,ALERT_ROUTER_FN=alert-router}"
+zip -r probe.zip index.js lib/ node_modules/
+aws lambda create-function \
+  --function-name central-auth-probe \
+  --runtime nodejs22.x \
+  --role arn:aws:iam::<network-audit-acct>:role/CentralProbeRole \
+  --handler index.handler \
+  --timeout 300 --memory-size 512 \
+  --zip-file fileb://probe.zip \
+  --environment "Variables={REGISTRY_TABLE=app-registry,OPENAPI_BUCKET=openapi-registry,ALERT_ROUTER_FN=alert-router}"
+
+# M1（自動）: EventBridge ルール（OpenAPI Export S3 イベント等）から invoke（18 章 §18.2）
+# M3（手動）: aws lambda invoke --function-name central-auth-probe --payload '{"mode":"full"}' /dev/null
 ```
+
+> **将来オプション（Synthetics）**: M2 定期 heartbeat 等を追加する場合のみ `aws synthetics create-canary`（runtime `syn-nodejs-puppeteer-16.1`）で同じ probe lib を実行できる（[18 章 §18.4.1](../../18-scan-modes-and-scheduling.md)）。
 
 ## テスト
 

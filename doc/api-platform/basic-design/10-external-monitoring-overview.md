@@ -156,7 +156,7 @@ flowchart LR
     style FIX fill:#c8e6c9
 ```
 
-> **静的解析（①の 04 章）をすり抜けた認証漏れを、稼働後に④〜⑧で捕捉する**のが本機構の存在意義（具体例は [11 章 §11.8](11-central-canary-architecture.md) の 4 ケース）。①〜③はライフサイクル、④〜⑤の 1 実行内の詳細は [11 章 §11.1](11-central-canary-architecture.md) のシーケンス図。
+> **静的解析（①の 04 章）をすり抜けた認証漏れを、稼働後に④〜⑧で捕捉する**のが本機構の存在意義（具体例は [11 章 §11.8](11-central-probe-architecture.md) の 4 ケース）。①〜③はライフサイクル、④〜⑤の 1 実行内の詳細は [11 章 §11.1](11-central-probe-architecture.md) のシーケンス図。
 
 ---
 
@@ -164,10 +164,10 @@ flowchart LR
 
 | 章 | 設計 | 実装（code-samples/）|
 |---|---|---|
-| 11 | 認証 probe アーキテクチャ | [central-canary-puppeteer/](code-samples/central-canary-puppeteer/) |
+| 11 | 認証 probe アーキテクチャ | [central-probe-lib/](code-samples/central-probe-lib/) |
 | 12 | App Registry | [app-registry-lambda/](code-samples/app-registry-lambda/) |
 | 13 | OpenAPI Registry | [openapi-export-lambda/](code-samples/openapi-export-lambda/) |
-| 14 | 実装ガイド（probe lib / モノリス・Private 対応）| [central-canary-puppeteer/](code-samples/central-canary-puppeteer/) |
+| 14 | 実装ガイド（probe lib / モノリス・Private 対応）| [central-probe-lib/](code-samples/central-probe-lib/) |
 | 15 | Alert Router | [alert-router-lambda/](code-samples/alert-router-lambda/) |
 | 全 | データ契約 SSOT | [code-samples/README.md](code-samples/README.md) |
 

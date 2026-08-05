@@ -27,7 +27,7 @@
 
 | ディレクトリ | 役割 | Runtime |
 |---|---|---|
-| [central-canary-puppeteer/](central-canary-puppeteer/) | Central Probe 本体（共通 probe lib：OpenAPI 動的発見、Hybrid 検証、4×4 分類）| Lambda（probe lib）※dir 名は歴史的 |
+| [central-probe-lib/](central-probe-lib/) | Central Probe 本体（共通 probe lib：OpenAPI 動的発見、Hybrid 検証、4×4 分類）| Lambda（Node.js 22 / SDK v3）|
 | [multi-checks-blueprint/](multi-checks-blueprint/) | **将来オプション**（Synthetics）: 小規模 Multi Checks JSON（≤10 checks、OAuth ネイティブ）| `syn-nodejs-5.1` |
 | [app-registry-lambda/](app-registry-lambda/) | App Registry CRUD（Custom Resource から呼ばれる登録 API）| Node.js 22 / SDK v3 |
 | [openapi-export-lambda/](openapi-export-lambda/) | OpenAPI Export Custom Resource（API GW get-export → S3 Put）| Node.js 22 / SDK v3 |
@@ -149,7 +149,7 @@
 
 1. `app-registry-lambda` + `openapi-export-lambda` をネットワーク監査 Acct にデプロイ（Cross-Acct Role 設定）
 2. `alert-router-lambda` + SNS トピック（P1/P2/P3）をデプロイ
-3. `central-canary-puppeteer` の probe lib を **probe Lambda** としてデプロイ（M1=EventBridge 起動 / M3=手動 invoke、18 章）
+3. `central-probe-lib` の probe lib を **probe Lambda** としてデプロイ（M1=EventBridge 起動 / M3=手動 invoke、18 章）
 4. 各 App Acct の Service Catalog 製品に Custom Resource（App Registry 登録 + OpenAPI Export）を組込
 5. Phase 4 PoC: 1 App Acct 相当で end-to-end 検証
 

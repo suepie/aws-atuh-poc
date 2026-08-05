@@ -1,5 +1,5 @@
 {
-  "name": "central-canary-puppeteer",
+  "name": "central-probe-lib",
   "version": "1.0.0",
   "description": "Central Auth Check Canary (CloudWatch Synthetics Puppeteer). App Registry(DynamoDB) + OpenAPI Registry(S3) を Scan して全アプリの認証外形を Negative/Positive で probe し、4x4 真偽値表で分類する。ADR-059 Pattern β。",
   "main": "index.js",

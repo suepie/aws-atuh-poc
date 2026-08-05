@@ -1,7 +1,7 @@
 # 18. スキャン実行モードとスケジューリング
 
-前提: [00-basic-design-plan.md](00-basic-design-plan.md) / [11-central-canary-architecture.md](11-central-canary-architecture.md) / [17-deployment-integration-and-registration.md](17-deployment-integration-and-registration.md)
-実装: [code-samples/central-canary-puppeteer/](code-samples/central-canary-puppeteer/)（probe lib を流用）
+前提: [00-basic-design-plan.md](00-basic-design-plan.md) / [11-central-probe-architecture.md](11-central-probe-architecture.md) / [17-deployment-integration-and-registration.md](17-deployment-integration-and-registration.md)
+実装: [code-samples/central-probe-lib/](code-samples/central-probe-lib/)（probe lib を流用）
 
 > **本章は認証 probe の実行モデルの SSOT**。実行基盤は **Lambda**、実行モードは **M1 デプロイ差分（自動）+ M3 フル監査（手動）**（+ 将来 M2）。CloudWatch Synthetics は不使用（将来オプション、§18.4）。10/11 章の頻度・基盤の記述は本章が上書きする。実行モデルを Synthetics から Lambda に定めた**経緯・理由は [ADR-059](../../adr/059-central-auth-check-canary-architecture.md)**。
 
@@ -122,7 +122,7 @@ aws lambda invoke --function-name central-auth-probe \
 | アラーム | canary FAIL → SuccessPercent<100 | **CloudWatch metric `AuthCheckCritical > 0`** |
 | コスト | run ごと $0.0012 上乗せ + 定期実行分 | **イベント駆動で概ね無料枠内**（価格比較は [ADR-059](../../adr/059-central-auth-check-canary-architecture.md)）|
 
-> **実装資産は無駄にならない**: `central-canary-puppeteer/lib/*` はそのまま Lambda から流用。`index.js`（Synthetics handler）を Lambda handler に転用し、synthetics 注入を https 実装に差し替える（後続の実装タスク、[code-samples/](code-samples/) に `probe-lambda/` として追加）。
+> **実装資産は無駄にならない**: `central-probe-lib/lib/*` はそのまま Lambda から流用。`index.js`（Synthetics handler）を Lambda handler に転用し、synthetics 注入を https 実装に差し替える（後続の実装タスク、[code-samples/](code-samples/) に `probe-lambda/` として追加）。
 
 ### §18.4.1 Synthetics を将来使う場合
 
@@ -156,6 +156,6 @@ M2（常時 heartbeat）を追加する / HAR・スクリーンショット・Mu
 
 ## §18.x 関連
 
-- [11-central-canary-architecture.md](11-central-canary-architecture.md) — probe / classify / 4×4 の詳細（実行モデルは本章が上書き）
+- [11-central-probe-architecture.md](11-central-probe-architecture.md) — probe / classify / 4×4 の詳細（実行モデルは本章が上書き）
 - [17-deployment-integration-and-registration.md](17-deployment-integration-and-registration.md) — M1 トリガとなるデプロイ検知・登録
 - [13-openapi-registry-design.md](13-openapi-registry-design.md) — OpenAPI の S3 versioning（差分の元データ）

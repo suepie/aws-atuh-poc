@@ -3,7 +3,7 @@
 /**
  * Alert Router Lambda（ADR-059 Central Auth Check Canary / Pattern β）
  *
- * canary（central-canary-puppeteer）から Alert イベント（README §2.6）を受け、
+ * canary（central-probe-lib）から Alert イベント（README §2.6）を受け、
  * severity（CRITICAL/WARN/INFO）に基づき P1/P2/P3 の SNS トピックへ Publish する。
  *
  * 通知先 SNS ARN の解決:

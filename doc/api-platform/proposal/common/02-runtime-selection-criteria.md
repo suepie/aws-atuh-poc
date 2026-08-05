@@ -86,7 +86,7 @@ flowchart LR
 
 ### §C-2.1.1.A 第 4 パターン：D. BFF（Backend for Frontend）⭐
 
-A（SPA + API）の派生形として、**SPA/モバイルと API の間にサーバサイドの BFF を挟む**パターン。ブラウザに token を持たせず機密性を高める。認証の持ち方が **2 層**なのが最大の特徴（CSRF 責任分界は [ADR-057](../../../adr/057-csrf-protection-responsibility-boundary.md)、外形監視は [basic-design 14 章 §14.3](../../basic-design/14-canary-implementation-guide.md)）。
+A（SPA + API）の派生形として、**SPA/モバイルと API の間にサーバサイドの BFF を挟む**パターン。ブラウザに token を持たせず機密性を高める。認証の持ち方が **2 層**なのが最大の特徴（CSRF 責任分界は [ADR-057](../../../adr/057-csrf-protection-responsibility-boundary.md)、外形監視は [basic-design 14 章 §14.3](../../basic-design/14-probe-implementation-guide.md)）。
 
 | 観点 | D. BFF |
 |---|---|

@@ -1,6 +1,6 @@
 # 15. Alert Router 設計
 
-前提: [00-basic-design-plan.md](00-basic-design-plan.md) / [11-central-canary-architecture.md](11-central-canary-architecture.md)
+前提: [00-basic-design-plan.md](00-basic-design-plan.md) / [11-central-probe-architecture.md](11-central-probe-architecture.md)
 実装: [code-samples/alert-router-lambda/](code-samples/alert-router-lambda/) / データ契約: [code-samples/README.md §2.5/§2.6](code-samples/README.md)
 
 ---

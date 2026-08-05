@@ -50,10 +50,10 @@ API プラットフォーム標準の要件定義（`proposal/` 配下: §FR-API
 | # | ファイル | 主題 | 主インプット | Phase |
 |---|---------|------|------------|:---:|
 | 10 | `10-external-monitoring-overview.md` | 外形監視 総論（ADR-059 要約 + 実装物ナビ）| ADR-059、§C-6.6.8 | 後続 |
-| 11 | `11-central-canary-architecture.md` | Central Canary 詳細設計（Puppeteer vs Multi Checks / 4×4 真偽値表 / Smoke test）| ADR-059、§C-6.6.8 | 後続 |
+| 11 | `11-central-probe-architecture.md` | 認証 probe 詳細設計（処理フロー / Hybrid 検証 / 4×4 真偽値表 / Positive トークン管理）| ADR-059、§C-6.6.8 | 後続 |
 | 12 | `12-app-registry-design.md` | App Registry（DynamoDB）スキーマ・CRUD | ADR-059 | 後続 |
 | 13 | `13-openapi-registry-design.md` | OpenAPI Registry（S3）構造・Export Custom Resource | ADR-059、§C-API-5 | 後続 |
-| 14 | `14-canary-implementation-guide.md` | Puppeteer / Multi Checks 実装ガイド + モノリス / Private 対応 | ADR-059 §D/§E | 後続 |
+| 14 | `14-probe-implementation-guide.md` | probe lib 実装ガイド + モノリス / Private 対応（Synthetics は将来オプション）| ADR-059 §D/§E | 後続 |
 | 15 | `15-alert-routing-design.md` | 4×4 真偽値表 Alert Router 設計（P1/P2/P3 分岐）| §C-6.6.8 | 後続 |
 | 16 | `16-cross-account-iam-design.md` | Cross-Acct 登録 5 案比較 / StackSets 配布 | ADR-039/059 | 後続 |
 | 17 | `17-deployment-integration-and-registration.md` | デプロイ検知と登録（Service Catalog / CI/CD / EventBridge の 3 層）| §C-API-5 / ADR-059 | 後続（質問対応で追加）|
@@ -65,7 +65,7 @@ API プラットフォーム標準の要件定義（`proposal/` 配下: §FR-API
 
 | ディレクトリ | 内容 | Phase |
 |---|---|:---:|
-| `code-samples/central-canary-puppeteer/` | Puppeteer canary 完全実装 + 単体テスト + README | 後続 |
+| `code-samples/central-probe-lib/` | Central Probe（probe lib）完全実装 + 単体テスト + README | 後続 |
 | `code-samples/multi-checks-blueprint/` | Multi Checks JSON テンプレ + synthetics.json | 後続 |
 | `code-samples/app-registry-lambda/` | App Registry CRUD Lambda | 後続 |
 | `code-samples/openapi-export-lambda/` | OpenAPI Export Custom Resource Lambda | 後続 |

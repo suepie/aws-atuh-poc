@@ -31,7 +31,7 @@
 
 ### C（私）が代行できること
 3. SAM CLI 導入: `brew install aws-sam-cli`
-4. [aws-samples/synthetics-canary-local-debugging-sample](https://github.com/aws-samples/synthetics-canary-local-debugging-sample) の `template.yml` / `cw-synthetics.js` shim を流用し、CodeUri を `central-canary-puppeteer/` に向けた **SAM テンプレ + event.json を作成**
+4. [aws-samples/synthetics-canary-local-debugging-sample](https://github.com/aws-samples/synthetics-canary-local-debugging-sample) の `template.yml` / `cw-synthetics.js` shim を流用し、CodeUri を `central-probe-lib/` に向けた **SAM テンプレ + event.json を作成**
 5. `sam build && sam local invoke -e event.json` を実行・結果検証
 
 → **あなたは「Docker 起動 + S3 バケット 1 個」だけ**。残りは私がやります。

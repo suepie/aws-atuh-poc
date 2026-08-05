@@ -10,9 +10,9 @@ OAuth Client Credentials / API Key / Basic / SigV4 がネイティブ対応で�
 
 ---
 
-## 1. central-canary-puppeteer との使い分け
+## 1. central-probe-lib との使い分け
 
-| 観点 | multi-checks-blueprint（本ディレクトリ）| central-canary-puppeteer |
+| 観点 | multi-checks-blueprint（本ディレクトリ）| central-probe-lib |
 |---|---|---|
 | Runtime | `syn-nodejs-5.1`（Node.js のみ、ブラウザなし）| `syn-nodejs-puppeteer-16.1`（ヘッドレス Chrome）|
 | endpoint 数 | **≤ 10 チェック / canary**（上限あり）| 制限なし（OpenAPI から動的発見）|

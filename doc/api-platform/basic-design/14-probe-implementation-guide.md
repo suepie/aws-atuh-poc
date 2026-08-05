@@ -1,7 +1,7 @@
 # 14. 認証 probe 実装ガイド
 
-前提: [00-basic-design-plan.md](00-basic-design-plan.md) / [11-central-canary-architecture.md](11-central-canary-architecture.md)
-実装: [code-samples/central-canary-puppeteer/](code-samples/central-canary-puppeteer/) / [code-samples/multi-checks-blueprint/](code-samples/multi-checks-blueprint/)
+前提: [00-basic-design-plan.md](00-basic-design-plan.md) / [11-central-probe-architecture.md](11-central-probe-architecture.md)
+実装: [code-samples/central-probe-lib/](code-samples/central-probe-lib/) / [code-samples/multi-checks-blueprint/](code-samples/multi-checks-blueprint/)
 
 ---
 
@@ -16,7 +16,7 @@
 flowchart LR
     A["11 章<br/>アーキ設計"] --> THIS["14 章 実装ガイド<br/>lib 構成 / 検証方式"]
     R["12/13 章<br/>Registry データ源"] --> THIS
-    THIS --> IMPL["code-samples/<br/>central-canary-puppeteer"]
+    THIS --> IMPL["code-samples/<br/>central-probe-lib"]
     THIS --> AL["15 章<br/>Alert Router"]
     style THIS fill:#fff9c4
 ```
@@ -25,7 +25,7 @@ flowchart LR
 
 ## §14.1 probe lib の構成（Lambda 実行）
 
-`central-canary-puppeteer/` のモジュール分割:
+`central-probe-lib/` のモジュール分割:
 
 | ファイル | 役割 | 検証 |
 |---|---|:---:|
@@ -118,7 +118,7 @@ Internal ALB / API GW Private endpoint など VPC 内部のみの API も監視�
 
 ## §14.6 テスト
 
-`central-canary-puppeteer` の `node --test`: **27 PASS**（classify 16 + probe統合 4 + extractEndpoints 7）。probe統合は synthetics スタブ + 実 HTTP モックで認証漏れ（Neg=200→CRITICAL/P1）を実検知。
+`central-probe-lib` の `node --test`: **27 PASS**（classify 16 + probe統合 4 + extractEndpoints 7）。probe統合は synthetics スタブ + 実 HTTP モックで認証漏れ（Neg=200→CRITICAL/P1）を実検知。
 
 ---
 

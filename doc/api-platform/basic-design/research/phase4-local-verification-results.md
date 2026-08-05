@@ -80,7 +80,7 @@
 
 ## 3. P4-3 canary probe→classify 統合（実行済み）
 
-`central-canary-puppeteer/test/probe-integration.test.js`:
+`central-probe-lib/test/probe-integration.test.js`:
 - **synthetics スタブ**（executeHttpStep を実 http リクエストで代替）+ **ローカル HTTP モックサーバ**（認証ヘッダ有無で status 出し分け）で、**実物の probe.js（authPattern 分岐）+ classify.js** を end-to-end 実行。
 
 | ケース | probe 実測 | classify 実測 | 結果 |
@@ -94,7 +94,7 @@
 
 ### 3.1 canary logic 全ユニット/統合（2026-07-26 追加）
 
-`central-canary-puppeteer` の `node --test` 全体: **27 PASS**（classify 16 + probe-integration 4 + openapi extractEndpoints 7）。
+`central-probe-lib` の `node --test` 全体: **27 PASS**（classify 16 + probe-integration 4 + openapi extractEndpoints 7）。
 - `test/openapi.test.js` 新規: `extractEndpoints` のアノテーション解釈（skip-auth-check / positive-test / path-params dummy 置換 / cookie-redirect / cleanup）を検証。
 
 ### 3.2 full オーケストレーション（LocalStack、部分成立）
@@ -118,7 +118,7 @@ brew install aws-sam-cli        # or 公式インストーラ
 # Docker Desktop を起動（デーモン）
 git clone https://github.com/aws-samples/synthetics-canary-local-debugging-sample.git
 # 同 sample の template.yml / cw-synthetics.js を流用し、CodeUri を
-#   central-canary-puppeteer に向ける。event.json に canaryName / artifactS3Location を設定
+#   central-probe-lib に向ける。event.json に canaryName / artifactS3Location を設定
 sam build && sam local invoke -e event.json
 
 # --- P4-2 full: Lambda を LocalStack で ---
@@ -137,7 +137,7 @@ localstack start            # DynamoDB/S3/SNS/SecretsManager/API GW をエミュ
 | `iac-guard-rules/api-gw-authorizer-required.guard` | ALB ルールを `some` 演算子に修正（誤 FAIL 解消）|
 | `semgrep-rules/test-fixtures/{vulnerable,clean}.py` | 新規（検証フィクスチャ）|
 | `iac-guard-rules/test-fixtures/{noncompliant,compliant}.yaml` | 新規（検証フィクスチャ）|
-| `central-canary-puppeteer/test/probe-integration.test.js` | 新規（P4-3 統合テスト）|
+| `central-probe-lib/test/probe-integration.test.js` | 新規（P4-3 統合テスト）|
 
 ## 6. 総括
 

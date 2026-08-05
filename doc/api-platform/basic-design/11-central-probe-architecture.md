@@ -1,7 +1,7 @@
 # 11. 認証 probe アーキテクチャ（Central Probe）
 
 前提: [00-basic-design-plan.md](00-basic-design-plan.md) / [10-external-monitoring-overview.md](10-external-monitoring-overview.md)
-実装: [code-samples/central-canary-puppeteer/](code-samples/central-canary-puppeteer/) / データ契約: [code-samples/README.md](code-samples/README.md)
+実装: [code-samples/central-probe-lib/](code-samples/central-probe-lib/) / データ契約: [code-samples/README.md](code-samples/README.md)
 
 ---
 
@@ -44,7 +44,7 @@ sequenceDiagram
     CC->>CC: ⑨ CRITICAL があれば AuthCheckCritical 発火（→ アラーム、18 章 §18.4）
 ```
 
-実装対応: [`index.js`](code-samples/central-canary-puppeteer/index.js)（handler）+ `lib/registry.js`（①）+ `lib/openapi.js`（②③）+ `lib/probe.js`（④⑤）+ `lib/classify.js`（⑥）+ `lib/emit.js`（⑦⑧）。
+実装対応: [`index.js`](code-samples/central-probe-lib/index.js)（handler）+ `lib/registry.js`（①）+ `lib/openapi.js`（②③）+ `lib/probe.js`（④⑤）+ `lib/classify.js`（⑥）+ `lib/emit.js`（⑦⑧）。
 
 ---
 

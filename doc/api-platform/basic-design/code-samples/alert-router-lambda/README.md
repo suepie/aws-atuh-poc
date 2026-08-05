@@ -1,7 +1,7 @@
 # alert-router-lambda — 4×4 分類 → SNS routing
 
 Central Auth Check Canary（[ADR-059](../../../../adr/059-central-auth-check-canary-architecture.md) / Pattern β）の **Alert Router**。
-canary（[central-canary-puppeteer](../central-canary-puppeteer/)）が 4×4 真偽値表で分類した結果（Alert イベント）を受け、
+canary（[central-probe-lib](../central-probe-lib/)）が 4×4 真偽値表で分類した結果（Alert イベント）を受け、
 `severity` に応じて **P1 / P2 / P3** の SNS トピックへ振り分ける。
 
 > ⚠ 参照実装。Region / アカウント ID / SNS ARN は環境に合わせて置換すること。
@@ -11,7 +11,7 @@ canary（[central-canary-puppeteer](../central-canary-puppeteer/)）が 4×4 真
 ## 1. 役割
 
 ```
-central-canary-puppeteer
+central-probe-lib
   └─ lib/classify.js で 4×4 分類 → { severity, reason, priority }
        │  Alert イベント（README §2.6）を Lambda.invoke
        ▼
@@ -132,7 +132,7 @@ npm test             # node --test （test/routing.test.js）
 
 ## 8. canary 側 classify との整合
 
-`central-canary-puppeteer/lib/classify.js` が返す `severity` と本 Lambda の `SEVERITY_META`
+`central-probe-lib/lib/classify.js` が返す `severity` と本 Lambda の `SEVERITY_META`
 （`lib/format.js`）は §2.5 の 4×4 真偽値表を SSOT として一致している:
 
 | classify.js の severity | classify.js の priority | 本 Lambda の routingKey / priority |

@@ -27,7 +27,7 @@ proposal（§FR-API-* / §NFR-API-* / §C-API-*）は参照物として維持。
 | **認証不備チェック 構成図**（Pattern β 骨格）| [10 §10.1.1](10-external-monitoring-overview.md) |
 | **認証不備チェック 統合構成図**（登録・トリガー・probe・通知）| [10 §10.1.3](10-external-monitoring-overview.md) |
 | **認証不備チェック E2E フロー**（deploy→検知→通知→是正）| [10 §10.1.4](10-external-monitoring-overview.md) |
-| 認証不備チェック 実行シーケンス（1 実行の中身）| [11 §11.1](11-central-canary-architecture.md) |
+| 認証不備チェック 実行シーケンス（1 実行の中身）| [11 §11.1](11-central-probe-architecture.md) |
 | 課金按分パイプライン概念図 | [03 §3.1.2](03-billing-cost-allocation-rules.md) |
 
 ## 設計書一覧
@@ -53,10 +53,10 @@ proposal（§FR-API-* / §NFR-API-* / §C-API-*）は参照物として維持。
 | # | ファイル | 主な内容 | 状態 |
 |---|---------|---------|:---:|
 | 10 | [10-external-monitoring-overview.md](10-external-monitoring-overview.md) | 外形監視 総論（Pattern β + 全体図 + 実装物ナビ + Phase4 検証状況）| ✅ Phase 2 |
-| 11 | [11-central-canary-architecture.md](11-central-canary-architecture.md) | Central Canary 詳細（処理フロー / Hybrid 検証 / 4×4 / Puppeteer vs Multi Checks）| ✅ Phase 2 |
+| 11 | [11-central-probe-architecture.md](11-central-probe-architecture.md) | 認証 probe 詳細（処理フロー / Hybrid 検証 / 4×4 / Positive トークン管理）| ✅ Phase 2 |
 | 12 | [12-app-registry-design.md](12-app-registry-design.md) | App Registry（DynamoDB スキーマ / Custom Resource 登録 / Cross-Acct）| ✅ Phase 2 |
 | 13 | [13-openapi-registry-design.md](13-openapi-registry-design.md) | OpenAPI Registry（S3 構造 / Export / アノテーション）| ✅ Phase 2 |
-| 14 | [14-canary-implementation-guide.md](14-canary-implementation-guide.md) | 実装ガイド（lib 構成 / Multi Checks / モノリス / Private / 要 PoC）| ✅ Phase 2 |
+| 14 | [14-probe-implementation-guide.md](14-probe-implementation-guide.md) | 実装ガイド（probe lib 構成 / モノリス / Private / 要 PoC、Synthetics は将来）| ✅ Phase 2 |
 | 15 | [15-alert-routing-design.md](15-alert-routing-design.md) | 4×4 → SNS 振り分け（P1/P2/P3 / ARN 2 段解決）| ✅ Phase 2 |
 | 16 | [16-cross-account-iam-design.md](16-cross-account-iam-design.md) | Cross-Acct IAM（2 経路 / 登録 5 案比較 / StackSets / BD-Q-01）| ✅ Phase 2 |
 | 17 | [17-deployment-integration-and-registration.md](17-deployment-integration-and-registration.md) | デプロイ検知と登録（Service Catalog / CI/CD / EventBridge の 3 層）| ✅ Phase 2 |
@@ -69,7 +69,7 @@ proposal（§FR-API-* / §NFR-API-* / §C-API-*）は参照物として維持。
 | ディレクトリ | 内容 | 状態 |
 |---|---|:---:|
 | [code-samples/README.md](code-samples/README.md) | **データ契約**（App Registry schema / OpenAPI アノテーション / CloudWatch Metrics / 4×4 真偽値表 / Runtime バージョン）| ✅ |
-| [code-samples/central-canary-puppeteer/](code-samples/central-canary-puppeteer/) | Central Canary 本体（index + lib 6 + test 16 PASS + README）、`syn-nodejs-puppeteer-16.1` | ✅ |
+| [code-samples/central-probe-lib/](code-samples/central-probe-lib/) | Central Probe 本体（index + lib 6 + test + README）、Lambda（Node.js 22 / SDK v3）| ✅ |
 | [code-samples/multi-checks-blueprint/](code-samples/multi-checks-blueprint/) | Multi Checks Blueprint（`steps` オブジェクト schema 検証済 + OAuth + `${AWS_SECRET}`）| ✅ |
 | [code-samples/app-registry-lambda/](code-samples/app-registry-lambda/) | App Registry CRUD Custom Resource（SDK v3）| ✅ |
 | [code-samples/openapi-export-lambda/](code-samples/openapi-export-lambda/) | OpenAPI Export Custom Resource（get-export → S3、SDK v3）| ✅ |
