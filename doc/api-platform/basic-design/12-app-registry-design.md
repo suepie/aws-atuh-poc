@@ -8,13 +8,13 @@
 ## §12.0 前提と背景
 
 **この章で定めること**: 「どのアプリを監視するか」の台帳（App Registry）のデータ構造と、アプリ deploy 時にそこへ自動登録する仕組み。
-**なぜ要るか**: Pattern β で「Deploy 漏れ = ゼロ」を成立させる中核。アプリが deploy されると同時にこの台帳へ載り、中央認証チェックが次回実行から自動的に監視する。
+**なぜ要るか**: Pattern β で「Deploy 漏れ = ゼロ」を成立させる中核。アプリが deploy されると同時にこの台帳へ載り、認証実装確認処理が次回実行から自動的に監視する。
 
 ---
 
 ## §12.1 データモデル（DynamoDB スキーマ）
 
-ネットワーク監査アカウントに 1 テーブル。PK=`appId` / SK=`env`。
+共通基盤アカウントに 1 テーブル。PK=`appId` / SK=`env`。
 
 | 属性 | 型 | 説明 | 例 |
 |---|:---:|---|---|
@@ -28,11 +28,11 @@
 | `enabled` | BOOL | 監視有効フラグ | `true` |
 | `registeredAt` | S | ISO8601 登録日時 | `2026-07-06T00:00:00Z` |
 
-> 厳密な定義は [README §2.1](code-samples/README.md)。中央認証チェックは `enabled=true` のみ Scan する（`lib/registry.js`）。
+> 厳密な定義は [README §2.1](code-samples/README.md)。認証実装確認処理は `enabled=true` のみ Scan する（`lib/registry.js`）。
 
 ### §12.1.1 検査先が CloudFront URL である理由
 
-`baseUrl` は API GW の直 URL でなく **CloudFront の URL**。中央認証チェックは実ユーザーと同じ経路（CloudFront → WAF → Origin Protection → API GW）を通るため、**Origin Protection（[ADR-039 §C-4](../../adr/039-centralized-network-account-edge-layer.md)）を破らず、実 UX と同一条件で検証**できる。probe は `X-Origin-Verify` secret を持たない（Lambda@Edge が付与）。
+`baseUrl` は API GW の直 URL でなく **CloudFront の URL**。認証実装確認処理は実ユーザーと同じ経路（CloudFront → WAF → Origin Protection → API GW）を通るため、**Origin Protection（[ADR-039 §C-4](../../adr/039-centralized-network-account-edge-layer.md)）を破らず、実 UX と同一条件で検証**できる。probe は `X-Origin-Verify` secret を持たない（Lambda@Edge が付与）。
 
 ---
 
@@ -44,7 +44,7 @@
 sequenceDiagram
     participant SC as Service Catalog 製品 / App アカウント
     participant CR as app-registry Lambda / Custom Resource
-    participant DDB as App Registry / ネットワーク監査アカウント
+    participant DDB as App Registry / 共通基盤アカウント
 
     SC->>CR: CloudFormation Create/Update<br/>(ResourceProperties)
     CR->>CR: buildItem（enabled 文字列→Boolean 正規化）
@@ -71,8 +71,8 @@ app-registry Lambda の配置は 2 パターン（16 章で詳細）:
 
 | 配置 | クロスアカウント | 説明 |
 |---|:---:|---|
-| **ネットワーク監査アカウントに配置** | 不要 | App アカウントから Lambda を Invoke。DDB は同 アカウント |
-| App アカウントに配置 | 要 | STS AssumeRole でネットワーク監査アカウントのロールを引き受けて Put（`CROSS_ACCT_ROLE_ARN`）|
+| **共通基盤アカウントに配置** | 不要 | App アカウントから Lambda を Invoke。DDB は同 アカウント |
+| App アカウントに配置 | 要 | STS AssumeRole で共通基盤アカウントのロールを引き受けて Put（`CROSS_ACCT_ROLE_ARN`）|
 
 → **推奨は前者**（Lambda を中央に置き、App アカウントからは Invoke するだけ）。クロスアカウントの複雑性を Registry 書込みだけに閉じ込める。
 
@@ -96,14 +96,14 @@ app-registry Lambda の配置は 2 パターン（16 章で詳細）:
 | D-M-12-1 | PK=appId / SK=env の複合キー | 同一アプリの環境別（prod/stg）を別レコードで管理 |
 | D-M-12-2 | probe 先は CloudFront URL（API GW 直でない）| Origin Protection を破らず実 UX 同一条件で検証（§12.1.1）|
 | D-M-12-3 | 登録は Service Catalog 製品の Custom Resource で自動化 | Deploy 漏れゼロ（人手登録を排除）|
-| D-M-12-4 | app-registry Lambda はネットワーク監査アカウント 配置を推奨 | クロスアカウント 複雑性を最小化 |
+| D-M-12-4 | app-registry Lambda は共通基盤アカウント 配置を推奨 | クロスアカウント 複雑性を最小化 |
 | D-M-12-5 | enabled で監視の有効/無効を切替 | メンテ時などに削除せず一時停止できる |
 
 ---
 
 ## §12.6 なぜ App Registry が要るか（代替案比較）
 
-中央認証チェックが 1 アプリを検査するには、**API の形（endpoint 一覧）以外に**運用メタデータが要る。これらは OpenAPI（= API 仕様）には属さない。
+認証実装確認処理が 1 アプリを検査するには、**API の形（endpoint 一覧）以外に**運用メタデータが要る。これらは OpenAPI（= API 仕様）には属さない。
 
 | 必要な情報 | App Registry の属性 | OpenAPI に書けるか |
 |---|---|---|

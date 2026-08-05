@@ -191,7 +191,7 @@ CI で **Unit test + IaC lint + 静的解析**（[04 章](04-static-analysis-gui
 
 | 機構 | 役割 | 参照 |
 |---|---|---|
-| **外形監視（中央認証チェック）** | M1 デプロイ差分（自動）+ M3 フル監査（手動）で認証を Negative+Positive の 2 種リクエストで検査 | 章 10-18、[ADR-059](../../adr/059-central-auth-check-canary-architecture.md)|
+| **外形監視（認証実装確認処理）** | M1 デプロイ差分（自動）+ M3 フル監査（手動）で認証を Negative+Positive の 2 種リクエストで検査 | 章 10-18、[ADR-059](../../adr/059-central-auth-check-canary-architecture.md)|
 | Config Rules | 認証 / Origin Protection の drift 検知 | [§FR-API-7 §7.2.2](../proposal/fr/07-guardrails.md)|
 | GuardDuty / Inspector / Security Hub | 脅威検知 / 脆弱性 / 集約 | §NFR-API-4 |
 

@@ -8,7 +8,7 @@
 ## §17.0 前提と背景
 
 **この章で定めること**: 「アプリがデプロイされたことをどう検知し、App Registry に登録するか」。Pattern β で「Deploy 漏れ = ゼロ」を実運用で成立させる登録トリガの設計。
-**なぜ要るか**: 中央認証チェックは App Registry に載っているアプリしか監視しない。**登録漏れ = 監視漏れ**。登録をどうトリガするかが機構全体の実効性を決める。
+**なぜ要るか**: 認証実装確認処理は App Registry に載っているアプリしか監視しない。**登録漏れ = 監視漏れ**。登録をどうトリガするかが機構全体の実効性を決める。
 
 ---
 
@@ -60,7 +60,7 @@ Resources:
   AppRegistryRegister:                # ← DynamoDB(App Registry) へ登録する Custom Resource
     Type: Custom::AppRegistryRegister
     Properties:
-      ServiceToken: !Sub arn:aws:lambda:${AWS::Region}:${NetworkAuditAcctId}:function:app-registry-register
+      ServiceToken: !Sub arn:aws:lambda:${AWS::Region}:${CommonPlatformAcctId}:function:app-registry-register
       appId: !Ref AppId
       env:   !Ref Env
       baseUrl: !Sub https://${AppId}.example.com
@@ -72,7 +72,7 @@ Resources:
   OpenApiExport:                      # ← 実 API GW から OpenAPI を中央 S3 へ export（13 章）
     Type: Custom::OpenApiExport
     Properties:
-      ServiceToken: !Sub arn:aws:lambda:${AWS::Region}:${NetworkAuditAcctId}:function:openapi-export
+      ServiceToken: !Sub arn:aws:lambda:${AWS::Region}:${CommonPlatformAcctId}:function:openapi-export
       restApiId: !Ref Api
       stageName: !Ref Env
 ```
@@ -118,7 +118,7 @@ flowchart LR
 # アプリの deploy パイプライン（GitHub Actions 例）
 - name: Deploy API
   run: cdk deploy
-- name: Register to 中央認証チェック         # ← 追加ステップ
+- name: Register to 認証実装確認処理         # ← 追加ステップ
   run: |
     aws lambda invoke --function-name app-registry-register \
       --payload '{"appId":"expense-api","env":"prod","baseUrl":"https://expense.example.com",

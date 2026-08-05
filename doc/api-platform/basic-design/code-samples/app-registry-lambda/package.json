@@ -1,7 +1,7 @@
 {
   "name": "app-registry-lambda",
   "version": "1.0.0",
-  "description": "中央認証チェック (ADR-059) - App Registry CRUD Custom Resource. クロスアカウントで ネットワーク監査アカウントの DynamoDB にアプリを登録/削除する。",
+  "description": "認証実装確認処理 (ADR-059) - App Registry CRUD Custom Resource. クロスアカウントで 共通基盤アカウントの DynamoDB にアプリを登録/削除する。",
   "main": "index.js",
   "type": "commonjs",
   "engines": {

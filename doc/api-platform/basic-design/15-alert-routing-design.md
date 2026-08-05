@@ -7,14 +7,14 @@
 
 ## §15.0 前提と背景
 
-**この章で定めること**: 中央認証チェックが検知した非 OK（CRITICAL/WARN/INFO）を、**適切な担当・SLA の SNS トピックへ振り分ける**仕組み。
+**この章で定めること**: 認証実装確認処理が検知した非 OK（CRITICAL/WARN/INFO）を、**適切な担当・SLA の SNS トピックへ振り分ける**仕組み。
 **なぜ要るか**: 「全部 Security に飛ばす」と誤検知（token 失効等）で Security を疲弊させる。4×4 分類で担当を分け、**誤った P1 を防ぐ**。
 
 ---
 
 ## §15.1 分類 → 通知先の対応
 
-中央認証チェックの `classify.js`（11 章 §11.2.2）が付けた severity/priority で振り分ける。
+認証実装確認処理の `classify.js`（11 章 §11.2.2）が付けた severity/priority で振り分ける。
 
 | severity | priority | routingKey | 通知先 | SLA | 典型 |
 |---|:---:|:---:|---|:---:|---|
@@ -25,7 +25,7 @@
 
 ```mermaid
 flowchart LR
-    CC[中央認証チェック<br/>classify 済み] -->|Alert イベント| AR[Alert Router]
+    CC[認証実装確認処理<br/>classify 済み] -->|Alert イベント| AR[Alert Router]
     AR --> D{severity}
     D -->|CRITICAL| P1[🔥 SNS P1<br/>Security 即時]
     D -->|WARN| P2[🟡 SNS P2<br/>Platform 24h]

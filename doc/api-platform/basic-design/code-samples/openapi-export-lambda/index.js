@@ -3,17 +3,17 @@
 /**
  * openapi-export-lambda / index.js
  *
- * 中央認証チェック (ADR-059, Pattern β) の OpenAPI Export。
+ * 認証実装確認処理 (ADR-059, Pattern β) の OpenAPI Export。
  *
  * CloudFormation Custom Resource として各 App アカウントの Service Catalog 製品から呼ばれ、
  * 自アプリの API Gateway 定義を OpenAPI(oas30 / YAML) で get-export し、
- * ネットワーク監査アカウントの OpenAPI Registry(S3) に Put する。
+ * 共通基盤アカウントの OpenAPI Registry(S3) に Put する。
  *
  * - Create / Update : API GW get-export → S3 PutObject（キー {accountId}/{apiId}/openapi.yaml）
  * - Delete          : S3 上の openapi.yaml を DeleteObject（任意・冪等）
  *
  * クロスアカウント: 本 Lambda は App アカウント側で動く（API GW を export する）ため、
- *             S3 Put は STS AssumeRole でネットワーク監査アカウントのロールを引き受けて行う。
+ *             S3 Put は STS AssumeRole で共通基盤アカウントのロールを引き受けて行う。
  *
  * AWS SDK は必ず v3。
  *   - @aws-sdk/client-api-gateway : GetExportCommand（OpenAPI 取得）

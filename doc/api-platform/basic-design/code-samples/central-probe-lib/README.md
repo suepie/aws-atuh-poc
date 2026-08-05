@@ -1,4 +1,4 @@
-# central-probe-lib — 中央認証チェック 本体（検査ロジック）
+# central-probe-lib — 認証実装確認処理 本体（検査ロジック）
 
 前提: [../README.md](../README.md)（データ契約）/ [ADR-059](../../../../adr/059-central-auth-check-canary-architecture.md) / [§C-6.6.8](../../../proposal/common/06-external-api-auth-architecture.md)
 Runtime: **Lambda（Node.js 22.x / AWS SDK v3）**。synthetics 抽象は https 実装で注入（Synthetics runtime は将来オプション、[18 章 §18.4.1](../../18-scan-modes-and-scheduling.md)）
@@ -7,7 +7,7 @@ Runtime: **Lambda（Node.js 22.x / AWS SDK v3）**。synthetics 抽象は https 
 
 ## 役割
 
-ネットワーク監査アカウントに配置する **中央認証チェック（Lambda）**。**M1 デプロイ差分（自動）/ M3 フル監査（手動）**（[18 章](../../18-scan-modes-and-scheduling.md)）で全アプリの認証を外形監視する（Pattern β）。各アプリに probe を配らず、App Registry への登録で自動追随する。
+共通基盤アカウントに配置する **認証実装確認処理（Lambda）**。**M1 デプロイ差分（自動）/ M3 フル監査（手動）**（[18 章](../../18-scan-modes-and-scheduling.md)）で全アプリの認証を外形監視する（Pattern β）。各アプリに probe を配らず、App Registry への登録で自動追随する。
 
 ## 処理フロー
 
@@ -56,7 +56,7 @@ handler (index.js)
 - `lambda:InvokeFunction`（Alert Router）
 - CloudWatch Logs（Lambda 標準）
 
-## デプロイ（CLI 例、認証チェック Lambda）
+## デプロイ（CLI 例、認証実装チェック Lambda）
 
 ```bash
 # lib/ を含めて zip 化（node_modules は同梱 or Lambda Layer）
@@ -64,7 +64,7 @@ zip -r probe.zip index.js lib/ node_modules/
 aws lambda create-function \
   --function-name central-auth-probe \
   --runtime nodejs22.x \
-  --role arn:aws:iam::<network-audit-acct>:role/CentralProbeRole \
+  --role arn:aws:iam::<common-platform-acct>:role/CentralProbeRole \
   --handler index.handler \
   --timeout 300 --memory-size 512 \
   --zip-file fileb://probe.zip \

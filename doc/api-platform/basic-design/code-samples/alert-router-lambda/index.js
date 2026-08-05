@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * Alert Router Lambda（ADR-059 中央認証チェック / Pattern β）
+ * Alert Router Lambda（ADR-059 認証実装確認処理 / Pattern β）
  *
  * canary（central-probe-lib）から Alert イベント（README §2.6）を受け、
  * severity（CRITICAL/WARN/INFO）に基づき P1/P2/P3 の SNS トピックへ Publish する。

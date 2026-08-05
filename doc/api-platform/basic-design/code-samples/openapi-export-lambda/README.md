@@ -2,7 +2,7 @@
 
 Central Auth Check Canary（[ADR-059](../../../../adr/059-central-auth-check-canary-architecture.md), Pattern β）の **OpenAPI Export**。
 各 App アカウントの deploy 時に、自アプリの API Gateway 定義を OpenAPI(oas30/YAML) で export し、
-ネットワーク監査アカウントの **OpenAPI Registry(S3)** に Put する CloudFormation **Custom Resource** ハンドラ。
+共通基盤アカウントの **OpenAPI Registry(S3)** に Put する CloudFormation **Custom Resource** ハンドラ。
 
 Central Canary はこの Registry から各アプリの `openapi.yaml` を取得し、endpoint を動的発見して probe する（[../README.md](../README.md) §0）。
 
@@ -14,15 +14,15 @@ Central Canary はこの Registry から各アプリの `openapi.yaml` を取得
 | `Delete` | S3 上の `openapi.yaml` を **DeleteObject**（無くても冪等に SUCCESS）|
 
 - S3 キー: `{accountId}/{apiId}/openapi.yaml`（[../README.md](../README.md) §2.2）
-- バケット: `<network-audit-acct>-openapi-registry`（Versioning 有効）
+- バケット: `<common-platform-acct>-openapi-registry`（Versioning 有効）
 - いずれの結果でも **cfn-response** で `SUCCESS`/`FAILED` を返す（失敗時も必ず `FAILED`、CFN stuck 防止）。
 
 ## 環境変数
 
 | 変数 | 必須 | 説明 |
 |---|---|---|
-| `REGISTRY_BUCKET` | ✅ | OpenAPI Registry の S3 バケット名（ネットワーク監査アカウント）|
-| `CROSS_ACCT_ROLE_ARN` | クロスアカウント時 ✅ | ネットワーク監査アカウント側の S3 書込ロール ARN。設定時は STS `AssumeRole` してから S3 に Put/Delete。未設定なら Lambda 実行ロールの既定クレデンシャル |
+| `REGISTRY_BUCKET` | ✅ | OpenAPI Registry の S3 バケット名（共通基盤アカウント）|
+| `CROSS_ACCT_ROLE_ARN` | クロスアカウント時 ✅ | 共通基盤アカウント側の S3 書込ロール ARN。設定時は STS `AssumeRole` してから S3 に Put/Delete。未設定なら Lambda 実行ロールの既定クレデンシャル |
 | `AWS_REGION` | 自動 | Lambda が自動注入（既定 `ap-northeast-1`）|
 
 > 本 Lambda は **App アカウント側で動く**のが基本（自 アカウントの API GW を export するため）。

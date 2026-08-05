@@ -1,7 +1,7 @@
 # app-registry-lambda
 
 Central Auth Check Canary（[ADR-059](../../../../adr/059-central-auth-check-canary-architecture.md), Pattern β）の **App Registry CRUD**。
-各 App アカウントの deploy 時に、自アプリのメタデータをネットワーク監査アカウントの DynamoDB(App Registry) に登録する CloudFormation **Custom Resource** ハンドラ。
+各 App アカウントの deploy 時に、自アプリのメタデータを共通基盤アカウントの DynamoDB(App Registry) に登録する CloudFormation **Custom Resource** ハンドラ。
 
 Central Canary はこの App Registry を 5min 周期で Scan して監視対象を動的発見する（[../README.md](../README.md) §0）。
 
@@ -20,7 +20,7 @@ Central Canary はこの App Registry を 5min 周期で Scan して監視対象
 | 変数 | 必須 | 説明 |
 |---|---|---|
 | `TABLE_NAME` | ✅ | App Registry DynamoDB テーブル名（PK=`appId`, SK=`env`）|
-| `CROSS_ACCT_ROLE_ARN` | 任意 | ネットワーク監査アカウント側の書込ロール ARN。設定時は STS `AssumeRole` してから DynamoDB を書く。未設定なら Lambda 実行ロールの既定クレデンシャルを使用（= 本 Lambda をネットワーク監査アカウントに置く構成）|
+| `CROSS_ACCT_ROLE_ARN` | 任意 | 共通基盤アカウント側の書込ロール ARN。設定時は STS `AssumeRole` してから DynamoDB を書く。未設定なら Lambda 実行ロールの既定クレデンシャルを使用（= 本 Lambda を共通基盤アカウントに置く構成）|
 | `AWS_REGION` | 自動 | Lambda が自動注入（既定 `ap-northeast-1`）|
 
 ## Service Catalog 製品からの呼ばれ方
@@ -33,7 +33,7 @@ Resources:
   AppRegistryEntry:
     Type: Custom::AppRegistryEntry
     Properties:
-      ServiceToken: !Sub arn:aws:lambda:${AWS::Region}:<network-audit-acct>:function:app-registry-lambda
+      ServiceToken: !Sub arn:aws:lambda:${AWS::Region}:<common-platform-acct>:function:app-registry-lambda
       appId: expense-api
       env: prod
       baseUrl: https://expense.example.com
@@ -54,12 +54,12 @@ Resources:
 ## 構成パターンと クロスアカウント
 
 ```
-[本 Lambda をネットワーク監査アカウントに配置]（推奨・シンプル）
+[本 Lambda を共通基盤アカウントに配置]（推奨・シンプル）
   App アカウントの Service Catalog → ServiceToken(クロスアカウント Lambda invoke)
   → Lambda は同一 アカウント内の DynamoDB を書く（CROSS_ACCT_ROLE_ARN 不要）
 
 [本 Lambda を App アカウントに配置]
-  → CROSS_ACCT_ROLE_ARN にネットワーク監査アカウントのロールを設定
+  → CROSS_ACCT_ROLE_ARN に共通基盤アカウントのロールを設定
   → STS AssumeRole 後に DynamoDB へ PutItem/DeleteItem
 ```
 

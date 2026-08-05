@@ -7,22 +7,22 @@
 
 ## §13.0 前提と背景
 
-**この章で定めること**: 中央認証チェックが「各アプリの endpoint 一覧と probe 制御情報」を得るための OpenAPI 置き場（S3）と、deploy 後の正本を自動 export する仕組み、アプリチームが付けるアノテーション。
-**なぜ要るか**: 中央認証チェックは endpoint を**動的に**知る必要がある（アプリごとに違い、増減する）。OpenAPI を正本にすれば新規 endpoint も次回 deploy で自動追随する。
+**この章で定めること**: 認証実装確認処理が「各アプリの endpoint 一覧と probe 制御情報」を得るための OpenAPI 置き場（S3）と、deploy 後の正本を自動 export する仕組み、アプリチームが付けるアノテーション。
+**なぜ要るか**: 認証実装確認処理は endpoint を**動的に**知る必要がある（アプリごとに違い、増減する）。OpenAPI を正本にすれば新規 endpoint も次回 deploy で自動追随する。
 
 ---
 
 ## §13.1 S3 バケット構造
 
-ネットワーク監査アカウントに 1 バケット。
+共通基盤アカウントに 1 バケット。
 
 | 項目 | 値 |
 |---|---|
-| バケット | `<network-audit-acct>-openapi-registry` |
+| バケット | `<common-platform-acct>-openapi-registry` |
 | キー | `{accountId}/{apiId}/openapi.yaml` |
 | Versioning | 有効（正本の履歴を保持）|
 
-中央認証チェックは App Registry の `openApiS3Key` でこのキーを引き、`lib/openapi.js` の `fetchSpec` で取得・parse する。
+認証実装確認処理は App Registry の `openApiS3Key` でこのキーを引き、`lib/openapi.js` の `fetchSpec` で取得・parse する。
 
 > ⚠ **実装注意（Phase 4 検証で判明）**: LocalStack でのローカルテストは S3 の **virtual-host addressing** で失敗する（`forcePathStyle` 要）。これは LocalStack 固有で**実 AWS では発生しない**。full-run は SAM local か実 AWS で（[research](research/phase4-local-verification-results.md)）。
 
@@ -37,7 +37,7 @@ sequenceDiagram
     participant SC as Service Catalog 製品 / App アカウント
     participant CR as openapi-export Lambda / Custom Resource
     participant AGW as API GW / App アカウント
-    participant S3 as OpenAPI Registry / ネットワーク監査アカウント
+    participant S3 as OpenAPI Registry / 共通基盤アカウント
 
     SC->>CR: CloudFormation Create/Update
     CR->>AGW: GetExport（exportType=oas30, accepts=application/yaml）
@@ -116,7 +116,7 @@ paths:
 flowchart LR
     Dep[デプロイ] --> Exp[openapi-export<br/>新 openapi.yaml を Put]
     Exp -->|S3 PutObject イベント| EB[EventBridge]
-    EB --> L[delta-認証チェック Lambda<br/>mode=delta, appId]
+    EB --> L[delta-認証実装チェック Lambda<br/>mode=delta, appId]
     L --> P[そのアプリの全 endpoint probe]
 ```
 

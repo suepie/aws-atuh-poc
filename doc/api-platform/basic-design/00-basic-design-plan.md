@@ -5,7 +5,7 @@
 
 ## 0. 背景・なぜここで決めるか
 
-API プラットフォーム標準の要件定義（`proposal/` 配下: §FR-API-1〜8 / §NFR-API-1〜9 / §C-API-1〜6）は骨格完成。ADR-039（ネットワーク監査アカウント）/ ADR-059（中央認証チェック）で主要な実装方針も確定した。本フェーズでは要件・ADR を **アプリチームが従うガイドライン** と **動く実装物** に落とす。
+API プラットフォーム標準の要件定義（`proposal/` 配下: §FR-API-1〜8 / §NFR-API-1〜9 / §C-API-1〜6）は骨格完成。ADR-039（ネットワーク監査アカウント）/ ADR-059（認証実装確認処理）で主要な実装方針も確定した。本フェーズでは要件・ADR を **アプリチームが従うガイドライン** と **動く実装物** に落とす。
 
 **⚠ スコープ確定（2026-07-06 ユーザー指示）**: 本基本設計は当初の全 8 領域網羅ではなく、以下 **2 領域に絞る**:
 
@@ -25,10 +25,10 @@ API プラットフォーム標準の要件定義（`proposal/` 配下: §FR-API
 |---|------|------|------|
 | BD-P-01 | ネットワーク監査アカウントにアプリごと独立 CloudFront + WAF、5 アカウント体系 | ADR-039 v2 | ⚠ ROSA 側基本設計 P-18 で「他組織管理の監査アカウント」に責任分界改訂の可能性あり。API プラットフォーム側は自管理前提で記述し、差分は §16 で吸収 |
 | BD-P-02 | Origin Protection = Custom Header + CloudFront IP allowlist（Pattern A）、Secret 30 日ローテ | ADR-039 §C-4 | Public API GW / Public ALB |
-| BD-P-03 | 認証実装漏れ検知 = 中央認証チェック（Pattern β、ネットワーク監査アカウント集約）| ADR-059 | App Registry + OpenAPI Registry で全アプリ自動追随 |
+| BD-P-03 | 認証実装漏れ検知 = 認証実装確認処理（Pattern β、**共通基盤アカウント**集約。境界 CloudFront/WAF はネットワーク監査アカウントのまま）| ADR-059 | App Registry + OpenAPI Registry で全アプリ自動追随 |
 | BD-P-04 | 認証方式 = 7 パターン（P-1〜P-7）+ 5 大分類、Tier 表現廃止 | §C-API-6 §C-6.2.5 | OAuth トークン / 証明書 / 共有秘密キー / AWS IAM 署名 |
 | BD-P-05 | 検知 5 レイヤー（IaC / Config / Static Code / Runtime Log / Behavioral）で 95-99% 担保 | §C-API-6 §C-6.6 | 本基本設計は L1/L3（静的解析）と L5（外形監視）を実装対象化 |
-| BD-P-06 | 認証チェックの実行基盤 = **Lambda（Node.js 22 / AWS SDK v3）**。Synthetics（`syn-nodejs-puppeteer-16.1` 等）は将来オプション（18 章 §18.4） | 2026-07-06 確認 / 18 章 | 現行は Lambda。Synthetics 系ランタイム値は将来用に確認済み（旧 `-7.0` は Deprecated）|
+| BD-P-06 | 認証実装チェックの実行基盤 = **Lambda（Node.js 22 / AWS SDK v3）**。Synthetics（`syn-nodejs-puppeteer-16.1` 等）は将来オプション（18 章 §18.4） | 2026-07-06 確認 / 18 章 | 現行は Lambda。Synthetics 系ランタイム値は将来用に確認済み（旧 `-7.0` は Deprecated）|
 | BD-P-07 | 課金按分 = Cost Allocation Tag + Usage Plan API Key 経由の Partner 識別 | §FR-API-4 | Athena 集計 |
 | BD-P-08 | Service Catalog 製品テンプレで死守事項（認証必須 / Origin Protection / タグ）を強制 | §C-API-5 | アプリチームは製品起動で自動準拠 |
 
@@ -50,7 +50,7 @@ API プラットフォーム標準の要件定義（`proposal/` 配下: §FR-API
 | # | ファイル | 主題 | 主インプット | Phase |
 |---|---------|------|------------|:---:|
 | 10 | `10-external-monitoring-overview.md` | 外形監視 総論（ADR-059 要約 + 実装物ナビ）| ADR-059、§C-6.6.8 | 後続 |
-| 11 | `11-central-probe-architecture.md` | 認証チェック 詳細設計（処理フロー / Hybrid 検証 / 4×4 真偽値表 / Positive トークン管理）| ADR-059、§C-6.6.8 | 後続 |
+| 11 | `11-central-probe-architecture.md` | 認証実装チェック 詳細設計（処理フロー / Hybrid 検証 / 4×4 真偽値表 / Positive トークン管理）| ADR-059、§C-6.6.8 | 後続 |
 | 12 | `12-app-registry-design.md` | App Registry（DynamoDB）スキーマ・CRUD | ADR-059 | 後続 |
 | 13 | `13-openapi-registry-design.md` | OpenAPI Registry（S3）構造・Export Custom Resource | ADR-059、§C-API-5 | 後続 |
 | 14 | `14-probe-implementation-guide.md` | probe lib 実装ガイド + モノリス / Private 対応（Synthetics は将来オプション）| ADR-059 §D/§E | 後続 |
@@ -65,7 +65,7 @@ API プラットフォーム標準の要件定義（`proposal/` 配下: §FR-API
 
 | ディレクトリ | 内容 | Phase |
 |---|---|:---:|
-| `code-samples/central-probe-lib/` | 中央認証チェック（probe lib）完全実装 + 単体テスト + README | 後続 |
+| `code-samples/central-probe-lib/` | 認証実装確認処理（probe lib）完全実装 + 単体テスト + README | 後続 |
 | `code-samples/multi-checks-blueprint/` | Multi Checks JSON テンプレ + synthetics.json | 後続 |
 | `code-samples/app-registry-lambda/` | App Registry CRUD Lambda | 後続 |
 | `code-samples/openapi-export-lambda/` | OpenAPI Export Custom Resource Lambda | 後続 |
@@ -80,7 +80,7 @@ API プラットフォーム標準の要件定義（`proposal/` 配下: §FR-API
 | **Phase 1** | 骨格（00-index / 00-plan / 01-overview）+ ガイドライン章 02-06 | 🚧 着手（2026-07-06）|
 | Phase 2 | 外形監視設計章 10-18 | 未着手 |
 | Phase 3 | 実装物（code-samples/）| 未着手 |
-| Phase 4 | PoC 検証（ネットワーク監査アカウントモック + 1 App アカウント相当）| 未着手 |
+| Phase 4 | PoC 検証（共通基盤アカウントモック + 1 App アカウント相当）| 未着手 |
 
 ## 5. 品質方針（ファクト検証の徹底）
 

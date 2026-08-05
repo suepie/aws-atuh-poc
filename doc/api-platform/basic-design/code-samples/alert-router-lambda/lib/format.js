@@ -58,7 +58,7 @@ function formatSubject(event) {
 function formatBody(event) {
   const meta = metaFor(event.severity);
   const lines = [
-    `${meta.emoji} 中央認証チェック Alert`,
+    `${meta.emoji} 認証実装確認処理 Alert`,
     '',
     `重大度   : ${event.severity} (${meta.priority})`,
     `通知先   : ${meta.target}`,

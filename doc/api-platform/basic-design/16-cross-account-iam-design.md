@@ -8,7 +8,7 @@
 
 ## §16.0 前提と背景
 
-**この章で定めること**: ネットワーク監査アカウント（中央）と App アカウント（各アプリ）の間で必要な IAM 権限と、Service Catalog 製品の配布方法。
+**この章で定めること**: 共通基盤アカウント（中央）と App アカウント（各アプリ）の間で必要な IAM 権限と、Service Catalog 製品の配布方法。
 **なぜ要るか**: Pattern β は「中央が全アプリを監視」するため、必然的にアカウントを跨ぐ。その権限を**最小限**に閉じ込める。
 
 ---
@@ -19,8 +19,8 @@ Pattern β で発生する クロスアカウントは **2 経路のみ**（そ�
 
 | # | 経路 | 方向 | 手段 |
 |---|---|---|---|
-| 1 | App Registry 登録 | App アカウント → ネットワーク監査アカウント | Custom Resource（12 章）|
-| 2 | OpenAPI Export | App アカウント → ネットワーク監査アカウント S3 | Custom Resource（13 章）|
+| 1 | App Registry 登録 | App アカウント → 共通基盤アカウント | Custom Resource（12 章）|
+| 2 | OpenAPI Export | App アカウント → 共通基盤アカウント S3 | Custom Resource（13 章）|
 | — | probe → アプリ | 中央 → App アカウント | **Public CloudFront URL（権限不要）** |
 | — | probe → OAuth /token | 中央 → 認証基盤 | **Public URL（権限不要）** |
 
@@ -72,9 +72,9 @@ flowchart LR
 | ロール | 所在 | 信頼 | 権限 |
 |---|---|---|---|
 | `CentralRegistryFn-InvokeRole` | App アカウント | Service Catalog / CFN | 中央 Lambda の `lambda:InvokeFunction` |
-| `app-registry-lambda-role` | ネットワーク監査アカウント | Lambda | `dynamodb:PutItem/DeleteItem`（App Registry）|
-| `openapi-export-lambda-role` | ネットワーク監査アカウント | Lambda | `apigateway:GET`（App アカウントの RestApi、クロスアカウント）+ `s3:PutObject`（Registry）|
-| `CentralProbeRole` | ネットワーク監査アカウント | 認証チェック Lambda | DDB Scan / S3 Get / Secrets Get / CloudWatch Put / Lambda Invoke（Alert Router）|
+| `app-registry-lambda-role` | 共通基盤アカウント | Lambda | `dynamodb:PutItem/DeleteItem`（App Registry）|
+| `openapi-export-lambda-role` | 共通基盤アカウント | Lambda | `apigateway:GET`（App アカウントの RestApi、クロスアカウント）+ `s3:PutObject`（Registry）|
+| `CentralProbeRole` | 共通基盤アカウント | 認証実装チェック Lambda | DDB Scan / S3 Get / Secrets Get / CloudWatch Put / Lambda Invoke（Alert Router）|
 
 > openapi-export は「App アカウントの API GW を export → 中央 S3 に Put」のため、GetExport は App アカウント リソースへの クロスアカウント read が要る（App アカウント側で Resource Policy or AssumeRole）。
 
@@ -89,14 +89,14 @@ flowchart LR
 
 ## §16.5 ⚠ ROSA 側前提との責任分界（BD-Q-01）
 
-ADR-039 v2 では「ネットワーク監査アカウント = 自管理」前提だが、ROSA 側基本設計 P-18 で「**インターネット境界（CloudFront/WAF）は他組織管理の監査アカウント**」に変わる可能性がある。
+アカウント配置は **2 つに分離**している：**インターネット境界（CloudFront/WAF、ADR-039）＝ネットワーク監査アカウント**（ROSA 側 P-18 で他組織管理になる可能性）と、**認証実装確認処理のリソース群（App Registry / OpenAPI Registry / 認証実装チェック Lambda / Alert Router / Secrets）＝共通基盤アカウント（自社管理）**。
 
 | 影響 | 対応 |
 |---|---|
-| CloudFront / Origin Protection の管理主体 | 他組織なら、probe 先 URL / Origin Protection secret の運用を他組織と調整 |
-| 中央認証チェックの配置 アカウント | 「ネットワーク監査アカウント」が他組織管理なら、認証チェック Lambda は自社側の別 アカウントに置く再設計が要る |
+| CloudFront / Origin Protection の管理主体（ネットワーク監査アカウント）| 他組織なら、probe 先 URL / Origin Protection secret の運用を他組織と調整 |
+| 認証実装確認処理の配置 | **共通基盤アカウント（自社管理）に置くため、境界が他組織管理になっても再設計は不要**。影響は上記の probe 先経路調整のみ |
 
-→ **本章は自管理前提で記述**。P-18 確定時に probe 先経路と 認証チェック Lambda 配置を差分改訂する（BD-Q-01）。
+→ P-18 確定時に probe 先経路（境界越え）を差分改訂する（BD-Q-01）。確認処理リソース自体の配置は影響を受けない。
 
 ---
 

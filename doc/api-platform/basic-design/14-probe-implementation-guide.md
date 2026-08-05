@@ -1,4 +1,4 @@
-# 14. 認証チェック 実装ガイド
+# 14. 認証実装チェック 実装ガイド
 
 前提: [00-basic-design-plan.md](00-basic-design-plan.md) / [11-central-probe-architecture.md](11-central-probe-architecture.md)
 実装: [code-samples/central-probe-lib/](code-samples/central-probe-lib/) / [code-samples/multi-checks-blueprint/](code-samples/multi-checks-blueprint/)
@@ -7,7 +7,7 @@
 
 ## §14.0 前提と背景
 
-**この章で定めること**: 認証チェックの実装構成（共通 probe lib の内部モジュール / モノリス・Private 対応 / 将来オプション / 要 PoC 項目）。
+**この章で定めること**: 認証実装チェックの実装構成（共通 probe lib の内部モジュール / モノリス・Private 対応 / 将来オプション / 要 PoC 項目）。
 **主な判断軸**: 11 章のアーキを「動くコード」に落とす。実装は既に [code-samples/](code-samples/) にあり本章はその構造と使い方を説明する（実行基盤は Lambda、18 章 SSOT）。
 
 **本章の位置づけ（全体像の中で）**:
@@ -95,7 +95,7 @@ Internal ALB / API GW Private endpoint など VPC 内部のみの API も監視�
 | Internal ALB / NLB | **Canary VPC + Transit Gateway 経由** |
 | VPC Lattice Service | VPC Lattice Service Association |
 
-→ 中央認証チェック（Lambda）を **VPC 構成**にし、既存 Transit Gateway にアタッチすれば全 App アカウントの Private endpoint に到達可能。Lambda は VPC 実行に対応（将来 Synthetics を使う場合も VPC 実行を公式サポート）。詳細は [ADR-059 §E](../../adr/059-central-auth-check-canary-architecture.md)。
+→ 認証実装確認処理（Lambda）を **VPC 構成**にし、既存 Transit Gateway にアタッチすれば全 App アカウントの Private endpoint に到達可能。Lambda は VPC 実行に対応（将来 Synthetics を使う場合も VPC 実行を公式サポート）。詳細は [ADR-059 §E](../../adr/059-central-auth-check-canary-architecture.md)。
 
 ---
 
@@ -105,7 +105,7 @@ Internal ALB / API GW Private endpoint など VPC 内部のみの API も監視�
 
 | 項目 | 必要環境 | 理由 |
 |---|---|---|
-| 認証チェック Lambda 実行（synthetics 抽象を https 実装に差替）| SAM local + Docker | handler 転用の実挙動 |
+| 認証実装チェック Lambda 実行（synthetics 抽象を https 実装に差替）| SAM local + Docker | handler 転用の実挙動 |
 | Positive probe（OAuth Bearer 取得）| 実 IdP or モック /token | token.js の実挙動 |
 | SigV4 Positive（api-gw-iam）| 実装（`@aws-sdk/signature-v4`）+ AWS | 手動署名が未実装 |
 | Cookie モノリス Positive | Puppeteer ログインフロー実装 | 未実装（Negative は検証済）|

@@ -3,17 +3,17 @@
 /**
  * app-registry-lambda / index.js
  *
- * 中央認証チェック (ADR-059, Pattern β) の App Registry CRUD。
+ * 認証実装確認処理 (ADR-059, Pattern β) の App Registry CRUD。
  *
  * CloudFormation Custom Resource として各 App アカウントの Service Catalog 製品から呼ばれ、
- * ネットワーク監査アカウントの DynamoDB(App Registry) に自アプリのメタデータを登録/更新/削除する。
+ * 共通基盤アカウントの DynamoDB(App Registry) に自アプリのメタデータを登録/更新/削除する。
  *
  * - Create / Update : PutItem（README §2.1 の全属性）
  * - Delete          : DeleteItem
  *
  * クロスアカウント: 本 Lambda が App アカウント側で動く場合は STS AssumeRole で
- *             ネットワーク監査アカウントのロールを引き受けてから DynamoDB を書く。
- *             （本 Lambda 自体をネットワーク監査アカウントに置き、App アカウント から
+ *             共通基盤アカウントのロールを引き受けてから DynamoDB を書く。
+ *             （本 Lambda 自体を共通基盤アカウントに置き、App アカウント から
  *              Lambda を invoke する構成なら CROSS_ACCT_ROLE_ARN 未設定でよい）
  *
  * AWS SDK は必ず v3。

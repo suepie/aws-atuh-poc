@@ -10,7 +10,7 @@
 
 ### §10.0.1 この設計書群（章 10-18）で定めること
 
-「アプリチームに認証を実装させたうえで、**その実装漏れを中央で継続検知する**」仕組み ＝ **中央認証チェック**（ADR-059 では "Central Auth Check Canary" の名称）の詳細設計。ガイドライン章（01-06）が「アプリチームが守るルール」を定めるのに対し、本章群は **ネットワーク監査チームが運用する中央機構**を定める。
+「アプリチームに認証を実装させたうえで、**その実装漏れを中央で継続検知する**」仕組み ＝ **認証実装確認処理**（ADR-059 では "Central Auth Check Canary" の名称）の詳細設計。ガイドライン章（01-06）が「アプリチームが守るルール」を定めるのに対し、本章群は **ネットワーク監査チームが運用する中央機構**を定める。
 
 ### §10.0.2 なぜ外形監視が要るか
 
@@ -20,7 +20,7 @@
 
 | 対象 | 本章群で扱う |
 |---|---|
-| 認証チェック（Lambda / 検査ロジック probe lib）| ✅ 11 / 14 章 |
+| 認証実装チェック（Lambda / 検査ロジック probe lib）| ✅ 11 / 14 章 |
 | App Registry（DynamoDB）| ✅ 12 章 |
 | OpenAPI Registry（S3）| ✅ 13 章 |
 | Alert Router（4×4 → SNS）| ✅ 15 章 |
@@ -34,7 +34,7 @@
 | **probe（プローブ）** | 原義は「探針」。本設計では「**実際に HTTP リクエストを送り、応答で認証の効き具合を確かめる検査**」を指す。設定を読むのではなく、実物に触って確かめるのが特徴 |
 | **Negative probe（未認証検査）** | 認証情報**なし**でリクエスト → 401/403（Cookie 系は 302）が返れば正常。**2xx が返れば認証漏れ** |
 | **Positive probe（正規検査）** | **有効なトークン付き**でリクエスト → 200 が返れば API 稼働とテスト健全性を確認。Negative との組合せで誤検知を防ぐ（11 章 §11.2）|
-| **probe lib（検査ロジック）** | 上記の検査を実装した共通ライブラリ（[central-probe-lib/](code-samples/central-probe-lib/)）。認証チェック Lambda が実行する |
+| **probe lib（検査ロジック）** | 上記の検査を実装した共通ライブラリ（[central-probe-lib/](code-samples/central-probe-lib/)）。認証実装チェック Lambda が実行する |
 | **Pattern β** | 検査を各アプリに配らず**中央 1 箇所**から横断実行する方式（§10.1）|
 | **M1 / M3** | 実行モード。M1=デプロイ差分（自動）/ M3=フル監査（手動）（18 章）|
 
@@ -44,14 +44,16 @@
 
 ### §10.1.1 Pattern β とは
 
-probe を**各アプリに配らず、ネットワーク監査アカウントの中央認証チェック（Lambda）が全アプリを横断監視**する（[ADR-059](../../adr/059-central-auth-check-canary-architecture.md)）。
+probe を**各アプリに配らず、共通基盤アカウントの認証実装確認処理（Lambda）が全アプリを横断監視**する（[ADR-059](../../adr/059-central-auth-check-canary-architecture.md)）。
+
+> **アカウント配置の分離**: 認証実装確認処理のリソース群（App Registry / OpenAPI Registry / 認証実装チェック Lambda / Alert Router / Secrets）は **共通基盤アカウント（自社管理）** に置く。インターネット境界（CloudFront + WAF、[ADR-039](../../adr/039-centralized-network-account-edge-layer.md)）は **ネットワーク監査アカウント**（他組織管理の可能性あり）のままで、probe はその境界越しに実ユーザーと同じ経路で検査する（16 章 §16.5）。
 
 ```mermaid
 flowchart TB
-    subgraph NetAudit["ネットワーク監査アカウント（中央運用）"]
+    subgraph NetAudit["共通基盤アカウント（中央運用）"]
         Reg[App Registry<br/>DynamoDB]
         OAR[OpenAPI Registry<br/>S3]
-        CC[中央認証チェック<br/>Lambda（probe lib 共通）<br/>M1 差分/M3 フル ※18 章]
+        CC[認証実装確認処理<br/>Lambda（probe lib 共通）<br/>M1 差分/M3 フル ※18 章]
         AR[Alert Router<br/>Lambda]
         SNS1[SNS: P1 Security]
         SNS2[SNS: P2 Platform]
@@ -87,14 +89,14 @@ flowchart TB
     style AppB fill:#e8f5e9
 ```
 
-> **実行モデル（[18 章](18-scan-modes-and-scheduling.md) が SSOT）**: 実行基盤は **Lambda**、モードは **M1 デプロイ差分（自動・変更アプリ単位）+ M3 フル監査（手動・全量）**。CloudWatch Synthetics は不使用（将来 M2 用オプション）。図中の中央認証チェックはこの Lambda を指す。実行モデルを Lambda に定めた経緯は [ADR-059](../../adr/059-central-auth-check-canary-architecture.md)。
+> **実行モデル（[18 章](18-scan-modes-and-scheduling.md) が SSOT）**: 実行基盤は **Lambda**、モードは **M1 デプロイ差分（自動・変更アプリ単位）+ M3 フル監査（手動・全量）**。CloudWatch Synthetics は不使用（将来 M2 用オプション）。図中の認証実装確認処理はこの Lambda を指す。実行モデルを Lambda に定めた経緯は [ADR-059](../../adr/059-central-auth-check-canary-architecture.md)。
 
 ### §10.1.2 なぜ β（中央）か — α（分散）との比較
 
 | 観点 | α: 各アプリ配置 | **β: 中央集約（採用）** |
 |---|:---:|:---:|
 | Deploy 漏れ | ⚠ 個別 deploy 必要、漏れリスク | ✅ **App Registry 登録で自動追随、原理的にゼロ** |
-| 統一実装保証 | ⚠ アプリごとにばらつく | ✅ 中央認証チェック 1 実装 |
+| 統一実装保証 | ⚠ アプリごとにばらつく | ✅ 認証実装確認処理 1 実装 |
 | 運用主体 | 各アプリチーム | ネットワーク監査チーム集約 |
 | メトリクス集約 | ⚠ クロスアカウント集約が別途必要 | ✅ 標準で 1 箇所 |
 | 「中央でチェック」思想 | ✗ | ✅ **一致** |
@@ -115,11 +117,11 @@ flowchart TB
         EDGE -. deploy イベント .-> EVT["CloudTrail / S3 Put"]
     end
 
-    subgraph NetAudit["ネットワーク監査アカウント（中央運用）"]
+    subgraph NetAudit["共通基盤アカウント（中央運用）"]
         REG["App Registry<br/>DynamoDB"]
         OAR["OpenAPI Registry<br/>S3"]
         EB["EventBridge"]
-        PROBE["認証チェック Lambda<br/>probe / classify lib 共通"]
+        PROBE["認証実装チェック Lambda<br/>probe / classify lib 共通"]
         CWM["CloudWatch Metrics/Alarm<br/>AuthCheckCritical＞0"]
         ALR["Alert Router Lambda"]
         SNS1["SNS P1 Security"]
@@ -175,14 +177,14 @@ flowchart LR
 
 図に登場する全リソースの役割を 1 表にまとめる。詳細は「詳細章」列が SSOT。
 
-**ネットワーク監査アカウント（中央）側**
+**共通基盤アカウント（中央）側**
 
 | リソース | AWS サービス | 役割（ひとことで） | 詳細章 |
 |---|---|---|:---:|
-| **App Registry** | DynamoDB | **監視対象の台帳**。アプリごとの baseUrl / 認証方式（authPattern）/ 通知先を 1 レコードで保持。認証チェックは「ここに載っているもの」だけを検査する | 12 |
+| **App Registry** | DynamoDB | **監視対象の台帳**。アプリごとの baseUrl / 認証方式（authPattern）/ 通知先を 1 レコードで保持。認証実装チェックは「ここに載っているもの」だけを検査する | 12 |
 | **OpenAPI Registry** | S3（Versioning）| **API 仕様の正本置き場**。deploy 後の実 API GW から export された OpenAPI を保管し、endpoint 一覧と公開印（MON-1）の情報源になる | 13 |
-| **認証チェック Lambda（中央認証チェック）** | Lambda | **検査の実行体**。台帳と仕様を読み、各 endpoint に未認証/正規の 2 種リクエストを送って認証の効き具合を確かめる | 11 / 14 |
-| **EventBridge** | EventBridge | **M1 の起動役**。デプロイイベント（OpenAPI Export の S3 Put 等）を検知して認証チェック Lambda を自動起動 | 18 |
+| **認証実装チェック Lambda（認証実装確認処理）** | Lambda | **検査の実行体**。台帳と仕様を読み、各 endpoint に未認証/正規の 2 種リクエストを送って認証の効き具合を確かめる | 11 / 14 |
+| **EventBridge** | EventBridge | **M1 の起動役**。デプロイイベント（OpenAPI Export の S3 Put 等）を検知して認証実装チェック Lambda を自動起動 | 18 |
 | **CloudWatch Metrics / アラーム** | CloudWatch | **検査結果の記録と発報**。`AuthCheckCritical > 0` で認証漏れアラーム | 11 / 18 |
 | **Alert Router Lambda** | Lambda | **通知の振り分け役**。検知結果を 4×4 分類に従い P1/P2/P3 の宛先へ振り分ける（「全部 Security 行き」を防ぐ）| 15 |
 | **SNS（P1 / P2 / P3）** | SNS | **通知の出口**。P1=Security 即時 / P2=Platform 24h / P3=アプリチーム | 15 |
@@ -195,9 +197,9 @@ flowchart LR
 | **Service Catalog 製品** | Service Catalog | **正規デプロイの型**。認証必須・Origin Protection・タグ・下記 2 つの登録処理を全部込みで提供（アプリはパラメータを選ぶだけ）| 17 |
 | **App Registry 登録（Custom Resource）** | 製品テンプレ内蔵 | deploy と同時に**台帳へ自動登録**（アプリ開発者はコードを書かない）| 12 / 17 |
 | **OpenAPI Export（Custom Resource）** | 製品テンプレ内蔵 | deploy 後の実 API GW から**仕様を自動 export** して正本置き場へ | 13 / 17 |
-| **CloudFront → API GW / ALB** | — | **検査の対象**。認証チェックは実ユーザーと同じ CloudFront 経由で叩く（Origin Protection を破らない）| 12 §12.2 |
+| **CloudFront → API GW / ALB** | — | **検査の対象**。認証実装チェックは実ユーザーと同じ CloudFront 経由で叩く（Origin Protection を破らない）| 12 §12.2 |
 
-> **1 行まとめ**: アプリが Service Catalog 製品で deploy すると**台帳と仕様が自動で中央に登録**され、その瞬間（M1）と手動監査時（M3）に**中央の認証チェック Lambda が実際にリクエストを投げて認証漏れを検査**し、問題があれば **4×4 分類で適切なチームに通知**される。
+> **1 行まとめ**: アプリが Service Catalog 製品で deploy すると**台帳と仕様が自動で中央に登録**され、その瞬間（M1）と手動監査時（M3）に**中央の認証実装チェック Lambda が実際にリクエストを投げて認証漏れを検査**し、問題があれば **4×4 分類で適切なチームに通知**される。
 
 ---
 
@@ -205,7 +207,7 @@ flowchart LR
 
 | 章 | 設計 | 実装（code-samples/）|
 |---|---|---|
-| 11 | 認証チェック アーキテクチャ | [central-probe-lib/](code-samples/central-probe-lib/) |
+| 11 | 認証実装チェック アーキテクチャ | [central-probe-lib/](code-samples/central-probe-lib/) |
 | 12 | App Registry | [app-registry-lambda/](code-samples/app-registry-lambda/) |
 | 13 | OpenAPI Registry | [openapi-export-lambda/](code-samples/openapi-export-lambda/) |
 | 14 | 実装ガイド（probe lib / モノリス・Private 対応）| [central-probe-lib/](code-samples/central-probe-lib/) |
@@ -225,7 +227,7 @@ flowchart LR
 | 静的解析ルール（cfn-guard 3 + Semgrep 3）| ✅ フィクスチャ検証（**実バグ 2 件修正**）|
 | Lambda SDK 実挙動（app-registry PutItem / alert-router SNS Publish）| ✅ LocalStack 3.8.1 |
 | probe lib logic（classify / probe / extractEndpoints）| ✅ 27 テスト PASS |
-| full orchestration（認証チェック Lambda E2E / Positive probe / metrics 着地）| ⏳ SAM local or 実 AWS 要 |
+| full orchestration（認証実装チェック Lambda E2E / Positive probe / metrics 着地）| ⏳ SAM local or 実 AWS 要 |
 
 → **ロジックは検証済み、残るは AWS 環境依存の full-run**（14 章 §14.5 に要 PoC 項目を明記）。
 
