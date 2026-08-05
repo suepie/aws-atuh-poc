@@ -16,11 +16,11 @@
 flowchart TB
     Client([クライアント / 外部アプリ])
 
-    subgraph Edge["境界層 ＝ ネットワーク監査 Acct（他組織 / ADR-039）"]
+    subgraph Edge["境界層 ＝ ネットワーク監査アカウント（他組織 / ADR-039）"]
         CF["CloudFront + WAF<br/>Origin Protection ・ Rate-based rule"]
     end
 
-    subgraph AppAcct["各アプリ Acct（実行時パス）"]
+    subgraph AppAcct["各アプリ アカウント（実行時パス）"]
         GW["API GW / ALB / BFF<br/>認証（JWT / Cookie / IAM）"]
         APP["アプリ処理"]
     end
@@ -53,7 +53,7 @@ flowchart TB
     style Gov fill:#e3f2fd
 ```
 
-**通過フロー（実行時）**: クライアント → **境界（CloudFront+WAF, ADR-039）** → **認証（アプリ Acct の GW/ALB/BFF）** → アプリ処理。この道の各段で **流量（02）／課金計測（03）／ログ・監視（06）／セキュリティ（05）** が横断的に効く。
+**通過フロー（実行時）**: クライアント → **境界（CloudFront+WAF, ADR-039）** → **認証（アプリ アカウントの GW/ALB/BFF）** → アプリ処理。この道の各段で **流量（02）／課金計測（03）／ログ・監視（06）／セキュリティ（05）** が横断的に効く。
 
 **ガバナンスフロー（アプリが世に出る）**: 実装 → **静的解析（04, deploy 前に止める）** → **Service Catalog デプロイ（05/17, 境界・認証・タグを自動付与）** → **App Registry 登録** → **認証 外形監視（10-18, 稼働中の漏れを検知）**。
 
@@ -101,7 +101,7 @@ API プラットフォーム標準（`proposal/` 配下）は **要件・設計�
 | セキュリティ | ネットワーク / 認証制御 / テストプロセス（05 章）| 認証基盤の内部設計（認証側 SSOT）|
 | ログ・監視 | 最低限のログ出力・保持・監視の死守事項（06 章）| アプリ固有の詳細オブザーバビリティ設計（自由）|
 
-認証外形監視（Central Probe）は **別領域**（章 10-18）として扱う。本ガイドラインはアプリチームが日常的に守る「ルール」、外形監視は Network 監査チームが運用する「中央機構」。
+認証外形監視（中央認証チェック）は **別領域**（章 10-18）として扱う。本ガイドラインはアプリチームが日常的に守る「ルール」、外形監視は ネットワーク監査チームが運用する「中央機構」。
 
 ### §1.0.3 4 アーキパターンとの関係
 
@@ -190,7 +190,7 @@ API プラットフォーム標準（`proposal/` 配下）は **要件・設計�
 
 ---
 
-## §1.2 責務分担（アプリチーム vs Platform / Network 監査チーム）
+## §1.2 責務分担（アプリチーム vs Platform / ネットワーク監査チーム）
 
 本標準の一貫した設計思想は「**Engine は中央、Relationship 運用は分散**」（[§C-API-6 §C-6.1](../proposal/common/06-external-api-auth-architecture.md)）。ガイドライン領域でも同様:
 
@@ -199,7 +199,7 @@ API プラットフォーム標準（`proposal/` 配下）は **要件・設計�
 | **流量制御** | Usage Plan tier 選択 / quota 値設定 / 429 ハンドリング実装 | WAF ルール配布（FMS）/ CloudFront 標準 / rate limit 基盤 |
 | **課金制御** | タグ付与 / Budgets 設定 / 自 app のコスト監視 | Cost Allocation Tag 有効化 / Athena 集計基盤 / 全社ダッシュボード |
 | **静的解析** | CI に組込 / 検知修正 / 例外申請 | ルールセット配布 / cfn-guard・Semgrep ルール保守 |
-| **テストプロセス** | Pre-Deploy テスト実行 / OpenAPI 維持 | Service Catalog 製品 / Central Probe / 検知基盤 |
+| **テストプロセス** | Pre-Deploy テスト実行 / OpenAPI 維持 | Service Catalog 製品 / 中央認証チェック / 検知基盤 |
 | **ログ・監視** | アクセスログ出力 / 相関 ID 付与 / PII マスク / 自 app のダッシュボード | ログ集約基盤（CloudWatch/S3）/ 保持ポリシー標準 / 中央監査ログ |
 
 → **アプリチームは「設定・実装・修正」、中央は「基盤・ルール・機構」を担う**。
@@ -226,7 +226,7 @@ flowchart TD
     SEC --> Deploy
     OBS --> Deploy
 
-    Deploy --> Monitor[認証 probe<br/>監視対象に自動登録<br/>章 10-18]
+    Deploy --> Monitor[認証チェック<br/>監視対象に自動登録<br/>章 10-18]
 
     style Overview fill:#fff9c4
     style Deploy fill:#c8e6c9
@@ -248,7 +248,7 @@ flowchart TD
 | ID | 判断 | 根拠 |
 |---|---|---|
 | D-G-01 | ガイドラインは「死守事項サマリ（本章 §1.1）→ 各章詳細」の 2 層構造とする | アプリチームは §1.1 だけで最低ラインを把握でき、深掘りは各章に委譲できる |
-| D-G-02 | 認証外形監視（Central Probe）はガイドラインと分離し章 10-18 で扱う | アプリチームが日常守る「ルール」と中央運用の「機構」は読者・責務が異なる |
+| D-G-02 | 認証外形監視（中央認証チェック）はガイドラインと分離し章 10-18 で扱う | アプリチームが日常守る「ルール」と中央運用の「機構」は読者・責務が異なる |
 | D-G-03 | 責務分担は「Engine 中央 / Relationship 分散」（§C-API-6）を踏襲 | 標準全体の設計思想と一貫させ、認知負荷を下げる |
 
 ---
@@ -268,5 +268,5 @@ flowchart TD
 - [§C-API-1 全体参照アーキテクチャ](../proposal/common/01-reference-architecture.md)
 - [§C-API-5 Service Catalog](../proposal/common/05-self-service-catalog.md)
 - [§C-API-6 外部 API 認証アーキテクチャ](../proposal/common/06-external-api-auth-architecture.md)
-- [ADR-039 ネットワーク監査 Acct](../../adr/039-centralized-network-account-edge-layer.md)
+- [ADR-039 ネットワーク監査アカウント](../../adr/039-centralized-network-account-edge-layer.md)
 - [ADR-059 Central Auth Check Canary](../../adr/059-central-auth-check-canary-architecture.md)

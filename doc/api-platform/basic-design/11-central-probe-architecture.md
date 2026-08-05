@@ -1,4 +1,4 @@
-# 11. 認証 probe アーキテクチャ（Central Probe）
+# 11. 中央認証チェック アーキテクチャ
 
 前提: [00-basic-design-plan.md](00-basic-design-plan.md) / [10-external-monitoring-overview.md](10-external-monitoring-overview.md)
 実装: [code-samples/central-probe-lib/](code-samples/central-probe-lib/) / データ契約: [code-samples/README.md](code-samples/README.md)
@@ -7,20 +7,20 @@
 
 ## §11.0 前提と背景
 
-**この章で定めること**: Central Probe が 1 回の実行で何をどう検査するか（処理フロー / 検証方式 / 分類ロジック / probe 実装）。
+**この章で定めること**: 中央認証チェックが 1 回の実行で何をどう検査するか（処理フロー / 検証方式 / 分類ロジック / probe 実装）。
 **主な判断軸**: 「認証が正しく実装されている」を**誤検知なく**担保する。そのため Negative だけでなく Positive も併用する。
 
 ---
 
 ## §11.1 処理フロー（1 回の実行）
 
-> 本節は認証 probe の **1 回の実行内容（処理フロー）** を示す。**実行基盤（Lambda）と頻度（M1 デプロイ差分/自動・M3 フル/手動）は [18 章](18-scan-modes-and-scheduling.md) が SSOT**。
+> 本節は認証チェックの **1 回の実行内容（処理フロー）** を示す。**実行基盤（Lambda）と頻度（M1 デプロイ差分/自動・M3 フル/手動）は [18 章](18-scan-modes-and-scheduling.md) が SSOT**。
 
 1 回の実行で（M1 は対象アプリ、M3 は全アプリを）以下のように横断 probe する。
 
 ```mermaid
 sequenceDiagram
-    participant CC as Central Probe
+    participant CC as 中央認証チェック
     participant Reg as App Registry DDB
     participant OAR as OpenAPI Registry S3
     participant CF as アプリ CloudFront
@@ -82,7 +82,7 @@ canary 冒頭で**既知の挙動**を確認し、テスト基盤自体の健全
 
 ---
 
-## §11.3 authPattern 別の probe 方式
+## §11.3 authPattern 別の検査方式
 
 アプリの認証方式（[README §2.1 enum](code-samples/README.md)）で Negative の期待値と Positive の手段が変わる。`lib/probe.js` が分岐する。
 
@@ -103,11 +103,11 @@ Positive probe（valid token → 200 期待）に使う認証情報は、**静�
 
 ```
 認証基盤(Keycloak) に canary 専用サービスアカウント "api-canary-probe" を 1 つ
-  └ client_id/secret → Secrets Manager（ネットワーク監査 Acct）に保管
-     └ GetSecretValue できるのは Probe Lambda の IAM ロールのみ
+  └ client_id/secret → Secrets Manager（ネットワーク監査アカウント）に保管
+     └ GetSecretValue できるのは 認証チェック Lambda の IAM ロールのみ
 
 【1 回の probe 実行ごと】
-  Probe Lambda → Keycloak /token（client_credentials grant）
+  認証チェック Lambda → Keycloak /token（client_credentials grant）
               → 短命アクセストークン（5〜15 分）取得 → Positive probe に使用 → 破棄
 ```
 
@@ -118,9 +118,9 @@ Positive probe（valid token → 200 期待）に使う認証情報は、**静�
 | 対策 | 内容 |
 |---|---|
 | 保管 | client_secret は **Secrets Manager のみ**（環境変数・コード埋込・ログ出力禁止＝[05 OBS-3](05-security.md)）|
-| アクセス | probe Lambda ロールだけが `secretsmanager:GetSecretValue`（最小 IAM）|
+| アクセス | 認証チェック Lambda ロールだけが `secretsmanager:GetSecretValue`（最小 IAM）|
 | ローテ | **自動ローテーション**（30/90 日、Secrets Manager rotation）|
-| 経路 | 中央 Acct からの egress のみ・TLS |
+| 経路 | 中央アカウントからの egress のみ・TLS |
 
 **漏洩しても影響を小さく（blast radius 最小化）**:
 | 対策 | 内容 |
@@ -128,7 +128,7 @@ Positive probe（valid token → 200 期待）に使う認証情報は、**静�
 | 最小権限 | canary クライアントは**読み取り専用・最小スコープ**（管理者でも書込でもない）|
 | 短 TTL | トークンは数分で失効 → 捕捉されてもすぐ死ぬ |
 | GET 限定 | Positive は GET のみ（本番 POST スキップ、§11.5）|
-| 即失効 | 発火元は中央 Acct の既知プリンシパル → 異常利用検知でクライアント無効化 |
+| 即失効 | 発火元は中央アカウントの既知プリンシパル → 異常利用検知でクライアント無効化 |
 
 **スコープ設計（A → B の 2 段階）**:
 
@@ -141,7 +141,7 @@ Positive probe（valid token → 200 期待）に使う認証情報は、**静�
 
 ---
 
-## §11.4 probe 実装：共通 probe lib（Lambda 実行）
+## §11.4 検査ロジックの実装（probe lib、Lambda 実行）
 
 現行設計の probe は **Lambda 上で共通 probe lib を実行**する（[18 章](18-scan-modes-and-scheduling.md)）。OpenAPI を動的発見して endpoint 数無制限に対応し、`lib/token.js` で OAuth Bearer（§11.3.1）、Puppeteer 相当のロジックで Cookie モノリス Positive も扱う。
 
@@ -156,7 +156,7 @@ Positive probe（valid token → 200 期待）に使う認証情報は、**静�
 
 ---
 
-## §11.5 環境別 probe 動作
+## §11.5 環境別の検査動作
 
 | 環境 | Negative | Positive (GET) | Positive (POST 等) | Smoke |
 |---|:---:|:---:|:---:|:---:|

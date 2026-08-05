@@ -8,7 +8,7 @@
 ## §17.0 前提と背景
 
 **この章で定めること**: 「アプリがデプロイされたことをどう検知し、App Registry に登録するか」。Pattern β で「Deploy 漏れ = ゼロ」を実運用で成立させる登録トリガの設計。
-**なぜ要るか**: Central Probe は App Registry に載っているアプリしか監視しない。**登録漏れ = 監視漏れ**。登録をどうトリガするかが機構全体の実効性を決める。
+**なぜ要るか**: 中央認証チェックは App Registry に載っているアプリしか監視しない。**登録漏れ = 監視漏れ**。登録をどうトリガするかが機構全体の実効性を決める。
 
 ---
 
@@ -36,9 +36,9 @@
 | # | 成果物 | 中身 |
 |---|---|---|
 | 1 | **`product-api.yaml`**（製品テンプレ本体）| API GW/ALB を **認証必須・Origin Protection・アクセスログ・必須タグ込み**で生成。下記 2 つの Custom Resource を内蔵 |
-| 2 | Portfolio + 共有設定 | AWS Organizations / RAM でアプリ Acct へ配布 |
-| 3 | Launch ロール / 制約 | 起動時に中央 Lambda（登録 / Export）を Cross-Acct 呼べる権限（16 章）|
-| 4 | （既存）`app-registry-lambda` / `openapi-export-lambda` | 中央 Acct に配置済み（[code-samples/](code-samples/)）|
+| 2 | Portfolio + 共有設定 | AWS Organizations / RAM でアプリ アカウントへ配布 |
+| 3 | Launch ロール / 制約 | 起動時に中央 Lambda（登録 / Export）を クロスアカウント 呼べる権限（16 章）|
+| 4 | （既存）`app-registry-lambda` / `openapi-export-lambda` | 中央アカウントに配置済み（[code-samples/](code-samples/)）|
 | 5 | （任意）SCP | 製品を通さない API GW/ALB 直作成を禁止（§17.5）|
 
 **製品テンプレに内蔵する Custom Resource（＝アプリ開発者が書かない登録処理）のイメージ**:
@@ -77,7 +77,7 @@ Resources:
       stageName: !Ref Env
 ```
 
-- `Custom::AppRegistryRegister` は stack の **Create/Update/Delete に応じて**中央 DynamoDB へ PutItem/DeleteItem（Cross-Acct）。実装は既存の [`app-registry-lambda`](code-samples/app-registry-lambda/)。
+- `Custom::AppRegistryRegister` は stack の **Create/Update/Delete に応じて**中央 DynamoDB へ PutItem/DeleteItem（クロスアカウント）。実装は既存の [`app-registry-lambda`](code-samples/app-registry-lambda/)。
 - `ServiceToken` に中央 Lambda の ARN を指すだけで、**登録ロジックはアプリ側に一切書かれない**。
 
 **アプリチームが API ごとにやること（これだけ）**:
@@ -118,7 +118,7 @@ flowchart LR
 # アプリの deploy パイプライン（GitHub Actions 例）
 - name: Deploy API
   run: cdk deploy
-- name: Register to Central Probe         # ← 追加ステップ
+- name: Register to 中央認証チェック         # ← 追加ステップ
   run: |
     aws lambda invoke --function-name app-registry-register \
       --payload '{"appId":"expense-api","env":"prod","baseUrl":"https://expense.example.com",

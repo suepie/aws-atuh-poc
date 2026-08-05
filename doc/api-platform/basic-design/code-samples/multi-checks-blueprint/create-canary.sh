@@ -20,7 +20,7 @@ set -euo pipefail
 
 # ---- 環境に合わせて置換 -------------------------------------------------------
 REGION="ap-northeast-3"                       # 大阪リージョン想定
-ACCOUNT_ID="111122223333"                     # ネットワーク監査 Acct
+ACCOUNT_ID="111122223333"                     # ネットワーク監査アカウント
 CANARY_NAME="auth-check-expense-api"          # 小文字/数字/ハイフン/アンダースコアのみ (^[0-9a-z_\-]+$)
 RUNTIME="syn-nodejs-5.1"
 EXEC_ROLE_ARN="arn:aws:iam::${ACCOUNT_ID}:role/synthetics-auth-check-exec-role"

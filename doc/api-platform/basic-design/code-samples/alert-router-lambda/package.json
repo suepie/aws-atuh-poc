@@ -1,7 +1,7 @@
 {
   "name": "alert-router-lambda",
   "version": "1.0.0",
-  "description": "Central Auth Check Canary の Alert Router。canary からの Alert イベント(README §2.6)を severity(CRITICAL/WARN/INFO)で P1/P2/P3 SNS トピックへ振り分ける。ADR-059 Pattern β。",
+  "description": "中央認証チェック の Alert Router。canary からの Alert イベント(README §2.6)を severity(CRITICAL/WARN/INFO)で P1/P2/P3 SNS トピックへ振り分ける。ADR-059 Pattern β。",
   "main": "index.js",
   "engines": {
     "node": ">=22.0.0"

@@ -3,23 +3,23 @@
 /**
  * app-registry-lambda / index.js
  *
- * Central Auth Check Canary (ADR-059, Pattern β) の App Registry CRUD。
+ * 中央認証チェック (ADR-059, Pattern β) の App Registry CRUD。
  *
- * CloudFormation Custom Resource として各 App Acct の Service Catalog 製品から呼ばれ、
- * ネットワーク監査 Acct の DynamoDB(App Registry) に自アプリのメタデータを登録/更新/削除する。
+ * CloudFormation Custom Resource として各 App アカウントの Service Catalog 製品から呼ばれ、
+ * ネットワーク監査アカウントの DynamoDB(App Registry) に自アプリのメタデータを登録/更新/削除する。
  *
  * - Create / Update : PutItem（README §2.1 の全属性）
  * - Delete          : DeleteItem
  *
- * Cross-Acct: 本 Lambda が App Acct 側で動く場合は STS AssumeRole で
- *             ネットワーク監査 Acct のロールを引き受けてから DynamoDB を書く。
- *             （本 Lambda 自体をネットワーク監査 Acct に置き、App Acct から
+ * クロスアカウント: 本 Lambda が App アカウント側で動く場合は STS AssumeRole で
+ *             ネットワーク監査アカウントのロールを引き受けてから DynamoDB を書く。
+ *             （本 Lambda 自体をネットワーク監査アカウントに置き、App アカウント から
  *              Lambda を invoke する構成なら CROSS_ACCT_ROLE_ARN 未設定でよい）
  *
  * AWS SDK は必ず v3。
  *   - @aws-sdk/client-dynamodb        : 低レベルクライアント
  *   - @aws-sdk/lib-dynamodb           : DocumentClient（marshalling 自動）
- *   - @aws-sdk/client-sts             : AssumeRole（Cross-Acct 時）
+ *   - @aws-sdk/client-sts             : AssumeRole（クロスアカウント 時）
  *
  * ⚠ Custom Resource の鉄則:
  *   成功でも失敗でも必ず cfn-response を presigned S3 URL に PUT する。
@@ -34,7 +34,7 @@ const { DynamoDBDocumentClient, PutCommand, DeleteCommand } = require('@aws-sdk/
 const { STSClient, AssumeRoleCommand } = require('@aws-sdk/client-sts');
 
 const TABLE_NAME = process.env.TABLE_NAME;                 // App Registry テーブル名（必須）
-const CROSS_ACCT_ROLE_ARN = process.env.CROSS_ACCT_ROLE_ARN; // Cross-Acct 書込用ロール（任意）
+const CROSS_ACCT_ROLE_ARN = process.env.CROSS_ACCT_ROLE_ARN; // クロスアカウント 書込用ロール（任意）
 const REGION = process.env.AWS_REGION || 'ap-northeast-1';
 
 /**

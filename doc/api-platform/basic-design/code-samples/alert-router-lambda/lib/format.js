@@ -58,7 +58,7 @@ function formatSubject(event) {
 function formatBody(event) {
   const meta = metaFor(event.severity);
   const lines = [
-    `${meta.emoji} Central Auth Check Canary Alert`,
+    `${meta.emoji} 中央認証チェック Alert`,
     '',
     `重大度   : ${event.severity} (${meta.priority})`,
     `通知先   : ${meta.target}`,

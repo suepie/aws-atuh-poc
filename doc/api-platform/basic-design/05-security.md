@@ -13,7 +13,7 @@
 
 | 柱 | 節 | 概要 |
 |---|---|---|
-| **ネットワークセキュリティ** | §5.1 | 他アカウント（ネットワーク監査 Acct）が Inbound/Outbound を制御する構造と、アプリが守ること |
+| **ネットワークセキュリティ** | §5.1 | 他アカウント（ネットワーク監査アカウント）が Inbound/Outbound を制御する構造と、アプリが守ること |
 | **認証制御** | §5.2 | アプリが把握・遵守すべき認証（JWT 検証 / 認証必須 / CSRF / tenant 分離）|
 | **セキュリティテストプロセス** | §5.3 | Pre-Deploy / Deploy / Runtime の 3 段階検証 |
 
@@ -23,12 +23,12 @@
 
 ### §5.1.1 前提：境界は「他アカウント」が制御する
 
-API プラットフォームのインターネット境界は **ネットワーク監査 Acct（他組織/中央管理）** に集約される（[ADR-039](../../adr/039-centralized-network-account-edge-layer.md)）。アプリチームは自分のアカウント内に境界を持たず、以下を**前提として理解**する。
+API プラットフォームのインターネット境界は **ネットワーク監査アカウント（他組織/中央管理）** に集約される（[ADR-039](../../adr/039-centralized-network-account-edge-layer.md)）。アプリチームは自分のアカウント内に境界を持たず、以下を**前提として理解**する。
 
 | 方向 | 制御 | 管理主体 |
 |---|---|---|
-| **Inbound** | CloudFront + WAF + Origin Protection（→ 各アプリ API GW/ALB）| ネットワーク監査 Acct |
-| **Outbound** | Network Firewall ドメインフィルタ（許可ドメインのみ Egress）| ネットワーク監査 Acct |
+| **Inbound** | CloudFront + WAF + Origin Protection（→ 各アプリ API GW/ALB）| ネットワーク監査アカウント |
+| **Outbound** | Network Firewall ドメインフィルタ（許可ドメインのみ Egress）| ネットワーク監査アカウント |
 
 → 認証基盤側は「**A 部（自管理）/ B 部（他組織要求仕様 REQ-IN/REQ-OUT）**」に分け、**「B 部が満たされなくても A 部単独で破られない」**を生命線としている（[認証 06 章 §6.0.2](../../basic-design/06-infra-network-design.md)）。API 側アプリも同じ原則に従う（§5.1.4）。
 
@@ -191,7 +191,7 @@ CI で **Unit test + IaC lint + 静的解析**（[04 章](04-static-analysis-gui
 
 | 機構 | 役割 | 参照 |
 |---|---|---|
-| **外形監視（Central 認証 probe）** | M1 デプロイ差分（自動）+ M3 フル監査（手動）で認証を Negative+Positive probe | 章 10-18、[ADR-059](../../adr/059-central-auth-check-canary-architecture.md)|
+| **外形監視（中央認証チェック）** | M1 デプロイ差分（自動）+ M3 フル監査（手動）で認証を Negative+Positive の 2 種リクエストで検査 | 章 10-18、[ADR-059](../../adr/059-central-auth-check-canary-architecture.md)|
 | Config Rules | 認証 / Origin Protection の drift 検知 | [§FR-API-7 §7.2.2](../proposal/fr/07-guardrails.md)|
 | GuardDuty / Inspector / Security Hub | 脅威検知 / 脆弱性 / 集約 | §NFR-API-4 |
 
@@ -259,7 +259,7 @@ CI で **Unit test + IaC lint + 静的解析**（[04 章](04-static-analysis-gui
 | ID | 内容 | 引き渡し先 |
 |---|---|---|
 | BD-Q-05 | 外部 pen test のベンダー選定・予算（$20-50k/年 目安）| 契約 / 予算フェーズ |
-| BD-Q-01 | ROSA 側 P-18（ネットワーク監査 Acct 他組織管理）確定時の NW セキュリティ責任分界 | 16 章 |
+| BD-Q-01 | ROSA 側 P-18（ネットワーク監査アカウント 他組織管理）確定時の NW セキュリティ責任分界 | 16 章 |
 | G-HANDOFF-05-1 | 外形監視（M1/M3）の実装 | 章 10-18、`code-samples/` |
 
 ---
@@ -280,7 +280,7 @@ CI で **Unit test + IaC lint + 静的解析**（[04 章](04-static-analysis-gui
 - [01-cloud-guidelines-overview.md](01-cloud-guidelines-overview.md) — 死守事項サマリ
 - [04-static-analysis-guidelines.md](04-static-analysis-guidelines.md) — Pre-Deploy 静的解析
 - [章 10-18](10-external-monitoring-overview.md) — Runtime 外形監視
-- [ADR-039](../../adr/039-centralized-network-account-edge-layer.md) — ネットワーク監査 Acct / Origin Protection
+- [ADR-039](../../adr/039-centralized-network-account-edge-layer.md) — ネットワーク監査アカウント / Origin Protection
 - [ADR-057](../../adr/057-csrf-protection-responsibility-boundary.md) — CSRF 責任分界
 - [§C-API-6](../proposal/common/06-external-api-auth-architecture.md) — 認証アーキ / 6 漏れパターン
 - [認証 basic-design 06 章](../../basic-design/06-infra-network-design.md) — ネットワーク設計（A/B 部、REQ-IN/OUT）

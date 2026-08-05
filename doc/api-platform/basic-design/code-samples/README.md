@@ -1,7 +1,7 @@
-# code-samples — Central Auth Check Canary 実装物
+# code-samples — 中央認証チェック 実装物
 
 前提: [ADR-059 Central Auth Check Canary Architecture (Pattern β)](../../../adr/059-central-auth-check-canary-architecture.md) / [§C-API-6 §C-6.6.8](../../proposal/common/06-external-api-auth-architecture.md)
-位置付け: 認証外形監視（Pattern β = ネットワーク監査 Acct 集約）の**動く実装サンプル**。本ディレクトリは API プラットフォーム専用（認証基盤 `keycloak/` とは分離）。
+位置付け: 認証外形監視（Pattern β = ネットワーク監査アカウント集約）の**動く実装サンプル**。本ディレクトリは API プラットフォーム専用（認証基盤 `keycloak/` とは分離）。
 
 > ⚠ **これは参照実装 / サンプルです**。本番採用時は Region / アカウント ID / ドメイン等を環境に合わせて置換し、PoC 検証（Phase 4）を経てください。
 
@@ -10,10 +10,10 @@
 ## 0. 全体像
 
 ```
-[ネットワーク監査 Acct]                          [各 App Acct]
-  App Registry (DynamoDB) ◄──── Cross-Acct Put ──── Service Catalog 製品
-  OpenAPI Registry (S3)   ◄──── Cross-Acct Put ──── (deploy 時に自動登録)
-  Central Probe (Lambda, 共通 probe lib)
+[ネットワーク監査アカウント]                          [各 App アカウント]
+  App Registry (DynamoDB) ◄──── クロスアカウント Put ──── Service Catalog 製品
+  OpenAPI Registry (S3)   ◄──── クロスアカウント Put ──── (deploy 時に自動登録)
+  中央認証チェック (Lambda, 共通 probe lib)
     │ M1 デプロイ差分（自動）/ M3 フル監査（手動）※18 章
     ├─ App Registry を Scan（M1 対象アプリ / M3 全アプリ取得）
     ├─ OpenAPI Registry から各アプリの openapi.yaml 取得
@@ -27,7 +27,7 @@
 
 | ディレクトリ | 役割 | Runtime |
 |---|---|---|
-| [central-probe-lib/](central-probe-lib/) | Central Probe 本体（共通 probe lib：OpenAPI 動的発見、Hybrid 検証、4×4 分類）| Lambda（Node.js 22 / SDK v3）|
+| [central-probe-lib/](central-probe-lib/) | 中央認証チェック 本体（共通 probe lib：OpenAPI 動的発見、Hybrid 検証、4×4 分類）| Lambda（Node.js 22 / SDK v3）|
 | [multi-checks-blueprint/](multi-checks-blueprint/) | **将来オプション**（Synthetics）: 小規模 Multi Checks JSON（≤10 checks、OAuth ネイティブ）| `syn-nodejs-5.1` |
 | [app-registry-lambda/](app-registry-lambda/) | App Registry CRUD（Custom Resource から呼ばれる登録 API）| Node.js 22 / SDK v3 |
 | [openapi-export-lambda/](openapi-export-lambda/) | OpenAPI Export Custom Resource（API GW get-export → S3 Put）| Node.js 22 / SDK v3 |
@@ -41,7 +41,7 @@
 
 ### 2.1 App Registry（DynamoDB）スキーマ
 
-各アプリが deploy 時に 1 レコード登録。Central Probe がこれを Scan する。
+各アプリが deploy 時に 1 レコード登録。中央認証チェックがこれを Scan する。
 
 | 属性 | 型 | 説明 | 例 |
 |---|---|---|---|
@@ -50,12 +50,12 @@
 | `baseUrl` | S | probe 先の CloudFront URL（Origin Protection 経由）| `https://expense.example.com` |
 | `authPattern` | S | 認証パターン（下記 enum）| `api-gw-jwt` |
 | `openApiS3Key` | S | OpenAPI Registry 内のキー | `111122223333/abc123/openapi.yaml` |
-| `testTokenSecret` | S | Positive test 用 token の Secret 名（ネットワーク監査 Acct 内）| `canary-central-readonly` |
+| `testTokenSecret` | S | Positive test 用 token の Secret 名（ネットワーク監査アカウント内）| `canary-central-readonly` |
 | `alertRouting` | M | 通知先設定（下記）| `{ p1: "arn:...:security", p2: "arn:...:platform", p3: "arn:...:app-team-x" }` |
 | `enabled` | BOOL | 監視有効フラグ | `true` |
 | `registeredAt` | S | ISO8601 登録日時 | `2026-07-06T00:00:00Z` |
 
-**`authPattern` enum**（Central Probe が assertion 方式を切替）:
+**`authPattern` enum**（中央認証チェックが assertion 方式を切替）:
 | 値 | 意味 | Negative 期待 | Positive |
 |---|---|---|---|
 | `api-gw-jwt` | API GW + JWT Authorizer | 401/403 | Bearer で 200 |
@@ -73,7 +73,7 @@
 - キー: `{accountId}/{apiId}/openapi.yaml`
 - 各アプリの deploy 時に openapi-export-lambda が Put
 
-### 2.3 OpenAPI アノテーション（アプリチームが付与、Central Probe が解釈）
+### 2.3 OpenAPI アノテーション（アプリチームが付与、中央認証チェックが解釈）
 
 > **MON-1（必須・default-deny）**: 未記載 = 認証必須。**public endpoint は `x-synthetics-skip-auth-check: true` を必ず明示**。未明示の public は「認証漏れ（Neg=2xx）」として P1 になる（[13 章 §13.3.0](../13-openapi-registry-design.md)）。これがアプリ必須の唯一の監視アノテーション、他は任意。
 
@@ -87,7 +87,7 @@
 | `x-canary-auth-mode: cookie-redirect` | モノリス Cookie フロー | — |
 | `x-canary-expected-redirect: /login` | Cookie モノリスの期待リダイレクト先 | — |
 
-### 2.4 CloudWatch Metrics（Central Probe が emit）
+### 2.4 CloudWatch Metrics（中央認証チェックが emit）
 
 - Namespace: `APIPlatform/AuthCheck`
 - Dimensions: `AppId`, `Env`, `AuthPattern`
@@ -138,7 +138,7 @@
 
 | 対象 | バージョン | 備考 |
 |---|---|---|
-| **Probe Lambda（現行）** | **Node.js 22 / AWS SDK v3** | probe lib を実行、synthetics 抽象は https 実装で注入 |
+| **認証チェック Lambda（現行）** | **Node.js 22 / AWS SDK v3** | probe lib を実行、synthetics 抽象は https 実装で注入 |
 | Synthetics Puppeteer runtime（将来）| `syn-nodejs-puppeteer-16.1` | Lambda Node.js 22.x、旧 `-7.0` は Deprecated |
 | Synthetics Node.js-only runtime（将来）| `syn-nodejs-5.1` | Multi Checks Blueprint 用 |
 | Synthetics namespace（将来）| `@aws/synthetics-puppeteer` / `@aws/synthetics-logger` | v13.1+ で旧 `Synthetics` から変更 |
@@ -147,11 +147,11 @@
 
 ## 4. デプロイ順序
 
-1. `app-registry-lambda` + `openapi-export-lambda` をネットワーク監査 Acct にデプロイ（Cross-Acct Role 設定）
+1. `app-registry-lambda` + `openapi-export-lambda` をネットワーク監査アカウントにデプロイ（クロスアカウント Role 設定）
 2. `alert-router-lambda` + SNS トピック（P1/P2/P3）をデプロイ
-3. `central-probe-lib` の probe lib を **probe Lambda** としてデプロイ（M1=EventBridge 起動 / M3=手動 invoke、18 章）
-4. 各 App Acct の Service Catalog 製品に Custom Resource（App Registry 登録 + OpenAPI Export）を組込
-5. Phase 4 PoC: 1 App Acct 相当で end-to-end 検証
+3. `central-probe-lib` の probe lib を **認証チェック Lambda** としてデプロイ（M1=EventBridge 起動 / M3=手動 invoke、18 章）
+4. 各 App アカウントの Service Catalog 製品に Custom Resource（App Registry 登録 + OpenAPI Export）を組込
+5. Phase 4 PoC: 1 App アカウント相当で end-to-end 検証
 
 ---
 

@@ -1,7 +1,7 @@
 # app-registry-lambda
 
 Central Auth Check Canary（[ADR-059](../../../../adr/059-central-auth-check-canary-architecture.md), Pattern β）の **App Registry CRUD**。
-各 App Acct の deploy 時に、自アプリのメタデータをネットワーク監査 Acct の DynamoDB(App Registry) に登録する CloudFormation **Custom Resource** ハンドラ。
+各 App アカウントの deploy 時に、自アプリのメタデータをネットワーク監査アカウントの DynamoDB(App Registry) に登録する CloudFormation **Custom Resource** ハンドラ。
 
 Central Canary はこの App Registry を 5min 周期で Scan して監視対象を動的発見する（[../README.md](../README.md) §0）。
 
@@ -20,12 +20,12 @@ Central Canary はこの App Registry を 5min 周期で Scan して監視対象
 | 変数 | 必須 | 説明 |
 |---|---|---|
 | `TABLE_NAME` | ✅ | App Registry DynamoDB テーブル名（PK=`appId`, SK=`env`）|
-| `CROSS_ACCT_ROLE_ARN` | 任意 | ネットワーク監査 Acct 側の書込ロール ARN。設定時は STS `AssumeRole` してから DynamoDB を書く。未設定なら Lambda 実行ロールの既定クレデンシャルを使用（= 本 Lambda をネットワーク監査 Acct に置く構成）|
+| `CROSS_ACCT_ROLE_ARN` | 任意 | ネットワーク監査アカウント側の書込ロール ARN。設定時は STS `AssumeRole` してから DynamoDB を書く。未設定なら Lambda 実行ロールの既定クレデンシャルを使用（= 本 Lambda をネットワーク監査アカウントに置く構成）|
 | `AWS_REGION` | 自動 | Lambda が自動注入（既定 `ap-northeast-1`）|
 
 ## Service Catalog 製品からの呼ばれ方
 
-各 App Acct の Service Catalog 製品（CFN テンプレート）内で `Custom::AppRegistryEntry` として宣言し、
+各 App アカウントの Service Catalog 製品（CFN テンプレート）内で `Custom::AppRegistryEntry` として宣言し、
 `ServiceToken` に本 Lambda の ARN を指定、`Properties` に §2.1 の属性を渡す。
 
 ```yaml
@@ -51,21 +51,21 @@ Resources:
 - `PhysicalResourceId` は `app-registry::{appId}::{env}` で安定化させ、Update が誤って replacement 扱いにならないようにしている。
 - Delete は stack 削除・製品終了時に発火し、該当アプリを Registry から外す（= 監視対象から外れる）。
 
-## 構成パターンと Cross-Acct
+## 構成パターンと クロスアカウント
 
 ```
-[本 Lambda をネットワーク監査 Acct に配置]（推奨・シンプル）
-  App Acct の Service Catalog → ServiceToken(Cross-Acct Lambda invoke)
-  → Lambda は同一 Acct 内の DynamoDB を書く（CROSS_ACCT_ROLE_ARN 不要）
+[本 Lambda をネットワーク監査アカウントに配置]（推奨・シンプル）
+  App アカウントの Service Catalog → ServiceToken(クロスアカウント Lambda invoke)
+  → Lambda は同一 アカウント内の DynamoDB を書く（CROSS_ACCT_ROLE_ARN 不要）
 
-[本 Lambda を App Acct に配置]
-  → CROSS_ACCT_ROLE_ARN にネットワーク監査 Acct のロールを設定
+[本 Lambda を App アカウントに配置]
+  → CROSS_ACCT_ROLE_ARN にネットワーク監査アカウントのロールを設定
   → STS AssumeRole 後に DynamoDB へ PutItem/DeleteItem
 ```
 
 ## 検証済み事実（AWS 公式、2026-07）
 
-- **AWS SDK v3**（`aws-sdk` v2 禁止）: DynamoDB は `@aws-sdk/client-dynamodb` + `@aws-sdk/lib-dynamodb` の `DynamoDBDocumentClient`（`PutCommand`/`DeleteCommand`）。Cross-Acct は `@aws-sdk/client-sts` の `AssumeRoleCommand`。
+- **AWS SDK v3**（`aws-sdk` v2 禁止）: DynamoDB は `@aws-sdk/client-dynamodb` + `@aws-sdk/lib-dynamodb` の `DynamoDBDocumentClient`（`PutCommand`/`DeleteCommand`）。クロスアカウントは `@aws-sdk/client-sts` の `AssumeRoleCommand`。
 - **CFN Custom Resource 応答**（[crpg-ref](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/crpg-ref-responses.html)）: presigned S3 URL(`ResponseURL`) へ **HTTPS PUT**。本文の必須フィールドは `Status`(SUCCESS/FAILED), `RequestId`, `StackId`, `LogicalResourceId`, `PhysicalResourceId`。`Reason` は FAILED 時必須。`Data`/`NoEcho` は Create/Update のみ。**本文 4096 bytes 以下**。
 - **応答未送信 = CFN タイムアウト**（既定最大 1h）まで stuck。だから成功でも失敗でも必ず送る。PUT の `content-type` は空文字が定石。
 - `PhysicalResourceId` は同一リソースの全応答で一致させる。変わると CFN は replacement（旧リソースへ Delete）と解釈する。

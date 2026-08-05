@@ -7,14 +7,14 @@
 
 ## §13.0 前提と背景
 
-**この章で定めること**: Central Probe が「各アプリの endpoint 一覧と probe 制御情報」を得るための OpenAPI 置き場（S3）と、deploy 後の正本を自動 export する仕組み、アプリチームが付けるアノテーション。
-**なぜ要るか**: Central Probe は endpoint を**動的に**知る必要がある（アプリごとに違い、増減する）。OpenAPI を正本にすれば新規 endpoint も次回 deploy で自動追随する。
+**この章で定めること**: 中央認証チェックが「各アプリの endpoint 一覧と probe 制御情報」を得るための OpenAPI 置き場（S3）と、deploy 後の正本を自動 export する仕組み、アプリチームが付けるアノテーション。
+**なぜ要るか**: 中央認証チェックは endpoint を**動的に**知る必要がある（アプリごとに違い、増減する）。OpenAPI を正本にすれば新規 endpoint も次回 deploy で自動追随する。
 
 ---
 
 ## §13.1 S3 バケット構造
 
-ネットワーク監査 Acct に 1 バケット。
+ネットワーク監査アカウントに 1 バケット。
 
 | 項目 | 値 |
 |---|---|
@@ -22,7 +22,7 @@
 | キー | `{accountId}/{apiId}/openapi.yaml` |
 | Versioning | 有効（正本の履歴を保持）|
 
-Central Probe は App Registry の `openApiS3Key` でこのキーを引き、`lib/openapi.js` の `fetchSpec` で取得・parse する。
+中央認証チェックは App Registry の `openApiS3Key` でこのキーを引き、`lib/openapi.js` の `fetchSpec` で取得・parse する。
 
 > ⚠ **実装注意（Phase 4 検証で判明）**: LocalStack でのローカルテストは S3 の **virtual-host addressing** で失敗する（`forcePathStyle` 要）。これは LocalStack 固有で**実 AWS では発生しない**。full-run は SAM local か実 AWS で（[research](research/phase4-local-verification-results.md)）。
 
@@ -34,15 +34,15 @@ deploy 後の**実際の API GW 定義**を正本として S3 に置く。リポ
 
 ```mermaid
 sequenceDiagram
-    participant SC as Service Catalog 製品 / App Acct
+    participant SC as Service Catalog 製品 / App アカウント
     participant CR as openapi-export Lambda / Custom Resource
-    participant AGW as API GW / App Acct
-    participant S3 as OpenAPI Registry / ネットワーク監査 Acct
+    participant AGW as API GW / App アカウント
+    participant S3 as OpenAPI Registry / ネットワーク監査アカウント
 
     SC->>CR: CloudFormation Create/Update
     CR->>AGW: GetExport（exportType=oas30, accepts=application/yaml）
     AGW-->>CR: OpenAPI（body = Uint8Array）
-    CR->>S3: PutObject（Cross-Acct、{accountId}/{apiId}/openapi.yaml）
+    CR->>S3: PutObject（クロスアカウント、{accountId}/{apiId}/openapi.yaml）
     CR-->>SC: cfn-response SUCCESS
 ```
 
@@ -116,7 +116,7 @@ paths:
 flowchart LR
     Dep[デプロイ] --> Exp[openapi-export<br/>新 openapi.yaml を Put]
     Exp -->|S3 PutObject イベント| EB[EventBridge]
-    EB --> L[delta-probe Lambda<br/>mode=delta, appId]
+    EB --> L[delta-認証チェック Lambda<br/>mode=delta, appId]
     L --> P[そのアプリの全 endpoint probe]
 ```
 

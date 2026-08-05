@@ -355,7 +355,7 @@ deploy 前に以下を全て満たすこと（総論 §1.1.1 の死守事項）�
 - [§FR-API-2 §2.2 Partner 認証](../proposal/fr/02-authn-authz.md)
 - [§C-API-6 §C-6.2.5 認証パターン P-1〜P-7](../proposal/common/06-external-api-auth-architecture.md)
 - [ADR-052 マルチテナント Isolation + Rate Limiting](../../adr/052-multi-tenant-isolation-rate-limiting.md)（Scope Reduced — 認証 API のみ本基盤対象）
-- [ADR-039 中央集約 Network Acct](../../adr/039-centralized-network-account-edge-layer.md)
+- [ADR-039 中央集約 Network アカウント](../../adr/039-centralized-network-account-edge-layer.md)
 
 ---
 

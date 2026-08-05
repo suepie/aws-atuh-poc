@@ -77,12 +77,12 @@
 | 発生源 | S3 / EBS / Aurora / DynamoDB | Storage 費。`app-id` タグ | §3.1 軸3 |
 | 発生源 | NAT GW / VPC Endpoint / CloudFront egress | Data transfer。**一部 untaggable** → split charge | §3.1 軸4 |
 | 発生源 | 外部 SaaS（Stripe / OpenAI 等）| **AWS 請求外**。別建て監視 | §3.5 |
-| **識別・計測** | Cost Allocation Tag（`app-id`/`env`/`cost-center`/`owner`）| 按分の**一次キー**。要 activate（Org 管理 Acct）| §3.2 |
+| **識別・計測** | Cost Allocation Tag（`app-id`/`env`/`cost-center`/`owner`）| 按分の**一次キー**。要 activate（Org 管理 アカウント）| §3.2 |
 | 識別・計測 | API Gateway Usage Plan + API Key | Partner（法人テナント）識別。**認証ではなく識別・計測用**| §3.4.1 |
 | 識別・計測 | GetUsage API | API Key ごとの日次 used/remaining quota | §3.4.2 |
 | 識別・計測 | API GW Access Log / EMF | リクエスト詳細・`tenant_id` 次元メトリクス | §3.4.2 |
 | **集約** | Cost & Usage Report (CUR 2.0, S3/Parquet) | 生データ **SSOT**。`resource_tags_user_*` 列 | §3.4.3 |
-| 集約 | Cost Categories（split charge rule）| タグ/Acct を束ねる**二次分類**・untaggable 共有費の比例配分 | §3.4.4 |
+| 集約 | Cost Categories（split charge rule）| タグ/アカウントを束ねる**二次分類**・untaggable 共有費の比例配分 | §3.4.4 |
 | **分析・可視化** | Athena | CUR を標準 SQL 集計（サーバーレス）| §3.4.3 |
 | 分析・可視化 | Cost Explorer | 即席ドリルダウン | §3.6.1 |
 | 分析・可視化 | QuickSight | 定型ダッシュボード（日次）| §3.6 |
@@ -141,7 +141,7 @@ flowchart TB
 
 | タグキー | 必須 | 値の規約 | 用途 |
 |---|:---:|---|---|
-| `app-id` | ✅ | `app-` 前缀 + 小文字英数ハイフン（例 `app-checkout`）。App Registry の app_id と一致必須 | アプリ単位のコスト按分の主キー。Central Probe の App Registry（[ADR-059](../../adr/059-central-auth-check-canary-architecture.md)）と突合 |
+| `app-id` | ✅ | `app-` 前缀 + 小文字英数ハイフン（例 `app-checkout`）。App Registry の app_id と一致必須 | アプリ単位のコスト按分の主キー。中央認証チェックの App Registry（[ADR-059](../../adr/059-central-auth-check-canary-architecture.md)）と突合 |
 | `env` | ✅ | `prod` / `stg` / `dev` のいずれか（列挙値のみ） | 環境別コスト追跡・Budgets 分割 |
 | `cost-center` | ✅ | `cc-` 前缀 + 組織の部門コード（例 `cc-ec`）。組織側標準名は BD-Q-03 で確定 | 内部部門への按分・請求 |
 | `owner` | ✅ | 責任チームの連絡先（メール DL 推奨、例 `team-checkout@example.com`） | コスト異常時のエスカレーション先 |
@@ -256,13 +256,13 @@ Partner（法人テナント）の識別は **API Gateway Usage Plan + API Key**
 
 ```mermaid
 flowchart TB
-    subgraph App["各アプリ Acct（Partner API）"]
+    subgraph App["各アプリ アカウント（Partner API）"]
         APIK["API Gateway<br/>Usage Plan + API Key<br/>(Partner=法人テナント識別)"]
         ALOG["Access Log<br/>(apiKey マスク / tenant_id)"]
         RES["課金対象リソース<br/>Lambda / ALB / S3 …<br/>必須タグ付与"]
     end
 
-    subgraph Mgmt["Org 管理 Acct（FinOps 中央）"]
+    subgraph Mgmt["Org 管理 アカウント（FinOps 中央）"]
         CUR["Cost & Usage Report 2.0<br/>(S3 / Parquet)<br/>resource_tags_user_app_id 列"]
         ATH["Athena<br/>タグ列 × Usage で按分クエリ"]
         CC["Cost Categories<br/>部門/BU 階層 + split charge"]
@@ -379,7 +379,7 @@ Cost Categories（AWS 公式で確認、2026-07 時点）で、タグ・アカ�
 | D-G-030 | 課金按分は **Cost Allocation Tag + CUR + Athena + QuickSight** のマネージドパイプラインに統一し、独自集計基盤は作らない | §FR-API-4 §4.0.3「運用負荷・コスト最小」。AWS 公式で CUR→Athena 標準クエリを確認 |
 | D-G-031 | 新規タグキー追加時は **Org 管理アカウントで即 activate** を運用手順化。付与（アプリ）と有効化（中央）を責務分離 | AWS 公式: activate しないと CUR/Cost Explorer に出ない・遡及しない（最大 24h 反映） |
 | D-G-032 | **Budget Actions の自動実行は Phase 1 で既定 OFF**。まず通知運用、次にマニュアル承認付き Action、自動は dev/stg 限定 | prod で IAM/SCP 自動適用は正規リクエストを巻き込み可用性を損なうリスク |
-| D-G-033 | タグキーは実装ガイドとして **kebab-case（`app-id` 等）に正規化**し App Registry と一致させる | Central Probe App Registry（ADR-059）との突合性。最終整合は BD-Q-03 |
+| D-G-033 | タグキーは実装ガイドとして **kebab-case（`app-id` 等）に正規化**し App Registry と一致させる | 中央認証チェック App Registry（ADR-059）との突合性。最終整合は BD-Q-03 |
 | D-G-034 | **API Key は識別・計測専用**とし、アクセス制御は Authorizer/IAM/Cognito に分離。Usage Plan クォータは非ハードリミットのためコスト制御を依存しない | AWS 公式明記（Usage Plan はベストエフォート / API Key は認証に使うなと明記） |
 | D-G-035 | **untaggable コスト（データ転送等）は Cost Categories の split charge rule** で按分。タグ＝一次データ、Cost Categories＝二次分類の役割分担 | AWS 公式: Cost Categories は CUR/CE/Budgets 横断・split charge 対応 |
 | D-G-036 | **Outbound SaaS 直接課金は AWS Budgets 対象外**として別建て監視（SaaS Usage API + FinOps 台帳）。AWS 側は間接コスト（egress/Compute）を app-id で可視化 | Outbound 課金は AWS 請求に乗らない（§C-6.2.6.4 中央ガバナンス） |

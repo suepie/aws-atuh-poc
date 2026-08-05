@@ -3,22 +3,22 @@
 /**
  * openapi-export-lambda / index.js
  *
- * Central Auth Check Canary (ADR-059, Pattern β) の OpenAPI Export。
+ * 中央認証チェック (ADR-059, Pattern β) の OpenAPI Export。
  *
- * CloudFormation Custom Resource として各 App Acct の Service Catalog 製品から呼ばれ、
+ * CloudFormation Custom Resource として各 App アカウントの Service Catalog 製品から呼ばれ、
  * 自アプリの API Gateway 定義を OpenAPI(oas30 / YAML) で get-export し、
- * ネットワーク監査 Acct の OpenAPI Registry(S3) に Put する。
+ * ネットワーク監査アカウントの OpenAPI Registry(S3) に Put する。
  *
  * - Create / Update : API GW get-export → S3 PutObject（キー {accountId}/{apiId}/openapi.yaml）
  * - Delete          : S3 上の openapi.yaml を DeleteObject（任意・冪等）
  *
- * Cross-Acct: 本 Lambda は App Acct 側で動く（API GW を export する）ため、
- *             S3 Put は STS AssumeRole でネットワーク監査 Acct のロールを引き受けて行う。
+ * クロスアカウント: 本 Lambda は App アカウント側で動く（API GW を export する）ため、
+ *             S3 Put は STS AssumeRole でネットワーク監査アカウントのロールを引き受けて行う。
  *
  * AWS SDK は必ず v3。
  *   - @aws-sdk/client-api-gateway : GetExportCommand（OpenAPI 取得）
  *   - @aws-sdk/client-s3          : PutObjectCommand / DeleteObjectCommand
- *   - @aws-sdk/client-sts         : AssumeRoleCommand（Cross-Acct）
+ *   - @aws-sdk/client-sts         : AssumeRoleCommand（クロスアカウント）
  *
  * ⚠ Custom Resource の鉄則:
  *   成功でも失敗でも必ず cfn-response を presigned S3 URL に PUT する。
@@ -34,7 +34,7 @@ const { STSClient, AssumeRoleCommand } = require('@aws-sdk/client-sts');
 
 const REGION = process.env.AWS_REGION || 'ap-northeast-1';
 const REGISTRY_BUCKET = process.env.REGISTRY_BUCKET;         // OpenAPI Registry バケット（必須）
-const CROSS_ACCT_ROLE_ARN = process.env.CROSS_ACCT_ROLE_ARN; // S3 書込用ロール（Cross-Acct 時必須）
+const CROSS_ACCT_ROLE_ARN = process.env.CROSS_ACCT_ROLE_ARN; // S3 書込用ロール（クロスアカウント 時必須）
 
 /**
  * AssumeRole して一時クレデンシャルを得る（未設定なら undefined = 既定クレデンシャル）。
@@ -64,7 +64,7 @@ async function assumeCredentials() {
  * GetExportCommand の出力 body は Uint8Array なので TextDecoder で文字列化する。
  */
 async function exportOpenApi(restApiId, stageName) {
-  // export は API GW 本体（= App Acct 内）に対して行うので既定クレデンシャルでよい
+  // export は API GW 本体（= App アカウント内）に対して行うので既定クレデンシャルでよい
   const apigw = new APIGatewayClient({ region: REGION });
   const res = await apigw.send(
     new GetExportCommand({
@@ -104,7 +104,7 @@ exports.handler = async (event, context) => {
       throw new Error('環境変数 REGISTRY_BUCKET が未設定です');
     }
 
-    const accountId = props.accountId;   // App Acct の 12 桁アカウント ID
+    const accountId = props.accountId;   // App アカウントの 12 桁アカウント ID
     const apiId = props.apiId;            // API Gateway restApiId
     const stageName = props.stageName;    // export 対象ステージ（prod 等）
 

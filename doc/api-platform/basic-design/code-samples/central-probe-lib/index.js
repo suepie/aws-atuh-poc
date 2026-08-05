@@ -1,9 +1,9 @@
 'use strict';
 
 /**
- * Central Auth Check Canary — handler（README §0 / §2 準拠）。
+ * 中央認証チェック — handler（README §0 / §2 準拠）。
  *
- * ネットワーク監査 Acct に配置し、5min 周期で全アプリの認証を外形監視する。
+ * ネットワーク監査アカウントに配置し、M1 デプロイ差分（自動）/ M3 フル監査（手動）で全アプリの認証を外形監視する（18 章）。
  *   1. App Registry（DynamoDB）を Scan して enabled なアプリ一覧を取得
  *   2. 各アプリの OpenAPI Registry(S3) から openapi.yaml を取得 → endpoint 展開
  *   3. 各 endpoint を Negative + Positive で probe（CloudFront 経由 = Origin Protection 準拠）

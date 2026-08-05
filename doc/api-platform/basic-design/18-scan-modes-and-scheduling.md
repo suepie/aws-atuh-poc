@@ -3,13 +3,13 @@
 前提: [00-basic-design-plan.md](00-basic-design-plan.md) / [11-central-probe-architecture.md](11-central-probe-architecture.md) / [17-deployment-integration-and-registration.md](17-deployment-integration-and-registration.md)
 実装: [code-samples/central-probe-lib/](code-samples/central-probe-lib/)（probe lib を流用）
 
-> **本章は認証 probe の実行モデルの SSOT**。実行基盤は **Lambda**、実行モードは **M1 デプロイ差分（自動）+ M3 フル監査（手動）**（+ 将来 M2）。CloudWatch Synthetics は不使用（将来オプション、§18.4）。10/11 章の頻度・基盤の記述は本章が上書きする。実行モデルを Synthetics から Lambda に定めた**経緯・理由は [ADR-059](../../adr/059-central-auth-check-canary-architecture.md)**。
+> **本章は認証チェックの実行モデルの SSOT**。実行基盤は **Lambda**、実行モードは **M1 デプロイ差分（自動）+ M3 フル監査（手動）**（+ 将来 M2）。CloudWatch Synthetics は不使用（将来オプション、§18.4）。10/11 章の頻度・基盤の記述は本章が上書きする。実行モデルを Synthetics から Lambda に定めた**経緯・理由は [ADR-059](../../adr/059-central-auth-check-canary-architecture.md)**。
 
 ---
 
 ## §18.0 前提と背景（なぜこの実行モデルか）
 
-認証 probe は **「常時監視」と「デプロイ検証」を分けて**設計する。両者を 1 つの重い全量スキャン（例: 5 分周期で全アプリ全 endpoint を Negative + Positive）で回すと非効率になる。
+認証チェックは **「常時監視」と「デプロイ検証」を分けて**設計する。両者を 1 つの重い全量スキャン（例: 5 分周期で全アプリ全 endpoint を Negative + Positive）で回すと非効率になる。
 
 | 規模 | 1 回の probe 数 | 仮に 5 分周期なら 1 日 |
 |---|---|---|
@@ -70,7 +70,7 @@ flowchart LR
     Ev -->|案 B: App Registry 更新| DDBS[DynamoDB Streams]
     Ev -->|案 C: API GW 作成| CT[CloudTrail/EventBridge]
     S3E & DDBS & CT --> EB[EventBridge]
-    EB --> L[delta-probe Lambda<br/>mode=delta, appId]
+    EB --> L[delta-認証チェック Lambda<br/>mode=delta, appId]
     L --> P[そのアプリの全 endpoint probe]
 ```
 
@@ -97,7 +97,7 @@ flowchart LR
 | トリガ | **手動**（運用者が CLI / コンソールから invoke）|
 | 範囲 | 全アプリ全 endpoint（App Registry を Scan）|
 | 用途 | 初回の全量確認 / 大きな変更後 / 監査前 / 定期棚卸し（人が判断）|
-| 実行基盤 | **M1 と同じ probe Lambda**（`mode=full`）。実装 1 つを payload で切替 |
+| 実行基盤 | **M1 と同じ 認証チェック Lambda**（`mode=full`）。実装 1 つを payload で切替 |
 
 起動例:
 ```bash
@@ -112,7 +112,7 @@ aws lambda invoke --function-name central-auth-probe \
 
 ## §18.4 実行基盤：Lambda（Synthetics 不採用の理由）
 
-イベント駆動（M1）+ 手動（M3）はいずれも**単発実行**で、Synthetics canary の「定期実行」メリットが効かない。よって実行基盤は **probe Lambda に一本化**し、CloudWatch Synthetics は採用しない（将来オプション、§18.4.1）。
+イベント駆動（M1）+ 手動（M3）はいずれも**単発実行**で、Synthetics canary の「定期実行」メリットが効かない。よって実行基盤は **認証チェック Lambda に一本化**し、CloudWatch Synthetics は採用しない（将来オプション、§18.4.1）。
 
 | 要素 | Synthetics canary（不採用）| **Lambda（採用）** |
 |---|---|---|
@@ -149,7 +149,7 @@ M2（常時 heartbeat）を追加する / HAR・スクリーンショット・Mu
 |---|---|
 | M-Q-18-1 | **M2 の重要 endpoint 定義**（アプリチームと会話）+ 追加時期。定義できたら `x-canary-heartbeat: true` アノテーション + Synthetics canary で実装 |
 | M-Q-18-2 | M1 トリガの確定（OpenAPI Export S3 イベント / DynamoDB Streams / CloudTrail のどれを主にするか、17 章の登録案と統合）|
-| M-Q-18-3 | M3 手動実行の権限・実行者（Network 監査チームのみか、アプリチームも自アプリを回せるか）|
+| M-Q-18-3 | M3 手動実行の権限・実行者（ネットワーク監査チームのみか、アプリチームも自アプリを回せるか）|
 | M-Q-18-4 | M1 でデプロイ検知漏れ（17 章案 C の保険が効かないモノリス等）の場合、M3 手動フルで補う運用ルール |
 
 ---
