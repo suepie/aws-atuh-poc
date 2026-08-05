@@ -7,14 +7,14 @@
 
 ## §15.0 前提と背景
 
-**この章で定めること**: canary が検知した非 OK（CRITICAL/WARN/INFO）を、**適切な担当・SLA の SNS トピックへ振り分ける**仕組み。
+**この章で定めること**: Central Probe が検知した非 OK（CRITICAL/WARN/INFO）を、**適切な担当・SLA の SNS トピックへ振り分ける**仕組み。
 **なぜ要るか**: 「全部 Security に飛ばす」と誤検知（token 失効等）で Security を疲弊させる。4×4 分類で担当を分け、**誤った P1 を防ぐ**。
 
 ---
 
 ## §15.1 分類 → 通知先の対応
 
-canary の `classify.js`（11 章 §11.2.2）が付けた severity/priority で振り分ける。
+Central Probe の `classify.js`（11 章 §11.2.2）が付けた severity/priority で振り分ける。
 
 | severity | priority | routingKey | 通知先 | SLA | 典型 |
 |---|:---:|:---:|---|:---:|---|
@@ -25,7 +25,7 @@ canary の `classify.js`（11 章 §11.2.2）が付けた severity/priority で�
 
 ```mermaid
 flowchart LR
-    CC[canary<br/>classify 済み] -->|Alert イベント| AR[Alert Router]
+    CC[Central Probe<br/>classify 済み] -->|Alert イベント| AR[Alert Router]
     AR --> D{severity}
     D -->|CRITICAL| P1[🔥 SNS P1<br/>Security 即時]
     D -->|WARN| P2[🟡 SNS P2<br/>Platform 24h]
@@ -59,7 +59,7 @@ flowchart TD
 
 → アプリ個別の通知先（alertRouting）と全社デフォルト（環境変数）の 2 段構え。
 
-> **Phase 4 検証済み**（[LocalStack](research/phase4-local-verification-results.md)）: canary イベント（ARN なし）→ App Registry GetItem で alertRouting.p1 解決 → SNS Publish → 実 MessageId 取得。**本番ルーティング経路が end-to-end 成立**。
+> **Phase 4 検証済み**（[LocalStack](research/phase4-local-verification-results.md)）: probe イベント（ARN なし）→ App Registry GetItem で alertRouting.p1 解決 → SNS Publish → 実 MessageId 取得。**本番ルーティング経路が end-to-end 成立**。
 
 ---
 
@@ -74,7 +74,7 @@ flowchart TD
 
 ## §15.4 バッチ耐性・エラー処理
 
-- canary からの Invoke は単一イベント想定だが、**配列でも処理**（バッチ耐性）
+- probe からの Invoke は単一イベント想定だが、**配列でも処理**（バッチ耐性）
 - 1 件でも失敗したら throw → Lambda 失敗（retry / DLQ 発火）
 - `classify.js` と `format.js` の `SEVERITY_META` が 4×4 の SSOT を共有（分類ずれ防止）
 
@@ -86,7 +86,7 @@ flowchart TD
 |---|---|---|
 | D-M-15-1 | 4×4 分類で P1/P2/P3 に振り分け（全部 Security でない）| 誤検知で Security を疲弊させない |
 | D-M-15-2 | ARN は App Registry alertRouting → 環境変数デフォルトの 2 段解決 | アプリ個別 + 全社既定の両立 |
-| D-M-15-3 | 分類ロジックは canary classify.js と SSOT 共有 | 二重実装のずれ防止 |
+| D-M-15-3 | 分類ロジックは probe の classify.js と SSOT 共有 | 二重実装のずれ防止 |
 | D-M-15-4 | ARN 未解決は throw（DLQ）| 設定不備を握り潰さず可視化 |
 
 ---

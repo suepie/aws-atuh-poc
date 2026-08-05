@@ -1,4 +1,4 @@
-# 14. Canary 実装ガイド
+# 14. 認証 probe 実装ガイド
 
 前提: [00-basic-design-plan.md](00-basic-design-plan.md) / [11-central-canary-architecture.md](11-central-canary-architecture.md)
 実装: [code-samples/central-canary-puppeteer/](code-samples/central-canary-puppeteer/) / [code-samples/multi-checks-blueprint/](code-samples/multi-checks-blueprint/)
@@ -7,8 +7,8 @@
 
 ## §14.0 前提と背景
 
-**この章で定めること**: canary の実装構成（Puppeteer カスタムの内部モジュール / Multi Checks の使い分け / モノリス・Private 対応 / 要 PoC 項目）。
-**主な判断軸**: 11 章のアーキを「動くコード」に落とす。実装は既に [code-samples/](code-samples/) にあり本章はその構造と使い方を説明する。
+**この章で定めること**: 認証 probe の実装構成（共通 probe lib の内部モジュール / モノリス・Private 対応 / 将来オプション / 要 PoC 項目）。
+**主な判断軸**: 11 章のアーキを「動くコード」に落とす。実装は既に [code-samples/](code-samples/) にあり本章はその構造と使い方を説明する（実行基盤は Lambda、18 章 SSOT）。
 
 **本章の位置づけ（全体像の中で）**:
 
@@ -23,7 +23,7 @@ flowchart LR
 
 ---
 
-## §14.1 Puppeteer カスタム canary の構成
+## §14.1 probe lib の構成（Lambda 実行）
 
 `central-canary-puppeteer/` のモジュール分割:
 
@@ -39,11 +39,11 @@ flowchart LR
 
 分割理由: `classify.js` を Alert Router と共有し**分類ずれを防ぐ**、`probe.js` の authPattern 分岐を独立テスト可能にする。
 
-> runtime: `syn-nodejs-puppeteer-16.1` / namespace `@aws/synthetics-puppeteer` / SDK v3（11 章 §11.4）。
+> 実行は **Lambda**（18 章）。probe lib は共通で、synthetics 抽象は素の https 実装で注入する。Synthetics を将来使う場合の runtime は §14.2 / [README §3](code-samples/README.md)。
 
 ---
 
-## §14.2 Multi Checks Blueprint（補助）
+## §14.2 Multi Checks Blueprint（将来オプション・Synthetics）
 
 ≤10 endpoint の固定セットを **JSON 設定だけ**で監視する軽量手段。`multi-checks-blueprint/`。
 
@@ -95,7 +95,7 @@ Internal ALB / API GW Private endpoint など VPC 内部のみの API も監視�
 | Internal ALB / NLB | **Canary VPC + Transit Gateway 経由** |
 | VPC Lattice Service | VPC Lattice Service Association |
 
-→ Central Canary を **VPC 構成**にし、既存 Transit Gateway にアタッチすれば全 App Acct の Private endpoint に到達可能。Synthetics は VPC 実行を公式サポート（[VPC 実行](../proposal/common/06-external-api-auth-architecture.md)）。詳細は [ADR-059 §E](../../adr/059-central-auth-check-canary-architecture.md)。
+→ Central Probe（Lambda）を **VPC 構成**にし、既存 Transit Gateway にアタッチすれば全 App Acct の Private endpoint に到達可能。Lambda は VPC 実行に対応（将来 Synthetics を使う場合も VPC 実行を公式サポート）。詳細は [ADR-059 §E](../../adr/059-central-auth-check-canary-architecture.md)。
 
 ---
 
@@ -105,7 +105,7 @@ Internal ALB / API GW Private endpoint など VPC 内部のみの API も監視�
 
 | 項目 | 必要環境 | 理由 |
 |---|---|---|
-| `@aws/synthetics-puppeteer` 実ランタイム | SAM local + Docker | Synthetics ランタイム再現 |
+| probe Lambda 実行（synthetics 抽象を https 実装に差替）| SAM local + Docker | handler 転用の実挙動 |
 | Positive probe（OAuth Bearer 取得）| 実 IdP or モック /token | token.js の実挙動 |
 | SigV4 Positive（api-gw-iam）| 実装（`@aws-sdk/signature-v4`）+ AWS | 手動署名が未実装 |
 | Cookie モノリス Positive | Puppeteer ログインフロー実装 | 未実装（Negative は検証済）|
@@ -126,8 +126,8 @@ Internal ALB / API GW Private endpoint など VPC 内部のみの API も監視�
 
 | ID | 判断 | 根拠 |
 |---|---|---|
-| D-M-14-1 | Puppeteer canary を lib 分割（registry/openapi/token/probe/classify/emit）| 独立テスト + classify の SSOT 共有 |
-| D-M-14-2 | Multi Checks は ≤10 固定 endpoint の補助 | OAuth ネイティブで手軽だが動的発見不可 |
+| D-M-14-1 | probe lib を分割（registry/openapi/token/probe/classify/emit）| 独立テスト + classify の SSOT 共有 |
+| D-M-14-2 | Multi Checks は将来オプション（≤10 固定 endpoint、Synthetics）| OAuth ネイティブで手軽だが動的発見不可・定期実行前提 |
 | D-M-14-3 | モノリスは authPattern=alb-cookie-monolith で 302 検証 | API GW 非依存アプリを担保 |
 | D-M-14-4 | Private は Canary VPC + TGW（Phase 2）| 既存 TGW を再利用し全 App Acct 到達 |
 | D-M-14-5 | 要 PoC 項目をコード内 TODO + 本章 §14.5 に明示 | 「検証済み」と「未検証」を誤認させない |

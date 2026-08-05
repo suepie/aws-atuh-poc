@@ -20,7 +20,7 @@
 
 | 対象 | 本章群で扱う |
 |---|---|
-| Central Canary（Puppeteer / Multi Checks）| ✅ 11 / 14 章 |
+| 認証 probe（Lambda / 共通 probe lib）| ✅ 11 / 14 章 |
 | App Registry（DynamoDB）| ✅ 12 章 |
 | OpenAPI Registry（S3）| ✅ 13 章 |
 | Alert Router（4×4 → SNS）| ✅ 15 章 |
@@ -33,7 +33,7 @@
 
 ### §10.1.1 Pattern β とは
 
-canary を**各アプリに配らず、ネットワーク監査 Acct の Central Canary が全アプリを横断監視**する（[ADR-059](../../adr/059-central-auth-check-canary-architecture.md)）。
+probe を**各アプリに配らず、ネットワーク監査 Acct の Central Probe（Lambda）が全アプリを横断監視**する（[ADR-059](../../adr/059-central-auth-check-canary-architecture.md)）。
 
 ```mermaid
 flowchart TB
@@ -76,14 +76,14 @@ flowchart TB
     style AppB fill:#e8f5e9
 ```
 
-> ⚠ **実行モデルは [18 章](18-scan-modes-and-scheduling.md) で見直し済み**: 当初の「5 分周期の全量スキャン」は重いため廃止し、**M1 デプロイ差分（自動・変更アプリ単位）+ M3 フル監査（手動・全量）**の 2 モードに再設計。実行基盤も Synthetics canary から **Lambda に一本化**（probe lib は共通流用、Synthetics は将来 M2 用オプション）。図中の Central Probe はこの Lambda を指す。
+> **実行モデル（[18 章](18-scan-modes-and-scheduling.md) が SSOT）**: 実行基盤は **Lambda**、モードは **M1 デプロイ差分（自動・変更アプリ単位）+ M3 フル監査（手動・全量）**。CloudWatch Synthetics は不使用（将来 M2 用オプション）。図中の Central Probe はこの Lambda を指す。実行モデルを Lambda に定めた経緯は [ADR-059](../../adr/059-central-auth-check-canary-architecture.md)。
 
 ### §10.1.2 なぜ β（中央）か — α（分散）との比較
 
 | 観点 | α: 各アプリ配置 | **β: 中央集約（採用）** |
 |---|:---:|:---:|
 | Deploy 漏れ | ⚠ 個別 deploy 必要、漏れリスク | ✅ **App Registry 登録で自動追随、原理的にゼロ** |
-| 統一実装保証 | ⚠ アプリごとにばらつく | ✅ Central canary 1 実装 |
+| 統一実装保証 | ⚠ アプリごとにばらつく | ✅ Central Probe 1 実装 |
 | 運用主体 | 各アプリチーム | Network 監査チーム集約 |
 | メトリクス集約 | ⚠ Cross-Acct 集約が別途必要 | ✅ 標準で 1 箇所 |
 | 「中央でチェック」思想 | ✗ | ✅ **一致** |
@@ -135,7 +135,7 @@ flowchart TB
     style PROBE fill:#fff9c4
 ```
 
-> §10.1.1 との違い: こちらは **トリガー（EventBridge の M1 / 手動 M3、18 章）と classify・Alarm（11 章）を明示**した完全版。実行基盤は Synthetics canary ではなく **Lambda 一本化**（§10.1.1 の注記どおり）。
+> §10.1.1 との違い: こちらは **トリガー（EventBridge の M1 / 手動 M3、18 章）と classify・Alarm（11 章）を明示**した完全版。実行基盤は **Lambda**（§10.1.1 の注記どおり）。
 
 ### §10.1.4 エンドツーエンド フロー（deploy → 検知 → 通知 → 是正）
 
@@ -164,10 +164,10 @@ flowchart LR
 
 | 章 | 設計 | 実装（code-samples/）|
 |---|---|---|
-| 11 | Central Canary アーキテクチャ | [central-canary-puppeteer/](code-samples/central-canary-puppeteer/) |
+| 11 | 認証 probe アーキテクチャ | [central-canary-puppeteer/](code-samples/central-canary-puppeteer/) |
 | 12 | App Registry | [app-registry-lambda/](code-samples/app-registry-lambda/) |
 | 13 | OpenAPI Registry | [openapi-export-lambda/](code-samples/openapi-export-lambda/) |
-| 14 | 実装ガイド（Multi Checks 併用）| [multi-checks-blueprint/](code-samples/multi-checks-blueprint/) |
+| 14 | 実装ガイド（probe lib / モノリス・Private 対応）| [central-canary-puppeteer/](code-samples/central-canary-puppeteer/) |
 | 15 | Alert Router | [alert-router-lambda/](code-samples/alert-router-lambda/) |
 | 全 | データ契約 SSOT | [code-samples/README.md](code-samples/README.md) |
 
@@ -183,8 +183,8 @@ flowchart LR
 |---|:---:|
 | 静的解析ルール（cfn-guard 3 + Semgrep 3）| ✅ フィクスチャ検証（**実バグ 2 件修正**）|
 | Lambda SDK 実挙動（app-registry PutItem / alert-router SNS Publish）| ✅ LocalStack 3.8.1 |
-| canary logic（classify / probe / extractEndpoints）| ✅ 27 テスト PASS |
-| full orchestration（実 Synthetics ランタイム / Positive probe / E2E）| ⏳ SAM local or 実 AWS 要 |
+| probe lib logic（classify / probe / extractEndpoints）| ✅ 27 テスト PASS |
+| full orchestration（probe Lambda E2E / Positive probe / metrics 着地）| ⏳ SAM local or 実 AWS 要 |
 
 → **ロジックは検証済み、残るは AWS 環境依存の full-run**（14 章 §14.5 に要 PoC 項目を明記）。
 
@@ -196,7 +196,7 @@ flowchart LR
 flowchart LR
     O[10 総論<br/>本章] --> A[11 アーキ<br/>全体の動き]
     A --> R[12 App Registry<br/>13 OpenAPI Registry<br/>データ源]
-    A --> I[14 実装ガイド<br/>canary の作り]
+    A --> I[14 実装ガイド<br/>probe の作り]
     I --> AL[15 Alert Router<br/>通知]
     R --> X[16 Cross-Acct<br/>アカウント跨ぎ]
     AL --> X
@@ -207,7 +207,7 @@ flowchart LR
 |---|---|
 | 全体がどう動くか | 11 |
 | アプリがどう監視対象に載るか | 12（登録）+ 13（OpenAPI）|
-| canary の中身・モノリス/Private 対応 | 14 |
+| probe の中身・モノリス/Private 対応 | 14 |
 | 検知後の通知の流れ | 15 |
 | アカウントを跨ぐ権限 | 16 |
 

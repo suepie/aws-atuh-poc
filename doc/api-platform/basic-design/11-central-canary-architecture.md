@@ -1,4 +1,4 @@
-# 11. Central Canary アーキテクチャ
+# 11. 認証 probe アーキテクチャ（Central Probe）
 
 前提: [00-basic-design-plan.md](00-basic-design-plan.md) / [10-external-monitoring-overview.md](10-external-monitoring-overview.md)
 実装: [code-samples/central-canary-puppeteer/](code-samples/central-canary-puppeteer/) / データ契約: [code-samples/README.md](code-samples/README.md)
@@ -7,20 +7,20 @@
 
 ## §11.0 前提と背景
 
-**この章で定めること**: Central Canary が 1 回の実行で何をどう検査するか（処理フロー / 検証方式 / 分類ロジック / 実行方式の選択）。
+**この章で定めること**: Central Probe が 1 回の実行で何をどう検査するか（処理フロー / 検証方式 / 分類ロジック / probe 実装）。
 **主な判断軸**: 「認証が正しく実装されている」を**誤検知なく**担保する。そのため Negative だけでなく Positive も併用する。
 
 ---
 
 ## §11.1 処理フロー（1 回の実行）
 
-> ⚠ **実行モデルは [18 章](18-scan-modes-and-scheduling.md) で見直し済み**: 「5 分周期の全量」は廃し、**M1 デプロイ差分（自動・変更アプリ単位）+ M3 フル監査（手動・全量）**の 2 モードに再設計。実行基盤も Synthetics canary から **Lambda に一本化**（probe lib は共通流用）。本節は「1 回の実行で何をするか」の処理内容を示す（頻度・基盤は 18 章が SSOT）。
+> 本節は認証 probe の **1 回の実行内容（処理フロー）** を示す。**実行基盤（Lambda）と頻度（M1 デプロイ差分/自動・M3 フル/手動）は [18 章](18-scan-modes-and-scheduling.md) が SSOT**。
 
 1 回の実行で（M1 は対象アプリ、M3 は全アプリを）以下のように横断 probe する。
 
 ```mermaid
 sequenceDiagram
-    participant CC as Central Canary
+    participant CC as Central Probe
     participant Reg as App Registry DDB
     participant OAR as OpenAPI Registry S3
     participant CF as アプリ CloudFront
@@ -41,7 +41,7 @@ sequenceDiagram
         end
         CC->>CW: ⑧ putMetrics（per-app 集計）
     end
-    CC->>CC: ⑨ CRITICAL があれば throw（canary FAIL → アラーム）
+    CC->>CC: ⑨ CRITICAL があれば AuthCheckCritical 発火（→ アラーム、18 章 §18.4）
 ```
 
 実装対応: [`index.js`](code-samples/central-canary-puppeteer/index.js)（handler）+ `lib/registry.js`（①）+ `lib/openapi.js`（②③）+ `lib/probe.js`（④⑤）+ `lib/classify.js`（⑥）+ `lib/emit.js`（⑦⑧）。
@@ -97,22 +97,62 @@ canary 冒頭で**既知の挙動**を確認し、テスト基盤自体の健全
 
 → **モノリス（Cookie セッション）も監視対象**（302 リダイレクトを認証拒否とみなす）。これが「API GW を使わないアプリも監査できる」根拠（14 章 §14.3）。
 
+### §11.3.1 Positive トークンの管理（共通クライアント資格情報 + 短命トークン）
+
+Positive probe（valid token → 200 期待）に使う認証情報は、**静的な長寿命トークンを持たない**。**共通の OAuth クライアント資格情報を 1 つ**だけ持ち、**実行ごとに短命トークンを発行**する。
+
+```
+認証基盤(Keycloak) に canary 専用サービスアカウント "api-canary-probe" を 1 つ
+  └ client_id/secret → Secrets Manager（ネットワーク監査 Acct）に保管
+     └ GetSecretValue できるのは Probe Lambda の IAM ロールのみ
+
+【1 回の probe 実行ごと】
+  Probe Lambda → Keycloak /token（client_credentials grant）
+              → 短命アクセストークン（5〜15 分）取得 → Positive probe に使用 → 破棄
+```
+
+- **「ずっと使える 1 つ」の実体はクライアント資格情報**（全 API 共通・定期ローテ）で、**実際のトークンは毎回使い捨て**。`lib/token.js` が取得・キャッシュ（TTL 内）する。
+- 実装対応: `x-canary-test-token-secret` は既定で共通 Secret（`canary-central-readonly` 相当のクライアント資格情報）を指す（13 章 §13.3 / README §2.1-2.3）。
+
+**漏洩しにくく**:
+| 対策 | 内容 |
+|---|---|
+| 保管 | client_secret は **Secrets Manager のみ**（環境変数・コード埋込・ログ出力禁止＝[05 OBS-3](05-security.md)）|
+| アクセス | probe Lambda ロールだけが `secretsmanager:GetSecretValue`（最小 IAM）|
+| ローテ | **自動ローテーション**（30/90 日、Secrets Manager rotation）|
+| 経路 | 中央 Acct からの egress のみ・TLS |
+
+**漏洩しても影響を小さく（blast radius 最小化）**:
+| 対策 | 内容 |
+|---|---|
+| 最小権限 | canary クライアントは**読み取り専用・最小スコープ**（管理者でも書込でもない）|
+| 短 TTL | トークンは数分で失効 → 捕捉されてもすぐ死ぬ |
+| GET 限定 | Positive は GET のみ（本番 POST スキップ、§11.5）|
+| 即失効 | 発火元は中央 Acct の既知プリンシパル → 異常利用検知でクライアント無効化 |
+
+**スコープ設計（A → B の 2 段階）**:
+
+| レベル | canary スコープ | 漏洩時の影響 | 採否 |
+|---|---|---|:---:|
+| **A** | 全 API 横断の**読み取り専用** | canary として read-only GET が可能（中程度）| ✅ **Phase 1 採用** |
+| **B** ⭐ | **canary 専用テナント / 合成データのみ**読める | 実データに一切届かない（最小）| 🎯 **目標**（認証基盤 Keycloak のロール設計へ引き渡し）|
+
+> **方針**: Phase 1 は A（共通 1 クライアント + 短 TTL + 自動ローテ）で開始し、**B（canary 専用スコープ = 漏洩しても実データに届かない）を目標**とする。B は認証基盤側で「canary 専用テナント/スコープ」を用意する必要があり、[認証基盤 Keycloak ロール設計への引き渡し事項](../../adr/059-central-auth-check-canary-architecture.md)（M-Q-11-4）。機微データを扱う API から順に B へ移行する。
+
 ---
 
-## §11.4 実行方式の選択：Puppeteer vs Multi Checks
+## §11.4 probe 実装：共通 probe lib（Lambda 実行）
 
-| 観点 | Puppeteer カスタム（本命）| Multi Checks Blueprint |
-|---|:---:|:---:|
-| runtime | `syn-nodejs-puppeteer-16.1` | `syn-nodejs-5.1`（軽量）|
-| endpoint 数 | 無制限（OpenAPI 動的発見）| **≤ 10 checks/canary** |
-| OpenAPI 追従 | ✅ 自動 | ❌ 固定 JSON |
-| OAuth / Secrets | 自前実装（lib/token.js）| ✅ **ネイティブ**（`${AWS_SECRET:...}`）|
-| Cookie モノリス Positive | ✅ 可能（Puppeteer）| ❌ |
-| 用途 | **全アプリ横断・動的**（Pattern β 本体）| 小規模・固定 endpoint の補助 |
+現行設計の probe は **Lambda 上で共通 probe lib を実行**する（[18 章](18-scan-modes-and-scheduling.md)）。OpenAPI を動的発見して endpoint 数無制限に対応し、`lib/token.js` で OAuth Bearer（§11.3.1）、Puppeteer 相当のロジックで Cookie モノリス Positive も扱う。
 
-→ **probe ロジック（lib）は共通**、OpenAPI 動的発見が必要なので Puppeteer 相当の probe 実装を使う。Multi Checks は「特定アプリの ≤10 endpoint を JSON だけで手軽に」の補助用途（14 章 §14.2）。
+| 能力 | 現行（Lambda + 共通 probe lib）|
+|---|---|
+| endpoint 数 | 無制限（OpenAPI 動的発見）|
+| OpenAPI 追従 | ✅ 自動 |
+| OAuth / Secrets | `lib/token.js`（短命トークン、§11.3.1）|
+| Cookie モノリス Positive | ✅（Puppeteer 相当ロジック）|
 
-> ⚠ **実行基盤は [18 章](18-scan-modes-and-scheduling.md) で Lambda に一本化**（M2 定期スケジュール廃止に伴い）。probe lib は共通流用し、synthetics 抽象を素の https 実装で注入する。Synthetics canary（`syn-nodejs-puppeteer-16.1` / namespace `@aws/synthetics-*` / SDK v3）は**将来 M2 やダッシュボード要件時のオプション**として温存。
+> **将来オプション（Synthetics）**: 定期 heartbeat（M2）や HAR・スクショ・Multilocation・実行履歴 UI が要る場合のみ、CloudWatch Synthetics（Puppeteer runtime）や Multi Checks Blueprint（≤10 endpoint を JSON で記述、OAuth ネイティブ）を実行環境として追加できる。**その場合も probe lib は共通**（14 章 §14.2 / [18 章 §18.4.1](18-scan-modes-and-scheduling.md)）。
 
 ---
 
@@ -131,7 +171,7 @@ canary 冒頭で**既知の挙動**を確認し、テスト基盤自体の健全
 
 - Namespace `APIPlatform/AuthCheck`、Dimensions `AppId` / `Env` / `AuthPattern`
 - Metrics: `AuthCheckPassed` / `AuthCheckCritical` / `AuthCheckWarn` / `AuthCheckInfo` / `EndpointsProbed`
-- **アラーム条件 = `AuthCheckCritical > 0`**（Lambda 基盤化に伴い、旧「canary FAIL → SuccessPercent<100」から metric ベースに変更、[18 章 §18.4](18-scan-modes-and-scheduling.md)）
+- **アラーム条件 = `AuthCheckCritical > 0`**（Lambda 実行のため canary FAIL 依存でなく metric ベース、[18 章 §18.4](18-scan-modes-and-scheduling.md)）
 - CRITICAL 検知時は alert-router へ即時 invoke（15 章）も併走
 
 ---
@@ -142,9 +182,9 @@ canary 冒頭で**既知の挙動**を確認し、テスト基盤自体の健全
 |---|---|---|
 | D-M-11-1 | Negative + Positive の Hybrid 検証を必須化 | Negative 単独では構成ミスと認証漏れを区別不能（§11.2.1）|
 | D-M-11-2 | 分類は 4×4 真偽値表、classify を canary/alert-router で SSOT 共有 | 二重実装の分類ずれを防ぐ |
-| D-M-11-3 | Pattern β 本体は Puppeteer、Multi Checks は補助 | OpenAPI 動的発見が Pattern β に必須 |
+| D-M-11-3 | probe は Lambda + 共通 probe lib（OpenAPI 動的発見）。Synthetics / Multi Checks は将来オプション | 動的発見が Pattern β に必須、定期実行は不要（18 章）|
 | D-M-11-4 | Cookie モノリスは 302 を認証拒否とみなし監視対象化 | API GW 非依存アプリも担保 |
-| D-M-11-5 | CRITICAL で canary FAIL → アラーム発火 | 「認証漏れ」を運用に即時可視化 |
+| D-M-11-5 | CRITICAL で `AuthCheckCritical` メトリクス → アラーム発火 | 「認証漏れ」を運用に即時可視化（Lambda 基盤、18 章 §18.4）|
 
 ---
 
@@ -244,3 +284,4 @@ paths:
 | M-Q-11-1 | probe 頻度（5min / 15min）とコストのバランス |
 | M-Q-11-2 | SigV4 Positive（api-gw-iam）の実装（`@aws-sdk/signature-v4` 手動署名、Phase 2）|
 | M-Q-11-3 | Cookie モノリス Positive（Puppeteer ログイン）の実装 |
+| M-Q-11-4 | **Positive トークン スコープ B（canary 専用テナント/合成データ）の設計**（認証基盤 Keycloak へ引き渡し、§11.3.1）。Phase 1 は A、機微データ API から B へ移行 |

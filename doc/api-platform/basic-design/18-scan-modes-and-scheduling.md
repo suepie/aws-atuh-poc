@@ -3,19 +3,19 @@
 前提: [00-basic-design-plan.md](00-basic-design-plan.md) / [11-central-canary-architecture.md](11-central-canary-architecture.md) / [17-deployment-integration-and-registration.md](17-deployment-integration-and-registration.md)
 実装: [code-samples/central-canary-puppeteer/](code-samples/central-canary-puppeteer/)（probe lib を流用）
 
-> **本章は実行モデルの SSOT**。11 章（Central Canary アーキ）が定めた「5 分周期の全量スキャン」を本章で見直し、**2 モード（+ 将来 1 モード）**に再設計する。11/10 章の頻度・実行基盤の記述は本章が上書きする。
+> **本章は認証 probe の実行モデルの SSOT**。実行基盤は **Lambda**、実行モードは **M1 デプロイ差分（自動）+ M3 フル監査（手動）**（+ 将来 M2）。CloudWatch Synthetics は不使用（将来オプション、§18.4）。10/11 章の頻度・基盤の記述は本章が上書きする。実行モデルを Synthetics から Lambda に定めた**経緯・理由は [ADR-059](../../adr/059-central-auth-check-canary-architecture.md)**。
 
 ---
 
-## §18.0 前提と背景（なぜ見直すか）
+## §18.0 前提と背景（なぜこの実行モデルか）
 
-11 章初版は「5 分周期で全アプリ全 endpoint を Negative + Positive」だった。これは **「常時監視」と「デプロイ検証」を 1 つの重い全量スキャンで混同**していた。
+認証 probe は **「常時監視」と「デプロイ検証」を分けて**設計する。両者を 1 つの重い全量スキャン（例: 5 分周期で全アプリ全 endpoint を Negative + Positive）で回すと非効率になる。
 
-| 規模 | 1 回の probe 数 | 5 分周期の 1 日 |
+| 規模 | 1 回の probe 数 | 仮に 5 分周期なら 1 日 |
 |---|---|---|
-| 10 アプリ × 20 endpoint × 2 | 400 | **約 11.5 万 probe/日** |
+| 10 アプリ × 20 endpoint × 2 | 400 | **約 11.5 万 probe/日**（大半は無変更 endpoint の無駄打ち）|
 
-→ 大半は「変わっていない endpoint を無駄に叩き続けている」。**2 つの関心事（常時監視 / デプロイ検証）を分離**する。
+→ そこで **2 つの関心事を分離**し、デプロイ契機（M1）と手動フル（M3）の**イベント駆動**にする。
 
 ---
 
@@ -81,8 +81,8 @@ flowchart LR
 
 | 項目 | 内容 |
 |---|---|
-| 実行環境 | **通常 Lambda**（Synthetics canary でなく）|
-| 理由 | デプロイ契機の単発実行は Lambda が素直（Synthetics はスケジュール実行モデルで単発が苦手）|
+| 実行環境 | **Lambda**（EventBridge 起動）|
+| 理由 | デプロイ契機の単発実行に適する（§18.4）|
 | probe ロジック | **`lib/probe.js` / `classify.js` / `emit.js` を共通流用**。synthetics 抽象を素の https 実装で注入（[probe-integration.test.js で実証済みの手法](research/phase4-local-verification-results.md)）|
 | payload | `{ mode:'delta', appId, env }`（対象アプリ）|
 
@@ -110,17 +110,17 @@ aws lambda invoke --function-name central-auth-probe \
 
 ---
 
-## §18.4 実行基盤の一本化（Synthetics → Lambda）
+## §18.4 実行基盤：Lambda（Synthetics 不採用の理由）
 
-M2（定期スケジュール）を当面なしにしたため、**Synthetics canary の「定期実行」メリットが不要**になった。実行基盤を **probe Lambda に一本化**する。
+イベント駆動（M1）+ 手動（M3）はいずれも**単発実行**で、Synthetics canary の「定期実行」メリットが効かない。よって実行基盤は **probe Lambda に一本化**し、CloudWatch Synthetics は採用しない（将来オプション、§18.4.1）。
 
-| 要素 | 見直し前（11 章初版）| 見直し後（本章）|
+| 要素 | Synthetics canary（不採用）| **Lambda（採用）** |
 |---|---|---|
-| 実行基盤 | Synthetics canary（5 分スケジュール）| **Lambda**（M1 イベント / M3 手動）|
+| 実行モデル | スケジュール定期実行 | **イベント（M1）/ 手動（M3）の単発** |
 | probe lib | 共通 | **共通（不変）** |
 | classify / alert | 共通 | **共通（不変）** |
-| アラーム | canary FAIL → SuccessPercent<100 | **CloudWatch metric `AuthCheckCritical > 0` → アラーム** |
-| Synthetics canary | 中心 | **将来 M2 / ダッシュボード要件時のオプションに格下げ** |
+| アラーム | canary FAIL → SuccessPercent<100 | **CloudWatch metric `AuthCheckCritical > 0`** |
+| コスト | run ごと $0.0012 上乗せ + 定期実行分 | **イベント駆動で概ね無料枠内**（価格比較は [ADR-059](../../adr/059-central-auth-check-canary-architecture.md)）|
 
 > **実装資産は無駄にならない**: `central-canary-puppeteer/lib/*` はそのまま Lambda から流用。`index.js`（Synthetics handler）を Lambda handler に転用し、synthetics 注入を https 実装に差し替える（後続の実装タスク、[code-samples/](code-samples/) に `probe-lambda/` として追加）。
 

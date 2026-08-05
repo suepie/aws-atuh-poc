@@ -161,7 +161,7 @@ flowchart LR
         Hook[CloudFormation Hooks]
     end
     subgraph Runtime["③ Runtime"]
-        Canary[外形監視 M1/M3<br/>章 10-18]
+        Probe[外形監視 M1/M3<br/>章 10-18]
         Config[Config Rules]
         GD[GuardDuty/Inspector]
     end

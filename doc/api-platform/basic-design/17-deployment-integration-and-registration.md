@@ -8,7 +8,7 @@
 ## §17.0 前提と背景
 
 **この章で定めること**: 「アプリがデプロイされたことをどう検知し、App Registry に登録するか」。Pattern β で「Deploy 漏れ = ゼロ」を実運用で成立させる登録トリガの設計。
-**なぜ要るか**: canary は App Registry に載っているアプリしか監視しない。**登録漏れ = 監視漏れ**。登録をどうトリガするかが機構全体の実効性を決める。
+**なぜ要るか**: Central Probe は App Registry に載っているアプリしか監視しない。**登録漏れ = 監視漏れ**。登録をどうトリガするかが機構全体の実効性を決める。
 
 ---
 
@@ -26,6 +26,68 @@
 ```
 
 アプリチームが**この製品を「起動（provision）」すると、認証必須・Origin Protection・監視登録が全部込みで立つ**。個別に正しく実装する必要がない。
+
+### §17.1.1 製品内蔵の具体像（誰が何を作り、アプリは何をするか）⭐
+
+> **本標準は案 A（製品内蔵）を既定**とする。ここでは「プラットフォームチームが一度作る成果物」と「アプリが API ごとにやること」を具体化する。登録処理は**製品テンプレに内蔵**され、**アプリ開発者は登録コードを書かない**。
+
+**プラットフォームチームが一度だけ作る成果物**:
+
+| # | 成果物 | 中身 |
+|---|---|---|
+| 1 | **`product-api.yaml`**（製品テンプレ本体）| API GW/ALB を **認証必須・Origin Protection・アクセスログ・必須タグ込み**で生成。下記 2 つの Custom Resource を内蔵 |
+| 2 | Portfolio + 共有設定 | AWS Organizations / RAM でアプリ Acct へ配布 |
+| 3 | Launch ロール / 制約 | 起動時に中央 Lambda（登録 / Export）を Cross-Acct 呼べる権限（16 章）|
+| 4 | （既存）`app-registry-lambda` / `openapi-export-lambda` | 中央 Acct に配置済み（[code-samples/](code-samples/)）|
+| 5 | （任意）SCP | 製品を通さない API GW/ALB 直作成を禁止（§17.5）|
+
+**製品テンプレに内蔵する Custom Resource（＝アプリ開発者が書かない登録処理）のイメージ**:
+
+```yaml
+Parameters:
+  AppId: { Type: String }
+  Env:   { Type: String, AllowedValues: [prod, stg, dev] }
+  CostCenter: { Type: String }
+  Owner: { Type: String }
+  AuthPattern: { Type: String, AllowedValues: [api-gw-jwt, alb-code-jwt, bff-cookie-session, api-gw-iam, lambda-url-iam] }
+  AlertP1TopicArn: { Type: String }   # 通知先を 1 回だけ選ぶ
+
+Resources:
+  Api:                                # ← 認証必須・Origin Protection・ログ・タグは
+    Type: AWS::ApiGateway::RestApi    #    テンプレ側に固定で埋め込み済み（アプリは触らない）
+    # ...
+
+  AppRegistryRegister:                # ← DynamoDB(App Registry) へ登録する Custom Resource
+    Type: Custom::AppRegistryRegister
+    Properties:
+      ServiceToken: !Sub arn:aws:lambda:${AWS::Region}:${NetworkAuditAcctId}:function:app-registry-register
+      appId: !Ref AppId
+      env:   !Ref Env
+      baseUrl: !Sub https://${AppId}.example.com
+      authPattern: !Ref AuthPattern
+      openApiS3Key: !Sub ${AWS::AccountId}/${Api}/openapi.yaml
+      alertRouting: { p1: !Ref AlertP1TopicArn }
+      enabled: true
+
+  OpenApiExport:                      # ← 実 API GW から OpenAPI を中央 S3 へ export（13 章）
+    Type: Custom::OpenApiExport
+    Properties:
+      ServiceToken: !Sub arn:aws:lambda:${AWS::Region}:${NetworkAuditAcctId}:function:openapi-export
+      restApiId: !Ref Api
+      stageName: !Ref Env
+```
+
+- `Custom::AppRegistryRegister` は stack の **Create/Update/Delete に応じて**中央 DynamoDB へ PutItem/DeleteItem（Cross-Acct）。実装は既存の [`app-registry-lambda`](code-samples/app-registry-lambda/)。
+- `ServiceToken` に中央 Lambda の ARN を指すだけで、**登録ロジックはアプリ側に一切書かれない**。
+
+**アプリチームが API ごとにやること（これだけ）**:
+
+| 手順 | 内容 |
+|---|---|
+| 1 | Service Catalog で製品を **launch**、パラメータ入力（AppId / Env / CostCenter / Owner / **AuthPattern をドロップダウン選択** / 通知先 SNS）|
+| 2 | OpenAPI に **公開印（[MON-1](13-openapi-registry-design.md)）** を付ける（public endpoint のみ `x-synthetics-skip-auth-check: true`）|
+
+→ 登録・OpenAPI Export・認証必須・Origin Protection・タグ・ログは**すべてテンプレが自動**。アプリの負担は「**製品をパラメータ選択で起動する**」＋「**OpenAPI に公開印を付ける**」の 2 点だけ。「Custom Resource がアプリ側に見えるが必要か」への答え = **処理は製品内蔵でアプリ開発者の作業ではない**（DynamoDB は監視対象台帳＋M1 トリガ源として引き続き必要、12 章）。
 
 ---
 
@@ -56,7 +118,7 @@ flowchart LR
 # アプリの deploy パイプライン（GitHub Actions 例）
 - name: Deploy API
   run: cdk deploy
-- name: Register to Central Canary       # ← 追加ステップ
+- name: Register to Central Probe         # ← 追加ステップ
   run: |
     aws lambda invoke --function-name app-registry-register \
       --payload '{"appId":"expense-api","env":"prod","baseUrl":"https://expense.example.com",

@@ -28,7 +28,7 @@ API プラットフォーム標準の要件定義（`proposal/` 配下: §FR-API
 | BD-P-03 | 認証実装漏れ検知 = Central Auth Check Canary（Pattern β、ネットワーク監査 Acct 集約）| ADR-059 | App Registry + OpenAPI Registry で全アプリ自動追随 |
 | BD-P-04 | 認証方式 = 7 パターン（P-1〜P-7）+ 5 大分類、Tier 表現廃止 | §C-API-6 §C-6.2.5 | OAuth トークン / 証明書 / 共有秘密キー / AWS IAM 署名 |
 | BD-P-05 | 検知 5 レイヤー（IaC / Config / Static Code / Runtime Log / Behavioral）で 95-99% 担保 | §C-API-6 §C-6.6 | 本基本設計は L1/L3（静的解析）と L5（外形監視）を実装対象化 |
-| BD-P-06 | Synthetics Runtime = `syn-nodejs-puppeteer-16.1`（Puppeteer）/ `syn-nodejs-5.1`（Node.js-only）、namespace `@aws/synthetics-*`、AWS SDK v3 | 2026-07-06 AWS 公式確認 | 旧 `syn-nodejs-puppeteer-7.0` は Deprecated |
+| BD-P-06 | 認証 probe の実行基盤 = **Lambda（Node.js 22 / AWS SDK v3）**。Synthetics（`syn-nodejs-puppeteer-16.1` 等）は将来オプション（18 章 §18.4） | 2026-07-06 確認 / 18 章 | 現行は Lambda。Synthetics 系ランタイム値は将来用に確認済み（旧 `-7.0` は Deprecated）|
 | BD-P-07 | 課金按分 = Cost Allocation Tag + Usage Plan API Key 経由の Partner 識別 | §FR-API-4 | Athena 集計 |
 | BD-P-08 | Service Catalog 製品テンプレで死守事項（認証必須 / Origin Protection / タグ）を強制 | §C-API-5 | アプリチームは製品起動で自動準拠 |
 
@@ -96,7 +96,7 @@ API プラットフォーム標準の要件定義（`proposal/` 配下: §FR-API
 
 | ID | 内容 | 影響章 |
 |---|---|---|
-| BD-Q-01 | ROSA 側 P-18（監査アカウント他組織管理）が確定した場合の Origin Protection / Canary の責任分界改訂 | 01/16 |
+| BD-Q-01 | ROSA 側 P-18（監査アカウント他組織管理）が確定した場合の Origin Protection / probe の責任分界改訂 | 01/16 |
 | BD-Q-02 | 流量制御の tier 別標準値（Bronze/Silver/Gold 廃止後の Partner 区分）| 02 |
 | BD-Q-03 | ~~Cost Center / タグ体系の組織側標準との整合~~ → **kebab-case（`app-id`/`env`/`cost-center`/`owner`）で確定**（App Registry と一致、proposal PascalCase 例は正規化）。組織側標準名との最終突合のみ残 | 03（解決済み）|
 | BD-Q-04 | 静的解析の言語別ルール整備優先順位（Python / Node / Java / Go）| 04 |

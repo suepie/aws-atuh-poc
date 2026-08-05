@@ -8,7 +8,7 @@
 ## §12.0 前提と背景
 
 **この章で定めること**: 「どのアプリを監視するか」の台帳（App Registry）のデータ構造と、アプリ deploy 時にそこへ自動登録する仕組み。
-**なぜ要るか**: Pattern β で「Deploy 漏れ = ゼロ」を成立させる中核。アプリが deploy されると同時にこの台帳へ載り、Central Canary が次回実行から自動的に監視する。
+**なぜ要るか**: Pattern β で「Deploy 漏れ = ゼロ」を成立させる中核。アプリが deploy されると同時にこの台帳へ載り、Central Probe が次回実行から自動的に監視する。
 
 ---
 
@@ -28,11 +28,11 @@
 | `enabled` | BOOL | 監視有効フラグ | `true` |
 | `registeredAt` | S | ISO8601 登録日時 | `2026-07-06T00:00:00Z` |
 
-> 厳密な定義は [README §2.1](code-samples/README.md)。canary は `enabled=true` のみ Scan する（`lib/registry.js`）。
+> 厳密な定義は [README §2.1](code-samples/README.md)。Central Probe は `enabled=true` のみ Scan する（`lib/registry.js`）。
 
 ### §12.1.1 probe 先が CloudFront URL である理由
 
-`baseUrl` は API GW の直 URL でなく **CloudFront の URL**。canary は実ユーザーと同じ経路（CloudFront → WAF → Origin Protection → API GW）を通るため、**Origin Protection（[ADR-039 §C-4](../../adr/039-centralized-network-account-edge-layer.md)）を破らず、実 UX と同一条件で検証**できる。canary は `X-Origin-Verify` secret を持たない（Lambda@Edge が付与）。
+`baseUrl` は API GW の直 URL でなく **CloudFront の URL**。Central Probe は実ユーザーと同じ経路（CloudFront → WAF → Origin Protection → API GW）を通るため、**Origin Protection（[ADR-039 §C-4](../../adr/039-centralized-network-account-edge-layer.md)）を破らず、実 UX と同一条件で検証**できる。probe は `X-Origin-Verify` secret を持たない（Lambda@Edge が付与）。
 
 ---
 
@@ -83,7 +83,7 @@ app-registry Lambda の配置は 2 パターン（16 章で詳細）:
 | 操作 | 手段 |
 |---|---|
 | アプリ追加 | Service Catalog 製品 deploy（自動登録）|
-| 一時停止 | `enabled=false` に更新（canary が Scan 対象外に）|
+| 一時停止 | `enabled=false` に更新（probe の Scan 対象外に）|
 | 削除 | Service Catalog 製品削除（DeleteItem）|
 | 棚卸し | 全 item Scan（誰が監視対象か中央で一覧）|
 
@@ -103,7 +103,7 @@ app-registry Lambda の配置は 2 パターン（16 章で詳細）:
 
 ## §12.6 なぜ App Registry が要るか（代替案比較）
 
-canary が 1 アプリを probe するには、**API の形（endpoint 一覧）以外に**運用メタデータが要る。これらは OpenAPI（= API 仕様）には属さない。
+Central Probe が 1 アプリを検査するには、**API の形（endpoint 一覧）以外に**運用メタデータが要る。これらは OpenAPI（= API 仕様）には属さない。
 
 | 必要な情報 | App Registry の属性 | OpenAPI に書けるか |
 |---|---|---|

@@ -98,9 +98,9 @@ proposal（§FR-API-* / §NFR-API-* / §C-API-*）は参照物として維持。
 **2026-07-26 追加検証（Docker/LocalStack 実行）**:
 - P4-1 完了: cfn-guard 3 ファイル + Semgrep 3 言語すべてフィクスチャ検証（origin-protection / required-tags もバグなしで PASS/FAIL 正動作）
 - P4-2 SDK 実挙動: **LocalStack 3.8.1** で app-registry PutItem / alert-router SNS Publish（App Registry DDB 経由の本番ルーティング）を end-to-end 実証。⚠ LocalStack `latest`(2026.7.0) は auth token 必須 → community は `3.8.1` ピン留め必須
-- P4-3 canary logic: **27 PASS**（classify 16 + probe統合 4 + extractEndpoints 7）。full orchestration は registry Scan が LocalStack で成立、S3 は LocalStack の virtual-host addressing（`forcePathStyle` 要、実 AWS 無関係）で境界
+- P4-3 probe lib logic: **27 PASS**（classify 16 + probe統合 4 + extractEndpoints 7）。full orchestration は registry Scan が LocalStack で成立、S3 は LocalStack の virtual-host addressing（`forcePathStyle` 要、実 AWS 無関係）で境界
 
-> **要 PoC 検証（P4-3 full / P4-4 / P4-5、実 AWS or SAM が必要）**: `@aws/synthetics-puppeteer` 実ランタイム（SAM local）/ Positive probe（Bearer・SigV4）/ Cookie モノリス Positive / get-export（API GW）/ CloudWatch metrics 着地 / マルチアカウント E2E。手順は [research/phase4-environment-setup-guide.md](research/phase4-environment-setup-guide.md)。
+> **要 PoC 検証（P4-3 full / P4-4 / P4-5、実 AWS or SAM が必要）**: probe Lambda E2E（SAM local）/ Positive probe（Bearer・SigV4）/ Cookie モノリス Positive / get-export（API GW）/ CloudWatch metrics 着地 / マルチアカウント E2E。手順は [research/phase4-environment-setup-guide.md](research/phase4-environment-setup-guide.md)。
 
 ## 参照する主要 proposal / ADR
 

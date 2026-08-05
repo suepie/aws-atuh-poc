@@ -21,10 +21,10 @@ Pattern β で発生する Cross-Acct は **2 経路のみ**（それ以外は P
 |---|---|---|---|
 | 1 | App Registry 登録 | App Acct → ネットワーク監査 Acct | Custom Resource（12 章）|
 | 2 | OpenAPI Export | App Acct → ネットワーク監査 Acct S3 | Custom Resource（13 章）|
-| — | canary → アプリ probe | 中央 → App Acct | **Public CloudFront URL（権限不要）** |
-| — | canary → OAuth /token | 中央 → 認証基盤 | **Public URL（権限不要）** |
+| — | probe → アプリ | 中央 → App Acct | **Public CloudFront URL（権限不要）** |
+| — | probe → OAuth /token | 中央 → 認証基盤 | **Public URL（権限不要）** |
 
-→ **canary の probe 自体は Cross-Acct 権限を要さない**（実ユーザーと同じ Public 経路）。権限が要るのは Registry / OpenAPI の**書き込み**だけ。
+→ **probe 自体は Cross-Acct 権限を要さない**（実ユーザーと同じ Public 経路）。権限が要るのは Registry / OpenAPI の**書き込み**だけ。
 
 ---
 
@@ -74,7 +74,7 @@ flowchart LR
 | `CentralRegistryFn-InvokeRole` | App Acct | Service Catalog / CFN | 中央 Lambda の `lambda:InvokeFunction` |
 | `app-registry-lambda-role` | ネットワーク監査 Acct | Lambda | `dynamodb:PutItem/DeleteItem`（App Registry）|
 | `openapi-export-lambda-role` | ネットワーク監査 Acct | Lambda | `apigateway:GET`（App Acct の RestApi、Cross-Acct）+ `s3:PutObject`（Registry）|
-| `CentralCanaryRole` | ネットワーク監査 Acct | Synthetics | DDB Scan / S3 Get / Secrets Get / CloudWatch Put / Lambda Invoke（Alert Router）|
+| `CentralProbeRole` | ネットワーク監査 Acct | Probe Lambda | DDB Scan / S3 Get / Secrets Get / CloudWatch Put / Lambda Invoke（Alert Router）|
 
 > openapi-export は「App Acct の API GW を export → 中央 S3 に Put」のため、GetExport は App Acct リソースへの Cross-Acct read が要る（App Acct 側で Resource Policy or AssumeRole）。
 
@@ -93,10 +93,10 @@ ADR-039 v2 では「ネットワーク監査 Acct = 自管理」前提だが、R
 
 | 影響 | 対応 |
 |---|---|
-| CloudFront / Origin Protection の管理主体 | 他組織なら、canary の probe 先 URL / Origin Protection secret の運用を他組織と調整 |
-| Central Canary の配置 Acct | 「ネットワーク監査 Acct」が他組織管理なら、canary は自社側の別 Acct に置く再設計が要る |
+| CloudFront / Origin Protection の管理主体 | 他組織なら、probe 先 URL / Origin Protection secret の運用を他組織と調整 |
+| Central Probe の配置 Acct | 「ネットワーク監査 Acct」が他組織管理なら、probe Lambda は自社側の別 Acct に置く再設計が要る |
 
-→ **本章は自管理前提で記述**。P-18 確定時に probe 先経路と canary 配置を差分改訂する（BD-Q-01）。
+→ **本章は自管理前提で記述**。P-18 確定時に probe 先経路と probe Lambda 配置を差分改訂する（BD-Q-01）。
 
 ---
 
@@ -105,7 +105,7 @@ ADR-039 v2 では「ネットワーク監査 Acct = 自管理」前提だが、R
 | ID | 判断 | 根拠 |
 |---|---|---|
 | D-M-16-1 | Cross-Acct は Phase 1 = 案 1（中央 Lambda + App Acct から Invoke）、規模拡大時 = 案 3（EventBridge Bus）| Invoke 権限 1 点に集約、疎結合強化は EventBridge へ移行（§16.2）。案 4（DDB 直開放）は避ける |
-| D-M-16-2 | canary の probe は Public URL 経由で Cross-Acct 権限不要 | 実 UX 同一 + 権限を書き込みだけに限定 |
+| D-M-16-2 | probe は Public URL 経由で Cross-Acct 権限不要 | 実 UX 同一 + 権限を書き込みだけに限定 |
 | D-M-16-3 | 製品配布は StackSets / Portfolio 共有 | 全 App Acct への一括配布 |
 | D-M-16-4 | ROSA 側 P-18 確定まで自管理前提で記述、差分改訂 | 前提変更に追随（BD-Q-01）|
 
