@@ -15,9 +15,9 @@ CRUD と権限編集は**叩く DB も Keycloak も全く別**。ここを混同
 
 **帰結**:
 - **ユーザー CRUD の書込先は「Broker の DB」ではなく「IdP-KC 自身の Keycloak（同じ IdP-KC アカウント）」**。
-- **「Broker の DB」は権限（authz）専用**で、CRUD とは別フロー。
-- **IdP アカウントのサービスが Broker Keycloak を叩くことは無い**（P-17：逆方向の Admin API 到達を作らない）。ユーザー CRUD は IdP-KC アカウント内で完結する。
-- **Broker Keycloak を叩くのは idm-api #1 の "Broker shadow 操作"（遮断/復活）だけ**、しかもローカル ClusterIP。
+- **「Broker の DB」は shadow 専用**（authz はブランドユニット側、ADR-063）。CRUD とは別フロー。
+- **アプリ/ #2 が Broker Keycloak を能動的に叩くことは無い**（P-17）。ユーザー CRUD も権限もブランド内で完結する。
+- **Broker Keycloak を叩くのは中央 shadow 制御 Lambda の shadow 操作（無効化/復活）だけ**、内部 NLB 経由（**IdP-KC 削除イベントで発火**、フロー④）。
 
 ## 1.5 登場する画面/アプリと配置の決定（E 反映、2026-08-06）
 
@@ -28,12 +28,14 @@ CRUD と権限編集は**叩く DB も Keycloak も全く別**。ここを混同
 | もの | 種類 | 置き場所 | 役割 |
 |---|---|---|---|
 | **管理 SPA** | 人の画面（1 枚）| CloudFront/S3 | **ユーザー管理タブ + 権限管理タブ**（"2 画面" でなく 1 SPA の 2 タブ）|
-| **idm-api #1（テナント管理 API）** | **Lambda**（ADR-062）| Broker Acct・VPC 層③ | **唯一の front door** |
-| **idm-api #2（ユーザー連携 API）** | **Lambda**（ADR-062）| IdP-KC Acct・VPC 層③ | **内部 executor（①からのみ呼ばれる）** |
+| **エッジ（CloudFront/API GW）** | ルーティング（ステートレス）| エッジ | **JWT 検証(L1) + ブランド → そのブランドの #2 へ振る**（重い中央 front door は不要）|
+| **idm-api #2（ブランド管理 API）** | **Lambda**（ADR-062）| **ブランドユニット（IdP-KC Acct）・層③** | **主役：CRUD + 権限編集 + authz + projection + idmap** |
+| **shadow 制御 Lambda** | **Lambda**（ADR-062）| Broker Acct・層③ | **中央・薄い。Broker shadow の enable/disable のみ**（IdP-KC 削除イベントで発火、フロー④）|
 | **同居アプリ** | プログラム（M2M）| 非推奨（App Acct へ）| 経路⑤ CRUD。Phase 1 対象外 |
 
 **決定（本セッションの議論の反映）**：
-- **入口は①（Broker）に一本化**（人＝SPA も 機械＝アプリも①を叩く）。①は**共有 front door** として JWT/brand スコープ検証し、**ブランドの②へ CRUD も権限編集もルーティング**。**経路⑤（②直・同居）は①経由へ寄せて実質廃す**。
+- **編集・権限・CRUD は #2（ブランド側）が実体**（ユーザー編集・権限は per-brand のため）。**入口は #2**、**ルーティングはエッジ**（CloudFront/API GW がブランド → そのブランドの #2 へ、JWT L1 検証も）。**重い中央 front door（旧 #1）は置かない**。**経路⑤（同居アプリ）も #2 へ寄せる**（App Acct のアプリが #2 を Client Credentials で呼ぶ）。
+- **中央（Broker）に残るのは shadow 制御だけ**（Broker が共有 1 つで shadow が中央 Broker KC にあるため）。**IdP-KC 削除をトリガーに Broker shadow を無効化**（非同期イベント、フロー④）。
 - **認可 DB＝ブランドユニット（IdP-KC 側）**（2026-08-06 案 b・[ADR-063](../../adr/063-brand-unit-architecture.md)）：ブランドを将来の隔離/複製単位とし、**authz/idmap/projection はブランド内に置く。Broker は authz を持たない**（共有＝認証/ログイン描画/`sub`/ルーティング/shadow のみ）。federated も **`sub`+`brand_id` キーでブランド authz に保持**（初回ログイン時に Broker→ブランドへ sub 通知、write 時のみ越境）。不変条件: ① sub グローバル安定 ② brand_id 一級キー ③ cross-brand join なし ④ Broker 共有関心のみ。
 - **編集アプリ＝authz API の呼出側**でどこで動いてもよい（DB を IdP 側へ動かす必要はない）。
 - **IdP-KC＝隔離した自前アカウント（VPC 分割でなくアカウント分割）**：PW ハッシュのブラスト半径のため。**業務アプリを同居させない**。
@@ -49,56 +51,56 @@ flowchart TB
     SPA["管理 SPA(S3)"]
 
     subgraph B["Broker Acct（共有・1）"]
-        API1["idm-api #1 = Lambda<br/>共有 front door(brand ルーティング)"]
+        SHC["shadow制御 Lambda<br/>(中央・薄い)"]
         NLBB["内部NLB kc-admin"]
-        BKC["Broker Keycloak<br/>Admin API"]
-        BDB[("Broker Aurora<br/>= Broker shadow のみ")]
+        BKC["Broker Keycloak<br/>shadow"]
+        BDB[("Broker Aurora<br/>= shadow のみ")]
     end
 
     subgraph I["IdP-KC Acct（ブランドユニット）"]
-        API2["idm-api #2 = Lambda<br/>CRUD + 権限 + projection"]
+        API2["idm-api #2 = Lambda<br/>主役: CRUD+権限+authz+projection"]
         NLBI["内部NLB kc-admin"]
-        IKC["IdP-KC Keycloak<br/>Admin API"]
-        IDB[("IdP-KC Aurora<br/>= ①identity DB")]
-        BAZ[("ブランド authz + idmap + projection<br/>= ②(sub+brand_id キー)")]
+        IKC["IdP-KC Keycloak"]
+        IDB[("IdP-KC Aurora<br/>= identity")]
+        BAZ[("ブランド authz+idmap+projection<br/>(sub+brand_id)")]
         BAPP["ブランドのアプリ"]
     end
 
     ADM --> CF
     CF --> SPA
-    CF --> GW -->|"invoke"| API1
-    API1 -->|"shadow遮断: 内部NLB"| NLBB --> BKC
-    API1 ==>|"CRUD+権限を委譲: PrivateLink単方向"| API2
+    CF --> GW -->|"invoke(brand→#2)"| API2
     API2 -->|"identity: 内部NLB"| NLBI --> IKC
     IKC --> IDB
     API2 -->|"権限/idmap/projection: ローカル"| BAZ
     BAPP -->|"/api/me/context ローカルread"| BAZ
-    BKC -.->|"初回sub通知(write時のみ越境)"| BAZ
+    API2 -.->|"削除: user.deprovisioned(EventBridge)"| SHC
+    SHC -->|"shadow無効化: 内部NLB"| NLBB --> BKC
+    BKC --- BDB
+    BKC -.->|"初回sub通知(Broker→ブランド)"| BAZ
 ```
 
-- **authz / idmap / projection はブランドユニット（IdP-KC 側）**（案 b・ADR-063）。**Broker は shadow のみ**。**ブランドのアプリは `/api/me/context` をブランドローカル read（越境なし）**。
-- **idm-api は Lambda**（ADR-062）。Keycloak Admin API へは内部 NLB（`scheme=internal` + SG 限定 + server-TLS + アプリ層認証）経由。Ingress = `CloudFront(api.) → API GW(JWT L1) → Lambda invoke`。
-- **越境は最小**：`#1→#2`（CRUD+権限委譲、PrivateLink 単方向）/ `Broker→ブランド`（初回 sub 通知、write 時のみ、EventBridge）/ `#1→Broker shadow`（遮断）。**ホットパス（アプリの context read）は越境ゼロ**。
+- **編集・権限・CRUD は #2（ブランド側）が実体**。**ルーティングはエッジ**（`CloudFront(api.) → API GW(JWT L1) → ブランドの #2 を invoke`）。**重い中央 front door は無し**。
+- **中央（Broker）は shadow 制御 Lambda のみ**（IdP-KC 削除イベントで Broker shadow を無効化、フロー④）。**Broker は authz を持たない**。
+- **authz / idmap / projection はブランドユニット**（案 b・ADR-063）。**ブランドのアプリは `/api/me/context` をブランドローカル read（越境なし）**。Keycloak Admin API へは内部 NLB 経由。
+- **越境は最小**：`#2→Broker`（削除イベント）/ `Broker→ブランド`（初回 sub 通知）。**ホットパス（アプリの context read）は越境ゼロ**。
 
 ## 3. フロー①：ユーザー作成（管理画面から、hosted ユーザー、経路④ `local-admin`）
 
 ```mermaid
 sequenceDiagram
     participant SPA as 管理SPA(→APIGW)
-    participant A1 as idm-api #1 Lambda (Broker)
-    participant A2 as idm-api #2 Lambda (IdP-KC)
+    participant A2 as idm-api #2 (ブランド/IdP-KC)
     participant IKC as IdP-KC Keycloak (内部NLB)
     participant IDB as IdP-KC Aurora (identity)
 
-    SPA->>A1: POST /users (作成, APIGW→Lambda)
-    A1->>A2: PrivateLink 単方向で委譲
+    SPA->>A2: POST /users (APIGW がブランド→#2 にルーティング)
     A2->>IKC: Admin API (内部NLB経由)
     IKC->>IDB: ユーザー作成
-    Note over IKC,IDB: 書込先は IdP-KC 自身の DB<br/>Broker の DB ではない
-    A1-->>SPA: 完了 (Broker shadow は初回ログイン時に JIT 生成)
+    Note over A2,IDB: ブランド内で完結(Broker 不介在)<br/>Broker shadow は初回ログイン時に JIT 生成
+    A2-->>SPA: 完了
 ```
 
-- **Admin API を PrivateLink へ直接露出しない**（#1 は #2 を呼び、Admin API 書込は IdP-KC クラスタ内で完結、D-U6-06 §6.3.2）。
+- **CRUD は #2 がブランド内（IdP-KC クラスタ内、内部 NLB）で完結**。Admin API を外部へ露出しない方針は維持（旧「#1 が #2 を委譲呼び」は CRUD ブランドローカル化で不要、ADR-063）。
 
 ## 4. フロー②：ユーザー作成（アプリから、経路⑤・IdP-KC 内で完結）
 
@@ -135,12 +137,12 @@ sequenceDiagram
 
 - P-17 は「**同 Acct アプリからのユーザ CRUD 想定（変更可能性あり）**」＝**変更含みの前提**。
 - **懸念**：IdP-KC は **PW ハッシュ**を持つ。業務アプリを IdP-KC アカウントに同居させると、**アプリ侵害のブラスト半径が credential ストアに及ぶ**（E の隔離論）。
-- **推奨**：**アプリは App Acct に置き、CRUD は idm-api #1（Broker front door）を Client Credentials で呼んで #2 へ委譲**。→ **IdP-KC への新規 ingress 不要**（既存 Broker→IdP-KC PrivateLink 再利用）＋ **credential 隔離維持**。
+- **推奨**：**アプリは App Acct に置き、CRUD は ブランドの #2（ブランド管理 API）を Client Credentials で（エッジ経由）呼ぶ**。→ **業務アプリを IdP-KC アカウントに同居させず** credential 隔離維持。
 - **Phase 1 は経路⑤ 自体が対象外**のため当面 moot。ただし**設計前提を "同居しない" 方向に倒しておく**（P-17 の「同居前提」を緩める提案）。
 
 ### hosted / federated の分離（CRUD は hosted 専用）
 
-- **CRUD（作成/削除）は本質的に hosted 専用**。federated は顧客 IdP が作成/削除するため CRUD 不可 → **CRUD バックエンド（#2/IdP-KC）は既に "hosted 専用"** 経路。federated 管理は **shadow 遮断（Broker #1）+ 権限編集（ブランド authz、#2、ADR-063）**。**別 tier・別アカウントで既に分離済み**。
+- **CRUD（作成/削除）は本質的に hosted 専用**。federated は顧客 IdP が作成/削除するため CRUD 不可 → **CRUD バックエンド（#2/IdP-KC）は既に "hosted 専用"** 経路。federated 管理は **shadow 遮断（中央 shadow 制御、IdP-KC 削除トリガー、フロー④）+ 権限編集（ブランド authz、#2、ADR-063）**。**別 tier・別アカウントで既に分離済み**。
 - **画面（管理 SPA）は 1 つのまま**、出自で操作を出し分け（CRUD タブは hosted のみ活性、federated はグレー）。**2 SPA 化は mixed テナントで逆効果**（capability 適応の結論）。
 
 ## 5. フロー③：権限編集（ブランドユニット側、案 b・ADR-063）
@@ -148,19 +150,16 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
     participant SPA as 管理SPA(→APIGW)
-    participant A1 as idm-api #1 (Broker/front door)
     participant A2 as idm-api #2 (ブランド/IdP-KC)
     participant AZ as ブランド authz+projection (IdP-KC側)
 
-    SPA->>A1: PUT /users/{sub}/roles
-    A1->>A2: brand スコープでルーティング(PrivateLink)
+    SPA->>A2: PUT /users/{sub}/roles (APIGW がブランド→#2 にルーティング)
     A2->>AZ: ②authz へ書込 + projection upsert (ローカル)
     Note over A2,AZ: Keycloak は叩かない(権限=Backend DB)<br/>brand_id + sub キー
-    A2-->>A1: 完了
-    A1-->>SPA: 完了
+    A2-->>SPA: 完了
 ```
 
-- **管理 SPA → #1（Broker front door, brand ルーティング）→ #2（ブランド）→ ブランド authz DB（IdP-KC 側）ローカル**。Keycloak は叩かない。
+- **管理 SPA →（エッジ: API GW がブランド→#2 ルーティング）→ #2（ブランド）→ ブランド authz DB（IdP-KC 側）ローカル**。Keycloak は叩かない。中央 #1 は経由しない。
 - **federated ユーザーの権限もブランド authz に持つ**（`sub`+`brand_id` キー。IdP-KC の identity レコードが無くても Backend DB の行は持てる。初回ログイン時に Broker→ブランドへ sub 通知で行生成）。
 
 ## 6. フロー④：削除（IdP-KC 削除トリガー → Broker shadow 無効化、2026-08-06 更新）
@@ -193,14 +192,15 @@ sequenceDiagram
 
 ## 7. まとめ（E/F の核心）
 
-- **ユーザー CRUD**：**IdP-KC アカウント内で完結**（`#2 → IdP-KC Keycloak → IdP-KC Aurora`）。**Broker Keycloak は叩かない**。管理画面起点のときだけ `#1 → #2` を PrivateLink で 1 本越境。
-- **権限編集**：**ブランドユニット内で完結**（`#1 front door → #2 → ブランド authz DB`、案 b・ADR-063）。**Keycloak を叩かない**（権限は Backend DB、`sub`+`brand_id` キー）。**アプリの `/api/me/context` はブランドローカル read（越境ゼロ）**。
-- **Broker Keycloak を叩くのは #1 の shadow 操作（遮断/復活）だけ**、内部 NLB 経由。**Broker は authz を持たない**（共有＝認証/ログイン描画/sub/ルーティング/shadow）。
-- **実行形態 = Lambda（ADR-062）**：idm-api #1/#2 は Lambda。Keycloak Admin API へは**内部 NLB（scheme=internal + SG 限定 + server-TLS + アプリ層認証）**で到達。決め手は **auth-critical な Keycloak（P0）と管理ツール idm-api（P1）を別障害ドメインに分離**。
+- **ユーザー CRUD**：**ブランド（#2/IdP-KC）内で完結**（`#2 → IdP-KC Keycloak → IdP-KC Aurora`）。**Broker Keycloak は叩かない**。**入口は #2**（エッジが brand→#2 ルーティング）、中央 #1 は経由しない。
+- **権限編集**：**ブランドユニット内で完結**（`SPA →（エッジ）→ #2 → ブランド authz DB`、案 b・ADR-063）。**Keycloak を叩かない**（権限は Backend DB、`sub`+`brand_id` キー）。**アプリの `/api/me/context` はブランドローカル read（越境ゼロ）**。
+- **Broker Keycloak を叩くのは中央 shadow 制御 Lambda の shadow 操作（無効化/復活）だけ**（IdP-KC 削除イベントで発火、フロー④）、内部 NLB 経由。**Broker は authz を持たない**（共有＝認証/ログイン描画/sub/ルーティング/shadow）。
+- **実行形態 = Lambda（ADR-062）**：#2（ブランド管理 API）と 中央 shadow 制御は Lambda。Keycloak Admin API へは**内部 NLB（scheme=internal + SG 限定 + server-TLS + アプリ層認証）**で到達。決め手は **auth-critical な Keycloak（P0）と管理ツール（P1）を別障害ドメインに分離**。
 - **配置 = ブランドユニット（ADR-063）**：ブランドを将来の隔離/複製単位とし、authz/idmap/projection/CRUD/アプリをブランド側に。**Broker は共有 1 つ**（ログインはブランド別テーマを 1 Broker で描画）。不変条件: sub グローバル / brand_id 一級キー / cross-brand join なし / Broker 共有関心のみ。
 
 ## 8. 未決（E/F 関連）
 
 - **O-9**: **Lambda で確定（ADR-062）**。本ノートは Lambda 前提に更新済み。残る実装論点は内部 NLB の堅牢化（特に #2 = credential アカウント）。
-- **O-12**: `#1 → #2` の内部ルート（PrivateLink NLB 上の内部リスナ）+ S2S 認可（CC scope）。
-- **経路⑤ / EventBridge 削除経路**は Phase 1 対象外（D3-17）。射影フィード②は D1 SCIM E2E でのみ PoC 検証（G-SCIM）。
+- **越境イベント経路（旧 O-12 を再定義）**: `#2 → Broker`（削除 `user.deprovisioned`）/ `Broker → ブランド`（初回 sub 通知）= EventBridge。shadow 制御 Lambda の S2S 認可。**旧「#1→#2 PrivateLink 委譲」は CRUD がブランドローカル化したため不要**（front door はエッジルーティングに置換、ADR-063）。
+- **front door トポロジ確定**: ブランド主役（#2 が CRUD+authz の実体）/ 中央は shadow 制御のみ / ルーティングはエッジ（ADR-063）。伝播窓の許容 SLA が残論点。
+- **経路⑤ / EventBridge 削除経路**の実装詳細は D3-17（Phase 1 スコープ）。射影フィードは D1 SCIM E2E で PoC 検証（G-SCIM）。
