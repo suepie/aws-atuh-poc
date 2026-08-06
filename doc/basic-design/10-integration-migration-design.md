@@ -257,12 +257,13 @@ sequenceDiagram
 
 | デプロイ | 配置 | 利用者・経路 | 認可 |
 |---|---|---|---|
-| **管理画面 Backend** | Broker Acct（U1 §1.2） | テナント管理者 SPA（`admin.basis.example.com`、ADR-038）+ launchpad の `/api/me/*` | **ユーザ AT**（`tenant-admin` ロール + `tenant_id`） |
-| **専用 API 層** | IdP-KC Acct（U3 D3-05 案 C） | 同居アプリの CRUD（経路 ⑤ `provisioned_by=app`）+ 移行バッチ | **Client Credentials**（`idm:*` スコープ + `allowed_tenants` クレーム、U5 §5.8） |
+| **idm-api #1（テナント管理 API）= 唯一の front door** | Broker Acct（U1 §1.2）・Lambda | テナント管理者 SPA（`admin.basis.example.com`、ADR-038）+ launchpad の `/api/me/*` + **アプリ（M2M も①経由、front door 一本化）** | **ユーザ AT**（`tenant-admin` ロール + `tenant_id`）/ アプリは **CC**（`idm:*`、U5 §5.8） |
+| **idm-api #2（ユーザー連携 API）= 内部 executor** | IdP-KC Acct（U3 D3-05 案 C）・Lambda | **#1 からのみ呼ばれる**（PrivateLink 単方向、U6 D-U6-06）+ 移行バッチ。**経路⑤（同居アプリ直叩き）は①経由へ寄せ実質廃す** | **内部 = #1 からの CC**（`idm:*` + `allowed_tenants`、U5 §5.8） |
 
 - **根拠**: U3 D3-05（案 C 確定: 属性規約・ガードレール・監査を API 層が不変条件として強制）+ U5 §5.8（CC スコープ確定済み）+ U7 §7.5.2（2 デプロイの Acct 分割は整合性レビュー済み）。**コードベースと OpenAPI は 1 本**にして仕様ドリフトを防ぎ、認可ミドルウェア（ユーザ AT 経路 / CC 経路）だけを差し替える。
+- **front door ①一本化（2026-08-06 確定、[control-plane ノート](research/control-plane-crud-authz-flows-notes.md) / [ADR-062](../adr/062-idm-api-execution-form-lambda.md)）**: 人（管理 SPA）も機械（アプリ）も**入口は idm-api #1**。**#2 は #1 からのみ呼ばれる内部 executor**。**経路⑤（同居アプリが #2 直叩き）は①経由へ寄せて実質廃す**（権限は #1 の authz DB にしかなく、#2 直では権限を扱えないため）。**同居アプリは App Acct 推奨**（IdP-KC 非同居 = PW ハッシュのブラスト半径隔離、E 判断）。
 - 対象 Keycloak: 管理画面 Backend は Broker KC + IdP-KC 両方の Admin API を叩く（ADR-038 §J、クロスアカウント経路は U6 D-U6-02 準拠）。専用 API 層は IdP-KC のみ。
-- 実装形態（Lambda + API GW か ROSA 常駐か）は U3-OP-3 / U6 §6.8 の裁定に従う（本書は API 面のみ確定）。
+- **実行形態 = Lambda で確定（[ADR-062](../adr/062-idm-api-execution-form-lambda.md)、O-9。旧「U3-OP-3 / U6 §6.8 の裁定に従う」を解決）**。Ingress = `CloudFront(api.basis, WAF) → API GW（JWT authorizer L1 + throttle）→ Lambda ネイティブ invoke`（VPC Link/NLB を ingress に挟まない）。**非同期の糊（射影フィード EventBridge ハンドラ / Webhook Dispatcher / idmap 更新ハンドラ）も Lambda（層③）**。Keycloak Admin API へは各クラスタの内部 NLB 経由（U6 D-U6-11 改訂 — scheme=internal + SG を Lambda SG 限定 + server-TLS + アプリ層認証、#2 は最厳格）。
 - **A11y**: テナント管理者 SPA（Admin SPA）は ADR-043 の WCAG 2.2 AA + ATAG 2.0 準拠を実装要件とする（U4 §4.6 / §4.7.4）。
 
 ### 10.2.2 リソース一覧と OpenAPI 骨子（D-U10-08）
@@ -542,7 +543,7 @@ flowchart TB
 | D-U10-04 | 並走 4 Phase（M0 Power-on → M1 Pilot → M2 全社 → M3 PW 無効化）、`mandatory=false` 起動・同一 Change ウィンドウでの PW 停止 | §10.1.4 | SN guide §6、B-SN-20 |
 | D-U10-05 | SN Break Glass 2-3 名（`sso_source` 空欄 + side_door + HW MFA + IP 制限 + 即時通知） | §10.1.5 | ADR-023 §J-3-A |
 | D-U10-06 | 削除連鎖 = L1 Soft Delete → SAML 認証拒否で L2 遮断（sys_user 残置）。SAML SLO Phase 1 不実装、残余窓 = SN セッションタイムアウト。受入テスト T-1〜T-5 | §10.1.6 | ADR-023 §L.4/L.6、U5 §5.5.2 |
-| D-U10-07 | ユーザ管理 API = 単一 OpenAPI `idm-api` v1 × 2 デプロイ（Broker Acct 管理画面 Backend / IdP-KC Acct 専用 API 層） | §10.2.1 | U3 D3-05、U5 §5.8、U7 §7.5.2 |
+| D-U10-07 | ユーザ管理 API = 単一 OpenAPI `idm-api` v1 × 2 デプロイ（#1 テナント管理 = front door / #2 ユーザー連携 = 内部 executor）。**実行形態 = Lambda（ADR-062）、front door ①一本化・経路⑤ 実質廃す** | §10.2.1 | U3 D3-05、U5 §5.8、U7 §7.5.2、**ADR-062**、U6 D-U6-06/11 |
 | D-U10-08 | Phase 1 リソースセット確定（users/invitations/credentials/roles/org/entitlements/audit-logs/idmap/sessions/me）+ DELETE 動詞 405 + RFC 9457 + カーソルページング | §10.2.2 | ADR-038 §C、U3 D3-09 |
 | D-U10-09 | 認可 C ハイブリッド実装 = L1 ON/OFF は Backend DB エンタイトルメント（**JWT 非搭載**、ADR-038 の apps/roles クレーム例を上書き）+ 3 層テナントスコープ検証の経路別写像 | §10.2.3 | ADR-038 §E、U2 §2.5.4、U4 §4.4.3 |
 | D-U10-10 | `GET /api/me/apps` スキーマ確定（entitled/requestable、app_id = Sorry・App Registry と同一名前空間、max-age 60s） | §10.2.4 | U4 D-U4-06、B-627 暫定 |
@@ -599,5 +600,6 @@ flowchart TB
 ## 改訂履歴
 
 - 2026-07-24: 初版（Wave 3 起草）。Baseline v1（P-13/P-14/P-17/P-18）前提。ServiceNow パターン ② の基本設計化（SAML Client K5 / Matching Field / 並走 4 Phase / Break Glass / 削除連鎖 T-1〜T-5）、ユーザ管理 API `idm-api` v1（単一 OpenAPI × 2 デプロイ / C ハイブリッド実装 / `GET /api/me/apps` 確定）、Webhook 配信機構（`basis.*` 正規化 + HMAC + DLQ + REQ-OUT-01 連動）、移行設計（4 集団マトリクス / PW ハッシュ判定フロー / idmap 旧 ID 記録 / `legacy_user_id` クレーム廃止）、DSAR Phase 1 手動運用の範囲確定（D-U10-01〜13）。
+- 2026-08-06: **[ADR-062](../adr/062-idm-api-execution-form-lambda.md)（idm-api 実行形態 = Lambda、O-9）を反映** — §10.2.1 に実行形態 Lambda 確定 + Ingress（API GW ネイティブ invoke / 非同期の糊も Lambda）+ **front door ①一本化**（人も機械も #1、#2 は内部 executor、経路⑤ 実質廃す、同居アプリは App Acct 推奨）を追記、D-U10-07 更新。
 - 2026-07-24 (v1.1): Wave 3 最終レビュー反映 — **H-3**: 未決に U10-OP-6（オンボーディング承認 UI の Backend 共用）/ U10-OP-7（`canary-central-readonly` スコープ設計）/ U10-OP-8（Admin API SLO 境界）の 3 件追加、§10.3.2 に `idp.enabled/disabled`・`maintenance.scheduled` の予約 2 行追加（Phase 1 は user 系のみ — U9 と合意済み）。**M-4**: §10.3 の Egress を REQ-OUT-01 流用から「枠拡張 or 新 REQ-OUT-06 起票を U6 へ依頼」に修正（U6 引き渡しにも追加）。**M-5**: idm-api 公開経路に REQ-IN-12 予約採番依頼を明記。**M-6**: U3 への引き渡し新設（`provisioned_by=legacy_spi` の D3-04 行追加依頼）。**M-13**: §10.2.1 に Admin SPA = WCAG 2.2 AA + ATAG 2.0 準拠（ADR-043 / U4）を追記。**M-14**: 契約書テンプレート反映のスコープ外明記（法務・契約タスクへ返却）。**L-2**: SAML Client テンプレート採番 K5 → CL-SN-01 改称（U9 禁則 K-\* との衝突回避、参照 5 箇所追随）。**L-3**: §10.1.6 見出しの括弧混在修正。**L-4**: 出典 U3 §3.7.4 #4 → U3 D3-05。**L-5**: `user.created` の JIT 発生源を First Broker ログインイベント（Event Listener SPI 経由、U7 D-U7-04 emit 専任原則）に修正。
 - 2026-07-26 (v1.2): 可読性向上 — mermaid 図 3 点追加（§10.1.3 SN SSO + sys_user リンク/JIT 作成シーケンス / §10.1.4 並走 4 Phase タイムライン〔受入テスト T-1〜T-5 の位置含む〕/ §10.4.1 移行方式 A〜D 判定フロー）。既存図（§10.1.6 削除連鎖 / §10.3.3 Webhook 配信 / §10.4.2 PW ハッシュ判定）は変更なし。設計内容の変更なし。

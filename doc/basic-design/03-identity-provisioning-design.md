@@ -407,9 +407,18 @@ D3-01 追加行（realm.json 反映は U2 §2.6）: `department` / `manager_ref`
 - **⚠ 訂正 1（検証で判明）**: SCIM Enterprise 拡張（RFC 7643 §4.3）の `manager` は**参照型（complex: value = SCIM リソース id）**であり文字列属性へ直写像できない。**`manager_ref` = 同一テナント内の `external_id` 値へ正規化して保存する規約**とする（Facade が SCIM id → external_id を解決。解決不能時は保留キューでリトライ — 順序到着問題）。
 - Enterprise 拡張で標準的に運べるのは `employeeNumber / costCenter / organization / division / department / manager`（検証済み ✅）。`employment_type` / `hire_year` はカスタム属性（Facade のスキーマ拡張で受理）。
 
+**属性正準化の原則（2026-08-06 明文化、出典 [attribute-canonicalization ノート](research/attribute-canonicalization-notes.md)）**: 名前・ID（Layer B）以外の属性は**顧客 IdP から素通ししない**。基盤の**正準スキーマ（= User Profile 宣言属性 = D3-01 の宣言集合 + 上記 8 組織属性）へ写像 or 基盤付与**し、**アプリは正準スキーマのみ受領**（存在 or 明示 null、生クレーム非渡し）。理由: 顧客 IdP はテナントごとに属性の有無・クレーム名・値の意味がバラバラで、生依存すると動作保証できない。
+- **source 解決 3 ケース（(テナント × 属性) ごと）**: ① 顧客写像（SoR = 顧客 IdP/HRIS、SCIM Enterprise 拡張写像 / JIT Mapper）② 基盤付与（顧客が送らずアプリが要る、SoR = 管理画面 authoring）③ 不要（収集も宣言もしない）。**同一属性でもテナントで SoR が変わる**（テナント設定で吸収）。
+- **②基盤付与が①写像で上書きされない規約**: 当該属性の Mapper を**非設定 or syncMode=IMPORT（初回のみ）**にする（per-Mapper syncMode、[U2 §2.5.4](02-keycloak-logical-design.md)）。
+- **編集可否**: hosted（IdP なし顧客）= 基盤付与で**編集可** / federated（顧客 IdP）= 顧客 IdP/HRIS が SoR で**読取のみ**（編集は次同期で上書き）。
+- **移行時**: レガシー/顧客属性 → 正準スキーマへの**マッピング表を顧客ごと**に用意（正準に無いものは捨て、足りないものは②基盤付与 or null）。B-IDM 系ヒアリングと連動。
+- **未宣言属性は保存段階で破棄**（`unmanagedAttributePolicy=DISABLED`、[U2 §2.6](02-keycloak-logical-design.md)）= 顧客生クレームのサイレント混入を物理防止。
+
 ### D3-16: 統合コンテキスト射影（`/api/me/context` の読取元、RC-1〜4）
 
 **採用（方向確定、実測ゲート付き）**: **Broker Acct に統合射影（Aurora `idmap` 同居の read model、RC-1）**を置き、`/api/me/context` はこの射影を 1 read するだけ（**リクエスト時に Keycloak を読まない・アカウント跨ぎしない** — P-17 / U6 D-U6-02 と整合）。提供場所 = Broker Acct の idm-api（RC-2 (i)。IdP-KC 同居アプリは **App Acct のアプリと同格の RP** として同経路で到達 — IdP-KC「基盤コンポーネント」としての単方向原則とは別レイヤ）。
+
+**射影 vs 都度 join の比較結論（2026-08-06 明文化、出典 [me-context-projection 比較ノート](research/me-context-projection-comparison-notes.md)）**: Option A（射影）採用方向は維持。**都度 join（Option B）は非 IdP ユーザーの読取で IdP-KC 越境が必要 = P-17 抵触のため却下**（+ 10M 規模の複数ストア join レイテンシ）。**ハイブリッド案 2（部分射影）を選択肢として保持**: 変化の遅い組織属性・idmap は射影、変化の速いエンタイトルメントは **Broker 内で都度 read**（Broker 内完結なら P-17 に触れない）も可。**即時剥奪など鮮度が命の操作は射影に頼らず Broker shadow 無効化で担保**（役割分担）。**読取 p99（10M）・RC-1 ストア選定（Aurora 同居 vs 別）は G-SCIM で実測**してから確定。
 
 統合射影への 3 つの書込フィードと読取経路を図示する（2026-07-26 図示追加）:
 
@@ -480,6 +489,7 @@ sequenceDiagram
 
 ## 改訂履歴
 
+- 2026-08-06: **属性正準化（[attribute-canonicalization ノート](research/attribute-canonicalization-notes.md)）と 射影 vs 都度 join 結論（[me-context-projection 比較ノート](research/me-context-projection-comparison-notes.md)）を反映** — D3-15 に「顧客 IdP 素通し不可・正準スキーマ写像/基盤付与・source 3 ケース・②が①で上書きされない規約・hosted 編集可/federated 読取のみ・移行マッピング表」、D3-16 に「Option A（射影）維持・都度 join は P-17 抵触で却下・ハイブリッド案 2 部分射影・G-SCIM 実測」を追記（[ADR-062](../adr/062-idm-api-execution-form-lambda.md) 系の管理コントロールプレーン確定と連動）。
 - 2026-07-26 (v1.4): 可読性向上のため mermaid 図 4 点を追加（D3-04 プロビ経路全体図 / D3-09 状態機械の stateDiagram 化〔ASCII 置換、内容不変〕/ D3-16 統合射影データフロー図 / D3-17 mode A 両側同期削除シーケンス図）。決定内容の変更なし（図示のみ）。
 - 2026-07-24 (v1.3): §3.8 に D3-17 追加（非 IdP mode A 単独・両側同期削除・日次リコンサイル・SCIM 内部伝播却下・Phase スコープ、note §8）。D3-04 ④ 注記 + D3-09 に idpkc shadow バッチ除外。
 - 2026-07-24 (v1.2): §3.8 新設（D3-14〜16: 認可境界・組織属性・統合射影。research/idp-kc-user-mgmt-authz-boundary-notes.md の本体反映 + 訂正 2 点〔manager 参照型の正規化 / RC-3 emit は Event Listener SPI 経由〕）。

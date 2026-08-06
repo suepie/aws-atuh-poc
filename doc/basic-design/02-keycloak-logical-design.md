@@ -432,6 +432,7 @@ Broker 内部 username は `<orgAlias>-<userid>`（Username Template Importer �
 - **roles**: Phase 1 は**ハイブリッド C**（Phase 5 設計確認で確定）— JWT には基盤ロールを**管理系 Client（テナント管理画面等）に限り** `oidc-usermodel-realm-role-mapper` で発行し、業務アプリの細粒度認可はアプリ側 DB / 管理画面 Backend で管理。業務アプリ Client には roles Mapper を付けない（Stage 3 は必要時のみ、ADR-030）。
   - **2026-07-24 補強（U3 §3.8 D3-14）**: 粗粒度認可（エンタイトルメント + 組織コンテキスト + 機能ロール割当の器）の **SSOT = ADR-038 Backend DB**、配信 = `/api/me/context`（API pull）。**Keycloak の groups/roles を業務認可の authoring に使わない**（単一 Realm × 1000+ テナントでの肥大回避・JWT 非搭載方針・アプリの Admin API 結合回避）。KC は認証 + `tenant_id`（+ 組織属性の**保管**、D3-15）に専念。
 - **syncMode 既定**: IdP レベル既定 = **`IMPORT`**。Mapper 単位 override は §2.4.4（`mfa_indicator`=FORCE）のみ許可し、**`scim_active` / `provisioned_by` / `last_login` を IdP Mapper の対象にすることを禁止**（SCIM/SPI 書込値の上書き事故防止。PoC V2 で per-Mapper syncMode の動作を実測確認済み）。
+- **②基盤付与属性を①顧客写像で上書きしない規約（2026-08-06、属性正準化 [U3 D3-15](03-identity-provisioning-design.md)）**: 管理画面 authoring で基盤付与した組織属性（source ケース②）は、顧客 IdP が後から同名クレームを送っても保持するため、**当該属性の Mapper を非設定 or syncMode=IMPORT（初回のみ取込）**にする。①顧客写像の属性にのみ Mapper を設定し、**属性ごとに source（顧客写像 / 基盤付与）を宣言**する（U3 D3-15 の source 解決 3 ケース）。
 - **根拠**: [jit-scim §10.4.F.4](../common/jit-scim-coexistence-keycloak.md)、ADR-033 §G.3（Minimum Storage L2: Import 属性を絞る）。
 - **未決事項**: 顧客 IdP の groups クレーム → 基盤ロール自動付与（Advanced Claim to Role）は Phase 1 では使わない方針だが、B-604 系ヒアリングの結果次第で再評価（U3）。
 
@@ -440,6 +441,8 @@ Broker 内部 username は `<orgAlias>-<userid>`（Username Template Importer �
 ## 2.6 User Profile スキーマ（明示宣言）
 
 **採用**: Realm `broker` / `idp` とも **User Profile を明示宣言**し、`unmanagedAttributePolicy = DISABLED`（未宣言属性は保存不可）とする。設定は **User Profile API（`/admin/realms/{r}/users/profile`）経由で IaC 化**する。
+
+**属性正準化の観点（2026-08-06、[U3 D3-15](03-identity-provisioning-design.md) / [attribute-canonicalization ノート](research/attribute-canonicalization-notes.md)）**: 宣言属性 = **アプリへの正準スキーマ契約**（アプリはこの集合のみ受領）。`unmanagedAttributePolicy=DISABLED` により**未宣言 = 顧客 IdP の生クレームは保存段階で物理破棄**され、生クレームのサイレント混入・アプリへの流出を構造的に防ぐ。
 
 **宣言属性の SSOT は U3 D3-01（[03-identity-provisioning-design.md](03-identity-provisioning-design.md)）。本表はその realm.json 化である。**
 
@@ -603,3 +606,4 @@ Broker 内部 username は `<orgAlias>-<userid>`（Username Template Importer �
 - 2026-07-23: 初版（Wave 1 起草）。Baseline v1（P-01〜P-18）前提。Realm/Org 命名規則・2-tier 論理設定・Flow 5 系統・Custom SPI 4 種・Protocol Mapper（Stage 1 + tenant/aud/roles C）・User Profile 明示宣言・1000+ IdP 必須対策 7 点の制約化・PoC ゲート（G-IdP-Scale P-1〜P-7 / G-SPI-Compat）を定義。
 - 2026-07-23 (v1.1): Wave 2 整合性レビュー反映（L-8、U7/U5 引き渡しの受け皿）— §2.3.1 に Composite Role 2 状態（`<role>-eligible`/`<role>-active`、ADR-040/U7 §7.6）の両 Realm Role 設計包含 + PW ポリシー length(12)・WebAuthn Policy 具体値の U7 §7.7.2 参照注記を追加、§2.3.5 の HIBP 照会を「PW 変更時 + ローカル PW ログイン成功時」（U7 §7.2.2）に拡張、§2.5.1 の `sid` 保留注記を「U5 §5.1.1 で確定済み（既定発行）」へ更新。
 - 2026-07-24 (v1.2): Wave 3 最終レビュー反映 — §2.7.5 テナント層の適用エンジンを「Admin API or keycloak-config-cli」から**自作オンボーディング API による Admin API 差分適用に確定**（keycloak-config-cli は K-1〔realm representation 禁止〕と原理衝突のため不採用、U9 D-U9-10 / H-1）、§2.4 の SPI CI/CD を ADR-055 §A.6（Tekton + Quay）併記から U9 D-U9-12（GitHub Actions + ECR + OpenShift GitOps）へ確定（H-4）、§2.7.5 基盤層「単一 state」に分割の最終形 = U9 D-U9-09 を注記（L-7）。
+- 2026-08-06: **属性正準化（[attribute-canonicalization ノート](research/attribute-canonicalization-notes.md) / [U3 D3-15](03-identity-provisioning-design.md)）を反映** — §2.5.4 に「②基盤付与属性を①顧客写像で上書きしない規約（Mapper 非設定 or syncMode=IMPORT、属性ごとに source 宣言）」、§2.6 に「宣言属性 = アプリへの正準スキーマ契約 / unmanagedAttributePolicy=DISABLED で未宣言=顧客生クレームを物理破棄」を追記（管理コントロールプレーン確定 [ADR-062](../adr/062-idm-api-execution-form-lambda.md) 系と連動）。
