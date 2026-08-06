@@ -58,7 +58,7 @@
 ### Negative / 留意
 
 - **federated ユーザーの authz 行生成**：初回ログイン時に **Broker → ブランドへ `sub` 通知（EventBridge、write 時のみ越境）** → ブランドが authz スタブ行作成。順序/整合（at-least-once + 冪等）が要る。
-- **idm-api トポロジが変わる**：#2（ブランド側）が **CRUD + 権限 + projection** を担い厚くなる。#1（Broker）は **共有 front door（brand ルーティング）+ shadow 遮断** に縮小。front door を #1 集約とするか #2 直とするかは実装で確定。
+- **idm-api トポロジが変わる**：#2（ブランド側）が **CRUD + 権限 + projection** を担う（主役）。**中央 front door（旧 #1）は置かず、ルーティングはエッジ（CloudFront/API GW）、中央に残るのは shadow 制御 Lambda のみ**（front door トポロジは Open Items で確定）。
 - **Phase 1（1 ブランド）ではやや冗長**に見えるが、将来移行回避のため受容。
 
 ### 改訂・影響

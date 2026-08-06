@@ -3,6 +3,7 @@
 - **ステータス**: Proposed（基本設計フェーズで Accepted 昇格予定）
 - **日付**: 2026-08-06 作成
 - **決定**: **idm-api（テナント管理 API #1 / ユーザー連携 API #2）を AWS Lambda で実装する**（ROSA 常駐案を退け、O-9 を Lambda で確定）
+- **後続 refine（[ADR-063](063-brand-unit-architecture.md)、2026-08-06）**: 本 ADR の #1/#2 トポロジ（#1 front door が #2 へ委譲・`#1→#2` PrivateLink）は **ブランド主役**に更新済み — **#2 がブランド管理 API の実体（CRUD+権限+authz+projection）、front door はエッジルーティング（CloudFront/API GW）、中央に残るのは shadow 制御 Lambda のみ、越境は「削除 `user.deprovisioned`」「初回 sub 通知」の EventBridge**。**Lambda 実行形態の決定自体は不変**。以降本文の `#1→#2` 委譲・PrivateLink 記述はこの refine を前提に読むこと。
 - **関連**:
   - [ADR-038 ユーザ管理画面](038-tenant-admin-portal.md)（本 API の親。SPA + idm-api の構成）
   - [ADR-056 ROSA 採用判断](056-rosa-adoption-decision.md)（Keycloak は ROSA HCP。本 ADR は "idm-api は ROSA に載せない" と決める）
