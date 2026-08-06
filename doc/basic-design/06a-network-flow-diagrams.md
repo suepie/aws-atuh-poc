@@ -249,7 +249,7 @@ flowchart LR
 
 | 通信 | 経路 | 根拠 |
 |---|---|---|
-| **静的 SPA(S3)** | CloudFront + WAF + **OAC**(NFW 経路外) | 公開読み取り専用の静的ファイルは低リスク。**S3 は LB 経由でなく OAC 直結が AWS 公式推奨**([OAC](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/private-content-restricting-access-to-s3.html)) |
+| **静的 SPA(S3)** | CloudFront + WAF + **OAC**(NFW 経路外) | 公開読み取り専用の静的ファイルは低リスク。**S3 は LB 経由でなく OAC 直結が AWS 公式推奨**([OAC](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/private-content-restricting-access-to-s3.html))。**⚠ 2026-08-06: 全 inbound NFW 通過が組織方針で確定([U6 REQ-IN-12](06-infra-network-design.md))→ この "NFW 経路外" は非準拠。静的 S3 も NFW 通過が要る(CloudFront→NFW→プロキシ→S3、S3 は LB native ターゲット不可)。launchpad./admin. SPA も同影響 → 別途詰める** |
 | **API(動的・機密)** | CloudFront →(VPC オリジン)監査 ALB → **NFW** → **Private API GW**(Interface Endpoint) | 検査したい本命だけ NFW に通す。CloudFront VPC origins でプライベート LB をオリジンにできる([2024 GA](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/private-content-vpc-origins.html)) |
 
 ⚠ **CloudFront VPC origins と NFW の共存**: VPC origins の CloudFront→オリジン通信を NFW 経路に載せるには **VPC ルートテーブル設計が別途必要**(VPC origins は **NACL 非評価** / **TLS リスナー付き NLB 不可**の仕様に注意)。「CloudFront→NFW→ALB」を素直に描くと、どのルートテーブルで firewall endpoint を通すかは実装時要検証(**O-APP-1 として U6 へ引き渡し**)。
