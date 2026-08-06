@@ -41,7 +41,7 @@
 
 **idm-api #1 / #2 とも AWS Lambda で実装する。** 具体:
 
-1. **Ingress**：`CloudFront(api.basis, WAF) → API Gateway（JWT authorizer L1 + throttle）→ Lambda（ネイティブ invoke）`。VPC Link/NLB を ingress に挟まない（最短）。**（⚠ 2026-08-06 撤回: 全 inbound を NFW 通過とする組織方針が確定〔U6 REQ-IN-12〕。この "API GW ネイティブ invoke（最短）" は NFW 経路外のため不採用。ingress は `他組織 CloudFront+WAF+ALB/NLB+NFW〔api. 専用エッジ〕→ TGW → 自 Internal ALB〔host: api.→Lambda ターゲット群〕→ Lambda`〔Option 2〕へ。JWT L1 は Lambda 内、throttle は WAF。実行形態=Lambda の決定自体は不変）**
+1. **Ingress**：`CloudFront(api.basis, WAF) → API Gateway（JWT authorizer L1 + throttle）→ Lambda（ネイティブ invoke）`。VPC Link/NLB を ingress に挟まない（最短）。**（2026-08-06 補足: 組織方針 = 全 inbound NFW 通過必須、ただし **静的 SPA と API GW は例外**〔U6 REQ-IN-12〕。API GW はこの例外ゆえ本 ingress は NFW 経路外で準拠 = そのまま維持。Option 2〔ALB→Lambda ターゲット〕/ Option 3〔Private API GW〕は不要）**
 2. **Lambda の VPC アタッチ**：サブネット層③（[06a §A.5.3](../basic-design/06a-network-flow-diagrams.md)）。egress のため。
 3. **Keycloak Admin API 到達**：各クラスタに **内部 NLB（`scheme=internal`）** を新設し、**SG を Lambda の SG に限定 + 最低 server-TLS + Admin API のアプリ層認証**で守る。ClusterIP 単独方針（D-U6-11）を本用途に限り "内部 NLB + 厳格 SG" に見直す。
 4. **越境**：`#1 → #2` は PrivateLink 単方向（[D-U6-06](../basic-design/06-infra-network-design.md)）。`IdP-KC → Broker` は EventBridge（射影フィード）。
