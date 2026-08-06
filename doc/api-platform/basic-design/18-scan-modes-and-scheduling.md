@@ -23,13 +23,14 @@
 
 | モード | トリガ | 範囲 | 頻度 | 状態 |
 |---|---|---|---|:---:|
-| **M1 デプロイ差分** | イベント（デプロイ検知）| **デプロイされたアプリの全 endpoint** | デプロイ毎（即時）| ✅ Phase 1 |
+| **M1 巡回差分** | **中央巡回**（発見 Lambda が 1 時間毎に資材を読み差分検知、[17 章 §17.2](17-deployment-integration-and-registration.md) / [ADR-061](../../adr/061-deploy-detection-pull-model.md)）| **変化のあったアプリの全 endpoint** | 1 時間毎（検知遅延 最大 1h）| ✅ Phase 1 |
 | **M3 フル監査** | **手動** | 全アプリ全 endpoint | オンデマンド | ✅ Phase 1 |
 | ~~M2 常時 heartbeat~~ | スケジュール | 重要 endpoint のサブセット | 5-15 分 | ⏸ **将来**（重要 endpoint の定義はアプリと会話後）|
 
 ```mermaid
 flowchart LR
-    Deploy[デプロイ] -->|EventBridge| M1[M1 差分（自動）<br/>変更アプリの全 endpoint]
+    SCH[EventBridge Scheduler<br/>1 時間毎] --> DISC[発見 Lambda<br/>資材巡回・差分検知（17 章）]
+    DISC -->|変化あり| M1[M1 巡回差分（自動）<br/>変更アプリの全 endpoint]
     Manual[運用者 手動] -->|invoke| M3[M3 フル監査（手動）<br/>全アプリ全 endpoint]
     M2["M2 heartbeat（将来）"]:::future
     M1 & M3 --> C[probe → classify → alert<br/>共通 lib]
@@ -38,15 +39,16 @@ flowchart LR
     style M3 fill:#e3f2fd
 ```
 
-### §18.1.1 なぜ常時ポーリング（M2）を一旦なしにするか
+### §18.1.1 M1 の巡回と M2 heartbeat の違い（M2 を一旦なしにする理由）
 
-- **重要 endpoint の定義はアプリチームと会話しないと決められない**（全 GET か / 認証必須のみか / 業務上の重要度か）。決め打ちで全量を回すと現状の重さに戻る。
-- M1（デプロイ差分）で「変更が入った瞬間」を捕捉でき、M3（手動フル）で「網羅確認」ができるため、**常時ポーリングがなくても認証漏れの主要な入り口（デプロイ）は塞げる**。
+- **M1 の巡回は「構成の読み取り」**（API list / deploymentId 比較）であり、probe（HTTP 検査）は**変化のあったアプリだけ**に飛ぶ。M2 heartbeat は「**endpoint への probe を常時定期実行**」する別物で、重要 endpoint の定義がないと全量 probe の重さに戻る。
+- **重要 endpoint の定義はアプリチームと会話しないと決められない**（全 GET か / 認証必須のみか / 業務上の重要度か）。
+- M1（巡回差分）で「デプロイ = 変更の瞬間」を最大 1 時間遅れで捕捉でき、M3（手動フル）で「網羅確認」ができるため、**常時 probe がなくても認証漏れの主要な入り口（デプロイ）は塞げる**。
 - M2 は将来、アプリと重要 endpoint を合意した上で追加する（§18.6 未決）。
 
 ---
 
-## §18.2 M1 デプロイ差分（自動）
+## §18.2 M1 巡回差分（自動）
 
 ### §18.2.1 差分の粒度は「アプリ単位」
 
@@ -59,32 +61,25 @@ flowchart LR
 
 → 認証漏れの典型（`AuthorizationType=NONE` / middleware 削除）は **OpenAPI に現れないことが多い**。だから「変更されたアプリは全 endpoint を probe」する。全アプリ全量よりは軽く（変更アプリのみ）、endpoint 差分より安全。
 
-### §18.2.2 トリガ
+### §18.2.2 トリガ：中央巡回（pull、17 章が SSOT）
 
-デプロイ検知（17 章）の登録/更新イベントを契機にする。
+デプロイ検知は **発見 Lambda の 1 時間毎巡回**（[17 章 §17.2](17-deployment-integration-and-registration.md)）が行い、変化のあったアプリだけ M1 を起動する。アプリ側イベント（S3 Put / DynamoDB Streams / CloudTrail）には依存しない（[ADR-061](../../adr/061-deploy-detection-pull-model.md)）。
 
 ```mermaid
 flowchart LR
-    Dep[アプリ deploy] --> Ev{検知}
-    Ev -->|案 A: OpenAPI Export 完了| S3E[S3 イベント]
-    Ev -->|案 B: App Registry 更新| DDBS[DynamoDB Streams]
-    Ev -->|案 C: API GW 作成| CT[CloudTrail/EventBridge]
-    S3E & DDBS & CT --> EB[EventBridge]
-    EB --> L[delta-認証実装チェック Lambda<br/>mode=delta, appId]
+    SCH[Scheduler 1h] --> DISC[発見 Lambda<br/>API GW 列挙 + deploymentId 比較]
+    DISC -->|変化あり| L[認証実装チェック Lambda<br/>mode=delta, appId]
+    DISC -->|新規発見| REG[(App Registry 自動登録)]
     L --> P[そのアプリの全 endpoint probe]
 ```
 
-- 主トリガは **OpenAPI Export 完了（S3 PutObject）or App Registry 更新（DynamoDB Streams）**
-- 17 章の登録（案 A/B/C）と統合：登録が走る = デプロイされた、なので登録イベントを M1 のトリガに使える
-
-### §18.2.3 実行基盤：EventBridge 起動 Lambda
+### §18.2.3 実行基盤：Lambda（発見 → probe の 2 段）
 
 | 項目 | 内容 |
 |---|---|
-| 実行環境 | **Lambda**（EventBridge 起動）|
-| 理由 | デプロイ契機の単発実行に適する（§18.4）|
+| 発見 Lambda | EventBridge Scheduler（1h）起動。Organizations 列挙 + 読み取り AssumeRole + 差分判定（17 章）|
+| 認証実装チェック Lambda | 発見 Lambda から invoke（変化アプリのみ）。payload `{ mode:'delta', appId, env }` |
 | probe ロジック | **`lib/probe.js` / `classify.js` / `emit.js` を共通流用**。synthetics 抽象を素の https 実装で注入（[probe-integration.test.js で実証済みの手法](research/phase4-local-verification-results.md)）|
-| payload | `{ mode:'delta', appId, env }`（対象アプリ）|
 
 → **probe/classify/alert の資産は全て再利用**。Synthetics 固有の `executeHttpStep` を https 実装に差し替えるだけ。
 
@@ -112,15 +107,15 @@ aws lambda invoke --function-name central-auth-probe \
 
 ## §18.4 実行基盤：Lambda（Synthetics 不採用の理由）
 
-イベント駆動（M1）+ 手動（M3）はいずれも**単発実行**で、Synthetics canary の「定期実行」メリットが効かない。よって実行基盤は **認証実装チェック Lambda に一本化**し、CloudWatch Synthetics は採用しない（将来オプション、§18.4.1）。
+巡回起点（M1）+ 手動（M3）はいずれも**単発の probe 実行**で、Synthetics canary の「endpoint への定期 probe」メリットが効かない（巡回のスケジュールは軽量な発見 Lambda 側にあり、probe は変化時のみ）。よって実行基盤は **認証実装チェック Lambda に一本化**し、CloudWatch Synthetics は採用しない（将来オプション、§18.4.1）。
 
 | 要素 | Synthetics canary（不採用）| **Lambda（採用）** |
 |---|---|---|
-| 実行モデル | スケジュール定期実行 | **イベント（M1）/ 手動（M3）の単発** |
+| 実行モデル | 全 endpoint へのスケジュール定期 probe | **巡回差分（M1）/ 手動（M3）時のみ probe** |
 | probe lib | 共通 | **共通（不変）** |
 | classify / alert | 共通 | **共通（不変）** |
 | アラーム | canary FAIL → SuccessPercent<100 | **CloudWatch metric `AuthCheckCritical > 0`** |
-| コスト | run ごと $0.0012 上乗せ + 定期実行分 | **イベント駆動で概ね無料枠内**（価格比較は [ADR-059](../../adr/059-central-auth-check-canary-architecture.md)）|
+| コスト | run ごと $0.0012 上乗せ + 定期実行分 | **巡回 + 変化時 probe で概ね無料枠内**（価格比較は [ADR-059](../../adr/059-central-auth-check-canary-architecture.md)）|
 
 > **実装資産は無駄にならない**: `central-probe-lib/lib/*` はそのまま Lambda から流用。`index.js`（Synthetics handler）を Lambda handler に転用し、synthetics 注入を https 実装に差し替える（後続の実装タスク、[code-samples/](code-samples/) に `probe-lambda/` として追加）。
 
@@ -134,7 +129,8 @@ M2（常時 heartbeat）を追加する / HAR・スクリーンショット・Mu
 
 | ID | 判断 | 根拠 |
 |---|---|---|
-| D-M-18-1 | 「5 分全量」を廃し、M1 差分（自動）+ M3 フル（手動）の 2 モードに | 常時監視とデプロイ検証を分離、常時負荷を桁で削減 |
+| D-M-18-1 | 「5 分全量」を廃し、M1 巡回差分（自動・1h）+ M3 フル（手動）の 2 モードに | 常時監視とデプロイ検証を分離、常時負荷を桁で削減 |
+| D-M-18-7 | M1 のトリガは**中央巡回（pull、1 時間毎）**。アプリ側イベントに依存しない | 登録漏れ構造ゼロ・トリガー中央統一（[ADR-061](../../adr/061-deploy-detection-pull-model.md) / 17 章）|
 | D-M-18-2 | M1 の差分粒度は **アプリ単位**（変更アプリの全 endpoint）| OpenAPI 不変の認証コード変更（middleware 削除等）を見逃さない（§18.2.1）|
 | D-M-18-3 | M2 常時 heartbeat は**当面なし**（将来、重要 endpoint をアプリと合意後）| 重要 endpoint の定義に業務会話が要る、決め打ち全量は本末転倒 |
 | D-M-18-4 | M3 フルは**手動**（スケジュールなし）| 網羅確認は人の判断契機（初回/監査/大変更後）で十分、常時コストゼロ |
@@ -148,9 +144,9 @@ M2（常時 heartbeat）を追加する / HAR・スクリーンショット・Mu
 | ID | 内容 |
 |---|---|
 | M-Q-18-1 | **M2 の重要 endpoint 定義**（アプリチームと会話）+ 追加時期。定義できたら `x-canary-heartbeat: true` アノテーション + Synthetics canary で実装 |
-| M-Q-18-2 | M1 トリガの確定（OpenAPI Export S3 イベント / DynamoDB Streams / CloudTrail のどれを主にするか、17 章の登録案と統合）|
-| M-Q-18-3 | M3 手動実行の権限・実行者（ネットワーク監査チームのみか、アプリチームも自アプリを回せるか）|
-| M-Q-18-4 | M1 でデプロイ検知漏れ（17 章案 C の保険が効かないモノリス等）の場合、M3 手動フルで補う運用ルール |
+| ~~M-Q-18-2~~ | ~~M1 トリガの確定~~ → **解決**: 中央巡回（pull、1h）に統一（[ADR-061](../../adr/061-deploy-detection-pull-model.md)）|
+| M-Q-18-3 | M3 手動実行の権限・実行者（共通基盤チームのみか、アプリチームも自アプリを回せるか）|
+| M-Q-18-4 | モノリス（巡回で自動発見できない、17 章 §17.4）の変更を M3 手動フルで補う運用ルール |
 
 ---
 

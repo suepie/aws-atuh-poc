@@ -10,11 +10,15 @@
 ## 0. 全体像
 
 ```
-[共通基盤アカウント]                          [各 App アカウント]
-  App Registry (DynamoDB) ◄──── クロスアカウント Put ──── Service Catalog 製品
-  OpenAPI Registry (S3)   ◄──── クロスアカウント Put ──── (deploy 時に自動登録)
+[共通基盤アカウント]                              [各 App アカウント]
+  発見 Lambda（1 時間毎巡回 ※17 章 / ADR-061）
+    │ 読み取り AssumeRole（DiscoveryReadRole）────► API GW list / deploymentId / get-export
+    ├─ 新規 API を App Registry へ自動登録
+    ├─ OpenAPI を OpenAPI Registry (S3) へ Put（pull）
+    └─ 変化のあったアプリ → M1 probe 起動
+  App Registry (DynamoDB) … 台帳 + 巡回スナップショット
   認証実装確認処理 (Lambda, 共通 probe lib)
-    │ M1 デプロイ差分（自動）/ M3 フル監査（手動）※18 章
+    │ M1 巡回差分（自動）/ M3 フル監査（手動）※18 章
     ├─ App Registry を Scan（M1 対象アプリ / M3 全アプリ取得）
     ├─ OpenAPI Registry から各アプリの openapi.yaml 取得
     ├─ 各 endpoint を Negative + Positive で probe（CloudFront 経由）──► 各アプリ CloudFront
@@ -29,8 +33,9 @@
 |---|---|---|
 | [central-probe-lib/](central-probe-lib/) | 認証実装確認処理 本体（共通 probe lib：OpenAPI 動的発見、Hybrid 検証、4×4 分類）| Lambda（Node.js 22 / SDK v3）|
 | [multi-checks-blueprint/](multi-checks-blueprint/) | **将来オプション**（Synthetics）: 小規模 Multi Checks JSON（≤10 checks、OAuth ネイティブ）| `syn-nodejs-5.1` |
-| [app-registry-lambda/](app-registry-lambda/) | App Registry CRUD（Custom Resource から呼ばれる登録 API）| Node.js 22 / SDK v3 |
-| [openapi-export-lambda/](openapi-export-lambda/) | OpenAPI Export Custom Resource（API GW get-export → S3 Put）| Node.js 22 / SDK v3 |
+| [app-registry-lambda/](app-registry-lambda/) | **旧 push 型の参考実装**（App Registry CRUD。PutItem/正規化ロジックは発見 Lambda に流用、[ADR-061](../../../adr/061-deploy-detection-pull-model.md)）| Node.js 22 / SDK v3 |
+| [openapi-export-lambda/](openapi-export-lambda/) | **旧 push 型の参考実装**（get-export → S3 Put。ロジックは発見 Lambda に流用）| Node.js 22 / SDK v3 |
+| 発見 Lambda（discovery）| **未実装（M-Q-17-4、Phase 3/4）**: 巡回・差分検知・自動登録・OpenAPI pull 取得（17 章）| Node.js 22 / SDK v3 |
 | [alert-router-lambda/](alert-router-lambda/) | 4×4 分類 → SNS routing | Node.js 22 / SDK v3 |
 | [iac-guard-rules/](iac-guard-rules/) | cfn-guard / cdk-nag ルールセット（04 章）| — |
 | [semgrep-rules/](semgrep-rules/) | Semgrep ルール（言語別、04 章）| — |
@@ -147,11 +152,11 @@
 
 ## 4. デプロイ順序
 
-1. `app-registry-lambda` + `openapi-export-lambda` を共通基盤アカウントにデプロイ（クロスアカウント Role 設定）
-2. `alert-router-lambda` + SNS トピック（P1/P2/P3）をデプロイ
-3. `central-probe-lib` の probe lib を **認証実装チェック Lambda** としてデプロイ（M1=EventBridge 起動 / M3=手動 invoke、18 章）
-4. 各 App アカウントの Service Catalog 製品に Custom Resource（App Registry 登録 + OpenAPI Export）を組込
-5. Phase 4 PoC: 1 App アカウント相当で end-to-end 検証
+1. `alert-router-lambda` + SNS トピック（P1/P2/P3）を共通基盤アカウントにデプロイ
+2. `central-probe-lib` の probe lib を **認証実装チェック Lambda** としてデプロイ（M3=手動 invoke、18 章）
+3. **発見 Lambda**（M-Q-17-4。app-registry / openapi-export の参考実装からロジック流用）+ EventBridge Scheduler（1h）をデプロイ
+4. 各 App アカウントへ **`DiscoveryReadRole`（読み取り専用）を StackSets 配布**（16 章 §16.2）
+5. Phase 4 PoC: 1 App アカウント相当で end-to-end 検証（巡回発見 → 自動登録 → M1 probe）
 
 ---
 

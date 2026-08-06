@@ -183,7 +183,7 @@ CI で **Unit test + IaC lint + 静的解析**（[04 章](04-static-analysis-gui
 
 ### §5.3.3 Deploy（TP-2）
 
-- API GW / ALB は **Service Catalog 製品経由でのみ deploy**（認証必須 / Origin Protection / タグ / App Registry 登録を自動付与、[§C-API-5](../proposal/common/05-self-service-catalog.md)）
+- API GW / ALB は **Service Catalog 製品経由でのみ deploy**（認証必須 / Origin Protection / タグを自動付与、[§C-API-5](../proposal/common/05-self-service-catalog.md)。外形監視対象への登録は中央巡回が自動で行う、17 章）
 - **CloudFormation Hooks（proactive）** で provision 前に非準拠を Reject（AWS 公式確認 2026-07）
 - Service Catalog 外の直接 deploy は SCP で禁止（17 章）
 
@@ -237,7 +237,7 @@ CI で **Unit test + IaC lint + 静的解析**（[04 章](04-static-analysis-gui
 | 9 | tenant_id をクレームと照合 | AC-5 |
 | 10 | CI で静的解析が pass | TP-1 |
 | 11 | Service Catalog 製品経由で deploy | TP-2 |
-| 12 | App Registry 登録（外形監視対象）| TP-3 |
+| 12 | 外形監視の対象になっている（中央巡回が自動登録。タグ整備が前提）| TP-3 |
 | 13 | アラート通知先 / SLA を把握 | TP-4 |
 
 ---

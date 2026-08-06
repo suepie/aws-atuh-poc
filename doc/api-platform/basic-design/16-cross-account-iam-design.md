@@ -1,89 +1,94 @@
-# 16. Cross-Account IAM / 配布設計
+# 16. クロスアカウント IAM / 配布設計
 
-前提: [00-basic-design-plan.md](00-basic-design-plan.md) / [10-external-monitoring-overview.md](10-external-monitoring-overview.md)
-実装: [code-samples/app-registry-lambda/](code-samples/app-registry-lambda/) / [code-samples/openapi-export-lambda/](code-samples/openapi-export-lambda/)
-根拠: [ADR-039](../../adr/039-centralized-network-account-edge-layer.md) / [ADR-059](../../adr/059-central-auth-check-canary-architecture.md)
+前提: [00-basic-design-plan.md](00-basic-design-plan.md) / [10-external-monitoring-overview.md](10-external-monitoring-overview.md) / [17-deployment-integration-and-registration.md](17-deployment-integration-and-registration.md)
+根拠: [ADR-039](../../adr/039-centralized-network-account-edge-layer.md) / [ADR-059](../../adr/059-central-auth-check-canary-architecture.md) / [ADR-061](../../adr/061-deploy-detection-pull-model.md)
 
 ---
 
 ## §16.0 前提と背景
 
-**この章で定めること**: 共通基盤アカウント（中央）と App アカウント（各アプリ）の間で必要な IAM 権限と、Service Catalog 製品の配布方法。
-**なぜ要るか**: Pattern β は「中央が全アプリを監視」するため、必然的にアカウントを跨ぐ。その権限を**最小限**に閉じ込める。
+**この章で定めること**: 共通基盤アカウント（中央）と App アカウント（各アプリ）の間で必要な IAM 権限と、その配布方法。
+**方式の前提**: デプロイ検知は pull 型中央巡回（[ADR-061](../../adr/061-deploy-detection-pull-model.md)）。これにより、クロスアカウント権限は **「中央 → App アカウントの読み取り」1 種類だけ**になった（旧 push 型の「App → 中央の書き込み」経路は廃止）。権限を**最小限**に閉じ込める。
 
 ---
 
-## §16.1 Cross-Account 要件の全体像
+## §16.1 クロスアカウント要件の全体像
 
-Pattern β で発生する クロスアカウントは **2 経路のみ**（それ以外は Public URL 経由で権限不要）。
+| # | 経路 | 方向 | 手段 | 権限 |
+|---|---|---|---|---|
+| 1 | **巡回発見・OpenAPI 取得** | **中央 → App アカウント（読み取り）** | 発見 Lambda が `DiscoveryReadRole` に AssumeRole（17 章 §17.2）| 下記 §16.2（read-only）|
+| — | probe → アプリ | 中央 → App アカウント | **Public CloudFront URL（権限不要）** | — |
+| — | probe → OAuth /token | 中央 → 認証基盤 | **Public URL（権限不要）** | — |
+| — | ~~App Registry 登録 / OpenAPI Export~~ | ~~App → 中央（書き込み）~~ | **廃止**（[ADR-061](../../adr/061-deploy-detection-pull-model.md)。台帳への書き込みは中央アカウント内のみ、12 章 §12.3）| — |
 
-| # | 経路 | 方向 | 手段 |
-|---|---|---|---|
-| 1 | App Registry 登録 | App アカウント → 共通基盤アカウント | Custom Resource（12 章）|
-| 2 | OpenAPI Export | App アカウント → 共通基盤アカウント S3 | Custom Resource（13 章）|
-| — | probe → アプリ | 中央 → App アカウント | **Public CloudFront URL（権限不要）** |
-| — | probe → OAuth /token | 中央 → 認証基盤 | **Public URL（権限不要）** |
+→ **probe 自体はクロスアカウント権限を要さない**（実ユーザーと同じ Public 経路）。権限が要るのは**巡回の読み取りだけ**。書き込みのクロスアカウント開放が消えたことで、攻撃面・設定ミス面が push 型より小さい。
 
-→ **probe 自体は クロスアカウント 権限を要さない**（実ユーザーと同じ Public 経路）。権限が要るのは Registry / OpenAPI の**書き込み**だけ。
+> 旧 push 型時代の「App → 中央 書き込み経路 5 案比較（中央 Lambda Invoke / AssumeRole / EventBridge Bus / DDB Resource Policy / 中央 S3）」は [ADR-061 付録](../../adr/061-deploy-detection-pull-model.md)に記録。
 
 ---
 
-## §16.2 Cross-Account 登録の設計案比較（5 案）
+## §16.2 読み取りロール（`DiscoveryReadRole`）の設計
 
-App Registry / OpenAPI Registry への書き込みを、App アカウントからどう中央へ届けるか。5 案を比較する。
+各 App アカウントに **読み取り専用ロールを 1 つ**配布し、中央の発見 Lambda だけが引き受けられるようにする。
 
-| 案 | 仕組み | 権限最小 | 実装 | App アカウント 負担 | 疎結合 | 障害耐性 |
-|---|---|:---:|:---:|:---:|:---:|:---:|
-| **1: 中央 Lambda + クロスアカウント Invoke** | App アカウントが中央 Lambda を Invoke | ✅ Invoke 1 点 | ✅ 低 | ✅ 小 | △ | △ |
-| **2: App アカウント Lambda + AssumeRole** | App アカウント Lambda が中央ロールを引受け書込 | ⚠ AssumeRole 各所 | ⚠ 中 | ⚠ 中 | △ | △ |
-| **3: EventBridge クロスアカウント Bus** | App アカウント → 中央 Event Bus → 中央 Lambda | ✅ PutEvents 1 点 | ⚠ 中 | ✅ 小 | ✅ 高 | ✅ 高（非同期）|
-| **4: DynamoDB Resource Policy 直書き** | App アカウント ロールに中央 DDB PutItem を許可 | ❌ DDB 直開放 | ✅ 低 | ✅ 小 | ✗ | △ |
-| **5: 中央 S3 に Put → S3 イベントで DDB 反映** | App アカウント → 中央 S3（Bucket Policy）→ 反映 | ✅ S3 Put 1 点 | ⚠ 中 | ✅ 小 | ✅ 高 | ✅ 高 |
-
-### §16.2.1 各案の要点
-
-- **案 1（中央 Lambda Invoke）**: クロスアカウントを「Lambda Invoke 権限 1 点」に集約、実装最小。ただし同期呼び出しで、中央 Lambda 障害時に deploy がブロックされうる。→ **Phase 1 の第一候補**。
-- **案 2（AssumeRole）**: App アカウント側に AssumeRole ロジックが分散、クロスアカウント 複雑性が各アプリに広がる。実装は `buildDocClient`（`CROSS_ACCT_ROLE_ARN`）で対応済み。
-- **案 3（EventBridge Bus）**: App アカウントが中央 Event Bus に `PutEvents` するだけ。**非同期・疎結合**で中央障害でもイベント滞留 → 後処理。EventBridge Archive で監査も付く。→ **規模拡大時の移行先**。
-- **案 4（DDB Resource Policy 直書き）**: 中央 DDB を クロスアカウント 直開放 = **最も広い攻撃面**。誤操作・悪用リスク大。**非推奨**。
-- **案 5（中央 S3 + イベント）**: App アカウントが登録 JSON を中央 S3 に Put、S3 イベントで反映。OpenAPI Export と書込経路を統一できる。疎結合。
-
-### §16.2.2 段階採用
-
-```mermaid
-flowchart LR
-    P1[Phase 1<br/>案 1: 中央 Lambda Invoke<br/>最小実装ですぐ動く] -->|規模拡大 / 疎結合強化| P2[Phase 2<br/>案 3: EventBridge Bus<br/>非同期・障害耐性・監査]
-    style P1 fill:#c8e6c9
-    style P2 fill:#e3f2fd
+```json
+// 権限（App アカウント側、read-only 最小）
+{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Effect": "Allow",
+    "Action": [
+      "apigateway:GET"          // get-rest-apis / get-stages / get-export / get-tags
+    ],
+    "Resource": "arn:aws:apigateway:*::/restapis*"
+  }]
+}
 ```
 
-| 重視点 | 推奨案 |
-|---|---|
-| 最小実装・すぐ動く | **案 1**（中央 Lambda Invoke）|
-| 疎結合・障害耐性・監査 | **案 3**（EventBridge Bus）|
-| セキュリティ最小面 | 案 1 or 案 3（**案 4 は避ける**）|
+```json
+// 信頼ポリシー（引受け元を発見 Lambda ロールに限定 + ExternalId）
+{
+  "Effect": "Allow",
+  "Principal": { "AWS": "arn:aws:iam::<common-platform-acct>:role/DiscoveryLambdaRole" },
+  "Action": "sts:AssumeRole",
+  "Condition": { "StringEquals": { "sts:ExternalId": "auth-impl-discovery" } }
+}
+```
 
-→ **Phase 1 は案 1 で立ち上げ、規模拡大時に案 3 へ移行**。`app-registry` Lambda は案 1（中央配置）/ 案 2（App アカウント 配置）の両構成に実装対応済み。
-
----
-
-## §16.3 必要な IAM（モデル A）
-
-| ロール | 所在 | 信頼 | 権限 |
-|---|---|---|---|
-| `CentralRegistryFn-InvokeRole` | App アカウント | Service Catalog / CFN | 中央 Lambda の `lambda:InvokeFunction` |
-| `app-registry-lambda-role` | 共通基盤アカウント | Lambda | `dynamodb:PutItem/DeleteItem`（App Registry）|
-| `openapi-export-lambda-role` | 共通基盤アカウント | Lambda | `apigateway:GET`（App アカウントの RestApi、クロスアカウント）+ `s3:PutObject`（Registry）|
-| `CentralProbeRole` | 共通基盤アカウント | 認証実装チェック Lambda | DDB Scan / S3 Get / Secrets Get / CloudWatch Put / Lambda Invoke（Alert Router）|
-
-> openapi-export は「App アカウントの API GW を export → 中央 S3 に Put」のため、GetExport は App アカウント リソースへの クロスアカウント read が要る（App アカウント側で Resource Policy or AssumeRole）。
+**設計のポイント**:
+- **read-only（`apigateway:GET`）のみ**。漏洩しても API 構成の閲覧までで、変更・削除・データアクセスはできない
+- 信頼先を**発見 Lambda のロール 1 本に限定** + ExternalId（confused deputy 防止）
+- 全 App アカウントで**同一ロール名**（`DiscoveryReadRole`）にし、発見 Lambda は `arn:aws:iam::{accountId}:role/DiscoveryReadRole` を機械的に組み立てて AssumeRole
+- 将来モノリスも巡回対象化する場合（M-Q-17-2）は `elasticloadbalancing:Describe*` 等を追加
 
 ---
 
-## §16.4 Service Catalog 製品の配布
+## §16.3 必要な IAM 一覧
 
-- 製品（API GW 構築 + Origin Protection + App Registry 登録 + OpenAPI Export の Custom Resource）を **StackSets or Service Catalog Portfolio 共有**で全 App アカウントに配布
-- アプリチームは製品を起動するだけで、認証必須 / Origin Protection / 監視登録が自動充足（[§C-API-5](../proposal/common/05-self-service-catalog.md)）
+**共通基盤アカウント側**
+
+| ロール | 使い手 | 権限 |
+|---|---|---|
+| `DiscoveryLambdaRole` | 発見 Lambda | `organizations:ListAccounts` / `sts:AssumeRole`（各 App の DiscoveryReadRole）/ `dynamodb:PutItem・UpdateItem・Scan`（App Registry）/ `s3:PutObject`（OpenAPI Registry）/ `lambda:InvokeFunction`（認証実装チェック Lambda）|
+| `CentralProbeRole` | 認証実装チェック Lambda | `dynamodb:Scan`（App Registry）/ `s3:GetObject`（OpenAPI Registry）/ `secretsmanager:GetSecretValue` / `cloudwatch:PutMetricData` / `lambda:InvokeFunction`（Alert Router）|
+| `alert-router-lambda-role` | Alert Router | `dynamodb:GetItem`（alertRouting 解決）/ `sns:Publish` |
+
+**各 App アカウント側（StackSets で配布）**
+
+| ロール | 使い手 | 権限 |
+|---|---|---|
+| `DiscoveryReadRole` | 中央の発見 Lambda（AssumeRole）| `apigateway:GET`（read-only、§16.2）|
+
+→ App アカウント側に置くのは**読み取りロール 1 つだけ**。旧 push 型で必要だった Invoke ロール / 書き込み AssumeRole / Custom Resource 実行権限はすべて不要になった。
+
+---
+
+## §16.4 配布（StackSets）
+
+| 配布物 | 手段 | 内容 |
+|---|---|---|
+| `DiscoveryReadRole` | **CloudFormation StackSets**（Organizations 連携・自動デプロイ）| 新規アカウント作成時も自動で配布 → 巡回が即座に読める |
+| Service Catalog 製品 | Portfolio 共有（Organizations / RAM）| 認証必須 / Origin Protection / タグの「守られた API の型」（17 章 §17.1。登録系 Custom Resource は含まない）|
 
 ---
 
@@ -96,7 +101,7 @@ flowchart LR
 | CloudFront / Origin Protection の管理主体（ネットワーク監査アカウント）| 他組織なら、probe 先 URL / Origin Protection secret の運用を他組織と調整 |
 | 認証実装確認処理の配置 | **共通基盤アカウント（自社管理）に置くため、境界が他組織管理になっても再設計は不要**。影響は上記の probe 先経路調整のみ |
 
-→ P-18 確定時に probe 先経路（境界越え）を差分改訂する（BD-Q-01）。確認処理リソース自体の配置は影響を受けない。
+→ P-18 確定時に probe 先経路（境界越え）を差分改訂する（BD-Q-01）。確認処理リソース自体の配置は影響を受けない。巡回の読み取り経路（中央 → App）も境界を通らないため影響なし。
 
 ---
 
@@ -104,10 +109,11 @@ flowchart LR
 
 | ID | 判断 | 根拠 |
 |---|---|---|
-| D-M-16-1 | クロスアカウントは Phase 1 = 案 1（中央 Lambda + App アカウントから Invoke）、規模拡大時 = 案 3（EventBridge Bus）| Invoke 権限 1 点に集約、疎結合強化は EventBridge へ移行（§16.2）。案 4（DDB 直開放）は避ける |
-| D-M-16-2 | probe は Public URL 経由で クロスアカウント 権限不要 | 実 UX 同一 + 権限を書き込みだけに限定 |
-| D-M-16-3 | 製品配布は StackSets / Portfolio 共有 | 全 App アカウントへの一括配布 |
-| D-M-16-4 | ROSA 側 P-18 確定まで自管理前提で記述、差分改訂 | 前提変更に追随（BD-Q-01）|
+| D-M-16-1 | クロスアカウントは**中央 → App の読み取り AssumeRole 1 種のみ**（書き込み経路は廃止）| pull 型統一（[ADR-061](../../adr/061-deploy-detection-pull-model.md)）。攻撃面・設定ミス面の最小化 |
+| D-M-16-2 | probe は Public URL 経由でクロスアカウント権限不要 | 実 UX 同一 + 権限を巡回読み取りだけに限定 |
+| D-M-16-3 | `DiscoveryReadRole` は read-only + 信頼先 1 本 + ExternalId + 全アカウント同一名 | 漏洩時影響の最小化・confused deputy 防止・機械的な AssumeRole |
+| D-M-16-4 | 配布は StackSets（Organizations 自動デプロイ）| 新規アカウントにも自動追随 → 巡回の空白を作らない |
+| D-M-16-5 | ROSA 側 P-18 確定まで自管理前提で記述、差分改訂 | 前提変更に追随（BD-Q-01）|
 
 ---
 
@@ -115,6 +121,14 @@ flowchart LR
 
 | ID | 内容 |
 |---|---|
-| BD-Q-01 | ROSA 側 P-18（監査アカウント他組織管理）確定時の responsibility 改訂 |
-| M-Q-16-1 | モデル A / B の最終選定（運用体制との整合）|
-| M-Q-16-2 | openapi-export の GetExport クロスアカウント read の実装方式（Resource Policy vs AssumeRole）|
+| BD-Q-01 | ROSA 側 P-18（監査アカウント他組織管理）確定時の probe 先経路改訂 |
+| M-Q-16-1 | `DiscoveryReadRole` の配布対象範囲（Organizations 全体 / OU 単位、17 章 M-Q-17-3 と連動）|
+| M-Q-16-2 | 発見 Lambda の並列度・スロットリング（アカウント数増加時の API コール制御）|
+
+---
+
+## §16.x 関連ドキュメント
+
+- [ADR-061](../../adr/061-deploy-detection-pull-model.md) — pull 型統一の決定 + 旧 push 型書き込み 5 案比較（付録）
+- [17-deployment-integration-and-registration.md](17-deployment-integration-and-registration.md) — 巡回フロー（このロールの使い手）
+- [12-app-registry-design.md](12-app-registry-design.md) — 台帳の書き込み権限（中央のみ）

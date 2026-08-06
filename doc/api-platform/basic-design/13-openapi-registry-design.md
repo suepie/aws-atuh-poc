@@ -1,7 +1,7 @@
 # 13. OpenAPI Registry 設計（S3）
 
 前提: [00-basic-design-plan.md](00-basic-design-plan.md) / [10-external-monitoring-overview.md](10-external-monitoring-overview.md)
-実装: [code-samples/openapi-export-lambda/](code-samples/openapi-export-lambda/) / データ契約: [code-samples/README.md §2.2/§2.3](code-samples/README.md)
+実装: 発見 Lambda が pull 取得（M-Q-17-4、[openapi-export-lambda/](code-samples/openapi-export-lambda/) の GetExport ロジックを流用）/ データ契約: [code-samples/README.md §2.2/§2.3](code-samples/README.md)
 
 ---
 
@@ -28,27 +28,24 @@
 
 ---
 
-## §13.2 Export フロー（Custom Resource）
+## §13.2 取得フロー（中央が pull で export）
 
-deploy 後の**実際の API GW 定義**を正本として S3 に置く。リポジトリの OpenAPI とずれても production と一致させるため、deploy 後に API GW から export する。
+deploy 後の**実際の API GW 定義**を正本として S3 に置く。リポジトリの OpenAPI とずれても production と一致させるため、**発見 Lambda の巡回（[17 章 §17.2](17-deployment-integration-and-registration.md) / [ADR-061](../../adr/061-deploy-detection-pull-model.md)）が変化を検知した API について、中央が AssumeRole + GetExport で取得**する。アプリ側の Export 処理は存在しない。
 
 ```mermaid
 sequenceDiagram
-    participant SC as Service Catalog 製品 / App アカウント
-    participant CR as openapi-export Lambda / Custom Resource
-    participant AGW as API GW / App アカウント
+    participant DISC as 発見 Lambda / 共通基盤アカウント
+    participant AGW as API GW / App アカウント（読み取り AssumeRole）
     participant S3 as OpenAPI Registry / 共通基盤アカウント
 
-    SC->>CR: CloudFormation Create/Update
-    CR->>AGW: GetExport（exportType=oas30, accepts=application/yaml）
-    AGW-->>CR: OpenAPI（body = Uint8Array）
-    CR->>S3: PutObject（クロスアカウント、{accountId}/{apiId}/openapi.yaml）
-    CR-->>SC: cfn-response SUCCESS
+    Note over DISC: 巡回で deploymentId の変化を検知（17 章）
+    DISC->>AGW: GetExport（exportType=oas30, accepts=application/yaml）
+    AGW-->>DISC: OpenAPI（body = Uint8Array）
+    DISC->>S3: PutObject（同一アカウント、{accountId}/{apiId}/openapi.yaml）
 ```
 
-実装対応: [`openapi-export-lambda/index.js`](code-samples/openapi-export-lambda/index.js)。
-
-> **公式確認（Phase 3）**: `GetExportCommand({ restApiId, stageName, exportType:'oas30', accepts:'application/yaml' })`、**body は `Uint8Array`** → `TextDecoder` で文字列化して Put。
+> **公式確認（Phase 3）**: `GetExportCommand({ restApiId, stageName, exportType:'oas30', accepts:'application/yaml' })`、**body は `Uint8Array`** → `TextDecoder` で文字列化して Put。GetExport 呼び出しは App アカウント側の API に対して行うため読み取りロールで AssumeRole する（16 章）。
+> 旧 push 型の Custom Resource 実装（[`openapi-export-lambda/`](code-samples/openapi-export-lambda/)）は参考保管。GetExport → S3 Put のロジックは発見 Lambda に流用できる。
 
 ---
 
@@ -102,26 +99,18 @@ paths:
 
 ## §13.4 新規 endpoint の自動追随
 
-1. アプリチームが endpoint を追加（OpenAPI 更新）
-2. deploy 時に openapi-export が新版を S3 に上書き
-3. probe（M1/M3）が次回実行で新 endpoint を対象化
+1. アプリチームが endpoint を追加（OpenAPI 更新）→ deploy
+2. **次回巡回（最大 1h）で発見 Lambda が変化を検知し、新版を GetExport → S3 に上書き**（§13.2）
+3. 同じ巡回で M1 probe が起動し、新 endpoint も対象化
 
 → **probe のコード変更は不要**。OpenAPI を正本にすることで「監視対象の維持」が自動化される。
 
-## §13.5 S3 Versioning による差分抽出（M1 の入力）
+## §13.5 M1 との関係と S3 Versioning
 
-[18 章 M1（デプロイ差分）](18-scan-modes-and-scheduling.md) は「デプロイされたアプリを probe する」トリガに、この OpenAPI Export を使う。
+**M1 のトリガは発見 Lambda の巡回差分（deploymentId 比較、[17 章 §17.2](17-deployment-integration-and-registration.md)）であり、S3 イベントではない**（[ADR-061](../../adr/061-deploy-detection-pull-model.md)）。OpenAPI Registry は「probe が読む正本」+「Versioning による履歴」を担う。
 
-```mermaid
-flowchart LR
-    Dep[デプロイ] --> Exp[openapi-export<br/>新 openapi.yaml を Put]
-    Exp -->|S3 PutObject イベント| EB[EventBridge]
-    EB --> L[delta-認証実装チェック Lambda<br/>mode=delta, appId]
-    L --> P[そのアプリの全 endpoint probe]
-```
-
-- **M1 のトリガ = OpenAPI Export の S3 PutObject イベント**（= そのアプリがデプロイされた証跡）
-- ⚠ **差分粒度はアプリ単位**（18 章 §18.2.1）: S3 versioning で新旧 diff は取れるが、**endpoint 単位に絞らず「そのアプリの全 endpoint」を probe** する。理由は、認証コードだけ変えて OpenAPI が不変なケース（middleware 削除等）を見逃さないため。S3 versioning の diff は「何が変わったか」の**参考情報**（アラート本文への付記）に使い、probe 範囲の絞り込みには使わない。
+- ⚠ **差分粒度はアプリ単位**（18 章 §18.2.1）: 巡回は deploymentId の変化で「デプロイされた」ことだけ判定し、**endpoint 単位に絞らず「そのアプリの全 endpoint」を probe** する。理由は、認証コードだけ変えて OpenAPI が不変なケース（middleware 削除等）を見逃さないため。
+- S3 Versioning の新旧 diff は「何が変わったか」の**参考情報**（アラート本文への付記）に使い、probe 範囲の絞り込みには使わない。
 
 > **なぜ endpoint 単位に絞らないか**は 18 章 §18.2.1 の設計判断 D-M-18-2 参照。
 

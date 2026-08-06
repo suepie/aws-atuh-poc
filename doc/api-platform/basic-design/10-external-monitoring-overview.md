@@ -2,7 +2,7 @@
 
 前提: [00-basic-design-plan.md](00-basic-design-plan.md) BD-P-01〜08
 実装: [code-samples/](code-samples/) / 根拠: [ADR-059](../../adr/059-central-auth-check-canary-architecture.md) / [§C-API-6 §C-6.6.8](../proposal/common/06-external-api-auth-architecture.md)
-対象読者: ネットワーク監査チーム / Platform チーム / アプリチーム / セキュリティ責任者
+対象読者: 共通基盤チーム / Platform チーム / アプリチーム / セキュリティ責任者
 
 ---
 
@@ -10,7 +10,7 @@
 
 ### §10.0.1 この設計書群（章 10-18）で定めること
 
-「アプリチームに認証を実装させたうえで、**その実装漏れを中央で継続検知する**」仕組み ＝ **認証実装確認処理**（ADR-059 では "Central Auth Check Canary" の名称）の詳細設計。ガイドライン章（01-06）が「アプリチームが守るルール」を定めるのに対し、本章群は **ネットワーク監査チームが運用する中央機構**を定める。
+「アプリチームに認証を実装させたうえで、**その実装漏れを中央で継続検知する**」仕組み ＝ **認証実装確認処理**（ADR-059 では "Central Auth Check Canary" の名称）の詳細設計。ガイドライン章（01-06）が「アプリチームが守るルール」を定めるのに対し、本章群は **共通基盤チームが運用する中央機構**を定める。
 
 ### §10.0.2 なぜ外形監視が要るか
 
@@ -51,6 +51,7 @@ probe を**各アプリに配らず、共通基盤アカウントの認証実装
 ```mermaid
 flowchart TB
     subgraph NetAudit["共通基盤アカウント（中央運用）"]
+        DISC[発見 Lambda<br/>1 時間毎巡回 ※17 章]
         Reg[App Registry<br/>DynamoDB]
         OAR[OpenAPI Registry<br/>S3]
         CC[認証実装確認処理<br/>Lambda（probe lib 共通）<br/>M1 差分/M3 フル ※18 章]
@@ -61,21 +62,20 @@ flowchart TB
     end
 
     subgraph AppA["App アカウント A"]
-        SCA[Service Catalog 製品]
         CFA[CloudFront]
         APIA[API GW]
     end
 
     subgraph AppB["App アカウント B"]
-        SCB[Service Catalog 製品]
         CFB[CloudFront]
         APIB[API GW]
     end
 
-    SCA -.deploy 時 クロスアカウント登録.-> Reg
-    SCA -.OpenAPI export.-> OAR
-    SCB -.登録.-> Reg
-    SCB -.export.-> OAR
+    DISC -.読み取り AssumeRole で<br/>API 発見・差分検知・OpenAPI 取得.-> APIA
+    DISC -.同.-> APIB
+    DISC -->|自動登録・スナップショット| Reg
+    DISC -->|OpenAPI Put| OAR
+    DISC -->|変化あり → M1 起動| CC
 
     CC -->|Scan（M1 対象/M3 全量）| Reg
     CC -->|Get spec| OAR
@@ -87,6 +87,7 @@ flowchart TB
     style NetAudit fill:#fff3e0
     style AppA fill:#e8f5e9
     style AppB fill:#e8f5e9
+    style DISC fill:#fff9c4
 ```
 
 > **実行モデル（[18 章](18-scan-modes-and-scheduling.md) が SSOT）**: 実行基盤は **Lambda**、モードは **M1 デプロイ差分（自動・変更アプリ単位）+ M3 フル監査（手動・全量）**。CloudWatch Synthetics は不使用（将来 M2 用オプション）。図中の認証実装確認処理はこの Lambda を指す。実行モデルを Lambda に定めた経緯は [ADR-059](../../adr/059-central-auth-check-canary-architecture.md)。
@@ -97,7 +98,7 @@ flowchart TB
 |---|:---:|:---:|
 | Deploy 漏れ | ⚠ 個別 deploy 必要、漏れリスク | ✅ **App Registry 登録で自動追随、原理的にゼロ** |
 | 統一実装保証 | ⚠ アプリごとにばらつく | ✅ 認証実装確認処理 1 実装 |
-| 運用主体 | 各アプリチーム | ネットワーク監査チーム集約 |
+| 運用主体 | 各アプリチーム | 共通基盤チーム集約 |
 | メトリクス集約 | ⚠ クロスアカウント集約が別途必要 | ✅ 標準で 1 箇所 |
 | 「中央でチェック」思想 | ✗ | ✅ **一致** |
 | Blast radius | ✅ アプリ単位 | ⚠ Central 障害で全断（Multilocation で緩和）|
@@ -106,21 +107,21 @@ flowchart TB
 
 ### §10.1.3 統合構成図（登録・トリガー・検査・通知）
 
-§10.1.1 は「どこに何があるか」の骨格。ここでは **登録（12/13 章）→ トリガー（18 章）→ probe/classify（11 章）→ 通知（15 章）** までを 1 枚に統合する。各コンポーネントの詳細は該当章が SSOT。
+§10.1.1 は「どこに何があるか」の骨格。ここでは **巡回発見（17 章）→ 登録（12/13 章）→ トリガー（18 章）→ probe/classify（11 章）→ 通知（15 章）** までを 1 枚に統合する。各コンポーネントの詳細は該当章が SSOT。
 
 ```mermaid
 flowchart TB
     subgraph AppAcct["各 App アカウント（監視対象）"]
-        CICD["CI/CD"] --> SCP["Service Catalog 製品"]
+        CICD["CI/CD"] --> SCP["Service Catalog 製品<br/>認証必須・Origin Protection・タグ"]
         SCP --> EDGE["CloudFront → API GW / ALB<br/>認証実装"]
-        SCP --> CRR["Custom Resource<br/>登録・Export"]
-        EDGE -. deploy イベント .-> EVT["CloudTrail / S3 Put"]
+        ROLE["DiscoveryReadRole<br/>読み取り専用（StackSets 配布）"]
     end
 
     subgraph NetAudit["共通基盤アカウント（中央運用）"]
-        REG["App Registry<br/>DynamoDB"]
+        SCH["EventBridge Scheduler<br/>1 時間毎"]
+        DISC["発見 Lambda<br/>API 発見・差分検知・OpenAPI 取得"]
+        REG["App Registry<br/>DynamoDB（台帳+スナップショット）"]
         OAR["OpenAPI Registry<br/>S3"]
-        EB["EventBridge"]
         PROBE["認証実装チェック Lambda<br/>probe / classify lib 共通"]
         CWM["CloudWatch Metrics/Alarm<br/>AuthCheckCritical＞0"]
         ALR["Alert Router Lambda"]
@@ -131,10 +132,12 @@ flowchart TB
 
     MAN["運用者 手動"]
 
-    CRR -->|クロスアカウント登録| REG
-    CRR -->|OpenAPI export| OAR
-    EVT --> EB
-    EB -->|M1 差分・自動| PROBE
+    SCH --> DISC
+    DISC -.AssumeRole.-> ROLE
+    ROLE -.API list / deploymentId / get-export.-> EDGE
+    DISC -->|自動登録・スナップショット更新| REG
+    DISC -->|OpenAPI Put| OAR
+    DISC -->|M1 変化アプリのみ・自動| PROBE
     MAN -->|M3 フル・手動| PROBE
     PROBE -->|対象取得| REG
     PROBE -->|spec 取得| OAR
@@ -146,9 +149,10 @@ flowchart TB
     style NetAudit fill:#fff3e0
     style AppAcct fill:#e8f5e9
     style PROBE fill:#fff9c4
+    style DISC fill:#fff9c4
 ```
 
-> §10.1.1 との違い: こちらは **トリガー（EventBridge の M1 / 手動 M3、18 章）と classify・Alarm（11 章）を明示**した完全版。実行基盤は **Lambda**（§10.1.1 の注記どおり）。
+> §10.1.1 との違い: こちらは **巡回（Scheduler → 発見 Lambda、17 章）と classify・Alarm（11 章）を明示**した完全版。登録・OpenAPI 取得は**すべて中央の pull**（[ADR-061](../../adr/061-deploy-detection-pull-model.md)）で、アプリ側に登録処理はない。
 
 ### §10.1.4 エンドツーエンド フロー（deploy → 検知 → 通知 → 是正）
 
@@ -156,8 +160,8 @@ flowchart TB
 
 ```mermaid
 flowchart LR
-    D["① デプロイ<br/>04 静的解析 pass"] --> R["② 登録<br/>App/OpenAPI Registry<br/>（12/13 章）"]
-    R --> T["③ トリガー<br/>M1 差分（自動）/ M3 フル（手動）<br/>（18 章）"]
+    D["① デプロイ<br/>04 静的解析 pass"] --> R["② 巡回発見<br/>最大 1h 後に検知・登録・OpenAPI 取得<br/>（17 章）"]
+    R --> T["③ M1 起動（自動）<br/>/ M3 フル（手動）<br/>（18 章）"]
     T --> P["④ probe<br/>Negative + Positive<br/>（11 章）"]
     P --> C{"⑤ classify<br/>4×4 真偽値表<br/>（11 章）"}
     C -->|OK| OK["✅ Metrics 記録のみ"]
@@ -181,10 +185,11 @@ flowchart LR
 
 | リソース | AWS サービス | 役割（ひとことで） | 詳細章 |
 |---|---|---|:---:|
-| **App Registry** | DynamoDB | **監視対象の台帳**。アプリごとの baseUrl / 認証方式（authPattern）/ 通知先を 1 レコードで保持。認証実装チェックは「ここに載っているもの」だけを検査する | 12 |
-| **OpenAPI Registry** | S3（Versioning）| **API 仕様の正本置き場**。deploy 後の実 API GW から export された OpenAPI を保管し、endpoint 一覧と公開印（MON-1）の情報源になる | 13 |
+| **EventBridge Scheduler** | EventBridge | **巡回の起点**。1 時間毎に発見 Lambda を起動 | 17 / 18 |
+| **発見 Lambda** | Lambda | **デプロイ検知と登録の実行体（pull）**。各 App アカウントを読み取り巡回し、API の発見・差分検知（deploymentId 比較）・台帳登録・OpenAPI 取得を行い、変化のあったアプリの検査を起動する | 17 |
+| **App Registry** | DynamoDB | **監視対象の台帳 + 巡回スナップショット**。アプリごとの baseUrl / 認証方式（authPattern）/ 通知先 / 前回 deploymentId を 1 レコードで保持。書き手は発見 Lambda（+ モノリスは手動）| 12 |
+| **OpenAPI Registry** | S3（Versioning）| **API 仕様の正本置き場**。発見 Lambda が実 API GW から pull 取得（get-export）した OpenAPI を保管し、endpoint 一覧と公開印（MON-1）の情報源になる | 13 |
 | **認証実装チェック Lambda（認証実装確認処理）** | Lambda | **検査の実行体**。台帳と仕様を読み、各 endpoint に未認証/正規の 2 種リクエストを送って認証の効き具合を確かめる | 11 / 14 |
-| **EventBridge** | EventBridge | **M1 の起動役**。デプロイイベント（OpenAPI Export の S3 Put 等）を検知して認証実装チェック Lambda を自動起動 | 18 |
 | **CloudWatch Metrics / アラーム** | CloudWatch | **検査結果の記録と発報**。`AuthCheckCritical > 0` で認証漏れアラーム | 11 / 18 |
 | **Alert Router Lambda** | Lambda | **通知の振り分け役**。検知結果を 4×4 分類に従い P1/P2/P3 の宛先へ振り分ける（「全部 Security 行き」を防ぐ）| 15 |
 | **SNS（P1 / P2 / P3）** | SNS | **通知の出口**。P1=Security 即時 / P2=Platform 24h / P3=アプリチーム | 15 |
@@ -194,12 +199,11 @@ flowchart LR
 
 | リソース | AWS サービス | 役割（ひとことで） | 詳細章 |
 |---|---|---|:---:|
-| **Service Catalog 製品** | Service Catalog | **正規デプロイの型**。認証必須・Origin Protection・タグ・下記 2 つの登録処理を全部込みで提供（アプリはパラメータを選ぶだけ）| 17 |
-| **App Registry 登録（Custom Resource）** | 製品テンプレ内蔵 | deploy と同時に**台帳へ自動登録**（アプリ開発者はコードを書かない）| 12 / 17 |
-| **OpenAPI Export（Custom Resource）** | 製品テンプレ内蔵 | deploy 後の実 API GW から**仕様を自動 export** して正本置き場へ | 13 / 17 |
-| **CloudFront → API GW / ALB** | — | **検査の対象**。認証実装チェックは実ユーザーと同じ CloudFront 経由で叩く（Origin Protection を破らない）| 12 §12.2 |
+| **Service Catalog 製品** | Service Catalog | **正規デプロイの型**。認証必須・Origin Protection・タグ付与を全部込みで提供（アプリはパラメータを選ぶだけ。登録処理は含まない＝中央が発見する）| 17 §17.1 |
+| **DiscoveryReadRole** | IAM ロール（StackSets 配布）| **中央からの読み取り窓口**。発見 Lambda だけが AssumeRole でき、`apigateway:GET` のみ（read-only）| 16 §16.2 |
+| **CloudFront → API GW / ALB** | — | **検査の対象**。認証実装チェックは実ユーザーと同じ CloudFront 経由で叩く（Origin Protection を破らない）| 12 §12.1.1 |
 
-> **1 行まとめ**: アプリが Service Catalog 製品で deploy すると**台帳と仕様が自動で中央に登録**され、その瞬間（M1）と手動監査時（M3）に**中央の認証実装チェック Lambda が実際にリクエストを投げて認証漏れを検査**し、問題があれば **4×4 分類で適切なチームに通知**される。
+> **1 行まとめ**: アプリが Service Catalog 製品で deploy すると、**中央の発見 Lambda が 1 時間毎の巡回で見つけて台帳・仕様を自動登録**し、変化のあったアプリ（M1）と手動監査時（M3）に**認証実装チェック Lambda が実際にリクエストを投げて認証漏れを検査**、問題があれば **4×4 分類で適切なチームに通知**される。アプリ側に登録処理はない。
 
 ---
 

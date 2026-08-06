@@ -57,10 +57,12 @@
 ## Decision
 
 > ⚠ **実行モデル見直し（2026-07-27、基本設計 [18 章](../api-platform/basic-design/18-scan-modes-and-scheduling.md)）**: 当初の「5 分周期の全量スキャン（Synthetics canary）」は規模拡大時に重いため見直した。**M1 デプロイ差分（自動・変更アプリ単位）+ M3 フル監査（手動・全量）**の 2 モードに再設計し、**M2 常時 heartbeat は当面なし**（重要 endpoint の定義をアプリと合意後に将来追加）。**実行基盤は Synthetics canary から Lambda に一本化**（probe lib は共通流用、Synthetics は M2 / ダッシュボード要件時のオプションに格下げ）。アラームは canary FAIL でなく CloudWatch metric `AuthCheckCritical>0`。本 ADR の以降の記述で「Central Canary」「Synthetics 5 分」とあるのは、この見直しで読み替える（Pattern β / App Registry / OpenAPI Registry / Hybrid 検証 / Cross-Acct / Monolith / Private の設計は不変）。
+>
+> ⚠ **名称・配置改称（2026-07-28、基本設計 [10 章](../api-platform/basic-design/10-external-monitoring-overview.md)）**: 呼称を **「認証実装確認処理」**（機構）/ **「認証実装チェック Lambda」**（実行体）に統一（本 ADR の "Central Auth Check Canary" / "Central Canary" はこれを指す）。リソース群（App Registry / OpenAPI Registry / 認証実装チェック Lambda / Alert Router / Secrets）の配置は **共通基盤アカウント（自社管理）** とする。インターネット境界（CloudFront / WAF、ADR-039）はネットワーク監査アカウントのままで、probe は境界越しに実ユーザーと同じ経路で検査する（基本設計 16 章 §16.5）。
 
 ### 採用方針
 
-**Pattern β（ネットワーク監査 Acct に Central 集約）を採用**。実行モデルは上記見直しにより 2 モード（M1 差分/自動・M3 フル/手動）+ Lambda 基盤。
+**Pattern β（中央 1 アカウントに集約）を採用**。配置先は共通基盤アカウント（上記 2026-07-28 注記）。実行モデルは上記見直しにより 2 モード（M1 差分/自動・M3 フル/手動）+ Lambda 基盤。
 
 ### 主要判断
 
@@ -84,6 +86,7 @@
 ## A. 5 アカウント体系での配置と全体像
 
 > **2026-07-24 読み替え（U9 D-U9-16 / ADR-039 v3）**: 本節の図・本文は **旧 5 アカウント体系** で記述。現行は **6 アカウント体系**（**Auth Acct → Broker Acct** に改称）へ読み替え。あわせて「🟣 ネットワーク監査 Acct」内の **Canary 系リソース（App Registry / OpenAPI Registry / Central Canary / Secrets Manager `canary/central/*` / Alert Router）は弊社監査 Acct に配置**（CloudFront / WAF / Lambda@Edge は NW 監査 Acct のまま — 他組織管理）。
+> **2026-07-28 追記（API プラットフォーム基本設計）**: 上記のリソース配置先を API プラットフォーム側では **「共通基盤アカウント」** と呼称する（Decision 冒頭の名称・配置改称注記参照）。
 
 ### A.1 配置図
 
