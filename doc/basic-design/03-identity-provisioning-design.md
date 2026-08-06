@@ -388,6 +388,37 @@ stateDiagram-v2
 
 > 出典: [research/idp-kc-user-mgmt-authz-boundary-notes.md](research/idp-kc-user-mgmt-authz-boundary-notes.md)（ユーザー設計討議の決定ログ AZB-1〜5 / RC-1〜4）。本節はその本体反映 + メインセッション検証での**訂正 2 点**を含む。
 
+### 3.8.0 管理コントロールプレーン全体構成（ブランド主役 + EventBridge 2 本、2026-08-06 [ADR-063](../adr/063-brand-unit-architecture.md)/[ADR-062](../adr/062-idm-api-execution-form-lambda.md)）
+
+CRUD・権限・authz・projection はブランド側（#2）でローカル完結し、**アカウント越境は EventBridge の 2 本のみ**（① 削除 `user.deprovisioned` = #2→Broker〔outbox で必達〕/ ② 初回 sub 通知 = Broker→ブランド）。ホットパス（`/api/me/context`）はブランドローカル read で越境ゼロ。
+
+```mermaid
+flowchart TB
+  ADM["管理者SPA / アプリ(M2M)"]
+  CF["他組織 CloudFront(api.basis)+WAF<br/>→ API GW(JWT L1)"]
+  subgraph BRAND["ブランドユニット(IdP-KC Acct・同一VPC)"]
+    A2["idm-api #2 = Lambda(主役)<br/>CRUD/権限/authz/projection"]
+    DB[("authz/projection/idmap Aurora<br/>+ outbox テーブル")]
+    REL["outbox リレー Lambda"]
+    IKC["IdP-KC KC<br/>(内部NLB→Admin API)"]
+    APP["ブランドのアプリ"]
+  end
+  subgraph BROKER["Broker Acct(共有・authz 非保持)"]
+    SH["shadow制御 Lambda(冪等)"]
+    BKC["Broker KC shadow<br/>(内部NLB)"]
+    RC["数分リコンサイル"]
+  end
+  ADM --> CF -->|"brand→#2 invoke"| A2
+  A2 -->|"CRUD 内部NLB"| IKC
+  A2 -->|"soft-delete + outbox 1Tx"| DB
+  DB --> REL
+  REL ==>|"EventBridge #2→Broker<br/>user.deprovisioned(必達)"| SH
+  SH -->|"shadow 無効化 内部NLB"| BKC
+  BKC -.->|"EventBridge Broker→ブランド<br/>初回 sub 通知"| DB
+  APP -->|"/api/me/context<br/>ローカルread(越境ゼロ)"| DB
+  RC -.->|"deprovisioned_at↔shadow 突合(数分)"| SH
+```
+
 ### D3-14: 認可境界 — 本基盤は「粗粒度」まで（AZB-1/2/3/5）
 
 **採用**: 認可 3 層のうち本基盤が持つのは **L-認可2（組織コンテキスト + エンタイトルメント + 機能ロール割当の器）まで**。SSOT = ADR-038 Backend DB。JWT には載せず **API pull（`/api/me/context`）で配信**（ハイブリッド C / P-10 維持）。
@@ -451,7 +482,7 @@ flowchart LR
 
 ### D3-17: 非 IdP テナントのユーザ CRUD/削除モデル — mode A 単独（2026-07-24 確定、[research note §8](research/idp-kc-user-mgmt-authz-boundary-notes.md)）
 
-**採用**: 非 IdP テナント = **mode A（管理画面 = SoT）単独**。テナント管理者がユーザ一覧/編集画面から作成・編集・削除。**mode B（HRIS/D1 SCIM — 要念押し確認）・mode C（アプリ発 CRUD = 経路 ⑤）・EventBridge 削除経路・非 IdP の 90 日休眠バッチは Phase 1 対象外**（mode C を将来提供する場合のみ EventBridge 復活、note §8.5。「数年休眠で削除」が要件化したらテナント別リテンションポリシーとして後付け）。
+**採用**: 非 IdP テナント = **mode A（管理画面 = SoT）単独**。テナント管理者がユーザ一覧/編集画面から作成・編集・削除。**mode B（HRIS/D1 SCIM — 要念押し確認）・mode C（アプリ発 CRUD = 経路 ⑤）・EventBridge 削除経路・非 IdP の 90 日休眠バッチは Phase 1 対象外**（mode C を将来提供する場合のみ EventBridge 復活、note §8.5。「数年休眠で削除」が要件化したらテナント別リテンションポリシーとして後付け）。**※ここでの「EventBridge 削除経路」は mode C 由来のアプリ発削除伝播を指す。mode A の shadow 無効化 EventBridge（ADR-063、下記削除フロー）は別物で Phase 1 スコープ内**。
 
 **CRUD モデル（2026-08-06 [ADR-063 ブランドユニット](../adr/063-brand-unit-architecture.md): ブランド側 #2 がオーケストレーション。作成/編集はブランド内同期、削除は IdP-KC トリガーのイベント駆動）**:
 
@@ -459,39 +490,46 @@ flowchart LR
 |---|---|---|
 | 作成 | IdP-KC のみ（Broker shadow は初回ログインで遅延生成） | なし |
 | 編集（組織属性等） | IdP-KC + ブランド projection（D3-16、ローカル）更新 | なし（projection はブランド側） |
-| **削除（2026-08-06 [ADR-063](../adr/063-brand-unit-architecture.md) 改訂: IdP-KC トリガー → shadow）** | **① #2 が IdP-KC Soft Delete（`enabled=false` + `deprovisioned_at`）→ ② `user.deprovisioned {sub, brand_id}` を EventBridge 発行（IdP-KC→Broker）→ ③ 中央 shadow 制御 Lambda が Broker shadow を `enabled=false` + `not_before` + session revoke（内部 NLB）→ ④ ブランド projection deprovisioned（ローカル）** | shadow 制御 Lambda のみ（イベント駆動） |
+| **削除（2026-08-06 A 案 = outbox で確実伝播、[ADR-063](../adr/063-brand-unit-architecture.md)）** | **① #2 が IdP-KC Soft Delete（`enabled=false` + `deprovisioned_at`）→ ② projection deprovisioned + `user.deprovisioned` outbox 行を authz DB の 1 Tx で書く（喪失なし）→ ③ outbox リレーが EventBridge へ必達送信（IdP-KC→Broker）→ ④ 中央 shadow 制御 Lambda が Broker shadow を `enabled=false` + `not_before` + session revoke（冪等・内部 NLB）** | shadow 制御 Lambda のみ（イベント駆動、数分リコンサイルが砦） |
 
-削除操作のイベント駆動シーケンスを図示する（2026-08-06 [ADR-063](../adr/063-brand-unit-architecture.md) 改訂）:
+削除操作の outbox イベント駆動シーケンスを図示する（2026-08-06 A 案、[ADR-063](../adr/063-brand-unit-architecture.md)）:
 
 ```mermaid
 sequenceDiagram
     participant SRC as 削除元(管理者/SCIM)
     participant A2 as idm-api #2 (ブランド/IdP-KC)
     participant IK as IdP-KC KC
+    participant DB as authz/projection Aurora(+outbox)
+    participant REL as outbox リレー
     participant EB as EventBridge(IdP-KC to Broker)
     participant SH as shadow制御 Lambda(Broker)
     participant BK as Broker KC
     SRC->>A2: ユーザ削除
     A2->>IK: 1 Soft Delete (enabled=false + deprovisioned_at)
-    A2->>EB: 2 user.deprovisioned (sub, brand_id, at)
-    EB->>SH: 3 配信 (at-least-once)
-    SH->>BK: 4 shadow を enabled=false + not_before + session revoke (内部NLB)
-    Note over SH,BK: 冪等 (既に無効なら no-op)・sub キー<br/>数秒の伝播窓は AT30分 + 日次リコンサイルで許容
+    A2->>DB: 2 projection deprovisioned + outbox 行 を 1 Tx
+    Note over A2,DB: 削除したら必ず outbox が残る(喪失なし)
+    DB->>REL: 3 リレーが outbox を拾う
+    REL->>EB: 4 user.deprovisioned を PutEvents(成功まで再送)
+    EB->>SH: 5 配信 (at-least-once)
+    SH->>BK: 6 shadow を enabled=false + not_before + revoke(冪等・内部NLB)
+    Note over SH,BK: 未達/遅延は数分リコンサイルが補正<br/>窓 = 通常数秒 / worst = リコンサイル間隔
 ```
 
-> 凡例: 発行済み AT は shadow 無効化後も最大 30 分有効（P-09 受容済み）。イベント取りこぼし・伝播窓は日次リコンサイル（RB-USR-06）が補正。
+> 凡例: 発行済み AT は shadow 無効化後も最大 30 分有効（P-09 受容済み）。outbox で喪失はなく、伝播窓は**数分リコンサイル**（RB-USR-06、遮断チェックのみ数分間隔）が上限を抑える。
 
-- **IdP-KC 削除トリガー方式の理由（2026-08-06 [ADR-063](../adr/063-brand-unit-architecture.md)、旧 Broker-first 同期 2 コールから変更）**: 削除の実行主体が #2（ブランド側）ゆえ soft-delete をトリガーに `user.deprovisioned` を確実に発行できる。Broker shadow 無効化はイベント駆動（shadow 制御 Lambda）で `enabled=false` + `not_before` + session revoke（Keycloak は refresh 時に user.enabled を検査するため即 invalid_grant）。**トレードオフ = shadow 無効化まで数秒の伝播窓**（発行済み AT は最大 30 分有効 = P-09 ゾンビ窓 Z 系で受容済みと同一。旧 Broker-first の「24h 独立生存」リスクはイベント即時発火で回避）。**即時ゼロ窓が要件なら削除パスで同期 shadow 無効化を併用**（逆方向同期）に切替可。
+- **確実性の担保 = outbox パターン（2026-08-06 A 案確定、旧 Broker-first 同期 2 コールから変更）**: #2 は soft-delete の後、**projection deprovisioned + `user.deprovisioned` outbox 行を authz DB の 1 トランザクションで書く**。**outbox リレーが成功するまで EventBridge へ再送**するため**イベント喪失がない**（"削除したのにイベントが飛ばない" が構造的に起きない）。shadow 制御 Lambda は**冪等**（既に無効なら no-op）。Broker は refresh 時に user.enabled を検査するため shadow `enabled=false` で即 invalid_grant。**遮断窓 = 通常 伝播 数秒 / worst = リコンサイル間隔（数分）**。旧 Broker-first の「24h 独立生存」には至らない（outbox 必達 + 数分リコンサイルで上限を数分に抑える）。発行済み AT は ≤30 分（P-09、オフライン検証）。**ゼロ窓 SLA が要件なら削除だけ IdP-KC→Broker 同期呼び（S 案）へ切替可**（新規の逆方向同期チャネルが要る）。
 - **federated ユーザー**: IdP-KC に identity レコードが無いため本トリガーは発火しない → **SCIM deprovision（SCIM Facade がイベント発行）or 90 日バッチ**で shadow 無効化（S5/S6、D3-09）。
 - **残存ウィンドウの注記（既存決定との整合）**: ① 実行後も**発行済み AT は最大 30 分**有効（オフライン検証、P-09）。これは U5 ゾンビ窓 Z 系（ADR-025 §I.5 の複合統制）で受容済みのリスクと同一であり、本モデルで新たな悪化はない。
-- **越境経路（2026-08-06 [ADR-063](../adr/063-brand-unit-architecture.md) 改訂）**: 削除の越境は **EventBridge（IdP-KC→Broker、`user.deprovisioned`）のみ**。**旧「Broker→IdP-KC PrivateLink 委譲」は撤回**（CRUD/削除がブランドローカル化したため、U6 §6.3.2）。IdP-KC Admin API は従来どおり in-cluster / 内部 NLB からのみ（Admin API を外部露出しない、D-U6-11 / 06a §A.2.1b）。shadow 制御 Lambda の S2S 認可は U5 §5.8（旧 O-12 は越境イベント S2S に再定義）。
-- **安全網 = 日次リコンサイル**: イベント駆動は at-least-once ゆえ、「IdP-KC の `deprovisioned_at` 有り ↔ Broker shadow enabled=true」を日次突合して補正（U9 RB-USR-06、イベント取りこぼし対策）。idpkc shadow は 90 日バッチ除外（D3-09 追記）のため、これが代替の砦。
-- **SCIM を内部伝播（IdP-KC → Broker）に使わない（却下根拠、検証済み ✅）**: ① **Keycloak には SCIM 送信クライアント（outbound）が core 未実装**（将来機能、[keycloak.org survey feedback](https://www.keycloak.org/2026/02/scim-support-survey-feedback) / [keycloak#13484](https://github.com/keycloak/keycloak/issues/13484)、2026-07-27 検証。受信サーバは 26.6 で experimental だが outbound とは別）→ サードパーティ拡張自作は §2.7 バージョン固定・RHBK サポートと衝突 ② `scim_active` の意味崩壊（内部フェデを外部顧客 SoT と誤認）③ shadow の除外印は既存 `jit_idp_alias=idpkc%` で足りる。mode A では**同期 2 コールが最良**（即時・DLQ 不要）。
+- **越境経路（2026-08-06 A 案）**: 削除の越境は **EventBridge（IdP-KC→Broker、`user.deprovisioned`、outbox リレー発）のみ**（[U6 D-U6-02](06-infra-network-design.md) の制御プレーン経路 = idmap/ITDR と同一方式のクロスアカウント PutEvents）。**旧「Broker→IdP-KC PrivateLink 委譲」は撤回**。IdP-KC Admin API は in-cluster / 内部 NLB からのみ（D-U6-11 / 06a §A.2.1b）。shadow 制御 Lambda の S2S 認可は U5 §5.8。
+- **安全網 = リコンサイル（遮断チェックは数分間隔）**: outbox で喪失はないが二重の砦として「IdP-KC `deprovisioned_at` 有り ↔ Broker shadow enabled=true」を突合。**この shadow 遮断整合のチェックだけ数分間隔**に短縮（他の整合突合は日次でよい、U9 RB-USR-06）。idpkc shadow は 90 日バッチ除外（D3-09）。
+- **Open Item（新規、2026-08-06）: ロックアウト SLA の明文化** — 削除→shadow 遮断の許容窓（= リコンサイル間隔を何分にするか）+ hosted の「即時ゼロ窓」要件の有無を契約 SLA と連動して確定（要件なら S 案へ）。RB-USR-06 のリコンサイル間隔設定に反映。
+- **SCIM を内部伝播（IdP-KC → Broker）に使わない（却下根拠、検証済み ✅）**: ① **Keycloak には SCIM 送信クライアント（outbound）が core 未実装**（将来機能、[keycloak.org survey feedback](https://www.keycloak.org/2026/02/scim-support-survey-feedback) / [keycloak#13484](https://github.com/keycloak/keycloak/issues/13484)、2026-07-27 検証。受信サーバは 26.6 で experimental だが outbound とは別）→ サードパーティ拡張自作は §2.7 バージョン固定・RHBK サポートと衝突 ② `scim_active` の意味崩壊（内部フェデを外部顧客 SoT と誤認）③ shadow の除外印は既存 `jit_idp_alias=idpkc%` で足りる。mode A の内部伝播は **outbox イベント（必達 + 冪等 + 数分リコンサイル）が最良**（SCIM outbound 不要。DLQ + リコンサイルで確実）。
 - **未決**: `provisioned_by` の値 — 経路 ④ の `local-admin` 流用か、テナント管理者 portal 作成を区別する新値 `portal` か（Case 表・Re-Activation 分岐 D3-12 に波及するため同時決定。監査上の区別要否がポイント）。
 
 ## 改訂履歴
 
 - 2026-08-06: **属性正準化（[attribute-canonicalization ノート](research/attribute-canonicalization-notes.md)）と 射影 vs 都度 join 結論（[me-context-projection 比較ノート](research/me-context-projection-comparison-notes.md)）を反映** — D3-15 に「顧客 IdP 素通し不可・正準スキーマ写像/基盤付与・source 3 ケース・②が①で上書きされない規約・hosted 編集可/federated 読取のみ・移行マッピング表」、D3-16 に「Option A（射影）維持・都度 join は P-17 抵触で却下・ハイブリッド案 2 部分射影・G-SCIM 実測」を追記（[ADR-062](../adr/062-idm-api-execution-form-lambda.md) 系の管理コントロールプレーン確定と連動）。
+- 2026-08-06: **削除の確実性 = A 案（outbox）確定** — D3-17 を「IdP-KC トリガーのイベント駆動」から **outbox パターン**（soft-delete + outbox を authz DB 1 Tx / リレーが EventBridge へ必達送信 / shadow 制御 Lambda 冪等 / **遮断チェックのみ数分リコンサイル**）に更新。楽観文言「数秒/24h 回避」を worst-case 正しく是正（通常数秒 / worst = リコンサイル間隔）。**ロックアウト SLA を Open Item に格上げ**。§3.8.0 に管理コントロールプレーン全体構成図（ブランド主役 + EventBridge 2 本 + outbox）を新設。
 - 2026-08-06: **[ADR-063 ブランドユニット](../adr/063-brand-unit-architecture.md) を反映** — D3-16 に per-brand（authz/idmap/projection はブランドユニット・`/api/me/context` はブランドローカル read・越境ゼロ / 都度 join 却下前提は per-brand で消える / RC-1〜4 は単一マルチテナント前提として保持）を追記、**D3-17 削除フローを「Broker-first 同期 2 コール」→「IdP-KC トリガーのイベント駆動」に改訂**（#2 soft-delete → `user.deprovisioned` EventBridge → shadow 制御 Lambda が Broker shadow 無効化、数秒窓は AT30分+リコンサイルで許容、旧 PrivateLink 委譲は撤回、federated は SCIM/90 日バッチ）。
 - 2026-07-26 (v1.4): 可読性向上のため mermaid 図 4 点を追加（D3-04 プロビ経路全体図 / D3-09 状態機械の stateDiagram 化〔ASCII 置換、内容不変〕/ D3-16 統合射影データフロー図 / D3-17 mode A 両側同期削除シーケンス図）。決定内容の変更なし（図示のみ）。
 - 2026-07-24 (v1.3): §3.8 に D3-17 追加（非 IdP mode A 単独・両側同期削除・日次リコンサイル・SCIM 内部伝播却下・Phase スコープ、note §8）。D3-04 ④ 注記 + D3-09 に idpkc shadow バッチ除外。

@@ -123,10 +123,10 @@ flowchart TB
 |---|------|------|------|
 | 1 | **Broker ↔ IdP-KC 間に IAM クロスアカウント Role を作らない** | 両 Acct 間は §6.3 のネットワーク経路（OIDC federation HTTPS）のみ。IAM AssumeRole の相互許可は設けず、片方の侵害が他方の AWS 制御面に波及しない構造とする（P-17 の分離目的 = 権限分界・障害隔離を IAM 面でも貫徹） | P-17、ADR-033 |
 | 2 | Pod → AWS リソースは **ROSA pod identity webhook + IRSA 方式** | クラスタ OIDC プロバイダを信頼する IAM Role + SA アノテーション。SA Token（短命・自動ローテーション）→ STS の**一時クレデンシャルは最長 1h で失効**（2026-07-24 表現修正） | ADR-041（2026-07-23 更新）、[research](research/rosa-hcp-adoption-research.md) #5 |
-| 3 | クロスアカウントは「監査 Acct への書込」「CI/CD」「idmap 更新イベント」「ITDR イベント集約」のみ | 下表の 6 経路に限定。ワイルドカード Principal 禁止、`sts:ExternalId` or OIDC `sub` 条件必須 | ADR-041 §C.3（2 段階 STS チェーン維持） |
+| 3 | クロスアカウントは「監査 Acct への書込」「CI/CD」「idmap 更新イベント」「ITDR イベント集約」「**削除 shadow 制御**」「**初回 sub 通知**」のみ | 下表の **8 経路**に限定（2026-08-06 制御プレーン 2 追加、ADR-063）。ワイルドカード Principal 禁止、`sts:ExternalId` or OIDC `sub` 条件必須 | ADR-041 §C.3（2 段階 STS チェーン維持） |
 | 4 | 他組織 Acct との IAM 関係は**持たない** | NW 監査 Acct / NW Acct とは TGW Attachment / PrivateLink 等のネットワーク受渡しのみ。IAM 信頼は要求仕様にも含めない | P-18 |
 
-**許可するクロスアカウント経路（6 経路）**:
+**許可するクロスアカウント経路（8 経路。2026-08-06 制御プレーン 2 経路追加）**:
 
 | 経路 | 方式 | 用途 |
 |------|------|------|
@@ -136,6 +136,8 @@ flowchart TB
 | App Acct → Broker Acct | **IAM 経路なし**（OIDC/JWKS は HTTPS のみ）。Token Exchange 等もアプリ層プロトコルで完結 | ADR-041 の境界 2b/2c |
 | IdP-KC → Broker | **EventBridge クロスアカウントイベント**（イベントバスへの PutEvents のみ許可） | `idmap` 更新（D1 SCIM Facade 発、案 i — U3 D3-11。Layer A FK の一元性を Broker Acct 側で維持） |
 | IdP-KC → Broker | **EventBridge PutEvents（itdr-bus への PutEvents のみ許可）** | **ITDR イベント集約**（U7 D-U7-04。IdP-KC 側ローカル PW ログインイベントを Broker Acct の Risk Engine へ送出。経路 5〔idmap〕と同一方式のため増分リスク小） |
+| **IdP-KC(ブランド) → Broker** | **EventBridge PutEvents（削除 shadow bus）** | **削除伝播**（2026-08-06、[ADR-063](../adr/063-brand-unit-architecture.md) / U3 D3-17）: `user.deprovisioned {sub, brand_id}`（#2 の **outbox リレー**発 → Broker shadow 制御 Lambda が Broker shadow 無効化）。**経路 5/6 と同一方式**（IdP-KC→Broker PutEvents） |
+| **Broker → ブランド(IdP-KC)** | **EventBridge PutEvents（初回 sub 通知 bus）** | **authz スタブ生成**（2026-08-06、[ADR-063](../adr/063-brand-unit-architecture.md) / U3 D3-16）: 初回ログイン時に Broker が `sub` をブランドへ通知（federated の authz 行生成用）。**EventBridge の新方向 = Broker→IdP-KC**（フェデ backchannel PrivateLink〔D-U6-06〕とは別レイヤ） |
 
 ---
 
@@ -502,7 +504,7 @@ Broker KC は顧客 IdP の authorization/token/JWKS/userinfo エンドポイン
 | # | 決定 | 節 |
 |---|------|-----|
 | D-U6-01 | 6 アカウント体系確定（Broker / IdP-KC 分割、NW 監査 = 他組織） | §6.1.1 |
-| D-U6-02 | クロスアカウント IAM 6 経路限定（EventBridge idmap 更新 + ITDR PutEvents〔U7 D-U7-04〕含む）、Broker↔IdP-KC 間 IAM Role なし | §6.1.2 |
+| D-U6-02 | クロスアカウント IAM 8 経路限定（EventBridge idmap 更新 + ITDR PutEvents + **削除 shadow / 初回 sub 通知**〔2026-08-06 制御プレーン 2 追加、ADR-063〕）、Broker↔IdP-KC 間 IAM Role なし | §6.1.2 |
 | D-U6-03 | ROSA HCP × 2、3 AZ × Machine Pool、Private NLB Ingress + 自管理 Internal ALB。**CP = Red Hat 管理、Infra Node なし、Egress 形態は O-10（NAT vs zero-egress）** | §6.2.1 |
 | D-U6-04 | **役割分離 2 Pool 構成（KC 専用 taint Pool + default/infra Pool c7g.large×2-3）**。KC = c7g.xlarge、2xlarge は事前定義の別 Pool（Blue/Green）、arm64 要確認 | §6.2.2 |
 | D-U6-05 | コスト概算 ROSA 4 クラスタ ≈ **$2,032/月**（infra Pool 別建て +$354、3y 55% 仮定） | §6.2.3 |
@@ -520,6 +522,7 @@ Broker KC は顧客 IdP の authorization/token/JWKS/userinfo エンドポイン
 ## 改訂履歴
 
 - 2026-07-23: 初版（Wave 1 起草）。Baseline v1（P-01〜P-18）準拠。A 部（自管理設計）/ B 部（他組織要求仕様）の 2 部構成で確定。B-BROK-1 / G-OSAKA / G-EGRESS / In-A/In-B 先方確認は未決事項として §6.8 で追跡。
+- 2026-08-06: **削除の A 案（outbox）に伴う EventBridge 経路追加** — D-U6-02 を 6→8 経路に（制御プレーン 2 = ①削除 `user.deprovisioned`〔IdP-KC→Broker、outbox 発〕②初回 sub 通知〔Broker→IdP-KC、EventBridge の新方向〕、ADR-063 / U3 D3-16/D3-17）。
 - 2026-08-06: **[ADR-062](../adr/062-idm-api-execution-form-lambda.md)（O-9 Lambda）+ [ADR-063 ブランドユニット](../adr/063-brand-unit-architecture.md)を反映** — D-U6-11 に「Admin API へは内部 NLB（scheme=internal + SG を Lambda SG 限定 + server-TLS + アプリ層認証）で到達、到達主体 = ブランド #2→IdP-KC / 中央 shadow 制御→Broker」を追記（ClusterIP 単独を本用途に限り見直し、/admin 403 は不変）、サブネット層③ を Lambda ENI アタッチ先と明記、O-9 を Lambda 確定に更新。**§6.3.2 の越境を再整理: 旧「#1→#2 PrivateLink 委譲」廃止 → 越境は EventBridge 2 本（#2→Broker 削除 / Broker→ブランド 初回 sub 通知）のみ、旧 O-12 は越境イベント S2S 認可に再定義**（ADR-063 = #2 ブランド主役 / 中央 shadow 制御のみ）。
 - 2026-07-23 (v1.1): 整合性レビュー修正（D-U6-02 5 経路化 / REQ-IN-09 / O-8/O-9 / 専用 API 層図示 / §6.3.2 クライアント認証追記）。
 - 2026-07-23 (v1.2): **ユーザー検討（[research note](research/rosa-hcp-machine-pool-egress-notes.md)）反映** — ① HCP に Infra Node なし → **役割分離 2 Machine Pool 構成**（D-U6-04 改訂、infra Pool 別建てでコスト $1,678 → $2,032/月）② CP = Red Hat 管理 + 接続 3 系統整理 + Ingress NLB 既定 ③ **Egress 形態 O-10 新設**（NAT GW 必須の明記 + zero-egress 案 B が P-18 と整合するため積極検討）④ **DB プール initial=min=max=30 等値化**（KC 公式推奨）+ max_connections 予約枠控除 + idmap 別プール独立計上 ⑤ PgBouncer はシャーディング段階の拡張パスと明記。
