@@ -399,6 +399,25 @@ flowchart TB
 
 ---
 
+### 9.6.4 決定 D-U9-18: idm-api / 非同期の糊（Lambda）の dev/release パイプライン（Keycloak と別系統）
+
+**採用**: **idm-api #2（ブランド管理 API）+ 非同期の糊（射影フィード / Webhook Dispatcher / shadow 制御）は Lambda**（[ADR-062](../adr/062-idm-api-execution-form-lambda.md)、O-9。トポロジは [ADR-063](../adr/063-brand-unit-architecture.md) = #2 ブランド主役 + 中央 shadow 制御）。**Keycloak（ROSA/GitOps、§9.6.1〜9.6.3）とは別パイプライン**とし、これが **auth-critical な Keycloak（P0）と管理ツール（P1）の障害ドメイン分離の実体**（ADR-062）。
+
+| 項目 | 決定 |
+|---|---|
+| CI | **GitHub Actions**（Keycloak と同じ VCS だが別ワークフロー） |
+| ビルド/配布 | **コンテナイメージ Lambda** を **ECR** へ push（RHBK と同じ ECR、digest 指定）→ **SAM / CDK** で **2 アカウント**（Broker Acct = shadow 制御 / ブランド = IdP-KC Acct = idm-api #2）へデプロイ（[U10 D-U10-07](10-integration-migration-design.md)） |
+| CD 分離 | **Keycloak（OpenShift GitOps）と独立**（クラスタライフサイクル非共有 = ADR-062 の決め手） |
+| Secret | **Secrets Manager + rotation Lambda**（Admin API 管理クライアント資格情報 / mTLS 証明書）。ESO は使わない（Pod でないため） |
+| 実行権限 | Lambda は IAM Role（Aurora は SG 直、越境は EventBridge / 内部 NLB のみ、[U6 §6.3.2](06-infra-network-design.md)）。ROSA 側 SA は IRSA（§9.6.1 とは別体系） |
+| 可観測性 | **X-Ray** トレース + CloudWatch（§9.1.1 の ADOT Lambda Layer に統合） |
+| バッチ | 定常 Lambda バッチ（射影リコンサイル等）は **EventBridge Scheduler + Lambda**（冪等 + 分散ロック）。**※退職者遮断 90 日バッチは Admin API 内部限定ゆえ in-cluster CronJob（D-U9-17、Lambda 不採用）で別** — 用途で使い分け |
+| cold start | 対話 UX の初回遅延は許容、厳しければ provisioned concurrency（ADR-062 Open Items） |
+
+- **根拠**: [ADR-062](../adr/062-idm-api-execution-form-lambda.md)（Lambda・別障害ドメイン）/ [ADR-063](../adr/063-brand-unit-architecture.md)（#2 ブランド主役 + 中央 shadow 制御）/ [U10 §10.2](10-integration-migration-design.md)（2 アカウントデプロイ）/ [idm-api-ingress 比較ノート](research/idm-api-ingress-execution-comparison-notes.md)（dev/release）。
+
+---
+
 ## 9.7 IdP オンボーディングパイプライン（3 レイヤー方式の実装形）
 
 ### 9.7.1 決定 D-U9-15: パイプライン 6 ステップとリードタイム内訳
@@ -482,6 +501,7 @@ flowchart TB
 | D-U9-15 | IdP オンボーディング 6 ステップ（検証 → **REQ-OUT-01 FQDN 更新** → 作成 → 疎通 → 監視登録）、リードタイム < 1 営業日は G-EGRESS ②③ 形態で成立（① SLA ≥ 1 営業日なら NFR 改訂エスカレーション） | §9.7.1 |
 | D-U9-16 | Central Canary は**弊社監査 Acct へ配置変更**（P-18 帰結、ADR-059 要改訂）、Phase 1 = Hybrid 検証（Positive + Negative 401/403）+ SLO 外形・デプロイ bake 兼用 | §9.8.1 |
 | D-U9-17 | **退職者遮断バッチ = in-cluster CronJob（infra Pool、Lambda 不採用）**。Admin API 経由・冪等 + `concurrencyPolicy: Forbid` + advisory lock + TOCTOU 再チェック + Session Revoke。Phase 2 物理削除も同基盤（O-U9-8 確定） | §9.5.4 |
+| D-U9-18 | **idm-api #2 + 非同期の糊（Lambda）の dev/release = Keycloak と別パイプライン**（GitHub Actions → ECR コンテナイメージ → SAM/CDK で 2 アカウント / Secrets Manager+rotation / IRSA・IAM Role / X-Ray / Lambda バッチ = EventBridge Scheduler）。障害ドメイン分離の実体（ADR-062）、ブランド主役（ADR-063） | §9.6.4 |
 
 ### 9.9.2 未決事項（オープン項目）
 
@@ -520,6 +540,7 @@ flowchart TB
 ## 改訂履歴
 
 - 2026-07-24: 初版（Wave 3 起草）。Baseline v1（P-01/P-04/P-15/P-16/P-17/P-18）準拠。可観測性（OTel/AMP/AMG/X-Ray + IdP 数関数監視、D-U9-01〜03）、SLO 定義書 + Burn Rate（D-U9-04）、ログ 3 層 + SIEM 取込セット（D-U9-05〜06）、Runbook 27 冊 + 禁則 K-1〜11（D-U9-07〜08）、IaC 2 層 + keycloak-config-cli 不採用 + ドリフト検知（D-U9-09〜11）、CI/CD（GitHub Actions/ArgoCD/ECR + SPI サプライチェーン + KC 昇格ゲート、D-U9-12〜14）、IdP オンボーディング 6 ステップ（D-U9-15）、Central Canary 弊社監査 Acct 配置変更（D-U9-16）を決定。
+- 2026-08-06: **[ADR-062](../adr/062-idm-api-execution-form-lambda.md)（Lambda）/ [ADR-063 ブランドユニット](../adr/063-brand-unit-architecture.md)を反映** — §9.6.4 D-U9-18 新設（idm-api #2 + 非同期の糊の Lambda dev/release パイプライン: GitHub Actions→ECR コンテナイメージ Lambda→SAM/CDK で 2 アカウント、Secrets Manager+rotation、X-Ray、Lambda バッチ = EventBridge Scheduler。Keycloak の ROSA/GitOps と別系統 = クラスタ分離の実体）。決定一覧に D-U9-18。
 - 2026-07-28 (v1.2): **§9.5.4 D-U9-17 新設 — 退職者遮断バッチの実行基盤を in-cluster CronJob に確定（O-U9-8 クローズ）**。Lambda 不採用の判断根拠（Admin API 内部限定 + 15 分上限）、多重実行対策 3 点セット（concurrencyPolicy: Forbid / podReplacementPolicy + advisory lock / 冪等）、ノード退避耐性、TOCTOU 再チェック、Phase 2 物理削除も同基盤。RB-USR-07 追加、決定一覧に D-U9-17。
 - 2026-07-24 (v1.1): Wave 3 最終レビュー反映 — **H-1**: D-U9-10（keycloak-config-cli 不採用）の波及 4 件を §9.9.3 に追加（ADR-051 :15/:94/:305 / ADR-060 :341 / U8 §8.3.1・U2 §2.7.5 は適用済み）。**H-2**: 主インプットに U4 §4.7.4 追加、§9.6.1 に Theme lint + axe-core CI 段追加、RB-TEN-01 に顧客オンボーディングガイド付属・RB-USR-03 に Recovery Codes 管理者リセットを明記。**H-3**: RB-TEN-06（SN オンボーディング）/ RB-TEN-07（Webhook 購読登録）/ RB-MIG-01 / RB-DSAR-01 / RB-SEC-07 の 5 冊追加 + RB-PLT-04 に SAML RSA 証明書ローテ（U10-OP-1）統合注記 + §9.7 ステップ 3 に Webhook 配信先 FQDN 同プロセス注記。**M-1**: D-U9-07 の冊数を実列挙から再計上（全 35 冊 / 必須 13 冊）。**M-2**: D-U9-13 の SPI 表記を「3 JAR・4 機能」へ修正（U2 §2.4 整合）。**M-9**: §9.6.1 に PII クレーム検査 CI（U5 §5.1.4 C-1〜C-7）追加。**M-11**: U1 向け G-EGRESS 記述を「更新済み」へ。**L-1**: U8 §8.2.3 → §8.5.2。**L-6**: §9.7 ステップ 4 に mfa_indicator FORCE override 注記（U2 §2.5.4）。
 - 2026-07-26 (v1.2): 可読性向上 — mermaid 図 3 点追加（§9.3.1 ログ・メトリクスパイプライン全体図 / §9.6.2 CI/CD パイプライン図〔昇格ゲート・bake 判定含む〕/ §9.7.1 IdP オンボーディング 6 ステップフロー〔G-EGRESS 分岐付き〕）。設計内容の変更なし。

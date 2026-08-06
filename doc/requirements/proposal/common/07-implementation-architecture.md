@@ -598,6 +598,8 @@ flowchart TB
 #### §C-7.3.2.1 Auth Platform Account 詳細（→ 2026-07-24 Broker Acct / IdP-KC Acct に分割）
 
 > **🆕 2026-07-24 基本設計反映**: 旧「Auth Platform Acct」は **Broker Acct / IdP-KC Acct の 2 アカウントに分割**（P-17）。Tier 1 = Broker Acct、Tier 2 = IdP-KC Acct にそれぞれ **ROSA HCP クラスタ + Aurora + KMS** を配置し、クロスアカウント経路は PrivateLink 推奨（詳細 = [basic-design/06](../../../basic-design/06-infra-network-design.md) §6.1〜6.3 D-U6-01/02/06）。
+>
+> **🆕 2026-08-06 ブランドユニット原則（[ADR-063](../../../adr/063-brand-unit-architecture.md) / [basic-design/01 §1.2](../../../basic-design/01-architecture-baseline.md)）**: Broker/IdP-KC 分割に加え、**Broker は共有 1 つ**（横断認証/SSO・**ログイン画面はブランド別テーマ**〔Keycloak Organizations + per-client/org テーマ + HRD で 1 Broker で実現〕・`sub` 発番・ブランドルーティング・Broker shadow〔遮断キルスイッチ〕）。**authz / idmap / projection / CRUD / アプリ = ブランドユニット（IdP-KC 側）**。**Broker は authz を持たない**。**管理コントロールプレーン = #2（ブランド管理 API、Lambda）が主役**、中央は shadow 制御 Lambda のみ、入口=#2/ルーティングはエッジ（[ADR-062](../../../adr/062-idm-api-execution-form-lambda.md)、[basic-design/10 §10.2](../../../basic-design/10-integration-migration-design.md)）。**不変条件 4 点**: ① `sub` グローバル安定 UUID ② authz/idmap/ユーザーに `brand_id` 一級キー ③ cross-brand join を作らない ④ Broker は共有関心のみ。**Phase 1 = 1 ブランド**（= 現行 IdP-KC アカウント 1 つ）、物理 per-brand 分割は将来。
 
 | 領域 | 主要リソース | 構成 | 根拠 |
 |---|---|---|---|
