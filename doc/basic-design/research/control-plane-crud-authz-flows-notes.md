@@ -163,24 +163,33 @@ sequenceDiagram
 - **管理 SPA → #1（Broker front door, brand ルーティング）→ #2（ブランド）→ ブランド authz DB（IdP-KC 側）ローカル**。Keycloak は叩かない。
 - **federated ユーザーの権限もブランド authz に持つ**（`sub`+`brand_id` キー。IdP-KC の identity レコードが無くても Backend DB の行は持てる。初回ログイン時に Broker→ブランドへ sub 通知で行生成）。
 
-## 6. フロー④：削除（二面同期）
+## 6. フロー④：削除（IdP-KC 削除トリガー → Broker shadow 無効化、2026-08-06 更新）
+
+> **旧「Broker-first 二面同期」から変更**：per-brand の **「IdP-KC の削除をトリガーに Broker shadow を無効化」**（ADR-063 の shadow 制御 = **非同期イベント〔案 i〕**を確定）。ブランド主役と一致。
 
 ```mermaid
 sequenceDiagram
-    participant SPA as 管理SPA(→APIGW)
-    participant A1 as idm-api #1 Lambda (Broker)
-    participant BKC as Broker Keycloak (内部NLB)
-    participant A2 as idm-api #2 Lambda (IdP-KC)
-    participant IKC as IdP-KC Keycloak (内部NLB)
+    participant SRC as 削除元(管理者/SCIM)
+    participant A2 as idm-api #2 (ブランド/IdP-KC)
+    participant IKC as IdP-KC Keycloak
+    participant EB as EventBridge(IdP-KC→Broker)
+    participant SH as shadow制御 Lambda(Broker)
+    participant BKC as Broker Keycloak
 
-    SPA->>A1: DELETE /users/{sub}
-    A1->>BKC: ① Broker shadow を enabled=false + not_before (内部NLB経由)
-    A1->>A2: ② PrivateLink 委譲
-    A2->>IKC: IdP-KC Soft Delete (内部NLB経由)
-    Note over A1,IKC: ①で即遮断 → ②で本体無効化<br/>越境は #1→#2 の1本だけ
+    SRC->>A2: ユーザー削除
+    A2->>IKC: soft-delete(enabled=false + deprovisioned_at)
+    A2->>EB: user.deprovisioned {sub, brand_id, at}
+    EB->>SH: 配信(at-least-once)
+    SH->>BKC: shadow を enabled=false + not_before + session revoke(内部NLB)
+    Note over SH,BKC: 冪等(既に無効ならno-op)・sub キー
 ```
 
-- 順序（① Broker shadow 先）は D3-17。IdP-KC 単独無効化では Broker がトークンを出し続けるため、① が実アクセス遮断。
+- **トリガー**：idm-api #2 が soft-delete 実行時に `user.deprovisioned {sub, brand_id, at}` を発行（削除の実行主体ゆえ確実。Keycloak Event Listener SPI 併用も可）。
+- **伝送**：EventBridge クロスアカウント（IdP-KC→Broker、既存経路）。**ハンドラ**：shadow 制御 Lambda（Broker）が Broker KC で `enabled=false` + `not_before` + セッション revoke（内部 NLB）。
+- **soft-delete（Phase 1）**：物理削除は Phase 2（retention 後、D3-09）。
+- **federated**：IdP-KC に identity 無しのため本トリガーは発火しない → **SCIM deprovision（SCIM Facade がイベント発行）or 90 日バッチ**で shadow 無効化。
+- **セーフティネット**：日次リコンサイル（IdP-KC `deprovisioned_at` ↔ Broker shadow `enabled` 不整合是正）＝イベント取りこぼし対策。
+- **トレードオフ（窓）**：IdP-KC-first のため shadow 無効化まで**数秒の伝播窓**。AT 30 分 + リコンサイルで許容。**即時ゼロ窓が要件なら削除パスで同期 shadow 無効化を併用**（逆方向同期）に切替可。
 
 ## 7. まとめ（E/F の核心）
 
