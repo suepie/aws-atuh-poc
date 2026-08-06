@@ -11,7 +11,7 @@ CRUD と権限編集は**叩く DB も Keycloak も全く別**。ここを混同
 | DB | 何を持つ | アカウント | 誰が書くか | Keycloak を叩くか |
 |---|---|---|---|---|
 | **① identity DB**＝**IdP-KC の Keycloak Aurora** | ユーザー本体（アカウント）| **IdP-KC Acct** | ユーザー CRUD | ✅ IdP-KC Keycloak（自アカウント）|
-| **② authz DB**＝**Backend DB** | 権限（エンタイトルメント・機能ロール割当）| **Broker Acct** | 権限編集 | ❌ Keycloak を叩かない |
+| **② authz DB**＝**Backend DB** | 権限（エンタイトルメント・機能ロール割当）+ idmap + projection | **ブランドユニット（IdP-KC 側）**（案 b・[ADR-063](../../adr/063-brand-unit-architecture.md)）| 権限編集 | ❌ Keycloak を叩かない |
 
 **帰結**:
 - **ユーザー CRUD の書込先は「Broker の DB」ではなく「IdP-KC 自身の Keycloak（同じ IdP-KC アカウント）」**。
@@ -33,8 +33,8 @@ CRUD と権限編集は**叩く DB も Keycloak も全く別**。ここを混同
 | **同居アプリ** | プログラム（M2M）| 非推奨（App Acct へ）| 経路⑤ CRUD。Phase 1 対象外 |
 
 **決定（本セッションの議論の反映）**：
-- **入口は①に一本化**（人＝SPA も 機械＝アプリも①を叩く）。**②は内部 executor**。**経路⑤（②直・同居）は①経由へ寄せて実質廃す**（権限は①の authz DB にしかなく、②直では権限を扱えないため）。
-- **認可 DB＝Broker**：federated は IdP-KC にレコードが無く、**全 population 共通キー `sub` を持つのは Broker だけ**。P-17 のホットパス越境回避 + idmap 集約も Broker。
+- **入口は①（Broker）に一本化**（人＝SPA も 機械＝アプリも①を叩く）。①は**共有 front door** として JWT/brand スコープ検証し、**ブランドの②へ CRUD も権限編集もルーティング**。**経路⑤（②直・同居）は①経由へ寄せて実質廃す**。
+- **認可 DB＝ブランドユニット（IdP-KC 側）**（2026-08-06 案 b・[ADR-063](../../adr/063-brand-unit-architecture.md)）：ブランドを将来の隔離/複製単位とし、**authz/idmap/projection はブランド内に置く。Broker は authz を持たない**（共有＝認証/ログイン描画/`sub`/ルーティング/shadow のみ）。federated も **`sub`+`brand_id` キーでブランド authz に保持**（初回ログイン時に Broker→ブランドへ sub 通知、write 時のみ越境）。不変条件: ① sub グローバル安定 ② brand_id 一級キー ③ cross-brand join なし ④ Broker 共有関心のみ。
 - **編集アプリ＝authz API の呼出側**でどこで動いてもよい（DB を IdP 側へ動かす必要はない）。
 - **IdP-KC＝隔離した自前アカウント（VPC 分割でなくアカウント分割）**：PW ハッシュのブラスト半径のため。**業務アプリを同居させない**。
 - **SPA は 1 枚のまま capability 適応**（CRUD タブは hosted のみ活性、federated はグレー）。2 SPA 化は mixed テナントで逆効果。
@@ -48,35 +48,37 @@ flowchart TB
     GW["API GW(JWT L1)"]
     SPA["管理 SPA(S3)"]
 
-    subgraph B["Broker Acct"]
-        API1["idm-api #1 = Lambda(層③)<br/>テナント管理 API"]
-        NLBB["内部NLB kc-admin<br/>scheme=internal+SG限定+server-TLS"]
-        BKC["Broker Keycloak Pod<br/>Admin API"]
-        BDB[("Broker Aurora<br/>=shadow+②authz DB+idmap+射影")]
+    subgraph B["Broker Acct（共有・1）"]
+        API1["idm-api #1 = Lambda<br/>共有 front door(brand ルーティング)"]
+        NLBB["内部NLB kc-admin"]
+        BKC["Broker Keycloak<br/>Admin API"]
+        BDB[("Broker Aurora<br/>= Broker shadow のみ")]
     end
 
-    subgraph I["IdP-KC Acct"]
-        API2["idm-api #2 = Lambda(層③)<br/>ユーザー連携 API"]
-        NLBI["内部NLB kc-admin<br/>scheme=internal+SG限定+server-TLS"]
-        IKC["IdP-KC Keycloak Pod<br/>Admin API"]
-        IDB[("IdP-KC Aurora<br/>=①identity DB")]
+    subgraph I["IdP-KC Acct（ブランドユニット）"]
+        API2["idm-api #2 = Lambda<br/>CRUD + 権限 + projection"]
+        NLBI["内部NLB kc-admin"]
+        IKC["IdP-KC Keycloak<br/>Admin API"]
+        IDB[("IdP-KC Aurora<br/>= ①identity DB")]
+        BAZ[("ブランド authz + idmap + projection<br/>= ②(sub+brand_id キー)")]
+        BAPP["ブランドのアプリ"]
     end
 
     ADM --> CF
     CF --> SPA
-    CF --> GW -->|"invoke(ネイティブ)"| API1
-    API1 -->|"権限編集: SG直(Keycloak叩かない)"| BDB
-    API1 -->|"shadow操作: 内部NLB"| NLBB --> BKC
-    API1 ==>|"identity CRUD委譲: PrivateLink単方向"| API2
-    API2 -->|"内部NLB"| NLBI --> IKC
+    CF --> GW -->|"invoke"| API1
+    API1 -->|"shadow遮断: 内部NLB"| NLBB --> BKC
+    API1 ==>|"CRUD+権限を委譲: PrivateLink単方向"| API2
+    API2 -->|"identity: 内部NLB"| NLBI --> IKC
     IKC --> IDB
-    IKC -.->|"変更をEventBridgeで越境"| BDB
+    API2 -->|"権限/idmap/projection: ローカル"| BAZ
+    BAPP -->|"/api/me/context ローカルread"| BAZ
+    BKC -.->|"初回sub通知(write時のみ越境)"| BAZ
 ```
 
-- **idm-api は Lambda**（ADR-062）。**Keycloak Admin API へは各クラスタの内部 NLB（`scheme=internal` + SG を Lambda SG に限定 + server-TLS + アプリ層認証）で到達**（ClusterIP 単独方針 D-U6-11 を本用途に限り見直し）。
-- **Ingress**：`CloudFront(api.) → API GW(JWT L1) → Lambda ネイティブ invoke`（VPC Link/NLB を ingress に挟まない）。SPA は CloudFront/S3。
-- **越境は 2 本だけ**：`#1 → #2`（PrivateLink 単方向、D-U6-06）と `IdP-KC → Broker`（EventBridge、射影フィード）。
-- **経路⑤（同居アプリ）は①経由へ寄せて実質廃す**（§1.5）ため図では省略。
+- **authz / idmap / projection はブランドユニット（IdP-KC 側）**（案 b・ADR-063）。**Broker は shadow のみ**。**ブランドのアプリは `/api/me/context` をブランドローカル read（越境なし）**。
+- **idm-api は Lambda**（ADR-062）。Keycloak Admin API へは内部 NLB（`scheme=internal` + SG 限定 + server-TLS + アプリ層認証）経由。Ingress = `CloudFront(api.) → API GW(JWT L1) → Lambda invoke`。
+- **越境は最小**：`#1→#2`（CRUD+権限委譲、PrivateLink 単方向）/ `Broker→ブランド`（初回 sub 通知、write 時のみ、EventBridge）/ `#1→Broker shadow`（遮断）。**ホットパス（アプリの context read）は越境ゼロ**。
 
 ## 3. フロー①：ユーザー作成（管理画面から、hosted ユーザー、経路④ `local-admin`）
 
@@ -138,27 +140,28 @@ sequenceDiagram
 
 ### hosted / federated の分離（CRUD は hosted 専用）
 
-- **CRUD（作成/削除）は本質的に hosted 専用**。federated は顧客 IdP が作成/削除するため CRUD 不可 → **CRUD バックエンド（#2/IdP-KC）は既に "hosted 専用"** 経路、federated 管理（shadow 遮断 + 権限編集）は **Broker（#1）**。**別 tier・別アカウントで既に分離済み**。
+- **CRUD（作成/削除）は本質的に hosted 専用**。federated は顧客 IdP が作成/削除するため CRUD 不可 → **CRUD バックエンド（#2/IdP-KC）は既に "hosted 専用"** 経路。federated 管理は **shadow 遮断（Broker #1）+ 権限編集（ブランド authz、#2、ADR-063）**。**別 tier・別アカウントで既に分離済み**。
 - **画面（管理 SPA）は 1 つのまま**、出自で操作を出し分け（CRUD タブは hosted のみ活性、federated はグレー）。**2 SPA 化は mixed テナントで逆効果**（capability 適応の結論）。
 
-## 5. フロー③：権限編集（どこの何から叩くか）
+## 5. フロー③：権限編集（ブランドユニット側、案 b・ADR-063）
 
 ```mermaid
 sequenceDiagram
-    participant SPA as 管理SPA
-    participant A1 as idm-api #1 (Broker)
-    participant AZ as authz DB (Broker Aurora)
-    participant PJ as 射影 (Broker Aurora)
+    participant SPA as 管理SPA(→APIGW)
+    participant A1 as idm-api #1 (Broker/front door)
+    participant A2 as idm-api #2 (ブランド/IdP-KC)
+    participant AZ as ブランド authz+projection (IdP-KC側)
 
-    SPA->>A1: PUT /users/{sub}/roles (機能ロール割当)
-    A1->>AZ: ②authz DB へ書込
-    Note over A1,AZ: Keycloak は叩かない<br/>(権限は Keycloak でなく Backend DB)
-    A1->>PJ: 射影を upsert
+    SPA->>A1: PUT /users/{sub}/roles
+    A1->>A2: brand スコープでルーティング(PrivateLink)
+    A2->>AZ: ②authz へ書込 + projection upsert (ローカル)
+    Note over A2,AZ: Keycloak は叩かない(権限=Backend DB)<br/>brand_id + sub キー
+    A2-->>A1: 完了
     A1-->>SPA: 完了
 ```
 
-- **管理 SPA → idm-api #1（Broker）→ authz DB（Broker Aurora）**。**Keycloak は叩かない**。
-- **federated ユーザーの権限もここで編集**（sub をキーに Broker 側で完結。federated は IdP-KC にレコードが無いため、共通キー sub を持つ Broker が唯一の紐付け先＝E の結論）。
+- **管理 SPA → #1（Broker front door, brand ルーティング）→ #2（ブランド）→ ブランド authz DB（IdP-KC 側）ローカル**。Keycloak は叩かない。
+- **federated ユーザーの権限もブランド authz に持つ**（`sub`+`brand_id` キー。IdP-KC の identity レコードが無くても Backend DB の行は持てる。初回ログイン時に Broker→ブランドへ sub 通知で行生成）。
 
 ## 6. フロー④：削除（二面同期）
 
@@ -182,9 +185,10 @@ sequenceDiagram
 ## 7. まとめ（E/F の核心）
 
 - **ユーザー CRUD**：**IdP-KC アカウント内で完結**（`#2 → IdP-KC Keycloak → IdP-KC Aurora`）。**Broker Keycloak は叩かない**。管理画面起点のときだけ `#1 → #2` を PrivateLink で 1 本越境。
-- **権限編集**：**Broker 内で完結**（`#1 → authz DB`）。**Keycloak を叩かない**（権限は Backend DB）。
-- **Broker Keycloak を叩くのは #1 の shadow 操作（遮断/復活）だけ**、内部 NLB 経由。
-- **実行形態 = Lambda（ADR-062）**：idm-api #1/#2 は Lambda（層③）。Keycloak Admin API へは各クラスタの**内部 NLB（scheme=internal + SG 限定 + server-TLS + アプリ層認証）**で到達。決め手は **auth-critical な Keycloak クラスタ（P0）と管理ツール idm-api（P1）を別障害ドメインに分離**すること。
+- **権限編集**：**ブランドユニット内で完結**（`#1 front door → #2 → ブランド authz DB`、案 b・ADR-063）。**Keycloak を叩かない**（権限は Backend DB、`sub`+`brand_id` キー）。**アプリの `/api/me/context` はブランドローカル read（越境ゼロ）**。
+- **Broker Keycloak を叩くのは #1 の shadow 操作（遮断/復活）だけ**、内部 NLB 経由。**Broker は authz を持たない**（共有＝認証/ログイン描画/sub/ルーティング/shadow）。
+- **実行形態 = Lambda（ADR-062）**：idm-api #1/#2 は Lambda。Keycloak Admin API へは**内部 NLB（scheme=internal + SG 限定 + server-TLS + アプリ層認証）**で到達。決め手は **auth-critical な Keycloak（P0）と管理ツール idm-api（P1）を別障害ドメインに分離**。
+- **配置 = ブランドユニット（ADR-063）**：ブランドを将来の隔離/複製単位とし、authz/idmap/projection/CRUD/アプリをブランド側に。**Broker は共有 1 つ**（ログインはブランド別テーマを 1 Broker で描画）。不変条件: sub グローバル / brand_id 一級キー / cross-brand join なし / Broker 共有関心のみ。
 
 ## 8. 未決（E/F 関連）
 
