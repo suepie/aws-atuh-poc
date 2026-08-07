@@ -28,6 +28,7 @@ proposal（§FR-API-* / §NFR-API-* / §C-API-*）は参照物として維持。
 | **認証実装確認処理 統合構成図**（登録・トリガー・検査・通知）| [10 §10.1.3](10-external-monitoring-overview.md) |
 | **認証実装確認処理 E2E フロー**（deploy→検知→通知→是正）| [10 §10.1.4](10-external-monitoring-overview.md) |
 | **認証実装確認処理 リソース一覧**（何が・どこで・何をするか）| [10 §10.1.5](10-external-monitoring-overview.md) |
+| **認証実装確認処理 AWS 構成図**（リソース単位・In/Out 境界アカウント込み・通信経路一覧）| [10 §10.1.6](10-external-monitoring-overview.md) |
 | 用語（probe とは何か 等）| [10 §10.0.4](10-external-monitoring-overview.md) |
 | 認証実装確認処理 実行シーケンス（1 実行の中身）| [11 §11.1](11-central-probe-architecture.md) |
 | 課金按分パイプライン概念図 | [03 §3.1.2](03-billing-cost-allocation-rules.md) |

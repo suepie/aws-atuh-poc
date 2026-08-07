@@ -225,6 +225,91 @@ flowchart LR
 
 ---
 
+### §10.1.6 AWS リソース構成図（アカウント横断・イン/アウト境界含む）
+
+§10.1.3 の論理構成を、**AWS リソース単位 + 通信経路（インバウンド/アウトバウンド境界アカウント込み）** で示す。前提: 組織のインターネット境界は他組織管理（In: CloudFront+WAF / Out: Network Firewall ドメインフィルタ、[05 章 §5.1](05-security.md)）。**probe の外向き HTTPS もアウトバウンド統制（NWFW）を通す**。
+
+```mermaid
+flowchart TB
+    subgraph Central["共通基盤アカウント（自社管理）"]
+        SCH["EventBridge Scheduler<br/>rate(1 hour)"]
+        subgraph VPC["VPC（private subnet）"]
+            DISC["発見 Lambda"]
+            PROBE["認証実装チェック Lambda"]
+        end
+        VPCE["VPC Endpoint 群<br/>S3 / DynamoDB（Gateway）<br/>STS / Secrets / CloudWatch / SNS（Interface）"]
+        DDB[("App Registry<br/>DynamoDB")]
+        S3R[("OpenAPI Registry<br/>S3")]
+        SM["Secrets Manager<br/>canary-central-readonly"]
+        CW["CloudWatch<br/>Metrics / Alarm"]
+        ALR["Alert Router Lambda"]
+        SNS["SNS P1/P2/P3"]
+        ATT["TGW Attachment"]
+    end
+
+    subgraph OutAcct["アウトバウンド境界アカウント（他組織管理）"]
+        TGW["Transit Gateway"]
+        NFW["Network Firewall<br/>ドメインフィルタ（許可制）"]
+        NAT["NAT / IGW"]
+    end
+
+    NET(("インターネット"))
+
+    subgraph InAcct["インバウンド境界アカウント（他組織管理・ADR-039）"]
+        CF["アプリごとの CloudFront + WAF<br/>Origin Protection"]
+    end
+
+    subgraph AppAcct["各 App アカウント"]
+        ROLE["DiscoveryReadRole<br/>（read-only）"]
+        APIGW["API GW / ALB<br/>認証実装"]
+    end
+
+    subgraph Broker["認証基盤（Broker アカウント）"]
+        KC["Keycloak /token<br/>client_credentials"]
+    end
+
+    SCH --> DISC
+    DISC & PROBE --- VPCE
+    VPCE --- DDB & S3R & SM & CW
+    PROBE -->|"Invoke（AWS 網内）"| ALR --> SNS
+
+    DISC -.->|"AssumeRole + apigateway:GET<br/>（AWS API・境界非経由）"| ROLE
+    ROLE -.-> APIGW
+
+    PROBE ==>|"HTTPS probe"| ATT
+    DISC ==>|"（EP 非対応の AWS API も同経路）"| ATT
+    ATT ==> TGW --> NFW --> NAT ==> NET
+    NET ==> CF ==>|"Origin Protection"| APIGW
+    NET ==> KC
+
+    style Central fill:#fff3e0
+    style OutAcct fill:#e0f2f1
+    style InAcct fill:#fce4ec
+    style AppAcct fill:#e8f5e9
+    style Broker fill:#ede7f6
+    style DISC fill:#fff9c4
+    style PROBE fill:#fff9c4
+```
+
+**通信経路一覧（何が・どこを通るか）**
+
+| # | 経路 | 中身 | 通る境界 | 必要な許可 |
+|---|---|---|---|---|
+| A | **probe → アプリ**（Negative/Positive）| HTTPS 443（実 UX と同一）| VPC → TGW → **NWFW（Out）** → インターネット → **CloudFront+WAF（In）** → API GW | NWFW 許可ドメイン: 各アプリの CloudFront ドメイン |
+| B | **probe → 認証基盤 /token**（Positive 用短命トークン）| HTTPS 443 | VPC → TGW → **NWFW（Out）** → 認証基盤 | NWFW 許可ドメイン: 認証基盤ドメイン |
+| C | **巡回読み取り**（発見 Lambda → App アカウント）| AWS API（STS AssumeRole → `apigateway:GET`）| **境界非経由**（AWS API。Interface EP or NWFW の AWS ドメイン許可）| DiscoveryReadRole（16 章）|
+| D | 中央内部（台帳/仕様/Secrets/Metrics/通知）| DynamoDB / S3 / Secrets / CloudWatch / SNS / Lambda Invoke | **VPC Endpoint（AWS 網内）**、インターネット非経由 | 各 EP + IAM |
+
+**設計のポイント**:
+- **Lambda 2 つ（発見 / 認証実装チェック）は VPC 配置**。理由: 外向き HTTPS（経路 A/B）を**組織のアウトバウンド統制（NWFW ドメインフィルタ = [05 章 NW-2](05-security.md)）に例外なく通す**ため。監視系自身がガードレールの例外になってはいけない
+- 経路 A は**インバウンド境界（CloudFront+WAF）を実ユーザーと同じ向きで通過**する（Origin Protection を破らない検査、12 §12.1.1）。つまり監視は In/Out 両方の境界統制の**利用者**であり、どちらもバイパスしない
+- 経路 C/D は AWS API・AWS 網内であり、インターネット境界（In/Out とも）は**無関係**
+- NWFW への許可ドメイン追加（アプリ追加時の CloudFront ドメイン）は他組織管理のため申請フローが要る（M-Q-10-3）
+
+> ⚠ VPC Endpoint の対象サービス細目（Interface EP が用意されていない AWS API は NWFW の AWS ドメイン許可で代替）は実装時に確定する（M-Q-10-3）。
+
+---
+
 ## §10.2 実装物ナビ（章 ↔ code-samples 対応）
 
 | 章 | 設計 | 実装（code-samples/）|
@@ -290,6 +375,7 @@ flowchart LR
 | D-M-10-1 | Pattern β（中央集約）を採用 | Deploy 漏れが構造的にゼロ、「中央でチェック」要件と一致（§10.1.2）|
 | D-M-10-2 | データ契約の SSOT は code-samples/README.md、設計書は意図を説明 | 実装と設計の二重管理を避ける |
 | D-M-10-3 | 設計は Phase 4 で実行検証してから確定 | 「検証済み事実」を積み上げる方針（BD 品質方針）|
+| D-M-10-4 | 発見/認証実装チェック Lambda は **VPC 配置**とし、外向き HTTPS は **TGW → アウトバウンド境界（NWFW ドメインフィルタ）経由** | 監視系自身を組織のアウトバウンド統制（NW-2）の例外にしない。probe はインバウンド境界（CloudFront+WAF）も実 UX と同じ向きで通過（§10.1.6）|
 
 ---
 
@@ -300,3 +386,4 @@ flowchart LR
 | BD-Q-01 | ROSA 側 P-18（監査アカウント他組織管理）確定時の責任分界 | 16 |
 | M-Q-10-1 | Central 障害時の Multilocation（DR region replica）採否 | 11 / 14 |
 | M-Q-10-2 | full-run（SAM local / 実 AWS）の実施タイミング | 14 |
+| M-Q-10-3 | §10.1.6 の実装細目: VPC Endpoint 対象サービスの確定（Interface EP 非対応 API は NWFW の AWS ドメイン許可で代替）/ NWFW 許可ドメイン追加（アプリの CloudFront ドメイン）の他組織への申請フロー | 10 / 16 |
