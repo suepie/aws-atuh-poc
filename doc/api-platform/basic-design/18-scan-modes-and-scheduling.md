@@ -23,13 +23,13 @@
 
 | モード | トリガ | 範囲 | 頻度 | 状態 |
 |---|---|---|---|:---:|
-| **M1 巡回差分** | **中央巡回**（発見 Lambda が 1 時間毎に資材を読み差分検知、[17 章 §17.2](17-deployment-integration-and-registration.md) / [ADR-061](../../adr/061-deploy-detection-pull-model.md)）| **変化のあったアプリの全 endpoint** | 1 時間毎（検知遅延 最大 1h）| ✅ Phase 1 |
+| **M1 巡回差分** | **中央巡回**（発見 Lambda が 1 時間毎に **CodeCommit のコミット差分**を確認、[17 章 §17.2](17-deployment-integration-and-registration.md) / [ADR-061 改訂](../../adr/061-deploy-detection-pull-model.md)）| **変更のあったアプリの全 endpoint** | 1 時間毎（検知遅延 最大 1h）| ✅ Phase 1 |
 | **M3 フル監査** | **手動** | 全アプリ全 endpoint | オンデマンド | ✅ Phase 1 |
 | ~~M2 常時 heartbeat~~ | スケジュール | 重要 endpoint のサブセット | 5-15 分 | ⏸ **将来**（重要 endpoint の定義はアプリと会話後）|
 
 ```mermaid
 flowchart LR
-    SCH[EventBridge Scheduler<br/>1 時間毎] --> DISC[発見 Lambda<br/>資材巡回・差分検知（17 章）]
+    SCH[EventBridge Scheduler<br/>1 時間毎] --> DISC[発見 Lambda<br/>CodeCommit 巡回・コミット差分（17 章）]
     DISC -->|変化あり| M1[M1 巡回差分（自動）<br/>変更アプリの全 endpoint]
     Manual[運用者 手動] -->|invoke| M3[M3 フル監査（手動）<br/>全アプリ全 endpoint]
     M2["M2 heartbeat（将来）"]:::future
@@ -41,9 +41,9 @@ flowchart LR
 
 ### §18.1.1 M1 の巡回と M2 heartbeat の違い（M2 を一旦なしにする理由）
 
-- **M1 の巡回は「構成の読み取り」**（API list / deploymentId 比較）であり、probe（HTTP 検査）は**変化のあったアプリだけ**に飛ぶ。M2 heartbeat は「**endpoint への probe を常時定期実行**」する別物で、重要 endpoint の定義がないと全量 probe の重さに戻る。
+- **M1 の巡回は「リポジトリの読み取り」**（コミット ID 比較）であり、probe（HTTP 検査）は**変更のあったアプリだけ**に飛ぶ。M2 heartbeat は「**endpoint への probe を常時定期実行**」する別物で、重要 endpoint の定義がないと全量 probe の重さに戻る。
 - **重要 endpoint の定義はアプリチームと会話しないと決められない**（全 GET か / 認証必須のみか / 業務上の重要度か）。
-- M1（巡回差分）で「デプロイ = 変更の瞬間」を最大 1 時間遅れで捕捉でき、M3（手動フル）で「網羅確認」ができるため、**常時 probe がなくても認証漏れの主要な入り口（デプロイ）は塞げる**。
+- M1（巡回差分）で「コミット = 変更の事実」を最大 1 時間遅れで捕捉でき、M3（手動フル）で「網羅確認」ができるため、**常時 probe がなくても認証漏れの主要な入り口（コード変更）は塞げる**（git に現れない変更の補完は 17 章 §17.2.2）。
 - M2 は将来、アプリと重要 endpoint を合意した上で追加する（§18.6 未決）。
 
 ---
@@ -63,15 +63,17 @@ flowchart LR
 
 ### §18.2.2 トリガ：中央巡回（pull、17 章が SSOT）
 
-デプロイ検知は **発見 Lambda の 1 時間毎巡回**（[17 章 §17.2](17-deployment-integration-and-registration.md)）が行い、変化のあったアプリだけ M1 を起動する。アプリ側イベント（S3 Put / DynamoDB Streams / CloudTrail）には依存しない（[ADR-061](../../adr/061-deploy-detection-pull-model.md)）。
+変更検知は **発見 Lambda の 1 時間毎巡回（CodeCommit のコミット差分 = `lastCheckedCommitId` 比較）**（[17 章 §17.2](17-deployment-integration-and-registration.md)）が行い、変更のあったアプリだけ M1 を起動する。アプリ側イベントには依存しない（[ADR-061 改訂](../../adr/061-deploy-detection-pull-model.md)）。
 
 ```mermaid
 flowchart LR
-    SCH[Scheduler 1h] --> DISC[発見 Lambda<br/>API GW 列挙 + deploymentId 比較]
-    DISC -->|変化あり| L[認証実装チェック Lambda<br/>mode=delta, appId]
+    SCH[Scheduler 1h] --> DISC[発見 Lambda<br/>リポジトリ列挙 + コミット ID 比較]
+    DISC -->|変更あり| L[認証実装チェック Lambda<br/>mode=delta, appId]
     DISC -->|新規発見| REG[(App Registry 自動登録)]
     L --> P[そのアプリの全 endpoint probe]
 ```
+
+> ⚠ **git 単独検知の穴と補完**（[17 章 §17.2.2](17-deployment-integration-and-registration.md)）: コンソール直変更は検知できない（→ L2 Config Rules + M3 + SCP）。コミット直後は未デプロイの可能性（→ 次回巡回の再検査 + M3）。
 
 ### §18.2.3 実行基盤：Lambda（発見 → probe の 2 段）
 
@@ -146,7 +148,7 @@ M2（常時 heartbeat）を追加する / HAR・スクリーンショット・Mu
 | M-Q-18-1 | **M2 の重要 endpoint 定義**（アプリチームと会話）+ 追加時期。定義できたら `x-canary-heartbeat: true` アノテーション + Synthetics canary で実装 |
 | ~~M-Q-18-2~~ | ~~M1 トリガの確定~~ → **解決**: 中央巡回（pull、1h）に統一（[ADR-061](../../adr/061-deploy-detection-pull-model.md)）|
 | M-Q-18-3 | M3 手動実行の権限・実行者（共通基盤チームのみか、アプリチームも自アプリを回せるか）|
-| M-Q-18-4 | モノリス（巡回で自動発見できない、17 章 §17.4）の変更を M3 手動フルで補う運用ルール |
+| ~~M-Q-18-4~~ | ~~モノリスの変更を M3 で補う~~ → **解消**: git 巡回でモノリスも自動発見・自動検知（17 章 §17.4）。M3 の役割は「git に現れない変更（コンソール直変更等）の網羅確認」に純化 |
 
 ---
 

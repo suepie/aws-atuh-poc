@@ -1,7 +1,16 @@
 # ADR-061: デプロイ検知の pull 型統一（中央巡回による発見・差分検知）
 
-日付: 2026-08-06
+日付: 2026-08-06（改訂 2026-08-07）
 ステータス: Accepted
+
+> ⚠ **改訂（2026-08-07）: 巡回の読み取り対象を「デプロイ資材（API GW deploymentId）」から「CodeCommit のコミット差分」単独に変更**。
+> - 前提: 各アプリのコードリポジトリは **App アカウントの CodeCommit**（2025-11-24 に AWS が CodeCommit を完全 GA へ復帰、新規利用可）。
+> - 変更検知 = `GetBranch` で先端コミット ID を取得し、台帳の `lastCheckedCommitId` と比較 → 変化あれば `GetDifferences` のパスで対象アプリを特定 → M1 検査。**「以前確認した範囲からの変更」を Git のコミット ID で表現**する（ユーザー提案 2026-08-07）。
+> - メタデータは資源タグでなく **リポジトリ内 `monitoring.yaml`（config-as-code）**、OpenAPI も **リポジトリ内の spec** を正本として取得（`GetFile`）。`apigateway:GET` の資材読取は廃止し、読み取りロールは **codecommit read のみ**に縮小。
+> - **モノリス（ALB 直）もリポジトリは列挙できるため自動発見の対象になる**（旧設計の「モノリスは手動登録」の穴が解消）。
+> - **受容した穴（git 単独の代償、ユーザー決定）**: ① コンソール直変更（Authorizer 外し等）は git に現れず**見逃す** ② コミット直後は未デプロイのため旧版検査の偽安心があり得る。補完: ① は検知 5 レイヤーの **L2 Config Rules**（AuthorizationType=NONE の drift 検知、§FR-API-7）と **M3 手動フル**、② は次回巡回の再検査と M3。
+> - Lambda 構成は **3 本**（発見 / 認証実装チェック / Alert Router）。**App Registry（DynamoDB）は台帳として維持**（状態 lastCheckedCommitId・通知先・enabled の置き場。ユーザー決定: DDB 維持 / git 単独 / 3 本分離）。
+> - 本文の「deploymentId 比較」「apigateway:GET」は上記に読み替える。基本設計 12/13/16/17/18 章は改訂反映済み。
 関連: [ADR-059 認証実装確認処理（Central Auth Check Canary）](059-central-auth-check-canary-architecture.md) / [基本設計 17 章](../api-platform/basic-design/17-deployment-integration-and-registration.md) / [18 章](../api-platform/basic-design/18-scan-modes-and-scheduling.md)
 
 ---

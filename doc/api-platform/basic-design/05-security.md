@@ -237,7 +237,7 @@ CI で **Unit test + IaC lint + 静的解析**（[04 章](04-static-analysis-gui
 | 9 | tenant_id をクレームと照合 | AC-5 |
 | 10 | CI で静的解析が pass | TP-1 |
 | 11 | Service Catalog 製品経由で deploy | TP-2 |
-| 12 | 外形監視の対象になっている（中央巡回が自動登録。タグ整備が前提）| TP-3 |
+| 12 | 外形監視の対象になっている（中央巡回が自動登録。リポジトリに `monitoring.yaml` を置くのが前提）| TP-3 |
 | 13 | アラート通知先 / SLA を把握 | TP-4 |
 
 ---

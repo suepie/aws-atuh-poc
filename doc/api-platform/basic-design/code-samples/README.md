@@ -11,11 +11,12 @@
 
 ```
 [共通基盤アカウント]                              [各 App アカウント]
-  発見 Lambda（1 時間毎巡回 ※17 章 / ADR-061）
-    │ 読み取り AssumeRole（DiscoveryReadRole）────► API GW list / deploymentId / get-export
-    ├─ 新規 API を App Registry へ自動登録
-    ├─ OpenAPI を OpenAPI Registry (S3) へ Put（pull）
-    └─ 変化のあったアプリ → M1 probe 起動
+  発見 Lambda（1 時間毎巡回 ※17 章 / ADR-061 改訂）
+    │ 読み取り AssumeRole（DiscoveryReadRole）────► CodeCommit: ListRepositories /
+    │                                              GetBranch（コミット ID 比較）/ GetFile
+    ├─ monitoring.yaml 付きリポジトリを App Registry へ自動登録
+    ├─ openapi.yaml（repo 正本）を OpenAPI Registry (S3) へ Put
+    └─ 前回確認コミットから変更のあったアプリ → M1 probe 起動
   App Registry (DynamoDB) … 台帳 + 巡回スナップショット
   認証実装確認処理 (Lambda, 共通 probe lib)
     │ M1 巡回差分（自動）/ M3 フル監査（手動）※18 章
@@ -46,7 +47,7 @@
 
 ### 2.1 App Registry（DynamoDB）スキーマ
 
-各アプリが deploy 時に 1 レコード登録。認証実装確認処理がこれを Scan する。
+**発見 Lambda が巡回（CodeCommit の monitoring.yaml）から自動登録・同期**する。認証実装確認処理がこれを Scan する。
 
 | 属性 | 型 | 説明 | 例 |
 |---|---|---|---|
@@ -57,8 +58,15 @@
 | `openApiS3Key` | S | OpenAPI Registry 内のキー | `111122223333/abc123/openapi.yaml` |
 | `testTokenSecret` | S | Positive test 用 token の Secret 名（共通基盤アカウント内）| `canary-central-readonly` |
 | `alertRouting` | M | 通知先設定（下記）| `{ p1: "arn:...:security", p2: "arn:...:platform", p3: "arn:...:app-team-x" }` |
-| `enabled` | BOOL | 監視有効フラグ | `true` |
+| `enabled` | BOOL | 監視有効フラグ（**中央管理**）| `true` |
 | `registeredAt` | S | ISO8601 登録日時 | `2026-07-06T00:00:00Z` |
+| `repositoryName` | S | CodeCommit リポジトリ名（発見元）| `expense-api` |
+| `branch` | S | 監視対象ブランチ | `main` |
+| `pathPrefix` | S | モノレポ時のアプリパス | `apps/expense-api/` |
+| `lastCheckedCommitId` | S | 前回確認した先端コミット ID（M1 差分の基準）| `a1b2c3d…` |
+| `lastSeenAt` | S | 巡回で最後に観測した日時 | `2026-08-07T00:00:00Z` |
+
+> `baseUrl`/`authPattern`/`testTokenSecret`/repo 系は **monitoring.yaml 由来**（巡回同期）、`alertRouting`/`enabled` は**台帳のみで中央管理**（12/17 章）。
 
 **`authPattern` enum**（認証実装確認処理が assertion 方式を切替）:
 | 値 | 意味 | Negative 期待 | Positive |
@@ -75,8 +83,8 @@
 ### 2.2 OpenAPI Registry（S3）構造
 
 - バケット: `<common-platform-acct>-openapi-registry`（Versioning 有効）
-- キー: `{accountId}/{apiId}/openapi.yaml`
-- 各アプリの deploy 時に openapi-export-lambda が Put
+- キー: `{accountId}/{appId}/openapi.yaml`
+- 発見 Lambda がリポジトリ内 openapi.yaml（正本）を GetFile で取得して Put（13 章）
 
 ### 2.3 OpenAPI アノテーション（アプリチームが付与、認証実装確認処理が解釈）
 

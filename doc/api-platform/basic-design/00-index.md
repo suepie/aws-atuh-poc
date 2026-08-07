@@ -57,12 +57,12 @@ proposal（§FR-API-* / §NFR-API-* / §C-API-*）は参照物として維持。
 |---|---------|---------|:---:|
 | 10 | [10-external-monitoring-overview.md](10-external-monitoring-overview.md) | 外形監視 総論（Pattern β + 全体図 + 実装物ナビ + Phase4 検証状況）| ✅ Phase 2 |
 | 11 | [11-central-probe-architecture.md](11-central-probe-architecture.md) | 認証実装チェック 詳細（処理フロー / Hybrid 検証 / 4×4 / Positive トークン管理）| ✅ Phase 2 |
-| 12 | [12-app-registry-design.md](12-app-registry-design.md) | App Registry（DynamoDB スキーマ / Custom Resource 登録 / クロスアカウント）| ✅ Phase 2 |
-| 13 | [13-openapi-registry-design.md](13-openapi-registry-design.md) | OpenAPI Registry（S3 構造 / Export / アノテーション）| ✅ Phase 2 |
+| 12 | [12-app-registry-design.md](12-app-registry-design.md) | App Registry（DynamoDB スキーマ / 巡回自動登録 / lastCheckedCommitId）| ✅ Phase 2 |
+| 13 | [13-openapi-registry-design.md](13-openapi-registry-design.md) | OpenAPI Registry（S3 コピー置き場・正本は repo の openapi.yaml / アノテーション）| ✅ Phase 2 |
 | 14 | [14-probe-implementation-guide.md](14-probe-implementation-guide.md) | 実装ガイド（probe lib 構成 / モノリス / Private / 要 PoC、Synthetics は将来）| ✅ Phase 2 |
 | 15 | [15-alert-routing-design.md](15-alert-routing-design.md) | 4×4 → SNS 振り分け（P1/P2/P3 / ARN 2 段解決）| ✅ Phase 2 |
 | 16 | [16-cross-account-iam-design.md](16-cross-account-iam-design.md) | クロスアカウント IAM（読み取りロール DiscoveryReadRole / StackSets 配布 / BD-Q-01）| ✅ Phase 2 |
-| 17 | [17-deployment-integration-and-registration.md](17-deployment-integration-and-registration.md) | デプロイ検知と登録（**中央巡回 pull 型・1h**、[ADR-061](../../adr/061-deploy-detection-pull-model.md)。モノリスのみ手動）| ✅ Phase 2 |
+| 17 | [17-deployment-integration-and-registration.md](17-deployment-integration-and-registration.md) | デプロイ検知と登録（**中央巡回 pull 型・1h**、[ADR-061](../../adr/061-deploy-detection-pull-model.md)。CodeCommit コミット差分・モノリスも自動発見）| ✅ Phase 2 |
 | 18 | [18-scan-modes-and-scheduling.md](18-scan-modes-and-scheduling.md) ⭐ | **スキャン実行モード（M1 巡回差分/自動 1h + M3 フル/手動、M2 将来、Lambda 基盤一本化）— 実行モデル SSOT** | ✅ Phase 2 |
 
 ## 実装物（code-samples/、認証基盤と分離）

@@ -16,7 +16,7 @@
 
 | # | 経路 | 方向 | 手段 | 権限 |
 |---|---|---|---|---|
-| 1 | **巡回発見・OpenAPI 取得** | **中央 → App アカウント（読み取り）** | 発見 Lambda が `DiscoveryReadRole` に AssumeRole（17 章 §17.2）| 下記 §16.2（read-only）|
+| 1 | **巡回発見（リポジトリ読み取り）** | **中央 → App アカウント（読み取り）** | 発見 Lambda が `DiscoveryReadRole` に AssumeRole → **CodeCommit** を読む（17 章 §17.2）| 下記 §16.2（codecommit read-only）|
 | — | probe → アプリ | 中央 → App アカウント | **Public CloudFront URL（権限不要）** | — |
 | — | probe → OAuth /token | 中央 → 認証基盤 | **Public URL（権限不要）** | — |
 | — | ~~App Registry 登録 / OpenAPI Export~~ | ~~App → 中央（書き込み）~~ | **廃止**（[ADR-061](../../adr/061-deploy-detection-pull-model.md)。台帳への書き込みは中央アカウント内のみ、12 章 §12.3）| — |
@@ -38,9 +38,13 @@
   "Statement": [{
     "Effect": "Allow",
     "Action": [
-      "apigateway:GET"          // get-rest-apis / get-stages / get-export / get-tags
+      "codecommit:ListRepositories",
+      "codecommit:GetBranch",        // 先端コミット ID
+      "codecommit:GetCommit",
+      "codecommit:GetDifferences",   // 変更パス（モノレポのアプリ特定）
+      "codecommit:GetFile"           // monitoring.yaml / openapi.yaml 取得
     ],
-    "Resource": "arn:aws:apigateway:*::/restapis*"
+    "Resource": "*"
   }]
 }
 ```
@@ -56,10 +60,10 @@
 ```
 
 **設計のポイント**:
-- **read-only（`apigateway:GET`）のみ**。漏洩しても API 構成の閲覧までで、変更・削除・データアクセスはできない
+- **read-only（codecommit 読み取り）のみ**。漏洩時の影響は**ソースコードの閲覧**（変更・削除・実行は不可）。ソース閲覧自体が機微なため、信頼先限定・ExternalId・CloudTrail での AssumeRole 監査を必須とする
 - 信頼先を**発見 Lambda のロール 1 本に限定** + ExternalId（confused deputy 防止）
 - 全 App アカウントで**同一ロール名**（`DiscoveryReadRole`）にし、発見 Lambda は `arn:aws:iam::{accountId}:role/DiscoveryReadRole` を機械的に組み立てて AssumeRole
-- 将来モノリスも巡回対象化する場合（M-Q-17-2）は `elasticloadbalancing:Describe*` 等を追加
+- 対象リポジトリを絞りたい場合は `Resource` を命名規約（例 `arn:aws:codecommit:*:*:*-api`）で限定可能（M-Q-16-3）
 
 ---
 
@@ -77,7 +81,7 @@
 
 | ロール | 使い手 | 権限 |
 |---|---|---|
-| `DiscoveryReadRole` | 中央の発見 Lambda（AssumeRole）| `apigateway:GET`（read-only、§16.2）|
+| `DiscoveryReadRole` | 中央の発見 Lambda（AssumeRole）| `codecommit:ListRepositories / GetBranch / GetCommit / GetDifferences / GetFile`（read-only、§16.2）|
 
 → App アカウント側に置くのは**読み取りロール 1 つだけ**。旧 push 型で必要だった Invoke ロール / 書き込み AssumeRole / Custom Resource 実行権限はすべて不要になった。
 
