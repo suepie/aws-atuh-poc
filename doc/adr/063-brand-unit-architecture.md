@@ -1,7 +1,7 @@
 # ADR-063: ブランドユニット・アーキテクチャ（共有 Broker + ブランド別 backend、authz/idmap をブランド配置）
 
 - **ステータス**: Proposed（基本設計フェーズで Accepted 昇格予定）
-- **日付**: 2026-08-06 作成
+- **日付**: 2026-08-06 作成、2026-08-07 更新（§認可データ配置粒度 = A+C 追記、U7 D-U7-19 連動）
 - **決定**: **Broker は共有（1 つ）。ブランドを将来の隔離/複製単位とし、authz / idmap / projection / CRUD / アプリをブランドユニット（IdP-KC 側）に置く。Broker は authz を持たない。** Phase 1 スコープ = 1 ブランド。物理 per-brand 分割は将来（本 ADR では論理境界のみ確定）。
 - **関連**:
   - [ADR-062 idm-api 実行形態 = Lambda](062-idm-api-execution-form-lambda.md)（実行形態。本 ADR の authz 配置と直交、両立）
@@ -75,6 +75,22 @@
 | **(a) authz = Broker（現状維持 + brand_id）** | Phase 1 シンプル | 将来 per-brand 化で **Broker→per-brand の移行が必要**。不採用（将来設計が目的のため） |
 | **(b) authz = ブランドユニット（IdP-KC 側）** | 将来移行不要・brand 形状 | **採用** |
 | 複数 Broker | ブランドごとに Broker | 不採用（ユーザー確定：Broker は 1 つ。ログインテーマは 1 Broker で per-brand 可能） |
+| **認可データ配置粒度 A+C** | ブランド内は単一アカウント + identity(Keycloak)/authz 系(authz/idmap/projection) を別 Aurora・別 CMK・別 IAM ロール・別 SG に内部分離 | **採用**（2026-08-07。下記「認可データ配置粒度」。B=2 アカウント分割は規制ブランド向け将来オプション、D=authz を Broker へ は却下） |
+
+## 認可データ配置粒度（A+C 採用、2026-08-07）
+
+ブランドユニット内で **credential（IdP-KC Keycloak の PW ハッシュ）と authz 系（authz/idmap/projection）をどう分離するか**。
+
+**脅威分解**: アカウント分離が効くのは「アカウントレベル侵害（IAM 権限昇格・アカウント乗っ取り）」のみ。**主脅威の idm-api #2 乗っ取りは、#2 が CRUD のため Admin API（credential）と authz DB の双方に正当アクセスするので、データを別アカウントにしても防げない**。DB 単体侵害は identity/authz が元々別 Aurora・別資格情報ゆえ一方から他方は取れない。
+
+**決定 = A + C**:
+- **A（単一アカウント）** の単純さ + ブランドローカル完結を維持。
+- **C（内部強分離）**: identity(Keycloak) Aurora と authz 系 Aurora を **別 Aurora・別 KMS CMK・別 IAM ロール・別 SG** に分け、**両方に届く単一ロールを作らない**（最小権限 + SCP）→ [U7 D-U7-19](../basic-design/07-security-compliance-design.md)。
+- 主脅威（#2 乗っ取り）は #2 の堅牢化（最小権限実行ロール・依存最小・監査）で守る。
+
+**却下/保留**:
+- **B（ブランドを credential/データの 2 アカウントに分割）**: アカウントレベル侵害には強いが #2 乗っ取りには無効 + ブランドあたり 2 アカウント + ブランド内クロスアカウント経路増。**規制ブランド（アカウントレベル分離が契約/監査要件）向けの将来オプションとして予約**。不変条件（sub グローバル / brand_id 一級キー）により、データアカウントの切り出しはクリーン移行可。
+- **D（authz を共有 Broker へ戻す）**: 却下。将来 per-brand 移行が必要 + 共有 Broker に cross-brand データ集中 = 不変条件 ③④ 違反。
 
 ## Open Items
 

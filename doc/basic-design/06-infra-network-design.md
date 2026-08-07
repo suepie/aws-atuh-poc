@@ -275,7 +275,7 @@ Tier ごとに CPU プロファイルが 10-30 倍異なる（Broker = JWT/SAML 
 | DR | Aurora Global Database（大阪 Secondary Reader × 1、RPO < 1 min）。**2026-07-30 D-18: コンピュート（ROSA）はコールド化するが Aurora Global〔データ層〕は維持**（D-U8-14 推奨 A、O-U8-10 で最終確定）+ イミュータブルスナップショット併用。Failover 手順は U8 | ADR-051 §B.1、P-05 |
 | 暗号化 | KMS MRK（CMK は Acct ごと。IdP-KC DB は PW ハッシュ保有のためバックアップ暗号化必須） | ADR-045、ADR-033 §H |
 | 接続 | **KC Pod SG → Aurora SG の直接続**（HCP でも worker は自 Acct VPC 内のため PrivateLink 不要 — 旧調査の「PrivateLink 経由」は CP↔worker 間の話） | research #8 |
-| `idmap` 補助 DB | **Broker Acct Aurora の別 DB（KC スキーマと分離）に暫定配置**（U3-OP-2、§6.8.1 O-8）。更新は Broker Acct 側ハンドラ経由のみ（D1 発は EventBridge クロスアカウントイベント、§6.1.2 経路 5） | U3 D3-03/D3-11 |
+| `authz` / `idmap` / `projection` | **2026-08-07 [ADR-063](../adr/063-brand-unit-architecture.md): ブランド(IdP-KC)アカウントローカルに配置**（旧「Broker Acct Aurora 別 DB」= O-8 は上書き）。**Option C: Keycloak identity Aurora とは別 Aurora・別 CMK・別 IAM ロール・別 SG**（[U7 D-U7-19](07-security-compliance-design.md)）。federated の authz 行は初回 sub 通知(EventBridge Broker→ブランド、§6.1.2)で生成 | U3 D3-03/D3-11/D3-16、U7 D-U7-19 |
 
 ### 6.4.2 決定 D-U6-08: jdbc-ping 前提のコネクション設計
 
@@ -482,7 +482,7 @@ Broker KC は顧客 IdP の authorization/token/JWKS/userinfo エンドポイン
 | O-5 | B-BROK-1（フェデ比率） | 回答受領で §6.5.3 → §6.2.3 を再計算（IdP-KC 3〜17 ノードの幅が確定） | ヒアリング |
 | O-6 | ROSA 3y 契約見積 | Worker fee 55% 引 + cluster fee 割引有無（aws-redhat-partnerteam 経由）。§6.2.3 は 55% 仮定 | 発注前 |
 | O-7 | NW Acct の管理主体確認 | 「他組織想定（要確認）」の確定。弊社管理なら §6.6.2 VPN 経路の位置づけが「保証可能」に昇格 | 要求仕様書 v1 回答時 |
-| O-8 | **U3-OP-2: `idmap` DB 配置** | 暫定 = Broker Acct Aurora 別 DB（§6.4.1）。独立クラスタ化の要否・アプリ参照経路（API 層経由のみ）の最終確定 | U3 と合同、Phase 1 実装前 |
+| ~~O-8~~ | ~~U3-OP-2: `idmap` DB 配置~~ | ✅ **2026-08-07 確定（[ADR-063](../adr/063-brand-unit-architecture.md)）: idmap/authz/projection はブランド(IdP-KC)アカウントローカル + Option C で Keycloak identity Aurora と別 Aurora/CMK/IAM/SG（U7 D-U7-19）**。旧「Broker Acct 別 DB」は上書き | クローズ |
 | O-9 | **管理コントロールプレーン実行形態（idm-api #2〔ブランド主役〕+ shadow 制御 + SCIM Facade + 非同期の糊）** | ✅ **Lambda で確定（[ADR-062](../adr/062-idm-api-execution-form-lambda.md)、2026-08-06）**。トポロジは [ADR-063](../adr/063-brand-unit-architecture.md) で brand 主役（#2 が CRUD+authz、中央は shadow 制御のみ）。残る実装論点は cold start 緩和・内部 NLB 堅牢化・**越境イベント経路の S2S 認可（旧 O-12 再定義）**、レイテンシ/読取 p99 は G-SCIM 実測 | 確定（ADR-062/063）。実装論点は越境イベント S2S / G-SCIM |
 | O-10 | **Egress 形態: 案 A（NAT GW）vs 案 B（egress zero + TGW）** | 案 B は NAT 不要 + P-18/PCI DSS 志向と整合し**積極検討**（§6.2.1/§6.7.3、U7 D-U7-16 でセキュリティ推奨済み）。**（2026-07-24 公式検証）機能名 = "egress zero"、2025Q1 GA、`--properties zero_egress:true`。ミラーは Red Hat が用意する in-region ECR（顧客自前構築ではない、VPC Endpoint 経由）。制約: ① Lightspeed/Telemetry 系機能不可 ② OperatorHub は Red Hat 製 Operator の default チャネルのみミラー → **RHBK Operator の利用チャネルが default であることの確認が採用条件** ③ ROSA CLI v1.2.45+ ④ zero_egress はプラットフォーム egress の排除であり、アプリの外向き（フェデ/HIBP/Webhook）は別管理（REQ-OUT 系）**。先方 TGW 接続可否と併せて決定 | 要求仕様書 v1 回答時（先方経路確認と同時） |
 | O-11 | **infra Pool サイジング実測** | c7g.large × 2〜3 暫定（§6.2.2）。1000+ IdP 時の Prometheus 時系列カーディナリティ + **Fluent Bit Aggregator のマスキング処理量**の実測（G-IdP-Scale P-4 と併せて）で確定。**⚠ c7g.large(4GB) は 1000+ IdP・10M MAU の Prometheus には不足懸念 — 比較対象に c7g.xlarge(8GB) とメモリ最適化系(r7g.large 16GB / m7g.large 8GB)を併記して実測**（台数でなくサイズで吸収する方針、2026-07-24 追記） | G-IdP-Scale 実施時 |
@@ -510,7 +510,7 @@ Broker KC は顧客 IdP の authorization/token/JWKS/userinfo エンドポイン
 | D-U6-04 | **役割分離 2 Pool 構成（KC 専用 taint Pool + default/infra Pool c7g.large×2-3）**。KC = c7g.xlarge、2xlarge は事前定義の別 Pool（Blue/Green）、arm64 要確認 | §6.2.2 |
 | D-U6-05 | コスト概算 ROSA 4 クラスタ ≈ **$2,032/月**（infra Pool 別建て +$354、3y 55% 仮定） | §6.2.3 |
 | D-U6-06 | Broker→IdP-KC バックチャネル = PrivateLink（フロントチャネルはエッジ経由） | §6.3.2 |
-| D-U6-07 | Aurora PG16 × 2 系統、SG 直接続、Global DB | §6.4.1 |
+| D-U6-07 | Aurora PG16（Broker / IdP-KC 各系統）、SG 直接続、Global DB。**2026-08-07: ブランド(IdP-KC)アカウントは Keycloak identity Aurora に加え authz 系 Aurora（authz/idmap/projection）を別建て（Option C 内部分離、ADR-063 / U7 D-U7-19）** | §6.4.1 |
 | D-U6-08 | Writer エンドポイントのみ + **プール initial=min=max=30 等値**（KC 公式推奨、チャーン回避）、予約枠控除評価、jdbc-ping 運用制約 | §6.4.2 |
 | D-U6-09 | RDS Proxy 暫定不採用 | §6.4.3 |
 | D-U6-10 | Infinispan realms 系キャッシュ初期値 200k entries 他 | §6.5.5 |
@@ -523,6 +523,7 @@ Broker KC は顧客 IdP の authorization/token/JWKS/userinfo エンドポイン
 ## 改訂履歴
 
 - 2026-07-23: 初版（Wave 1 起草）。Baseline v1（P-01〜P-18）準拠。A 部（自管理設計）/ B 部（他組織要求仕様）の 2 部構成で確定。B-BROK-1 / G-OSAKA / G-EGRESS / In-A/In-B 先方確認は未決事項として §6.8 で追跡。
+- 2026-08-07: **認可データ配置粒度 = A+C を反映（[ADR-063](../adr/063-brand-unit-architecture.md) / U7 D-U7-19）** — idmap/authz/projection はブランド(IdP-KC)アカウントローカル（O-8 クローズ）、Keycloak identity Aurora とは別 Aurora/CMK/IAM/SG に内部分離（D-U6-07 に authz 系 Aurora 別建てを明記）。
 - 2026-08-06: **REQ-IN-12 訂正 = API GW 例外で元設計維持**（組織方針の正確化: 全 inbound NFW 必須だが**静的 SPA と API GW は例外**。よって api. = CloudFront→API GW→Lambda のまま準拠、Option 2 不要、ADR-062 の撤回も取消）。O-APP-1 / 06a の "静的 S3 非準拠" flag も撤回（静的 SPA は例外ゆえ OAC 直結で準拠）。
 - 2026-08-06: **REQ-IN-12（api. = idm-api Lambda inbound の NFW 通過要否 + 到達方式）を実体化**（予約採番 → 表に追加）。Q1(a)。3 案〔(1) exception / (2) ALB→Lambda ターゲットで NFW 経路〔弊社推奨〕/ (3) Private API GW〕を提示し先方回答事項に。REQ-IN-13 に api.(Option 2) を追記。
 - 2026-08-06: **D-U6-11 の Admin API 内部 NLB 表現を正確化** — 「最厳格/露出」→「`scheme=internal` でインターネット非露出、in-cluster との差は VPC 内到達経路が 1 本増える分（SG を Lambda SG 限定 + server-TLS + アプリ層認証で緩和）、idm-api 侵害時の Admin API 到達は in-cluster と同等」。過大表現の是正。
