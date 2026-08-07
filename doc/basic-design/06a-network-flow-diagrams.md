@@ -567,9 +567,99 @@ flowchart TB
 | A6a-6 | IdP-KC 同居アプリの実行形態(ROSA 同居 namespace or 別コンピュート)→ ③/予備層の使い方確定 | U3/アプリチーム |
 | A6a-2 | (更新)Pod/Service ずらしは §A.5.4 の 4 クラスタ案で「ずらす」を推奨解として提示 → U6 承認で解消 | U6 |
 
+## A.6 アカウント別 詳細構成（Broker / IdP-KC ブランド、2026-08-07 新設）
+
+現行トポロジ（[ADR-062](../adr/062-idm-api-execution-form-lambda.md) Lambda / [ADR-063](../adr/063-brand-unit-architecture.md) ブランド主役 / A 案 outbox / REQ-IN-12 API GW 例外 / A+C credential-authz 内部分離）を 1 か所に集約する。**本節が現行の詳細構成の SSOT**（旧 drawio v2 は EKS 版で未反映、清書は §A.4）。
+
+### A.6.1 全体トポロジ（2 アカウント + 越境 + inbound）
+
+- **inbound の 3 系統**: ① auth./idp.（クラスタ）= 他組織 CloudFront+WAF+**NFW**→TGW→Internal ALB→KC / ② api.（idm-api）= CloudFront+WAF→**API GW〔NFW 例外〕**→Lambda invoke / ③ admin./launchpad.（SPA）= CloudFront+WAF→**OAC〔NFW 例外〕**→S3。「全 inbound NFW 必須、ただし静的 SPA・API GW は例外」（REQ-IN-12/13）。
+- **越境は 3 本のみ**: EventBridge ①ブランド→Broker（`user.deprovisioned`、outbox 発）②Broker→ブランド（初回 sub 通知）+ PrivateLink ③Broker→IdP-KC（フェデ backchannel `idpkc-oidc01`、D-U6-06）。ホットパス（`/api/me/context`）はブランドローカル read で越境ゼロ。
+
+```mermaid
+flowchart TB
+  subgraph EDGE["他組織 NW監査 Acct(P-18・全 inbound NFW 必須/静的SPA・APIGW は例外)"]
+    CFa["CloudFront+WAF<br/>auth./idp.(クラスタ)"]
+    NFWi["ALB/NLB + NFW"]
+    CFapi["CloudFront+WAF api.<br/>(API GW 例外)"]
+    CFspa["CloudFront+WAF<br/>admin./launchpad. SPA(OAC 例外)"]
+  end
+  subgraph BROKER["Broker Acct(共有・authz 非保持)"]
+    BALB["Internal ALB"]
+    BKC["Broker KC(ROSA#1)<br/>SSO/sub発行/ルーティング/shadow<br/>ブランド別テーマ(Org+HRD)"]
+    BAur[("Broker Aurora<br/>shadow + Broker realm")]
+    SHC["shadow制御 Lambda"]
+  end
+  subgraph BRAND["IdP-KC = ブランドユニット Acct"]
+    IALB["Internal ALB"]
+    IKC["IdP-KC KC(ROSA#2)<br/>hosted identity(local PW)"]
+    IAur[("identity Aurora<br/>PWハッシュ・専用CMK/SG")]
+    APIGW["API GW(JWT L1)"]
+    API2["idm-api #2 = Lambda(主役)<br/>CRUD/権限/authz/projection"]
+    ZAur[("authz系 Aurora<br/>authz+idmap+projection<br/>別CMK/別SG:Option C")]
+    OBX["outbox リレー Lambda"]
+  end
+  S3["SPA(S3+OAC)"]
+  APP["ブランドのアプリ(App Acct)"]
+  CFa --> NFWi
+  NFWi -->|TGW| BALB --> BKC --> BAur
+  NFWi -->|TGW| IALB --> IKC --> IAur
+  CFapi --> APIGW -->|invoke| API2
+  CFspa --> S3
+  BKC -. "フェデ PrivateLink(idpkc-oidc01)" .-> IKC
+  API2 -->|"CRUD: 内部NLB"| IKC
+  API2 -->|"authz/projection"| ZAur
+  API2 -->|"soft-delete+outbox 1Tx"| ZAur
+  ZAur --> OBX
+  OBX ==>|"EventBridge: user.deprovisioned"| SHC --> BKC
+  BKC -.->|"EventBridge: 初回sub通知"| ZAur
+  APP -->|"/api/me/context ローカルread"| ZAur
+```
+
+### A.6.2 Broker アカウント詳細（共有・1 つ）
+
+役割 = **横断認証/SSO・ログイン画面描画・`sub` 発行・ブランドルーティング・Broker shadow（遮断キルスイッチ）**。**authz は持たない**（ADR-063）。
+
+| レイヤ | リソース | 備考 |
+|---|---|---|
+| クラスタ | **ROSA HCP #1（Broker KC）** | 横断認証/SSO・**ログイン画面ブランド別テーマ**（Organizations + per-client/org テーマ + HRD で 1 Broker）・`sub` 発行・ブランドルーティング・**Broker shadow**（federated/IdP-KC ユーザの enabled フラグ = 遮断点） |
+| DB | **Broker Aurora**（PG16 / Global DB or スナップショット、U8 D-U8-14） | Broker realm 構成 + shadow。CMK = broker 系（Aurora は MRK、U7 D-U7-01）。**authz/idmap/projection は持たない**（ブランド側） |
+| 管理 CP | **shadow制御 Lambda（層③）** | EventBridge `user.deprovisioned` を受け Broker shadow を `enabled=false`+`not_before`+session revoke（**冪等**、内部 NLB→Broker KC Admin API）。デプロイは U9 D-U9-18 |
+| 非同期の糊 | Lambda（層③）+ EventBridge Scheduler | 射影フィード/リコンサイル等（U9 D-U9-18） |
+| セキュリティ | ITDR/Risk Engine（集約、U7 D-U7-04）・KMS（broker CMK）・IRSA | — |
+| Ingress | **auth.**（Broker KC ログイン）= 他組織 CloudFront+WAF+**NFW**→TGW→**Internal ALB**→IngressController→Broker KC（REQ-IN-01/13） | idp. は IdP-KC 側 |
+| 内部 NLB | `kc-admin`（`scheme=internal`） | shadow制御 Lambda → Broker KC Admin API（SG を Lambda SG 限定・server-TLS・アプリ層認証） |
+| Egress | 顧客 IdP token/JWKS/userinfo（**1000+ FQDN**）+ IdP-KC（PrivateLink）+ 運用系 | 他組織 NFW アウトバウンド（REQ-OUT）/ zero-egress は O-10 |
+| 越境 IN | **EventBridge: ブランド→Broker**（`user.deprovisioned`、outbox 発 → shadow制御） | D-U6-02 |
+| 越境 OUT | **EventBridge: Broker→ブランド**（初回 sub 通知）/ **PrivateLink: Broker→IdP-KC**（フェデ backchannel `idpkc-oidc01`） | D-U6-02 / D-U6-06 |
+| DNS | **Route 53 Public Zone** | auth./idp./admin./api./launchpad. → 他組織 CloudFront に CNAME(Alias) |
+
+### A.6.3 IdP-KC = ブランドユニット アカウント詳細（Phase 1 = 1 ブランド）
+
+役割 = **hosted identity（local PW）+ CRUD/権限/authz/projection/idmap の実体**（ブランド主役、ADR-063）。**credential(identity) と authz 系は Option C で内部分離**（D-U7-19）。
+
+| レイヤ | リソース | 備考 |
+|---|---|---|
+| クラスタ | **ROSA HCP #2（IdP-KC KC）** | hosted identity（IdP なしテナントの local PW ユーザ）。Broker から `idpkc-oidc01` でフェデ |
+| DB① identity | **identity Aurora** | PW ハッシュ・ユーザ本体。**専用 CMK・専用 SG（Keycloak Pod のみ）**（Option C、D-U7-19） |
+| DB② authz系 | **authz系 Aurora** | **authz + idmap + projection**（`sub`+`brand_id`）。**別 Aurora・別 CMK・別 SG（idm-api #2 のみ）**（Option C、D-U7-19）。projection は規模次第でリードレプリカ |
+| 管理 CP | **idm-api #2 = Lambda（層③・専用サブネット）** | **主役: CRUD + 権限 + authz + projection**。入口 = API GW（JWT L1）→ invoke |
+| 削除伝播 | **outbox リレー Lambda（層③）** | authz DB の outbox を EventBridge へ**必達送信**（`user.deprovisioned`、A 案） |
+| SCIM | **SCIM Facade Lambda（層③）** | 顧客 IdP/HRIS の SCIM 受信（D1）→ 属性正準化（D3-15）。REQ-IN-09 |
+| Ingress① idp. | **Internal ALB→IngressController→IdP-KC KC** | idp.（ログイン UI）= 他組織 CloudFront+WAF+**NFW**→TGW（REQ-IN-02/13） |
+| Ingress② api. | **API GW（JWT L1）→ idm-api #2 Lambda invoke** | api. = 他組織 CloudFront+WAF→**API GW（NFW 例外）**（REQ-IN-12）。ALB は挟まない |
+| 内部 NLB | `kc-admin`（`scheme=internal`） | idm-api #2 Lambda → IdP-KC KC Admin API（CRUD。SG 限定・TLS・アプリ層認証） |
+| KMS | **identity CMK / authz系 CMK（別）** | Option C（D-U7-19） |
+| IAM | Keycloak SA の IRSA（D-U7-09）/ **idm-api #2 実行ロール（別）** | **両方に届く単一ロール禁止**（D-U7-19）。#2 = Admin API 資格情報 + authz Aurora 接続のみ |
+| Egress | 運用系（ECR/registry 等）。**VPC エンドポイント（EventBridge/Secrets Manager）** | 顧客 IdP フェデは Broker 側ゆえ IdP-KC に顧客 IdP egress なし |
+| 越境 OUT | **EventBridge: ブランド→Broker**（`user.deprovisioned`、outbox 発） | D-U6-02 |
+| 越境 IN | **EventBridge: Broker→ブランド**（初回 sub 通知）/ **PrivateLink: Broker→IdP-KC**（フェデ backchannel） | D-U6-02 / D-U6-06 |
+| DR | 大阪は**コールド**（平時プロビジョニングなし、被災時 IaC 再構築）。identity/authz Aurora は Global DB or 不変スナップショット（U8 D-U8-14） | — |
+
 ## 改訂履歴
 
 - 2026-07-24: 初版。ユーザー提供のフロー表(B-*/I-* 系)を全量反映 + 抜け 8 系統を追加 + ROSA 内部詳細図(初出)+ OVN IP レンジ表。
+- 2026-08-07 (v1.7): **§A.6 新設 — アカウント別 詳細構成（Broker / IdP-KC ブランド）**。現行トポロジ（ADR-062 Lambda / ADR-063 ブランド主役 / A 案 outbox / REQ-IN-12 API GW 例外 / A+C credential-authz 内部分離）を全体トポロジ図 + Broker/IdP-KC アカウント別詳細表に集約（現行構成の SSOT。drawio v2 は旧 EKS 版で未反映）。
 - 2026-07-29 (v1.6): NFW ルート論点が**認証 ROSA パスにも同じく効く**(VPC origins 採用なら本命)ことを §A.1.1 に注記 + U6 REQ-IN-13(CloudFront→エッジ LB 到達方式 + NFW ingress ルート設計)/ §6.7.2 注記(In-A/In-B とは別軸)と連動。
 - 2026-07-28 (v1.5): §A.1.1 **フロントチャネルは認証用 CloudFront 経由に図修正**(ブラウザ発 = 認証 CF / サーバー発 = VPC 内の 2 分)+ Route53 CNAME 合理性 + **CachingDisabled 必須・XFF 注意** + **アプリ inbound と NFW の関係**(静的=OAC 直結で NFW 経路外 / API=Private API GW を NFW 経路に、VPC origins×NFW ルート設計は O-APP-1)。公式裏取り 7 主張 ✅。
 - 2026-07-28 (v1.4): §A.1.1 に**公式一次資料 6 件**を追記 + 3 点精密化(原則文に「JWS オフライン検証を採る限り」の限定 / JWKS は「1h + kid 不一致時更新」/ API GW 結果キャッシュと JWKS キャッシュの 2 段区別 + TTL 期間の失効遅延 / BFF 推奨の出典を IETF draft〔RFC 未確定〕と明示)。
