@@ -95,7 +95,7 @@
 ## Open Items
 
 - **物理 per-brand 分割の時期・方式**（アカウント/クラスタをブランド別に）→ マルチブランド要件が出た時。
-- **front door / shadow 制御トポロジ（2026-08-06 方向性確定）**：**ブランド主役**＝ #2（ブランド側）が CRUD + authz + projection の実体。中央は **shadow 制御のみ**（薄い Lambda）、ルーティングはエッジ（CloudFront/API GW）。**shadow 制御 = 「IdP-KC 削除をトリガーに Broker shadow を無効化」**（`user.deprovisioned` を idm-api #2 が発行 → EventBridge IdP-KC→Broker → shadow 制御 Lambda が `enabled=false`+`not_before`+revoke。**非同期イベント〔案 i〕確定**、soft-delete、冪等 + 日次リコンサイル）。**即時ゼロ窓が要件なら同期〔逆 PrivateLink〕併用**。federated は IdP-KC に identity 無し → **SCIM deprovision or 90 日バッチ**で shadow 無効化。詳細 = [control-plane ノート フロー④](../basic-design/research/control-plane-crud-authz-flows-notes.md)。残: 伝播窓の許容 SLA / Event Listener SPI 併用の要否。
+- **front door / shadow 制御トポロジ = 確定済み**：**ブランド主役**＝ #2 が CRUD + authz + projection の実体、中央は **shadow 制御 Lambda のみ**、ルーティングはエッジ。**削除伝播（shadow 無効化）は [ADR-064](064-deprovisioning-propagation-outbox.md) で確定**（A 案 outbox: 1Tx outbox + リレー必達 + 数分リコンサイル。旧「案 i 直接発行 / 日次リコンサイル」から更新）。残論点 = ロックアウト SLA（ADR-064 Open Items）。
 - **federated `sub` 通知**（authz 行生成用）の具体（EventBridge Broker→ブランド、整合設計）。
 - **cross-brand 横断管理ビュー**を将来作る場合の越境 read 設計（作らなければ不要）。
 - ブランドの Realm/Organization モデリング（1 Realm + Organizations でブランドをどう表すか）→ U2。
