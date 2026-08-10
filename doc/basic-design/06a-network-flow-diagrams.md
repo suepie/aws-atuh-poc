@@ -5,6 +5,8 @@
 
 ## A.0 本書の位置づけ
 
+> **【現行トポロジの SSOT = [§A.6](#a6-アカウント別-詳細構成broker--idp-kc-ブランド2026-08-07-新設)】** §A.1〜§A.3 の一部図は初期トポロジ（`idm-api #1 = 管理画面 Backend`、IdP-KC「同居アプリ」、中央 front door）の表記を残す。**現行は ADR-062（idm-api=Lambda）/ ADR-063（ブランド主役: idm-api は #2＝ブランド側が CRUD/権限/authz/projection の実体、中央は shadow 制御 Lambda のみ、業務アプリは非同居）/ ADR-064（削除=outbox）で更新済み**。図中の `idm-api #1`・「同居アプリ」表記は §A.6 で読み替えること。
+
 U6 §6.1.1 の簡略図を、**入口・出口の全フロー(ID 付き)** と **ROSA HCP クラスタ内部** の 2 レベルに詳細化する。作図前提:
 
 - **O-10 は案 B(zero-egress)前提で作図**: クラスタ VPC に NAT を置かず、①運用系(registry/STS 等)= VPC Endpoint 群で VPC 内完結 ②外向き(フェデ等)= TGW → 他組織 Egress VPC(NAT + NFW)。正式クローズは先方 TGW 接続可否確認後(U6 §6.8.1 O-10)
