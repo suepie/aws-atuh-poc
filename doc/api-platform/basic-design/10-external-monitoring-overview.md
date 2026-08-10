@@ -231,33 +231,29 @@ flowchart LR
 
 ### §10.1.6 AWS リソース構成図（アカウント横断・イン/アウト境界含む）
 
-§10.1.3 の論理構成を、**AWS リソース単位 + 通信経路（インバウンド/アウトバウンド境界アカウント込み）** で示す。前提: 組織のインターネット境界は他組織管理（In: CloudFront+WAF / Out: Network Firewall ドメインフィルタ、[05 章 §5.1](05-security.md)）。**probe の外向き HTTPS もアウトバウンド統制（NWFW）を通す**。
+§10.1.3 の論理構成を、**AWS リソース単位 + 通信経路（インバウンド/アウトバウンド境界アカウント込み）** で示す。前提: 組織のインターネット境界は他組織管理（In: CloudFront+WAF / Out: Network Firewall ドメインフィルタ、[05 章 §5.1](05-security.md)）。
+
+**Lambda 3 本はすべて VPC 外（Lambda マネージド網）に配置**する。VPC / VPC Endpoint 群 / TGW Attachment / NAT が**一切不要**になり、構成が大幅に簡素化される。代償として probe の外向き HTTPS が**アウトバウンド境界（NWFW）を通らない**——これは NW-2 の**明示的な例外**として受容し、代償統制で補う（下記）。
 
 ```mermaid
 flowchart TB
-    subgraph Central["共通基盤アカウント（自社管理）"]
+    subgraph Central["共通基盤アカウント（自社管理）— VPC なし"]
         SCH["EventBridge Scheduler<br/>rate(1 hour)"]
-        subgraph VPC["VPC（private subnet）"]
-            DISC["発見 Lambda"]
-            PROBE["認証実装チェック Lambda"]
-        end
-        VPCE["VPC Endpoint 群<br/>S3 / DynamoDB（Gateway）<br/>STS / Secrets / CloudWatch / SNS（Interface）"]
+        DISC["発見 Lambda<br/>（VPC 外）"]
+        PROBE["認証実装チェック Lambda<br/>（VPC 外）"]
         DDB[("App Registry<br/>DynamoDB")]
         S3R[("OpenAPI Registry<br/>S3")]
         SM["Secrets Manager<br/>canary-central-readonly"]
         CW["CloudWatch<br/>Metrics / Alarm"]
-        ALR["Alert Router Lambda"]
+        ALR["Alert Router Lambda<br/>（VPC 外）"]
         SNS["SNS P1/P2/P3"]
-        ATT["TGW Attachment"]
-    end
-
-    subgraph OutAcct["アウトバウンド境界アカウント（他組織管理）"]
-        TGW["Transit Gateway"]
-        NFW["Network Firewall<br/>ドメインフィルタ（許可制）"]
-        NAT["NAT / IGW"]
     end
 
     NET(("インターネット"))
+
+    subgraph OutAcct["アウトバウンド境界アカウント（他組織管理）"]
+        NFW["Transit Gateway + Network Firewall<br/>ドメインフィルタ"]
+    end
 
     subgraph InAcct["インバウンド境界アカウント（他組織管理・ADR-039）"]
         CF["アプリごとの CloudFront + WAF<br/>Origin Protection"]
@@ -274,21 +270,22 @@ flowchart TB
     end
 
     SCH --> DISC
-    DISC & PROBE --- VPCE
-    VPCE --- DDB & S3R & SM & CW
+    DISC & PROBE --- DDB
+    DISC --- S3R
+    PROBE --- S3R & SM & CW
     PROBE -->|"Invoke（AWS 網内）"| ALR --> SNS
 
     DISC -.->|"AssumeRole + codecommit read<br/>（AWS API・境界非経由）"| ROLE
     ROLE -.-> REPO
 
-    PROBE ==>|"HTTPS probe"| ATT
-    DISC ==>|"（EP 非対応の AWS API も同経路）"| ATT
-    ATT ==> TGW --> NFW --> NAT ==> NET
+    PROBE ==>|"HTTPS probe<br/>（Lambda マネージド egress）"| NET
     NET ==> CF ==>|"Origin Protection"| APIGW
     NET ==> KC
 
+    NFW -. "非経由（NW-2 の明示的例外、下記）" .- NET
+
     style Central fill:#fff3e0
-    style OutAcct fill:#e0f2f1
+    style OutAcct fill:#eeeeee,stroke-dasharray:5 5
     style InAcct fill:#fce4ec
     style AppAcct fill:#e8f5e9
     style Broker fill:#ede7f6
@@ -300,18 +297,25 @@ flowchart TB
 
 | # | 経路 | 中身 | 通る境界 | 必要な許可 |
 |---|---|---|---|---|
-| A | **probe → アプリ**（Negative/Positive）| HTTPS 443（実 UX と同一）| VPC → TGW → **NWFW（Out）** → インターネット → **CloudFront+WAF（In）** → API GW | NWFW 許可ドメイン: 各アプリの CloudFront ドメイン |
-| B | **probe → 認証基盤 /token**（Positive 用短命トークン）| HTTPS 443 | VPC → TGW → **NWFW（Out）** → 認証基盤 | NWFW 許可ドメイン: 認証基盤ドメイン |
-| C | **巡回読み取り**（発見 Lambda → App アカウントの CodeCommit）| AWS API（STS AssumeRole → codecommit `GetBranch`/`GetDifferences`/`GetFile`）| **境界非経由**（AWS API。Interface EP or NWFW の AWS ドメイン許可）| DiscoveryReadRole（16 章）|
-| D | 中央内部（台帳/仕様/Secrets/Metrics/通知）| DynamoDB / S3 / Secrets / CloudWatch / SNS / Lambda Invoke | **VPC Endpoint（AWS 網内）**、インターネット非経由 | 各 EP + IAM |
+| A | **probe → アプリ**（Negative/Positive）| HTTPS 443（実 UX と同一）| Lambda マネージド egress → インターネット → **CloudFront+WAF（In）** → API GW。**Out（NWFW）は非経由（例外）** | なし（宛先は台帳の baseUrl のみ、下記代償統制）|
+| B | **probe → 認証基盤 /token**（Positive 用短命トークン）| HTTPS 443 | 同上（Out 非経由）| 同上（宛先は認証基盤ドメイン固定）|
+| C | **巡回読み取り**（発見 Lambda → App アカウントの CodeCommit）| AWS API（STS AssumeRole → codecommit `GetBranch`/`GetDifferences`/`GetFile`）| **境界非経由**（AWS 網）| DiscoveryReadRole（16 章）|
+| D | 中央内部（台帳/仕様/Secrets/Metrics/通知）| DynamoDB / S3 / Secrets / CloudWatch / SNS / Lambda Invoke | **境界非経由**（AWS 網。VPC Endpoint 不要）| IAM のみ |
 
-**設計のポイント**:
-- **Lambda 2 つ（発見 / 認証実装チェック）は VPC 配置**。理由: 外向き HTTPS（経路 A/B）を**組織のアウトバウンド統制（NWFW ドメインフィルタ = [05 章 NW-2](05-security.md)）に例外なく通す**ため。監視系自身がガードレールの例外になってはいけない
-- 経路 A は**インバウンド境界（CloudFront+WAF）を実ユーザーと同じ向きで通過**する（Origin Protection を破らない検査、12 §12.1.1）。つまり監視は In/Out 両方の境界統制の**利用者**であり、どちらもバイパスしない
+**VPC 外配置の判断（NW-2 例外の明示受容と代償統制）**:
+
+| 観点 | 内容 |
+|---|---|
+| 得られる簡素化 | VPC / サブネット / ENI 管理・**Interface VPC Endpoint 群**・**TGW Attachment**・NAT 依存・NWFW への許可ドメイン申請（アプリ追加のたび）が**すべて不要** |
+| 例外の内容 | [05 章 NW-2](05-security.md)「Outbound は NWFW ドメインフィルタ経由」の例外となる（監視系の外向き HTTPS が組織の Egress 統制を通らない）|
+| 例外が許容できる理由 | ① 宛先が**固定 3 種のみ**（台帳の baseUrl = 自組織の CloudFront／認証基盤 /token／AWS API）で、**任意の外部 SaaS を呼ぶコードパスが存在しない** ② コードは共通基盤チーム管理・CI 静的解析（04 章）対象で、アプリ任意コードが乗らない ③ 漏洩リスク側は §11.3.1（短命トークン）で別途統制済み |
+| 代償統制 | **宛先 allowlist をコードで強制**（probe の接続先は App Registry の `baseUrl` と設定済み token URL のみ。任意 URL を受け取る口を作らない）+ IAM 最小権限 + CloudTrail / Lambda ログで監査 |
+| 承認 | NW-2 の例外として**セキュリティ / 他組織（境界管理側）への明示的な承認を得る**（M-Q-10-3）|
+
+- 経路 A は**インバウンド境界（CloudFront+WAF）を実ユーザーと同じ向きで通過**する（Origin Protection を破らない検査、12 §12.1.1）。**In 側はバイパスしない**
 - 経路 C/D は AWS API・AWS 網内であり、インターネット境界（In/Out とも）は**無関係**
-- NWFW への許可ドメイン追加（アプリ追加時の CloudFront ドメイン）は他組織管理のため申請フローが要る（M-Q-10-3）
 
-> ⚠ VPC Endpoint の対象サービス細目（Interface EP が用意されていない AWS API は NWFW の AWS ドメイン許可で代替）は実装時に確定する（M-Q-10-3）。
+> ⚠ **Phase 2（Private API の probe、14 章 §14.4）では認証実装チェック Lambda のみ VPC 化が必要**になる（VPC + TGW で Internal ALB へ到達）。その時点で経路 A の Out 統制接続も再検討する。発見 Lambda と Alert Router は Phase 2 でも VPC 外のまま。
 
 ---
 
@@ -380,7 +384,7 @@ flowchart LR
 | D-M-10-1 | Pattern β（中央集約）を採用 | Deploy 漏れが構造的にゼロ、「中央でチェック」要件と一致（§10.1.2）|
 | D-M-10-2 | データ契約の SSOT は code-samples/README.md、設計書は意図を説明 | 実装と設計の二重管理を避ける |
 | D-M-10-3 | 設計は Phase 4 で実行検証してから確定 | 「検証済み事実」を積み上げる方針（BD 品質方針）|
-| D-M-10-4 | 発見/認証実装チェック Lambda は **VPC 配置**とし、外向き HTTPS は **TGW → アウトバウンド境界（NWFW ドメインフィルタ）経由** | 監視系自身を組織のアウトバウンド統制（NW-2）の例外にしない。probe はインバウンド境界（CloudFront+WAF）も実 UX と同じ向きで通過（§10.1.6）|
+| D-M-10-4 | Lambda 3 本は **VPC 外配置**（VPC/EP/TGW/NAT 不要）。probe の外向き HTTPS は **NW-2（NWFW 経由）の明示的例外**として受容し、宛先 allowlist のコード強制 + 中央管理コード + 監査で代償 | 宛先が固定 3 種のみで任意外部 SaaS を呼ばない監視系に NWFW 経路を組むのは複雑さに見合わない（§10.1.6。例外承認は M-Q-10-3、Phase 2 Private 対応時に probe のみ VPC 化）。In 境界（CloudFront+WAF）は従来どおり実 UX と同じ向きで通過 |
 
 ---
 
@@ -391,4 +395,4 @@ flowchart LR
 | BD-Q-01 | ROSA 側 P-18（監査アカウント他組織管理）確定時の責任分界 | 16 |
 | M-Q-10-1 | Central 障害時の Multilocation（DR region replica）採否 | 11 / 14 |
 | M-Q-10-2 | full-run（SAM local / 実 AWS）の実施タイミング | 14 |
-| M-Q-10-3 | §10.1.6 の実装細目: VPC Endpoint 対象サービスの確定（Interface EP 非対応 API は NWFW の AWS ドメイン許可で代替）/ NWFW 許可ドメイン追加（アプリの CloudFront ドメイン）の他組織への申請フロー | 10 / 16 |
+| M-Q-10-3 | **NW-2 例外（VPC 外 Lambda の Egress が NWFW 非経由）の明示的承認**をセキュリティ / 境界管理の他組織から取得（§10.1.6 の例外理由・代償統制を提示）| 10 / 05 |
