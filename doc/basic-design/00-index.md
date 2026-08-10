@@ -6,6 +6,7 @@
 
 1. [00-basic-design-plan.md](00-basic-design-plan.md) — 計画書(単元分割 U1〜U10 + 暫定前提 P-01〜18 + 体制)
    - [00a-remaining-tasks-and-effort.md](00a-remaining-tasks-and-effort.md) — **残検討事項の全量棚卸しとタスク・工数計画**(2026-07-30: 未決 187 件 + 要件ゲート + 外部突合を 7 クラスタ A〜G に統合、調査 97 + 検討 135 = 232 人日、Wave W0〜W2)
+   - [00b-design-unit-breakdown.md](00b-design-unit-breakdown.md) — **詳細設計・構築 単元分解(Design Unit WBS)**(2026-08-10: 正式決定 170 件 + ADR-062/063/064 + 網羅性監査を実装可能単位 DU-U*-nn 約 60 単元へ分解、DU 間依存図 + クリティカルパス + PoC ゲート紐付け + 監査由来の新規 DU)
 2. [01-architecture-baseline.md](01-architecture-baseline.md) — **Baseline v1(前提 SSOT)**: P-01〜P-18 凍結表 / 6 アカウント体系 / コア・エッジ基準 / **PoC・契約前ゲート表(G-* 9 種)** / 用語注意
 3. 各設計書(02〜10)— 冒頭に「前提: Baseline v1」、決定は D-Ux-nn 採番、末尾に未決事項と他単元への引き渡し
 
