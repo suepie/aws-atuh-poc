@@ -480,6 +480,7 @@ flowchart LR
 | Break-Glass | FIDO2 ハードウェアキー必須（ADR-040 §C.2） | — |
 
 - Recovery Codes 標準発行 + リセットは管理者 JIT 承認経路のみ（D-U4-04 / §7.6 L4)。Keycloak WebAuthn Policy（attestation / user verification 要件）の具体値は U2 Realm 設定へ引き渡し。
+- **MFA 要素 = WebAuthn（第一）/ TOTP（フォールバック）に限定。メール OTP は MFA 第 2 要素として採用しない（FR-MFA-004、2026-08-10 明示除外）**: 本基盤は **email 非保有ユーザ（工場系顧客等）を一級前提**とする（§FR-1.2.0.D / G-UProfile-Email、U2 §2.9）ため、email をリカバリ / 第 2 要素チャネルに据えると当該ユーザで MFA が成立しない。よって MFA 要素は所持要素（WebAuthn / Passkey）+ TOTP（QR エンロール、U4 §4.4.2）に固定し、**email OTP は不採用**（Phishing-resistant 方針〔D-U7-14〕とも不整合）。email 保有顧客が email 確認を望む場合は**顧客 IdP 側の責務**（P-3 / P-2① 経路）。
 - **根拠**: PCI Req 8.4.2 / 8.5.1（replay 耐性）、NIST SP 800-63B Rev 4、gap doc 最大ギャップ #2。全アクセス MFA 必須化により Req 8.3.9（PW 90 日変更）を適用外化（gap doc Q4 の推奨解）。
 - **2026-07-26 改訂（MFA 実施主体の変更）**: 外部フェデユーザ（P-3）への**基盤側 MFA 補完を撤去**（U4 D-U4-04 改訂）。「全アクセス MFA 必須」の実施構造は **P-3 = 顧客 IdP が実施（契約条項で必須化）+ 基盤は `mfa_indicator` 記録・監視・監査証跡 / P-1・P-2・IdP-KC 収容 = 基盤（従来どおり技術的強制）**となる。**⚠ リスク明示（ステークホルダー伝達済み・方針決定）**: 顧客 IdP が MFA を実施しない場合、当該テナントについて Req 8.4.2 は技術的に充足されない。PCI 対応スコープ顧客との契約では「IdP 側 MFA 実施 + amr 送出」を必須条項とし（**契約前ゲート B-MFA-PCI-1**）、amr 記録（mfa_indicator=false 率の監視・アラート = ITDR 連携）を契約遵守の検知手段 + QSA 向け証跡とする。Req 8.3.9 適用外化ロジックは「MFA が実施されている前提」に依存するため、B-MFA-PCI-1 未合意の PCI 顧客では成立しない点も同ゲートで管理。
 - **代替**: 全ユーザ WebAuthn 強制 — P-4 のデバイス環境が保証できず UX 阻害。管理系必須 + 一般推奨の 2 段が業界標準。
@@ -569,9 +570,10 @@ flowchart TB
 |---|---|
 | Keycloak Brute Force Protection | 両 Realm 有効。5 連続失敗 / ロック 30 分 / permanent なし（§7.2.2） |
 | Account Enumeration 対策 | 汎用エラーメッセージ（存在有無を返さない）+ Constant-time response。**HRD の応答同一化（U4 D-U4-02）と同一原則**であり、ログイン系の全応答で貫徹 |
-| PW ポリシー | length(12) + 英数混在（PCI 8.3.6）+ HIBP 照会（§7.2.2）。U2 Realm Policy へ引き渡し |
+| PW ポリシー | length(12) + 英数混在 + HIBP 照会（§7.2.2）+ **passwordHistory = 直近 5 世代 再利用禁止** + **初回ログイン強制変更 = `UPDATE_PASSWORD` Required Action**。U2 Realm Policy へ引き渡し |
 | DDoS | インフラ面は他組織エッジ（CloudFront + Shield）に依存。自管理側は **KC Pool の HPA + Machine Pool autoscale（U6 §6.2.2）で L7 吸収余地を持つ**が、体積型 DDoS の防御は保証しない（Responsibility Matrix に明記） |
 
+- **PW ライフサイクル（FR-AUTH-014 初回強制変更 / パスワード履歴、2026-08-10 追加）**: 対象 = **IdP-KC 収容のローカル PW ユーザ**（IdP なしテナントのエンドユーザ + P-1 運用者 / 管理者作成分 `provisioned_by=local-admin`）。①**初回ログイン時に PW 強制変更**（管理者・運用者が発行した初期 PW、および Recovery 経由の一時 PW は `UPDATE_PASSWORD` Required Action で必ず変更させる）②**パスワード履歴 = 直近 5 世代の再利用禁止**（Keycloak `passwordHistory` Password Policy）。**フェデユーザ（P-2 顧客 IdP / P-3）は対象外**（PW を基盤が保持せず、PW ライフサイクルは顧客 IdP 責任）。両設定は両 Realm の Password Policy として U2 へ引き渡し（上表）。
 - **フォールバック評価（B 部不成立時）**: WAF Bot Control / ATP が未実装でも、Brute Force + Enumeration 対策 + ITDR + Rate Limit（自管理 ALB でのパスベース制限は限定的に可能）で「アカウント侵害の最低防御線」は成立する。ただし **PCI DSS §6.4.2（自動攻撃防御）の充足は WAF 側が前提**（ADR-042 判断根拠）のため、**REQ-IN-01 不成立のまま PCI 対応顧客と契約しないことをゲート条件**とする（G-EGRESS と同型の「未合意のまま契約禁止」原則。**G-PCI-WAF** として U1 §1.5 登録済み）。
 - **根拠**: ADR-042（WAF+ATP で PCI §6.4.2 充足 / 検知率 90-95%）、P-18、U6 §6.0.2 生命線原則。
 - **代替**: Phase 1 から Turnstile 常設 — SPI 継続メンテ負担で不採用済み（ADR-042）。商用 Bot Manager — 8-12 倍コストで不採用済み。
