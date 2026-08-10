@@ -447,6 +447,8 @@ D3-01 追加行（realm.json 反映は U2 §2.6）: `department` / `manager_ref`
 
 ### D3-16: 統合コンテキスト射影（`/api/me/context` の読取元、RC-1〜4）
 
+**現在形の決定（Phase 1、[ADR-063](../adr/063-brand-unit-architecture.md)）**: `/api/me/context` の読取元 = **ブランドユニット内の統合射影（read model = Option A）を 1 read**（Keycloak 非経由・越境ゼロ）。理由 = P-17（越境しない）+ 10M 規模で複数ストア都度 join のレイテンシ回避。**都度 join は不採用**。射影ストア選定・読取 p99 は G-SCIM で実測して確定。**以下の「Broker Acct 中央射影」「RC-1〜4」は単一マルチテナント前提の検討記録として保持**（ブランドモデルでは射影ストア = ブランド内。§末尾「per-brand 反映」を正とする）。
+
 **採用（方向確定、実測ゲート付き）**: **Broker Acct に統合射影（Aurora `idmap` 同居の read model、RC-1）**を置き、`/api/me/context` はこの射影を 1 read するだけ（**リクエスト時に Keycloak を読まない・アカウント跨ぎしない** — P-17 / U6 D-U6-02 と整合）。提供場所 = Broker Acct の idm-api（RC-2 (i)。IdP-KC 同居アプリは **App Acct のアプリと同格の RP** として同経路で到達 — IdP-KC「基盤コンポーネント」としての単方向原則とは別レイヤ）。
 
 **射影 vs 都度 join の比較結論（2026-08-06 明文化、出典 [me-context-projection 比較ノート](research/me-context-projection-comparison-notes.md)）**: Option A（射影）採用方向は維持。**都度 join（Option B）は非 IdP ユーザーの読取で IdP-KC 越境が必要 = P-17 抵触のため却下**（+ 10M 規模の複数ストア join レイテンシ）。**ハイブリッド案 2（部分射影）を選択肢として保持**: 変化の遅い組織属性・idmap は射影、変化の速いエンタイトルメントは **Broker 内で都度 read**（Broker 内完結なら P-17 に触れない）も可。**即時剥奪など鮮度が命の操作は射影に頼らず Broker shadow 無効化で担保**（役割分担）。**読取 p99（10M）・RC-1 ストア選定（Aurora 同居 vs 別）は G-SCIM で実測**してから確定。
@@ -517,13 +519,13 @@ sequenceDiagram
 
 > 凡例: 発行済み AT は shadow 無効化後も最大 30 分有効（P-09 受容済み）。outbox で喪失はなく、伝播窓は**数分リコンサイル**（RB-USR-06、遮断チェックのみ数分間隔）が上限を抑える。
 
-- **確実性の担保 = outbox パターン（2026-08-06 A 案確定、旧 Broker-first 同期 2 コールから変更）**: #2 は soft-delete の後、**projection deprovisioned + `user.deprovisioned` outbox 行を authz DB の 1 トランザクションで書く**。**outbox リレーが成功するまで EventBridge へ再送**するため**イベント喪失がない**（"削除したのにイベントが飛ばない" が構造的に起きない）。shadow 制御 Lambda は**冪等**（既に無効なら no-op）。Broker は refresh 時に user.enabled を検査するため shadow `enabled=false` で即 invalid_grant。**遮断窓 = 通常 伝播 数秒 / worst = リコンサイル間隔（数分）**。旧 Broker-first の「24h 独立生存」には至らない（outbox 必達 + 数分リコンサイルで上限を数分に抑える）。発行済み AT は ≤30 分（P-09、オフライン検証）。**ゼロ窓 SLA が要件なら削除だけ IdP-KC→Broker 同期呼び（S 案）へ切替可**（新規の逆方向同期チャネルが要る）。
+- **確実性の担保 = outbox パターン**（決定記録・代替比較の SSOT = [ADR-064](../adr/064-deprovisioning-propagation-outbox.md)）: outbox 行を authz DB と **1 Tx** で書き、リレーが EventBridge へ**必達送信**（イベント喪失なし）。shadow 制御は**冪等**。Broker は refresh 時に user.enabled を検査するため shadow `enabled=false` で即 invalid_grant。**遮断窓 = 通常 数秒 / worst = リコンサイル間隔（数分）**、発行済み AT は ≤30 分（P-09）。**ゼロ窓 SLA が要件なら S 案（削除だけ IdP-KC→Broker 同期呼び）へ切替**（ADR-064 Open Items）。
 - **federated ユーザー**: IdP-KC に identity レコードが無いため本トリガーは発火しない → **SCIM deprovision（SCIM Facade がイベント発行）or 90 日バッチ**で shadow 無効化（S5/S6、D3-09）。
 - **残存ウィンドウの注記（既存決定との整合）**: ① 実行後も**発行済み AT は最大 30 分**有効（オフライン検証、P-09）。これは U5 ゾンビ窓 Z 系（ADR-025 §I.5 の複合統制）で受容済みのリスクと同一であり、本モデルで新たな悪化はない。
 - **越境経路（2026-08-06 A 案）**: 削除の越境は **EventBridge（IdP-KC→Broker、`user.deprovisioned`、outbox リレー発）のみ**（[U6 D-U6-02](06-infra-network-design.md) の制御プレーン経路 = idmap/ITDR と同一方式のクロスアカウント PutEvents）。**旧「Broker→IdP-KC PrivateLink 委譲」は撤回**。IdP-KC Admin API は in-cluster / 内部 NLB からのみ（D-U6-11 / 06a §A.2.1b）。shadow 制御 Lambda の S2S 認可は U5 §5.8。
 - **安全網 = リコンサイル（遮断チェックは数分間隔）**: outbox で喪失はないが二重の砦として「IdP-KC `deprovisioned_at` 有り ↔ Broker shadow enabled=true」を突合。**この shadow 遮断整合のチェックだけ数分間隔**に短縮（他の整合突合は日次でよい、U9 RB-USR-06）。idpkc shadow は 90 日バッチ除外（D3-09）。
 - **Open Item（新規、2026-08-06）: ロックアウト SLA の明文化** — 削除→shadow 遮断の許容窓（= リコンサイル間隔を何分にするか）+ hosted の「即時ゼロ窓」要件の有無を契約 SLA と連動して確定（要件なら S 案へ）。RB-USR-06 のリコンサイル間隔設定に反映。
-- **SCIM を内部伝播（IdP-KC → Broker）に使わない（却下根拠、検証済み ✅）**: ① **Keycloak には SCIM 送信クライアント（outbound）が core 未実装**（将来機能、[keycloak.org survey feedback](https://www.keycloak.org/2026/02/scim-support-survey-feedback) / [keycloak#13484](https://github.com/keycloak/keycloak/issues/13484)、2026-07-27 検証。受信サーバは 26.6 で experimental だが outbound とは別）→ サードパーティ拡張自作は §2.7 バージョン固定・RHBK サポートと衝突 ② `scim_active` の意味崩壊（内部フェデを外部顧客 SoT と誤認）③ shadow の除外印は既存 `jit_idp_alias=idpkc%` で足りる。mode A の内部伝播は **outbox イベント（必達 + 冪等 + 数分リコンサイル）が最良**（SCIM outbound 不要。DLQ + リコンサイルで確実）。
+- **SCIM を内部伝播（IdP-KC→Broker）に使わない**: Keycloak に SCIM outbound が core 未実装（[keycloak#13484](https://github.com/keycloak/keycloak/issues/13484) ほか）+ `scim_active` の意味崩壊 → 内部伝播は outbox が最良（却下根拠の詳細は [ADR-064](../adr/064-deprovisioning-propagation-outbox.md) Alternatives）。除外印は既存 `jit_idp_alias=idpkc%` で足りる。
 - **未決**: `provisioned_by` の値 — 経路 ④ の `local-admin` 流用か、テナント管理者 portal 作成を区別する新値 `portal` か（Case 表・Re-Activation 分岐 D3-12 に波及するため同時決定。監査上の区別要否がポイント）。
 
 ## 改訂履歴

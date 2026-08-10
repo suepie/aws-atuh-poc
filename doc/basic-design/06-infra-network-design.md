@@ -110,7 +110,7 @@ flowchart TB
 | 2 | 🔷 ネットワーク Acct | 他組織想定（**要確認**） | Transit GW / DX / Site-to-Site VPN | P-18、ADR-039 §A.3 |
 | 3 | 🔵 監査 Acct | 弊社 | Org Trail / 監査ログ集約 S3（Object Lock 7 年）/ Security Hub / GuardDuty 集約 | ADR-039 §A.2 |
 | 4 | 🟠 Broker Acct | 弊社 | ROSA HCP #1（Broker KC）+ Aurora + ITDR + 管理画面 Backend + Route 53 PHZ | P-17、ADR-033 |
-| 5 | 🟡 IdP-KC Acct | 弊社 | ROSA HCP #2（IdP-KC）+ Aurora + **同居アプリ（ユーザ CRUD、経路設計は U3）** | P-17、ADR-033 更新注記 |
+| 5 | 🟡 IdP-KC Acct = ブランドユニット | 弊社 | ROSA HCP #2（IdP-KC）+ identity Aurora + authz系 Aurora + **idm-api #2（ブランド管理 API = Lambda: CRUD/権限/authz/projection）**。業務アプリは**非同居**（App Acct へ、PW ハッシュのブラスト半径隔離） | P-17、[ADR-033](../adr/033-keycloak-2tier-architecture.md)/[ADR-063](../adr/063-brand-unit-architecture.md)/[ADR-062](../adr/062-idm-api-execution-form-lambda.md) |
 | 6 | 🟢 App Acct × N | 各アプリチーム | Internal ALB + アプリ本体（JWT 検証は VPC 内 JWKS 経路、ADR-012 パターン踏襲） | ADR-039 §A.2 |
 
 補足:

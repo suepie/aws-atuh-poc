@@ -48,7 +48,7 @@ ADR-039 の 5 アカウント体系を Broker/IdP-KC 分割で **6 アカウン�
 
 **E（アカウント配置）の設計判断（2026-08-06、[ADR-063 ブランドユニット](../adr/063-brand-unit-architecture.md) / [ADR-062 Lambda](../adr/062-idm-api-execution-form-lambda.md) / [control-plane ノート](research/control-plane-crud-authz-flows-notes.md)）**:
 - **ブランドユニット・アーキテクチャ（案 b、[ADR-063](../adr/063-brand-unit-architecture.md)）**: **Broker は共有 1 つ**（横断認証/SSO・ログイン画面描画〔ブランド別テーマ〕・`sub` 発番・ルーティング・shadow 遮断）。**ブランドを将来の隔離/複製単位**とし、**authz / idmap / projection / CRUD / アプリはブランドユニット（IdP-KC 側）に置く。Broker は authz を持たない**。Phase 1 スコープ = **1 ブランド**（= 現行 IdP-KC アカウント 1 つ）。物理 per-brand 分割は将来。
-  - ~~旧: 認可 DB = Broker Acct~~ → **改訂: authz/idmap/projection = ブランドユニット**（federated も `sub` + `brand_id` で保持可、初回ログイン時に Broker→ブランドへ sub 通知〔write 時のみ越境〕）。**`/api/me/context` はブランドローカル read（越境ゼロ）**。
+  - **authz / idmap / projection はブランドユニットに配置**（Broker は authz 非保持。federated も `sub` + `brand_id` で保持、初回ログイン時に Broker→ブランドへ sub 通知〔write 時のみ越境〕）。**`/api/me/context` はブランドローカル read（越境ゼロ）**。
   - **不変条件（今ロック）**: ① `sub` はグローバル安定 UUID（Broker 発番）② authz/idmap/ユーザーに `brand_id` を一級キー ③ cross-brand join を作らない ④ Broker は共有関心のみ。
 - **IdP-KC = 隔離した自前アカウント**（VPC 分割でなく**アカウント分割**）: PW ハッシュのブラスト半径のため、**業務アプリを同居させない**（同居アプリは App Acct 推奨。旧 P-17「同居前提」を緩める提案）。
 - **管理コントロールプレーン実行形態 = Lambda で確定（O-9、[ADR-062](../adr/062-idm-api-execution-form-lambda.md)）**: auth-critical な Keycloak（P0）と管理ツール idm-api（P1）を別障害ドメインに分離。**#2（ブランド側）が CRUD + 権限 + projection の実体。中央 front door は置かず、ルーティングはエッジ（CloudFront/API GW）、中央に残るのは shadow 制御 Lambda のみ**（IdP-KC 削除トリガーで Broker shadow を無効化、[ADR-063](../adr/063-brand-unit-architecture.md)）。詳細は [U6 O-9](06-infra-network-design.md) / [U10 §10.2](10-integration-migration-design.md)。
