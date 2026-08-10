@@ -3,6 +3,8 @@
 日付: 2026-07-24 / 出典: ユーザーとの設計討議。
 関連: [03-identity-provisioning-design.md](../03-identity-provisioning-design.md)（U3 D3-05）、[02-keycloak-logical-design.md](../02-keycloak-logical-design.md)（U2 §2.5.4 ハイブリッド C）、[04-auth-ux-design.md](../04-auth-ux-design.md)（U4 §4.4.3 エンタイトルメント API）、[05-token-session-authz-design.md](../05-token-session-authz-design.md)（U5 §5.8 `idm:*`）、[ADR-038](../../adr/038-tenant-admin-portal.md)、[ADR-030](../../adr/030-minimal-jwt-claim-design.md)、§FR-6。
 
+> **【ステータス: 旧モデル・要読替え】** 本ノート（2026-07-24）は初期討議の記録で、以後の決定で**トポロジが変わっている**。現行は **ブランド主役（[ADR-063](../../adr/063-brand-unit-architecture.md)）**: 「authz/idmap は Broker」ではなく **ブランドユニット（IdP-KC 側）に配置**、「管理 API = Broker」ではなく **#2（ブランド）内で CRUD/権限が完結**、削除は **Broker-first 二面同期ではなく A 案 outbox（[ADR-064](../../adr/064-deprovisioning-propagation-outbox.md)）**。実行形態は Lambda（[ADR-062](../../adr/062-idm-api-execution-form-lambda.md)）。**エンタイトルメント/認可境界の思想（§2 の結論部）は現行でも有効**だが、DB/アカウント配置の記述は上記 ADR と [control-plane ノート](control-plane-crud-authz-flows-notes.md)・[U3 D3-14〜17](../03-identity-provisioning-design.md) を正とすること。
+
 ## 0. 問い
 
 IdP を持たない顧客のユーザは全て IdP-KC に収容される。同居アプリがユーザ CRUD を行う（U3 D3-05 = 専用 API 層 案 C）。

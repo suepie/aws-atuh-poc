@@ -4,6 +4,8 @@
 起票理由: ユーザー検討（「ユーザー CRUD はアプリが IdP・DB はブローカーと理解しているが、IdP アカウントの Lambda から Broker Keycloak Pod を叩くのか？   権限編集はどこから叩くのか。図で表現してほしい」）。E（アカウント配置）/ F（実行形態）の理解整理。  
 関連: [idp-kc-user-mgmt-authz-boundary-notes.md §8](idp-kc-user-mgmt-authz-boundary-notes.md)、[03-identity-provisioning-design.md](../03-identity-provisioning-design.md)（D3-14/17）、[10-integration-migration-design.md §10.2](../10-integration-migration-design.md)（D-U10-07 idm-api ×2）、[06-infra-network-design.md](../06-infra-network-design.md)（D-U6-06 PrivateLink 単方向 / D-U6-11 Admin API in-cluster）、[idm-api-ingress-execution-comparison-notes.md](idm-api-ingress-execution-comparison-notes.md)（実行形態×ingress の 3 案比較・ROSA サポート境界・mTLS）、[attribute-canonicalization-notes.md](attribute-canonicalization-notes.md)（属性正準化）、[me-context-projection-comparison-notes.md](me-context-projection-comparison-notes.md)（射影 vs 都度 join）。
 
+> **【ステータス: 検討ノート】** 本ノートは E（配置）/F（実行形態）の理解整理の一次記録。**確定した決定・トポロジは本体と ADR が SSOT**: 配置=[ADR-063](../../adr/063-brand-unit-architecture.md)、実行形態=[ADR-062](../../adr/062-idm-api-execution-form-lambda.md)、削除/デプロビ伝播=[ADR-064](../../adr/064-deprovisioning-propagation-outbox.md) / [U3 D3-17](../03-identity-provisioning-design.md)。本文とノートに差異がある場合は ADR/本体が優先。
+
 ## 1. 最重要の前提：「DB」は 2 つあり別物
 
 CRUD と権限編集は**叩く DB も Keycloak も全く別**。ここを混同すると経路が分からなくなる。
@@ -164,31 +166,35 @@ sequenceDiagram
 
 ## 6. フロー④：削除（IdP-KC 削除トリガー → Broker shadow 無効化、2026-08-06 更新）
 
-> **旧「Broker-first 二面同期」から変更**：per-brand の **「IdP-KC の削除をトリガーに Broker shadow を無効化」**（ADR-063 の shadow 制御 = **非同期イベント〔案 i〕**を確定）。ブランド主役と一致。
+> **確定モデル = A 案 outbox（[ADR-064](../../adr/064-deprovisioning-propagation-outbox.md) が SSOT）**：#2 が soft-delete + `user.deprovisioned` を **authz DB の outbox に 1Tx で書き**、outbox リレーが EventBridge へ**必達送信** → 中央 shadow 制御 Lambda が冪等に Broker shadow を無効化。旧「Broker-first 二面同期」「案 i 直接発行/日次リコンサイル」から更新（下図・下記も outbox 版）。
 
 ```mermaid
 sequenceDiagram
     participant SRC as 削除元(管理者/SCIM)
     participant A2 as idm-api #2 (ブランド/IdP-KC)
     participant IKC as IdP-KC Keycloak
+    participant ZDB as authz系 Aurora(outbox 同居)
+    participant RLY as outbox リレー Lambda
     participant EB as EventBridge(IdP-KC→Broker)
     participant SH as shadow制御 Lambda(Broker)
     participant BKC as Broker Keycloak
 
     SRC->>A2: ユーザー削除
     A2->>IKC: soft-delete(enabled=false + deprovisioned_at)
-    A2->>EB: user.deprovisioned {sub, brand_id, at}
+    A2->>ZDB: 1Tx: projection deprovisioned + user.deprovisioned outbox 行
+    RLY->>ZDB: outbox ポーリング
+    RLY->>EB: user.deprovisioned {sub, brand_id, at}(必達・成功まで再送)
     EB->>SH: 配信(at-least-once)
     SH->>BKC: shadow を enabled=false + not_before + session revoke(内部NLB)
     Note over SH,BKC: 冪等(既に無効ならno-op)・sub キー
 ```
 
-- **トリガー**：idm-api #2 が soft-delete 実行時に `user.deprovisioned {sub, brand_id, at}` を発行（削除の実行主体ゆえ確実。Keycloak Event Listener SPI 併用も可）。
-- **伝送**：EventBridge クロスアカウント（IdP-KC→Broker、既存経路）。**ハンドラ**：shadow 制御 Lambda（Broker）が Broker KC で `enabled=false` + `not_before` + セッション revoke（内部 NLB）。
+- **トリガー**：idm-api #2 が soft-delete と同一 authz DB トランザクションで **outbox 行**を書く（喪失なし。Keycloak Event Listener SPI 併用も可）。
+- **伝送**：**outbox リレー Lambda が EventBridge へ必達送信**（成功まで再送、IdP-KC→Broker）。**ハンドラ**：shadow 制御 Lambda（Broker）が Broker KC で `enabled=false` + `not_before` + セッション revoke（内部 NLB、冪等）。
 - **soft-delete（Phase 1）**：物理削除は Phase 2（retention 後、D3-09）。
 - **federated**：IdP-KC に identity 無しのため本トリガーは発火しない → **SCIM deprovision（SCIM Facade がイベント発行）or 90 日バッチ**で shadow 無効化。
-- **セーフティネット**：日次リコンサイル（IdP-KC `deprovisioned_at` ↔ Broker shadow `enabled` 不整合是正）＝イベント取りこぼし対策。
-- **トレードオフ（窓）**：IdP-KC-first のため shadow 無効化まで**数秒の伝播窓**。AT 30 分 + リコンサイルで許容。**即時ゼロ窓が要件なら削除パスで同期 shadow 無効化を併用**（逆方向同期）に切替可。
+- **セーフティネット**：**遮断チェックのみ数分リコンサイル**（IdP-KC `deprovisioned_at` ↔ Broker shadow `enabled` 不整合是正）＝伝播窓・取りこぼしの砦。他の整合突合は日次でよい。
+- **トレードオフ（窓）**：通常 = 伝播 **数秒** / worst = **リコンサイル間隔（数分）**。発行済み AT は ≤30 分（P-09）。**即時ゼロ窓が要件なら S 案（削除パスで同期 shadow 無効化 = 逆方向同期）**へ切替（ADR-064 Open Items）。
 
 ## 7. まとめ（E/F の核心）
 

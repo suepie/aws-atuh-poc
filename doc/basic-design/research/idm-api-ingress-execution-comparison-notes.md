@@ -3,6 +3,8 @@
 日付: 2026-08-05 / 起票理由: ユーザー検討（「ROSA 同居 API はどう叩かれるか。API GW の裏に置けるか、LB になるか、認証と同じエンドポイントでパス違いか。Lambda も含め全パターンを構成図付きで比較したい」）。O-9（実行形態）の判断材料。
 関連: [control-plane-crud-authz-flows-notes.md](control-plane-crud-authz-flows-notes.md)、[06-infra-network-design.md](../06-infra-network-design.md)（D-U6-06/11）、[06a-network-flow-diagrams.md](../06a-network-flow-diagrams.md)（§A.5 IP プラン層③）、[adr/038-tenant-admin-portal.md](../../adr/038-tenant-admin-portal.md)、[adr/057-csrf-responsibility-boundary.md](../../adr/057-csrf-responsibility-boundary.md)。
 
+> **【ステータス: 検討材料・トポロジ要読替え】** 本ノート（2026-08-05）の実行形態比較の**結論 = C（Lambda）は [ADR-062](../../adr/062-idm-api-execution-form-lambda.md) で確定**。ただし本文の **`#1 front door → #2` / `#1→#2 PrivateLink 単方向` というトポロジは [ADR-063](../../adr/063-brand-unit-architecture.md) で撤回**（ブランド主役 = #2 がブランド管理 API の実体、front door はエッジルーティング、越境は EventBridge 中心）。ingress の現行 SSOT は [06a §A.6](../06a-network-flow-diagrams.md) + [06 REQ-IN-12/13](../06-infra-network-design.md)（api. = API GW〔NFW 例外〕）。
+
 ## 1. 目的と対象
 
 idm-api（テナント管理 API #1 / ユーザー連携 API #2）を **どの実行形態で動かし、どう ingress するか**を 3 パターンで比較する。**#2 は #1 からしか呼ばれない内部 executor**（[control-plane ノート](control-plane-crud-authz-flows-notes.md)）なので、本ノートの ingress 論点は主に **#1（外から来る管理 API）**。
