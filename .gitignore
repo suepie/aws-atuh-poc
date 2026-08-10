@@ -60,3 +60,6 @@ lambda/*/.venv/
 
 # keycloak admin console の REST API export（一時バックアップ）
 backup/
+
+# officeの一時ファイル
+~$*
