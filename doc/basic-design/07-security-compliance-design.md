@@ -410,6 +410,10 @@ flowchart LR
 - **両方に届く単一 IAM ロール / 単一 SG を作らない**。idm-api #2 は「Keycloak Admin API（内部 NLB、CRUD）」と「authz 系 Aurora（SG 直）」の**両方に最小権限で到達する唯一の橋渡し**ゆえ、#2 実行ロールは必要最小（Admin API 管理クライアント資格情報 + authz Aurora 接続のみ）に絞り、**#2 の堅牢化（依存最小・監査・レビュー）を最優先**とする（主脅威 = #2 乗っ取りはアカウント分割でも防げないため）。
 - **背景**: [ADR-063 認可データ配置粒度](../adr/063-brand-unit-architecture.md)。脅威分解で「アカウント分離が効くのはアカウントレベル侵害のみ」→ Phase 1 は単一 + 内部強分離で足りる。規制ブランドで account-level 分離が要件化したら案 B（2 アカウント分割）へ（不変条件でクリーン移行）。
 
+### 7.5.5 決定 D-U7-20: 非人間ID（NHI）ガバナンス（[ADR-066](../adr/066-non-human-identity-governance.md)）
+
+**採用**: 本基盤の非人間ID（M2M クライアント資格情報・サービスアカウント・IRSA/Pod Identity・SCIM/JIT コネクタ・糊 Lambda）を **軽量 NHI 台帳 + 命名規約 + 孤立検知バッチ + 失効伝播**で統制する（[ADR-037](../adr/037-shared-responsibility-and-lightweight-iga.md) 軽量 IGA の傘下）。**理由**: 1000+ テナント × M2M で NHI は人間 ID の数十倍規模になり、台帳・所有者・棚卸しがないとスケール時に統制不能・資格情報スプロールが起きる。**要点** = ①台帳（type/owner 必須/purpose/scopes/rotation/last_used、authz 系 Aurora 同居）②孤立検知 CronJob（90 日超・owner 不在・ローテ超過）③失効は ADR-064 outbox 機構で伝播。責任分界（顧客/弊社）は hearing **B-NHI-1**。AI エージェント ID は NHI 特殊系（B-AGENT-1）。
+
 ## 7.6 PAM 統合（ADR-040 復活の本基盤設計への接続）
 
 > ADR-040（2026-07-23 Accepted 復帰）は運用体制・ロードマップ・SLA の SSOT。本節は**本基盤側に発生する設計制約 4 点**（Composite Role / /admin 経路 / 監査ログ集約 / アカウント体系読み替え）の接続のみを確定する。二重定義を避けるため数値・体制は ADR-040 §G〜§I を参照。
@@ -552,6 +556,10 @@ flowchart TB
 
 ---
 
+### 7.7.6 決定 D-U7-21: 同意管理・同意レシート
+
+**採用（方針・要否は hearing 依存）**: フェデ属性リリース/越境/目的に対する同意を **記録・撤回・監査証跡（同意レシート、ISO/IEC 29184）** として保持する枠組みを用意する。**理由**: フェデは利用者属性を RP に渡すため、APPI/GDPR 系は記録・撤回可能な同意を期待する。Keycloak には同意画面があるが**記録・目的拘束・撤回伝播は別設計**。**Phase 1 既定** = ファーストパーティ主体ゆえ同意画面はオフ運用可、ただし**越境・第三者提供が絡むテナントは同意レシート必須**。要否と適用範囲は hearing **B-CONSENT-1**。RTBF（忘れられる権利）との整合は U10 D-U10-13 / hearing B-RTBF-1。
+
 ## 7.8 Bot / DDoS — 自管理と他組織要求の分離
 
 ### 7.8.1 決定 D-U7-17: 分離マトリクスとフォールバック最低線
@@ -649,6 +657,7 @@ flowchart TB
 
 - 2026-07-26 (v1.2): 可読性向上のための図示追加（本文の決定内容の変更なし） — §7.1.1 KMS 3 階層 CMK × アカウント配置写像図（MRK / Regional 区別）、§7.2.3 ITDR パイプライン全体フロー（第 6 経路 PutEvents / L1〜L4 / Phase 1a→1b 段階活性化分岐）、§7.3.1 Log scrubbing 2 段構えパイプライン図、§7.7.3 漏えい報告 SOP 7 ステップフロー図。
 
+- 2026-08-12: **網羅性再監査反映** — D-U7-20 NHI ガバナンス（§7.5.5、[ADR-066](../adr/066-non-human-identity-governance.md)、B-NHI-1）/ D-U7-21 同意管理・同意レシート（§7.7.6、B-CONSENT-1）を新設。認可判定ログ + アクセス再認証は [ADR-067](../adr/067-authz-decision-logging-and-access-recertification.md)（U9 反映）、継続アクセス CAEP は [ADR-065](../adr/065-continuous-access-caep-shared-signals.md)（U5 §5.10）。
 - 2026-08-07: **D-U7-19 新設（ブランドアカウント内 credential/authz 分離 = Option C、[ADR-063](../adr/063-brand-unit-architecture.md)）** — identity(Keycloak)/authz 系を別 Aurora・別 CMK・別 IAM ロール・別 SG に内部分離、両方に届く単一ロール禁止、#2 堅牢化最優先。アカウント分割(案 B)は規制ブランド向け将来オプション。
 - 2026-07-23: 初版（Wave 2 起草）。Baseline v1（P-03/P-17/P-18）準拠。KMS 3 階層の 6 Acct 写像 + Realm Key 90 日 Cryptoperiod（D-U7-01〜03）、ITDR Phase 1（HIBP + Brute Force、Broker 集約、段階活性化、D-U7-04〜06）、Log scrubbing（infra Pool Aggregator + 辞書 M-1〜14、D-U7-07）、Golden 検知 Phase 1 = 4 シグナル（D-U7-08）、Workload Identity（IRSA 規約 + FedID + **private_key_jwt = Phase 2 昇格確定**、D-U7-09〜10）、**ADR-040 復活の取込**（6 Acct 読み替え + /admin 3 層整合 + 監査 Acct 一元、D-U7-11〜12）、PCI ギャップ 3 点 + APPI（Object Lock 7 年 / WebAuthn 必須範囲 / 漏えい SOP / Red Hat DPA ゲート / **zero-egress セキュリティ推奨**、D-U7-13〜16）、Bot/DDoS 分離 + Argon2id 確定（D-U7-17〜18）を決定。
 - 2026-07-23 (v1.1): Wave 2 整合性レビュー反映 — §7.2.3 に DR/Game Day ウィンドウの G-2/G-3 自動降格 + Brute Force 感度引上げを追加（M-4）、§7.2.2 HIBP Egress を送信元スコープ拡張（IdP-KC KC Pod CIDR）+ zero-egress 非代替の明記へ拡張（M-5）、§7.5.2 の管理画面 Backend（Broker Acct）/ 専用 API 層（IdP-KC Acct）を 2 行に分割（M-6）、G-PCI-WAF / G-DPA のゲート採番付記（M-11、U1 §1.5 登録）、Event Listener emit セットに REVOKE_GRANT / LOGOUT 系追加（L-1、U5 §5.9.2 受領）、Fluent Bit DaemonSet の KC Pool taint toleration 必須を明記（L-2）。

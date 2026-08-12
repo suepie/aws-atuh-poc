@@ -167,7 +167,7 @@ flowchart TB
 
 ### 5.2.4 ゾンビウィンドウの侵害シナリオ表（ADR-025 §I.5 整合）
 
-AT は Stateless JWT のため、失効操作後も **最大 30 分（テナント短縮時 5-15 分）** のゾンビウィンドウが残る。シナリオ別の実効遮断時間と緩和策を次で確定し、顧客契約説明（ADR-025 §I.5 の PCI DSS 8.2.5 説明と同一線）に用いる:
+AT は Stateless JWT のため、失効操作後も **最大 30 分（テナント短縮時 5-15 分）** のゾンビウィンドウが残る。シナリオ別の実効遮断時間と緩和策を次で確定し、顧客契約説明（ADR-025 §I.5 の PCI DSS 8.2.5 説明と同一線）に用いる。**恒久解 = 継続アクセス（CAEP / Shared Signals）を [ADR-065](../adr/065-continuous-access-caep-shared-signals.md) で目標アーキ化**（Phase 1 = 暫定ブリッジ + ADR-064 outbox 起点の自作 SET エミッタ、gate G-SSF 通過後に段階導入。§5.10.1）:
 
 | # | 侵害シナリオ | 遮断トリガー | RT の遮断 | AT ゾンビ窓（実効） | 緩和策（多層） |
 |---|---|---|---|---|---|
@@ -252,7 +252,7 @@ sequenceDiagram
     KC-->>SA: 交換後 AT（aud=expense-api / TTL 15 分 / RT なし）<br/>Stage 1 + sid 維持・sub=元ユーザ・azp=サービス A
     KC->>KC: TOKEN_EXCHANGE 監査イベント記録<br/>（subject / requester client / audience / scope）
     SA->>API: 交換後 AT で呼出
-    API->>API: aud / azp / tenant_id 検証（§5.6.3 の 6 点）
+    API->>API: aud / azp / tenant_id 検証（§5.6.3 の 7 点）
 ```
 
 ---
@@ -415,7 +415,7 @@ Back-Channel Logout はサーバ間 POST のため、**バックエンドを持�
 
 - **既定推奨は BFF**。SPA 直は上記制約の明示同意（アプリオーナー）を条件に許容する。
 
-### 5.6.3 Bearer 検証（Resource Server 必須 6 点）
+### 5.6.3 Bearer 検証（Resource Server 必須 7 点）
 
 ```text
 1. 署名: ES256、JWKS (/realms/broker/protocol/openid-connect/certs) をキャッシュ（kid ローテーション追従）
@@ -424,6 +424,7 @@ Back-Channel Logout はサーバ間 POST のため、**バックエンドを持�
 4. aud: 自 API 識別子（§5.3.2 短名）を含むこと。不一致は 401
 5. azp: 許可フロント Client のホワイトリスト検証（ADR-030 §G）
 6. tenant_id: リクエストが触れる全リソースのテナントスコープと一致強制（IDOR 防御。パス/ボディ中の tenant 指定より JWT 値を常に優先）
+7. typ: ヘッダ `typ` = `at+jwt`（RFC 9068）を検証し、ID トークン等の type confusion（別種トークンの流用）を拒否（署名が通っても `typ` 不一致は 401）
 ```
 
 - 認可判定（リソース単位の can/cannot）はアプリ責務（§FR-6.0.A、パターン A〜D はアプリ選択）。
@@ -536,11 +537,40 @@ Back-Channel Logout はサーバ間 POST のため、**バックエンドを持�
 
 ---
 
+## 5.10 継続アクセス・プロトコル堅牢化（2026-08-12 網羅性再監査反映）
+
+大規模認証のベストプラクティス（RFC 9700 / OpenID SSF-CAEP / FAPI 2.0 / RFC 9470 等）突合で判明した「決定+理由+参照」形の追補。方式の深掘りは各 ADR / hearing に置く。
+
+### 5.10.1 決定 D-U5-09: 継続アクセス（CAEP / Shared Signals）= ゾンビ窓の恒久解
+
+**採用**: ゾンビ窓（§5.2.4）の恒久解として **CAEP を目標アーキ**とする（[ADR-065](../adr/065-continuous-access-caep-shared-signals.md)）。**Phase 1 = 暫定ブリッジ**（短命 AT + not-before push〔§5.4.3〕+ 高価値リソースの Introspection + DPoP）**+ ADR-064 outbox 起点の自作 SET エミッタ**（transmitter 先行、opt-in RP へ `session-revoked`/RISC `account-disabled` を配信）。Phase 2 で Keycloak native SSF、Phase 3 で receiver（顧客 IdP 失効の inbound）。**RP 実装ガイド（§5.6）に CAEP receiver 章を追加**。最終確定 = gate **G-SSF** + hearing **B-CAEP-1**。
+
+### 5.10.2 決定 D-U5-10: API 層ステップアップ = RFC 9470 準拠（必要時）
+
+**採用**: 重要 API（管理系・決済・PII 更新）の**リソースサーバ起点ステップアップ**は **RFC 9470（OAuth Step-Up Authentication Challenge）** に準拠する。RS は不足時に `401 + WWW-Authenticate: ... error="insufficient_user_authentication", acr_values="..."/max_age` を返し、RP が再認可へ誘導。ログイン時ステップアップ（U2 §2.3.4、ACR-to-LoA 1/2/3）と同一 acr 体系。**Phase 1 は構造準備（認可リクエスト集約 U2 §2.3.4）に留め、重要 API 発生時に RS 側チャレンジを有効化**。
+
+### 5.10.3 決定 D-U5-11: 同時セッション数制限
+
+**採用**: 管理者・高価値ロール（P-1 運用者 / テナント管理者）に **同時アクティブセッション上限**を設ける（Keycloak Session Limits SPI、Realm/Client 設定）。無制限セッションは失効ブラスト半径と ATO を拡大するため。既定値は U9 サイジングと合わせ確定（一般ユーザは無制限、上限は管理系のみ）。hearing **B-SESS-1**。
+
+### 5.10.4 決定 D-U5-12: Token Exchange の委譲制御（act / may_act + ダウンスコープ）
+
+**追補**（§5.3 の限定採用を堅牢化）: Token Exchange は **`act`（実行主体）/ `may_act`（許可された代理主体）クレームで委譲を明示**し、**交換ごとに target audience/scope のダウンスコープを必須**（サイレントなアップスコープ禁止）。impersonation と delegation を区別。これは将来の AI エージェント OBO（[ADR-066](../adr/066-non-human-identity-governance.md) / hearing B-AGENT-1）の基盤となる。
+
+### 5.10.5 決定 D-U5-13: FAPI 2.0 姿勢（PAR / JAR / sender-constrained）
+
+**方針**: Phase 1 の認可リクエスト基線は **PKCE(S256) + `iss` レスポンス検証（§5.6.1）+ `nonce` 必須**で成立。**PAR（RFC 9126）/ JAR（RFC 9101）/ sender-constrained token（DPoP・mTLS）は「金融グレード（FAPI 2.0）テナントが出た時点で必須化」**する条件付き採用（現行 mTLS = Phase 3、D-U7-10b と整合）。判定 = hearing **B-FAPI-1**。
+
+### 5.10.6 決定 D-U5-14: DPoP 運用サイジング（Phase 2 前提）
+
+**追補**（[ADR-060 §B](../adr/060-auth-protocol-attack-path-residual-tbd.md) DPoP の運用面）: DPoP 導入時は **サーバ提供 nonce**（クロックドリフト/事前生成攻撃対策）と **`jti` プルーフ再生キャッシュ**が必要。10M MAU では **`jti` ストアは容量・レイテンシの設計項目**（分散キャッシュ・TTL = プルーフ有効期間）として U6 サイジングに含める。sender-constrained は AT のみでなく **RT にも適用**（RFC 9700、盗難 RT のオフデバイス再利用防止）。
+
 ## 改訂履歴
 
 - 2026-07-26 (v1.3): 可読性向上のための図示追加（本文の決定内容の変更なし） — §5.2.2 TTL 体系構造図（RT = SSO 従属 / 絶対 24h 防御線）、§5.3.3 Token Exchange Pattern 2 シーケンス、§5.4.3 Revocation 3 粒度 × ITDR L4 関係図、§5.5.1 ログアウト伝播シーケンス（L2 → L4 + IdP-KC 連鎖）。
 
 - 2026-07-24 (v1.2): **02a GAP-1/2 反映** — L3 に idpkc-oidc01 例外（既定 ON、自社基盤のため越境問題なし。OFF だと共有端末で無操作再ログイン可）、2 層セッション TTL 整合（IdP-KC は Broker 同値以下、P-09 絶対 24h は 2 層合成で担保）、既定到達範囲を「L1+L2+L4+IdP-KC 連鎖」に更新。
 
+- 2026-08-12: **§5.10 継続アクセス・プロトコル堅牢化を新設**（網羅性再監査）— D-U5-09 CAEP(ADR-065)/D-U5-10 RFC 9470 API層step-up/D-U5-11 同時セッション制限/D-U5-12 TE act・may_act+ダウンスコープ/D-U5-13 FAPI姿勢(PAR/JAR)/D-U5-14 DPoPサイジング。§5.6.3 を 7 点化（at+jwt typ 検証 RFC 9068 追加）、§5.2.4 に CAEP 恒久解の参照。
 - 2026-07-23: 初版（Wave 2 起草）。`sid` 既定発行 + Back-Channel Logout 採用を確定（ADR-030 宙吊り解消）、クレーム辞書正式版（Stage 1+1.5 / 昇格規約 / `ext_` 規約 / PII チェックリスト C-1〜C-7）、TTL 最終値（AT 30 分 / RT=SSO 従属・offline 無効 / テナント短縮 = Client override 方式）とゾンビ窓 Z-1〜Z-5、Token Exchange V2 の Pattern 2/3 限定採用 + audience 短名規約、Revocation 3 粒度 + ITDR L4 手順、ログアウト 4 レイヤー採用範囲（L3 既定 OFF / SN SLO オプション）、RP 実装ガイド骨子、専用 API 層 `idm:*` CC スコープ設計を定義。
 - 2026-07-23 (v1.1): Wave 2 整合性レビュー反映 — §5.6.6 新設（403→Sorry 誘導の RP 必須規約、U4 受け皿 / H-1）+ `launchpad-spa` Client テンプレート追加依頼（§5.9.2）、max_age 確定（AAL2=900s / AAL3=300s、§5.9.1 #2 / M-7）、`/api/me/*` ユーザ AT 経路の明示（§5.8 / M-8）、参照修正（U3 §3.7.4 #4 / jit-scim §10.4.L / L-3）、Memory 保管の意図的厳格化注記（L-4）。
