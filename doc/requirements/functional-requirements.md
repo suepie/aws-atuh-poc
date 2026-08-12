@@ -332,10 +332,12 @@ FR-INT は性質の異なる 3 つの観点を含む。
 
 | ID | 要件 | 優先度 | Cognito | Keycloak | PoC | 状態 |
 |----|------|:----:|:------:|:------:|:---:|:---:|
-| FR-INT-008 | 監査ログ外部出力（CloudWatch / S3 / Kinesis） | Must | ✅ CloudTrail / CloudWatch | ⚠ Event Listener 自前実装 | ⚠ デフォルト | 🟡 |
-| FR-INT-009 | 監査ログ SIEM 連携（Splunk / Datadog） | Could | ✅ | ⚠ ログ転送設計要 | ❌ | 🔴 |
+| FR-INT-008 | 監査ログ外部出力（CloudWatch / S3 / Kinesis） | Must | ✅ CloudTrail / CloudWatch | ✅ stdout → ログ基盤で成立（**自前 SPI 不要**）※1 | ⚠ デフォルト | ✅ |
+| FR-INT-009 | 監査ログ SIEM 連携（Splunk / Datadog） | Could | ✅ | ✅ OpenSearch 取込は確定（[U9 D-U9-06](../basic-design/09-operations-observability-design.md)）。商用 SIEM は顧客要件次第 | ❌ | 🟡 |
 
 > **クロスリファレンス**: ログ保存期間・コンプライアンス要件は NFR-OPS-003 / NFR-COMP-007 を参照。
+>
+> **※1 評価の是正（2026-08-12）**: 従来「⚠ Event Listener 自前実装」としていたが**実態より厳しい評価**だったため更新。正確には —— **(a) 外部出力そのもの（CloudWatch / S3 / Kinesis）は Keycloak 標準機能 + 汎用ログ基盤で成立し、自前 SPI は不要**（`KC stdout → Fluent Bit → CloudWatch Hot 90 日 / Firehose→S3 Object Lock 7 年 / OpenSearch Warm 1 年` = [U9 D-U9-05](../basic-design/09-operations-observability-design.md) / [U7 D-U7-13](../basic-design/07-security-compliance-design.md)）。**(b) 自前 Event Listener SPI が必要なのはリアルタイムのイベント駆動連携のみ**（EventBridge → Risk Engine = ITDR、[U7 D-U7-04](../basic-design/07-security-compliance-design.md)）で、これは Cognito でも Lambda トリガーの作り込みを要する領域。**(c) Cognito との本質差は「マネージド標準装備」vs「自社設計のログ基盤」＝ 工数・運用責任の差**であり、機能可否の差ではない（構築工数は WBS DU-U9O-02 に計上済み）。
 
 ### 8.3 API・IaC・Webhook
 

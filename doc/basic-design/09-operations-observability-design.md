@@ -166,6 +166,14 @@ flowchart LR
 - **根拠**: U7 D-U7-07/13（配置・辞書・WORM は U7 で確定済み。本書は保持値・スキャン Dashboard・ジョブ実装を確定）、ADR-053 §F（改訂対象 — §9.9.3）。
 - **代替**: OpenShift Cluster Logging（Vector）— U7 §7.3.1 の再評価条件を維持（Phase 1 は Fluent Bit 資産流用）。
 
+**Keycloak 側の出力前提（実装必須設定、2026-08-12 追加）**: 上記パイプラインは「KC がイベントを stdout に出す」ことが前提だが、**Keycloak の既定設定のままでは成立しない**ため次を必須とする:
+
+| # | 設定 | 理由（外すと何が起きるか） |
+|---|---|---|
+| 1 | **`spi-events-listener-jboss-logging-success-level=info`**（`...-error-level=error` も明示） | ⚠ **最重要**。既定の `jboss-logging` リスナーは **SUCCESS イベントを DEBUG レベル**で出力する一方、**ルートロガーは INFO** のため、**素のままだとログイン成功が 1 件も stdout に出ず監査証跡が静かに欠落する**（[Keycloak Javadoc](https://www.keycloak.org/docs-api/latest/javadocs/org/keycloak/events/log/JBossLoggingEventListenerProvider.html) / [RHBK Server Admin Guide](https://docs.redhat.com/en/documentation/red_hat_build_of_keycloak/24.0/html/server_administration_guide/configuring_auditing_to_track_events)）。IaC（KC CR / `keycloak.conf`）で固定し、CI で設定値を機械検査する |
+| 2 | **`log-console-output=json`**（KC 26 の構造化ログ） | Fluent Bit のパース安定性と、マスキング辞書 M-1〜14 の適用精度（フィールド単位マスクが可能になる）。テキスト整形ログだと正規表現依存になり取りこぼす |
+| 3 | **User Events / Admin Events の両方を有効化**（両 Realm） | 管理操作（Realm 設定変更・ユーザ操作）の証跡は **Admin Events 側**にしか出ない。§7.9 の「対象ログ源 Phase 1 必須セット」の `KC Admin Events（両 Realm）` はこれを指す |
+
 ### 9.3.2 決定 D-U9-06: SIEM 取込イベントセット（OpenSearch 相関 + ITDR 連携）
 
 **採用**: Keycloak Event Listener SPI（emit 専任、U7 D-U7-04）の対象イベントを SIEM（OpenSearch + Risk Engine）への必須取込セットとして確定する:
@@ -526,6 +534,8 @@ flowchart TB
 | O-U9-6 | アラート Routing 実体 | PagerDuty 契約 / オンコールローテーション体制（NFR-6.3 の 24/7 要否ヒアリング連動） | Phase 1 実装前 |
 | O-U9-7 | B-OBS-2/3/4/5 | ダッシュボード共有範囲 / APM 最終確認 / SLO 公開 / SLA 連動 | ヒアリング |
 | ~~O-U9-8~~ | ~~90 日 enabled=false バッチの実行基盤~~ | **✅ 2026-07-28 確定 = D-U9-17（in-cluster CronJob、堅牢化 3 点セット）**。テナント一括 logout ジョブも同基盤 | クローズ |
+| O-U9-10 | **Admin Events の `Include representation` 要否** | 変更内容（前後の値）まで記録するか。**監査価値は高いが PII・秘匿情報が本文に入る**ため Log scrubbing（U7 §7.3.1 M-1〜14）の対象拡大 + Cold 層容量増と表裏。ヒアリング（監査要件の粒度）と合わせ確定 | Phase 1 実装前 |
+| O-U9-11 | **Keycloak DB イベントストア（Save events）の扱い** | 本設計は**外部保管が本流**（stdout → 3 層）のため、KC の JPA イベント保存は **無効 or 短期 expiration** とすべき。**10M MAU で無制限保存すると `EVENT_ENTITY` / `ADMIN_EVENT_ENTITY` が肥大し Aurora を圧迫**（U6 サイジング §6.5 に波及）。無効化 or 保持日数を確定 | Phase 1 実装前（U6 サイジング合同） |
 | O-U9-9 | 文書整合更新の残タスク | ADR-040 OOS 残存注記（§FR-8.6 / §NFR-4.7）の参照整理（U7 §7.9.3 から引き受け。**ADR-040/036 は別スレッド改訂中のため本書からは書込まず、完了後に実施**） | 別スレッド完了後 |
 
 ### 9.9.3 他単元・ADR への引き渡し
@@ -549,6 +559,8 @@ flowchart TB
 ---
 
 ## 改訂履歴
+
+- 2026-08-12: **§9.3.1 に「Keycloak 側の出力前提（実装必須設定）」を追加** — ① `jboss-logging` の success-level=info（**既定では成功イベントが DEBUG で stdout に出ず監査証跡が欠落する**罠の回避）② `log-console-output=json` ③ User/Admin Events 両方有効化。**O-U9-10（Admin Events の representation 要否）/ O-U9-11（KC DB イベントストアの無効化・保持）を未決に起票**。要件側 FR-INT-008 の評価是正（⚠自前実装 → ✅、自前 SPI 不要）と対。
 
 - 2026-08-12: **網羅性再監査反映** — D-U9-19 非本番 PII マスキング/合成データ（§9.5.5、B-TESTDATA-1）/ D-U9-20 認可判定ログ（§9.3.3、[ADR-067](../adr/067-authz-decision-logging-and-access-recertification.md)、B-AUTHZLOG-1）を新設。アクセス再認証キャンペーンは ADR-067（軽量 IGA 運用）。
 
