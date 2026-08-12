@@ -15,7 +15,7 @@
 - **DU-U{単元}-{連番}**（例: DU-U2-04）。U1 は前提凍結層のためゲートとして扱い、構築 DU は持たない。
 - **成果物種別**: `IaC`（Terraform/Helm）/ `SPI`（Java 拡張）/ `App`（Lambda/SPA/Facade）/ `Config`（Realm/Policy 定義）/ `Doc`（Runbook/契約/ガイド）/ `Test`（検証・負荷）。
 - **PoC ゲート**: 着手前 or 並行で通す必要がある実測ゲート（G-*）。空欄 = ゲート非依存。
-- **工数**: 詳細設計 + 構築の粗見積（[00a §5](00a-remaining-tasks-and-effort.md) の 325–455 人日を DU へ配分した目安。±40% バッファ込み・PoC 環境費別）。
+- **工数**: 詳細設計 + 構築の粗見積。**人日はボトムアップ確定**＝[網羅監査 §8/§9](research/wbs-gap-audit-2026-08-12.md)（全 DU ≈1,044 人日、±40% バッファ込み・テスト/PoC 環境費別）。工程 4 分割（基本設計/詳細設計/構築/テスト）は §13。旧「S/M/L を 325–455 に配分」は §12c 監査で人日確定値に更新。
 - **状態**: 🔒確定(設計) / 🟡条件付き(ゲート待ち) / 🆕新規(監査由来・要件化/決定化が先行)。
 
 ---
@@ -219,13 +219,55 @@ U1 は前提凍結（P-01〜18）と PoC・契約前ゲートの管理層。構�
 
 > 姿勢のみ（Phase 1 実装なし、hearing 回答待ち）: FAPI 2.0（PAR/JAR、B-FAPI-1）/ IPSIE 準拠（B-IPSIE-1）/ AI エージェント ID（B-AGENT-1、NHI 台帳 `type` 拡張で受ける）。
 
+## 12c. 網羅監査由来の追加 DU（2026-08-12、git .md 全決定突合）
+
+[research/wbs-gap-audit-2026-08-12.md](research/wbs-gap-audit-2026-08-12.md) で設計書 10 冊の全決定（D-Ux-nn / D3-nn / §・REQ・O 系）+ 参照 ADR を SSOT とし、本書 DU に単元別突合（7 単元並行監査）。**DU 化漏れ 28 件**を検出。**すべて既存決定（設計書/ADR）の実装単位化漏れで、新規要件ではない**。人日はボトムアップ確定値（詳細設計+構築、テスト別掲）。
+
+| DU | 単元名 | 主要成果物 | DoD | 依存 | PoC | 工数 | 人日 | 状態 |
+|---|---|---|---|---|---|---|---|---|
+| DU-U2-09 🆕 | ブランド=Realm マルチ Realm モデリング | Config/IaC: 1 Broker=N Realm 派生テンプレ + per-realm ログインテーマ + per-brand IdP-KC Realm 対応表（ADR-063 §3.8.0） | 現行「単一 Realm」と ADR-063「brand=Realm」の整合を確定し N Realm を IaC 機械派生・per-realm theme/issuer 非衝突 | DU-U2-01, DU-U9I-01 | G-IdP-Scale | L | 18 | 🟡先行 |
+| DU-U2-10 🆕 | 2-tier セッション整合（§2.2.5 GAP-1〜5） | Config/SPI: backchannel logout 連鎖 + 両 Realm TTL 共通変数 + acr/prompt/max_age 転送 + login_hint 書式契約 | 5 ギャップが実機成立（storeToken=false 下 id_token_hint 取回し含む） | DU-U2-02, DU-U2-03, DU-U5-03 | G-SPI-Compat | M | 10 | 🟡 |
+| DU-U3-09 🆕 | 再有効化の対称伝播 | App: IdP-KC 再有効化→outbox `user.reactivated`→中央 shadow 制御 Lambda が Broker shadow `enabled=true`（冪等、ADR-064 対称） | 削除 outbox と対称に 1Tx・必達・数分リコンサイル整合 | DU-U3-05, DU-U3-07 | — | M | 9 | 🔒 |
+| DU-U3-10 🆕 | federated 初回 sub 通知の整合 | App: Broker→ブランド EventBridge（初回 sub 通知）+ Event Listener SPI emit（RC-3）+ federated authz 行生成 | 射影キー先行作成→sub バックフィル、順序到着/冪等/最新勝ち、越境は write 時のみ | DU-U3-04, DU-U2-04 | G-SCIM | M | 9 | 🔒 |
+| DU-U3-11 🆕 | 属性正準化 source レジストリ | Config/App: (tenant×属性) の source 宣言（①顧客写像/②基盤付与/③不要）の格納 + Mapper 生成連動（D3-15） | source 宣言が単一の持ち場所で管理され U2 Mapper/User Profile 宣言を導出 | DU-U3-03, DU-U10-02, DU-U2-05 | — | S | 6 | 🔒 |
+| DU-U4-11 🆕 | パスキー専用/email 非保有リカバリ | Config/Theme: 2 台目事前登録推奨導線 + assurance 非低下リカバリ（Recovery Code/管理者 JIT 承認のみ、SMS/email 禁止、D-U4-11） | email OTP 除外前提でメール非依存リカバリ完走・B/C=管理者リセット/D=Runbook | DU-U4-03, DU-U4-10, DU-U10-02 | — | S | 4 | 🔒 |
+| DU-U5-08 🆕 | DPoP Phase2 準備・運用サイジング | Doc/IaC: nonce 方式 + jti 再生キャッシュ サイジング入力 + sender-constrained(AT/RT) 適用範囲（D-U5-14） | 10M で jti ストア容量/レイテンシが U6 サイジングに織込・Phase2 トリガー明文 | DU-U6-02, DU-U5-01 | — | S | 4 | 🟡Phase2 |
+| DU-U6-11 🆕 | 内部 NLB server-TLS PKI + NetworkPolicy | IaC: ACM Private CA(発行+自動更新)/ kc-admin 内部 NLB(scheme=internal)証明書 / Lambda 側 CA 信頼 / Route53 Private DNS / K8s NetworkPolicy（ADR-062） | 2 クラスタの内部 NLB が server-TLS 終端・証明書自動ローテ・Lambda 自 CA 検証・NetworkPolicy で ingress 絞り | DU-U6-05, DU-U7-01 | — | M | 10 | 🔒 |
+| DU-U6-12 🆕 | SES メール送信基盤 | IaC/Doc: SES(sandbox 解除)+送信ドメイン SPF/DKIM/DMARC+SES VPCE(zero-egress 維持)+バウンス処理（A6a-1） | 招待/PW リセット/MFA/侵害通知メールが 2 クラスタから送出・SPF/DKIM/DMARC pass・VPCE 経由 | DU-U6-01, DU-U6-13 | — | S | 6 | 🔒 |
+| DU-U6-13 🆕 | DNS/名前解決設計(split-horizon) | IaC: Route53 Public Zone + PHZ + クロスアカウント RAM + Resolver ルール(NFW FQDN 同一解決系、REQ-OUT-04) | iss ホスト名一貫・内外で解決先分岐・App Acct が auth.basis を私設解決・DNS 分裂誤 drop なし | DU-U6-01 | — | M | 8 | 🔒 |
+| DU-U7-12 🆕 | Secrets ローテーション自動化 | App/IaC: client_secret 90 日自動ローテ Lambda + KC 2 世代並走 + private_key_jwt Phase2 昇格スロット（D-U7-10b） | Lambda→KC Admin API 瞬断ゼロ・全 Confidential/2-tier/CC 被覆・直書き禁止 CI lint 連動 | DU-U7-05, DU-U6-05 | — | M | 10 | 🔒 |
+| DU-U7-13 🆕 | サプライチェーン検証点 | IaC/App: ECR/OLM ミラー同期に Trivy + Cosign verify の単一検証ゲート + Critical CVE 緊急同期 Runbook（ADR-046/D-U7-16） | 未検証イメージ/カタログのクラスタ到達が構造的に消える・zero-egress 案 B 検証点集約 | DU-U6-07, DU-U9I-02 | G-EGRESS | M | 9 | 🔒 |
+| DU-U7-14 🆕 | 漏えい報告 SOP + APPI 委託先監督 | Doc/Test: APPI 漏えい報告 SOP(規則7条判定表・速報/確報タイマ)+ITDR L3/L4+Tabletop+Red Hat DPA/G-DPA 追跡（D-U7-15/15b） | 速報3-5日/確報30-60日を演習実証・DPA 未締結を契約前ゲート機械追跡 | DU-U7-03, DU-U9O-03 | G-DPA | M | 9 | 🟡 |
+| DU-U7-15 🆕 | Admin API 最小権限クライアント + #2 堅牢化 | Config/IaC: service-account client を①shadow 制御(disable/enable/logout のみ)②#2=ブランド realm manage-users に分離 + #2 側 NLB SG 最小・全操作監査・mTLS 優先検討（D-U7-19） | 両方に届く単一資格情報なし・#2 乗っ取り面最小・Admin API 逆流なし | DU-U6-05, DU-U7-07, DU-U3-05 | — | M | 10 | 🔒 |
+| DU-U8-06 🆕 | リージョン内可用性(Pod層) | IaC/Config: min3・PDB maxUnavailable=1・topologySpread(zone)・HPA(CPU60%+IdP-KC 予兆)・/health/ready（D-U8-02） | 2AZ 容量維持でローリング/ノード障害自動復旧・SPOF 点検表充足 | DU-U6-02 | — | S | 5 | 🔒 |
+| DU-U8-07 🆕 | Aurora リージョン内フェイルオーバー調整 | IaC/Config: Cluster 接続・JDBC timeout(<TTL30s)・Agroal 再接続・全 Pod 同時再起動禁則・RDS Proxy 再評価（D-U8-03） | Writer 障害<1分自動復旧・再接続時間実測で Proxy 要否判定 | DU-U6-03, DU-U8-06 | — | M | 8 | 🔒 |
+| DU-U8-08 🆕 | ゼロダウンデプロイ戦略 | Config/Doc: Operator Update=Auto ローリング・マイナー=メンテ窓+1000IdP 合成回帰・OLM 手動承認・SPI 差替手順（D-U8-04） | パッチ/SPI 差替ゼロダウン・マイナーは Staging 回帰通過必須 | DU-U2-04, DU-U9I-02 | G-SPI-Compat | M | 8 | 🟡 |
+| DU-U8-09 🆕 | セッション連続性 + 顧客 SLA 明文化 | Doc/Config: 全ユーザー再認証の製品仕様・SLA 文言・RPO 種別表・Failover 後60分 WAF Rate Limit 強化 or ITDR 感度・告知文（D-U8-10） | 契約/SLA に再認証・リセットリンク無効化反映・ブルートフォース緩和 U7/U9 引き渡し | DU-U8-04, DU-U7-09 | — | S | 6 | 🔒 |
+| DU-U8-10 🆕 | ブランドユニット DR 対象化 | IaC/Doc: authz系/idmap/projection Aurora を Aurora Global + PITR + 不変SS 対象に編入・大阪再構築に projection 再構築明記（§8.2.2） | brand_id 系が L1/L2/L3 保全・大阪昇格後 projection 再生・SSOT 表に projection/brand 追記 | DU-U8-03, DU-U3-01, DU-U3-04 | — | M | 10 | 🔒 |
+| DU-U8-11 🆕 | 削除伝播 outbox の DR 整合 | Doc/App: フェイルオーバー時の未送信 outbox の Promote 後必達・冪等リコンサイル・二重送信防止（ADR-064×DR） | 切替中/後に outbox exactly-once・shadow 無効化再生・Game Day 検証項目化 | DU-U3-05, DU-U8-04 | — | M | 8 | 🔒 |
+| DU-U8-12 🆕 | ADR-051 改訂反映(Doc) | Doc: §8.8 全12項を ADR-051 へ反映（Accepted 昇格） | 本書 D-U8-05〜14 と ADR-051 記述一致 | DU-U8-02〜05 | — | S | 3 | 🔒 |
+| DU-U9I-03 🆕 | idm-api/糊 Lambda dev/release パイプライン | IaC/CI: GH Actions(別 WF)→ECR コンテナイメージ Lambda(digest)→SAM/CDK で2アカウントデプロイ+Secrets Manager+rotation+EventBridge Scheduler バッチ枠（D-U9-18） | Keycloak(GitOps)と独立 CD・2アカウント同時・digest 固定・IAM/IRSA 別体系・Lambda バッチ冪等+分散ロック | DU-U9I-02, DU-U6-06, DU-U3-05, DU-U10-02 | — | M | 12 | 🔒 |
+| DU-U9O-08 🆕 | idm-api/shadow 制御/outbox Lambda 監視 | App/IaC: X-Ray+CW メトリクス/アラーム+AMG ダッシュボード(Lambda 別障害ドメインの SLI/エラー率/DLQ 滞留/リコンサイル遅延) | 各 Lambda にアラート閾値・数分リコンサイル遅延検知・ADOT Lambda Layer 統合・Runbook 紐付け | DU-U9O-01, DU-U9I-03, DU-U3-05, DU-U10-03 | — | M | 8 | 🔒 |
+| DU-U9O-09 🆕 | 管理操作監査ログの配置・保持決定 | Doc/IaC: per-brand vs 中央監査 Acct 集約の境界決定+保持年数(WORM 7年整合)+ブランド分離下の idm-api 管理操作ログ経路 | 管理操作監査ログの置き場所と保持を契約明記・D-U9-06/20 と整合・per-brand 越境ゼロ | DU-U9O-02, DU-U9O-06, DU-U10-02 | — | S | 5 | 🟡先行 |
+| DU-U10-08 🆕 | SN オンボーディング並走 4 Phase(実機) | Doc/App: M0-M3 テナント別 Runbook+提供6点+重複 sys_user 統合スクリプト(B-SN-19)+受入テスト T-1〜5（D-U10-04） | 4 Phase 巻き戻し各段成立・mandatory=false→true 収束・Pilot で sys_id 不変実証 | DU-U10-01, DU-U9O-03 | — | M | 12 | 🔒 |
+| DU-U10-09 🆕 | SN Break Glass 管理者構成 | Config/Doc: 2-3名の sso_source 空欄+side_door+HW MFA+IP 制限+SIEM 即時通知+四半期テスト（D-U10-05） | KC バイパス経路が KC 障害時生存・使用時通知→24h PW ローテ | DU-U10-01, DU-U7-06 | — | S | 5 | 🔒 |
+| DU-U10-10 🆕 | SN→他アプリ OIDC 貫通 | Config: SN=OAuth クライアント設定(フロー2 CC)+他アプリ OIDC RP 登録(フロー3、§10.1.7) | SN セッション後に aud 別 API を Bearer 認可・SAML→Broker SSO→OIDC サイレント発行成立 | DU-U10-01, DU-U5-02, DU-U2-02 | — | S | 6 | 🔒 |
+| DU-U10-11 🆕 | Custom PasswordHashProvider SPI(条件付) | SPI: bcrypt/旧 Argon2 恒久維持用ハッシュプロバイダ(B-MIG-10 該当時のみ、§10.4.2) | 旧 algo で既存 PW 検証が RHBK 26.x 成立・G-SPI-Compat 追加 | DU-U2-04, DU-U10-04 | G-SPI-Compat | M | 8 | 🟡条件付 |
+
+**GAP 小計 = 226 人日**（🔴Phase1 必須 ≈196 / 🟡将来・条件付 ≈30）。
+
+**先行判断（着手前）**: **「単一 broker Realm」vs「ブランド=Realm」** — DU-U2-09 とエッジ per-brand issuer/JWKS 検証は現行の単一 Realm/単一 issuer 前提（§5.6.3）と正面衝突する将来項目。Phase 1=1 ブランドなので急がないが**方式は先に固定**（将来移行回避）。DU-U9O-09（監査ログ per-brand/中央）も決定先行。
+
+**既存 DU の DoD 追記推奨（新規 DU 不要）**: DU-U2-02（§2.2.5 logout id_token_hint）/ DU-U4-03（ステップアップ専用文言）/ DU-U4-02（A' Theme Override）/ DU-U6-03（接続予算 pool 等値化 D-U6-08）/ DU-U6-05（Broker 側 shadow 制御 内部 NLB 明示）/ DU-U10-02（テナント開示用 DynamoDB 射影 §10.2.5）/ DU-U8-04（H2 論理破壊 Game Day）/ DU-U9O-03（D-U6-12 VPN 併用切替 Runbook）。
+
 ## 13. 未確定・引き渡し
 
-- **工数の総和**は [00a §5](00a-remaining-tasks-and-effort.md) の 325–455 人日レンジと整合させる（本表の S/M/L は配分の目安。確定は詳細設計時に PoC 実測を織り込んで再見積）。
+- **工数（人日・工程分割、[網羅監査 §9](research/wbs-gap-audit-2026-08-12.md)）**: 全 DU（既存 + §12c GAP 28）= 詳細設計+構築 ≈**1,044 人日**（**②詳細設計 418 + ③構築 626**、40/60 分割。IaC/Config/Doc 系は②③融合）。**①基本設計 244**（[00a §1-4](00a-remaining-tasks-and-effort.md)、進行中）・**④テスト ≈200**（結合/E2E/負荷/DR/pen、PoC ゲートと重複調整）は別掲。総計 ≈**1,488**。**注: 00a §6「構築+テスト 325–455」は詳細設計を含まない別スコープ**で単純合算不可。S/M/L は配分目安、確定は詳細設計時に PoC 実測で再見積。
 - **PoC ゲート未通過 DU（🟡）は着手可だが「凍結」まで進めない**（G-IdP-Scale/G-SPI-Compat/G-SCIM/G-UProfile-Email/G-EDGE-DR/G-EGRESS）。
 - 本書は Wave 進行（[00a §4](00a-remaining-tasks-and-effort.md)）と接続: W0（外部依頼・ゲート実測）→ 基盤 DU（U6/U7/U9I）→ 認証コア DU（U2/U3/U5）→ 体験・連携 DU（U4/U10）→ 回復性・運用 DU（U8/U9O）。
 
 ## 改訂履歴
 
+- 2026-08-12 (v1.2): **§12c 追加** — git .md 全決定突合の網羅監査（[research/wbs-gap-audit-2026-08-12.md](research/wbs-gap-audit-2026-08-12.md)、7 単元並行）で **DU 化漏れ 28 件**を検出・追加（U2-09/10・U3-09〜11・U4-11・U5-08・U6-11〜13・U7-12〜15・U8-06〜12・U9I-03/O-08/O-09・U10-08〜11）。**全 DU に人日（ボトムアップ、全 DU ≈1,044）**付与、**工程 4 分割**（基本設計244/詳細設計418/構築626/テスト200、総計≈1,488）を §13 に明記。既存 DU DoD 追記 8 件を §12c に注記。先行判断「単一 vs ブランド Realm」明示。
 - 2026-08-12 (v1.1): **§12b 追加** — 継続アクセス・ガバナンス・新興ID 由来の追加 DU 10 件（DU-U5-06 CAEP/07 プロトコル堅牢化 / U4-09 自セッション/10 セキュア登録 / U7-10 NHI 台帳/11 同意 / U9O-06 認可ログ+recert/07 非本番マスキング / U6-10 テナント隔離 / U10-07 RTBF 境界）を ADR-065〜067 + U4/U5/U6/U7/U9/U10 反映と同期。gate G-SSF 追加。
 - 2026-08-10 (v1.0): 新規作成。basic-design 10 冊の正式決定 170 件 + ADR-062/063/064 + 網羅性監査を、実装可能単位（DU-U*-nn 約 60 単元）へ分解。DU グループ間依存 mermaid + クリティカルパス + PoC ゲート紐付け + 監査由来の新規 DU 4 群を収録。
