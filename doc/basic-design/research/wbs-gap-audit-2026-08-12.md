@@ -124,9 +124,9 @@
 | **① 基本設計クローズ** | **244** | 00a §1-4（調査97+検討147）| クロス横断・DU 非配分・大半 進行中/完了。PoC ゲート87 含む |
 | **② 詳細設計** | **≈418** | 1,044 × 40% | DU 単位。IaC/Config/Doc は③と融合 |
 | **③ 構築（実装+単体）** | **≈626** | 1,044 × 60% | DU 単位 |
-| **④ テスト（結合/E2E/負荷/DR/セキュリティ）** | **≈200** | 別途粗見積（別掲）| PoC ゲートと重複調整済み |
-| **②+③+④（構築系）** | **≈1,244** | | これから作る工数 |
-| **総計（①含む）** | **≈1,488** | | |
+| **④ テスト（結合/E2E/実機/負荷/DR/セキュリティ/運用/UAT）** | **≈363** | **§10 で精緻化**（フルスコープ+フル再計上、2026-08-12 ユーザー確定）| 旧 ≈200 を上方修正 |
+| **②+③+④（構築系）** | **≈1,407** | | これから作る工数 |
+| **総計（①含む）** | **≈1,651** | | |
 
 **分割ルール（Excel の人日 3 列化に使う）**:
 - **②詳細設計 = DU 総人日 × 0.40**、**③構築 = DU 総人日 × 0.60**（per-DU に一律適用）。
@@ -149,4 +149,58 @@
 | 横断（負荷 10M/1000IdP・DR・pen）| — | — | 54 | 54 |
 | **合計** | **418** | **626** | **200** | **1,244** |
 
-> 注: ①基本設計は DU に配分しない横断作業（進行中）。②〜④が新規工数。比率・テストは ±40% 込みの粗見積で、詳細設計着手で ±30% 精緻化。
+> 注: ①基本設計は DU に配分しない横断作業（進行中）。②〜④が新規工数。比率は ±40% 込みの粗見積で、詳細設計着手で ±30% 精緻化。**④テストは §10 で精緻化（200→363）**。
+
+## 10. テスト WBS 精緻化（④テスト = 363 人日、2026-08-12 ユーザー確定）
+
+**スコープ = フルスコープ**（結合+E2E+実機統合+負荷+DR+セキュリティ+運用+UAT、単体は③構築に含む）／**PoC 重複 = フル再計上**（負荷/DR/セキュリティを本番前に満額実施）。各人日 = テスト設計+データ/環境準備+実行+欠陥・再テスト+報告（±40% 込み）。
+
+| 区分 | ID | 項目 | 人日 |
+|---|---|---|---|
+| A 結合 | IT-01 | idm-api ↔ Keycloak Admin API（内部NLB/server-TLS/最小権限client×2アカ）| 6 |
+| A | IT-02 | SCIM Facade ↔ Keycloak（属性写像/正準化/Soft Delete写像）| 6 |
+| A | IT-03 | 削除 outbox ↔ shadow制御（1Tx/必達/冪等/リコンサイル）| 6 |
+| A | IT-04 | EventBridge 越境（初回sub通知/削除、2アカ/at-least-once）| 5 |
+| A | IT-05 | 射影フィード ↔ /api/me/context（3書込/冪等/version）| 5 |
+| A | IT-06 | Broker ↔ IdP-KC フェデ（PrivateLink/JWKS/userinfo/BCL）| 6 |
+| A | IT-07 | 認可DB/idmap ↔ idm-api（brand_id/cross-brand join不能）| 4 |
+| B E2E | ST-01 | 認証コア（ローカル/HRD識別子先行/first-broker/post-broker/step-up）| 12 |
+| B | ST-02 | MFA/リカバリ（TOTP/WebAuthn/passkey-only/Recovery/email非保有/登録ATO）| 10 |
+| B | ST-03 | プロビジョニング（JIT 3系統/SCIM D1D2/属性正準化/mixed Case1-6）| 12 |
+| B | ST-04 | ライフサイクル（Soft Delete/reactivation対称/90日バッチ/3段階削除）| 10 |
+| B | ST-05 | トークン/セッション/ログアウト（AT/RT rotation/BCL/失効/TE/CAEP）| 12 |
+| B | ST-06 | 認可（/api/me/context/エンタイトルメント/機能ロール/hybrid C/テナント分離）| 8 |
+| B | ST-07 | 管理CP（idm-api CRUD/権限編集/招待/PWリセット/監査/3層スコープ）| 12 |
+| B | ST-08 | HRD/UX（識別子先行/フォールバック降格/ブランド別テーマ/多言語）| 6 |
+| B | ST-09 | Landing/Sorry/権限不足（launchpad/403→Sorry/権限不足画面）| 5 |
+| C 実機 | RI-01 | 商用IdP実機 Entra ID（SAML/OIDC・claims・証明書・iss/nonce）| 10 |
+| C | RI-02 | 商用IdP実機 Okta（差分洗い出し）| 8 |
+| C | RI-03 | ServiceNow実機（SAML JIT/sys_id保全/削除連鎖/OIDC貫通/Break Glass）| 12 |
+| C | RI-04 | 顧客SCIM実機（Entra/Okta Push→Facade Validator）| 8 |
+| D 負荷 | PT-01 | 認証負荷（10M MAU：ログイン/トークン検証 p99>1000req/s・70/30）| 18 |
+| D | PT-02 | IdP スケール（1000/2000 IdP：HRD→フェデ p99+10%以内・キャッシュ・再起動）| 14 |
+| D | PT-03 | SCIM/射影スケール（500/1000テナント externalId検索/バルク5万件/読取p99）| 12 |
+| D | PT-04 | DB/Aurora負荷（pool予算 pods×pool・Writer負荷・接続飽和）| 8 |
+| D | PT-05 | SPI高負荷耐久（Custom SPI 4機能・HRD高頻度）| 6 |
+| D | PT-06 | バッチ性能（90日バッチ 10M/移行一括投入）| 6 |
+| E DR | DR-01 | Game Day H1（大阪コールド再構築 RTO≈14日・成立条件5点）| 12 |
+| E | DR-02 | Game Day H2（PITR/論理破壊/不変SS/Vault Lock）| 8 |
+| E | DR-03 | リージョン内HA（Aurora failover<1分/Pod drain/PDB/ローリング）| 8 |
+| E | DR-04 | outbox/射影 DR整合（フェイルオーバー時 exactly-once/未送信Promote）| 6 |
+| E | DR-05 | ブランドユニットDR（authz/idmap/projection Aurora PITR/大阪）| 6 |
+| F セキュリティ | SEC-01 | pen test（外部委託：攻撃経路33・SAML/OIDC/認可バイパス/テナント越境）| 15 |
+| F | SEC-02 | Golden検知/ITDR（G-1〜6・HIBP・Brute Force 発火検証）| 8 |
+| F | SEC-03 | 鍵/シークレット（KMS SoD/署名鍵ローテ/client_secretローテ/Break Glass）| 6 |
+| F | SEC-04 | サプライチェーン（Trivy/Cosign/SBOM/未検証イメージ遮断）| 5 |
+| F | SEC-05 | CSRF/トークン境界/DPoP準備検証 | 4 |
+| G 運用 | OP-01 | 監視/アラート（SLO/Burn Rate/Lambda群監視/ダッシュボード/系列数）| 10 |
+| G | OP-02 | Runbook リハーサル（必須13冊 手順実証・禁則機械強制）| 12 |
+| G | OP-03 | オンボーディング パイプライン（顧客追加6ステップ/証明書ローテ/Egress申請）| 8 |
+| G | OP-04 | ログ/監査（3層/マスキング/SIEM/監査スキャン/認可判定ログ）| 6 |
+| H UAT | UAT-01 | テナント管理者受入（管理CP代表シナリオ/権限/監査）| 8 |
+| H | UAT-02 | エンドユーザー受入（ログイン/MFA/リカバリ/複数アプリSSO）| 6 |
+| H | UAT-03 | 顧客連携受入（IdP接続/SCIM/ServiceNow、代表テナント）| 8 |
+
+**区分小計**: A 結合 38 / B E2E 87 / C 実機 38 / D 負荷 64 / E DR 40 / F セキュリティ 38 / G 運用 36 / H UAT 22 = **363 人日**。
+
+**外部依存（壁時計律速）**: C は商用 IdP（Entra/Okta trial）+ServiceNow 実機の確保が前提（B-SCIM-14 連動）。F SEC-01 は外部 pen test ベンダー委託（費用別）。D/E は ROSA テスト環境・10M 合成データ・大阪一時プロビが前提（環境費別）。
