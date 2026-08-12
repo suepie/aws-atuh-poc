@@ -72,6 +72,7 @@
 - **#2（IdP-KC = credential アカウント）側の内部 NLB は特に厳格に**（`scheme=internal` でインターネット非露出。SG を Lambda SG 限定・監査・可能なら mTLS 優先検討）。
 - **越境は EventBridge 中心**（削除=ADR-064 / 初回 sub 通知）。S2S 認可（shadow 制御 Lambda 等）= Client Credentials（`idm:*` scope、U5 §5.8）。**旧「#1→#2 PrivateLink 委譲」は ADR-063 で撤回**。
 - Lambda は VPC 層③ に ENI アタッチ。Aurora は SG 直。越境の全体像は [06a §A.6](../basic-design/06a-network-flow-diagrams.md)、削除伝播は ADR-064。
+- **L1 = API GW ネイティブ JWT authorizer を採る場合、Broker の JWKS はパブリック到達可能である必要がある**（AWS マネージド側が issuer の `jwks_uri` を取得。private VPC エンドポイント不可、公開鍵は最大 2h キャッシュ）。現設計は `auth.` が公開（[ADR-013](013-cloudfront-waf-ip-restriction.md) L7 Rule#100 で JWKS / `.well-known` 全 IP 許可）ゆえ成立するが、**JWKS 公開を IP 制限等で絞る要件が出た場合は L1 を Lambda authorizer（VPC 内、[ADR-012](012-vpc-lambda-authorizer-internal-jwks.md)）へ切り替える**（U5 §5.6.3b）。
 
 ## Alternatives Considered
 

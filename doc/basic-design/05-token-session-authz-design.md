@@ -5,6 +5,8 @@
 **前提: [01-architecture-baseline.md](01-architecture-baseline.md) Baseline v1（P-01〜P-18、特に P-08/P-09/P-10/P-11/P-14）**
 上位文書: [00-basic-design-plan.md](00-basic-design-plan.md) §U5
 
+> **決定の採番について**: 本書の決定は原則 **節参照（`U5 §5.x.y`）** で識別する（他単元の `D-Ux-nn` 形式と異なる点に注意）。ただし **2026-08-12 追加分（§5.6.3b / §5.10）は他単元・ADR から参照されるため `D-U5-09〜15` の明示 ID を併記**している。両者は同じ「本書の正式決定」であり、重み付けの差はない。
+
 ---
 
 ## 5.0 背景・なぜここで決めるか（スコープ・境界）
@@ -430,6 +432,32 @@ Back-Channel Logout はサーバ間 POST のため、**バックエンドを持�
 - 認可判定（リソース単位の can/cannot）はアプリ責務（§FR-6.0.A、パターン A〜D はアプリ選択）。
 - AT ペイロードをアプリログへ出力しない（§5.1.4 C-6）。
 
+### 5.6.3b Discovery / JWKS エンドポイントの案内規約（D-U5-15、2026-08-12 追加）
+
+**採用**: RP へ案内する Discovery / JWKS の **パス形式と取得経路を規約として固定**する。理由 = ① `.well-known` のパス組み立て規則が OIDC と OAuth で異なり、issuer にパスを持つ Keycloak では**同じ AS でも到達 URL が変わる**（RP ライブラリ差で疎通不良になる）② JWKS は「公開面の要否」と「アプリの取得経路」を混同しやすい。
+
+**① パス形式（案内は OIDC 形式を正とする）**
+
+| 方式 | URL 形式 | 本基盤の扱い |
+|---|---|---|
+| **OIDC Discovery 1.0**（正） | `https://auth.<domain>/realms/broker/.well-known/openid-configuration`（issuer に**追記**） | **RP への案内はこちら**。FR-INT-002 の実体 |
+| RFC 8414（OAuth AS Metadata） | `https://auth.<domain>/.well-known/oauth-authorization-server/realms/broker`（host 直下に**挿入**） | RFC 8414 準拠の RP / MCP 系クライアントが叩き得る。**提供有無は実機確認**（[Keycloak #45271](https://github.com/keycloak/keycloak/issues/45271) / [discussion #40809](https://github.com/keycloak/keycloak/discussions/40809)、00a A-11） |
+
+- JWKS の実体は `https://auth.<domain>/realms/broker/protocol/openid-connect/certs`（§5.6.3 の 1）。**`jwks_uri` は必ず Discovery から解決**し、RP 側にハードコードさせない（鍵移設時の破綻回避）。
+
+**② 取得経路と公開面（混同注意）**
+
+| 検証者 | 取得経路 | 公開面への依存 |
+|---|---|---|
+| App Acct のアプリ / Lambda Authorizer / ミドルウェア / BFF / idm-api | **VPC 内（B-I2、[ADR-012](../adr/012-vpc-lambda-authorizer-internal-jwks.md)）・CloudFront を経由しない** | なし |
+| Broker KC → IdP-KC | **PrivateLink バックチャネル**（[02a](02a-broker-idpkc-federation.md)） | なし |
+| SPA 直（Public Client）/ モバイル | インターネット（エッジ経由） | **あり** |
+| **API GW ネイティブ JWT authorizer**（idm-api の L1、[ADR-062](../adr/062-idm-api-execution-form-lambda.md)） | **AWS マネージド側が `jwks_uri` を取得**（公開鍵は最大 2h キャッシュ） | **あり（下記制約）** |
+
+- **[ADR-012](../adr/012-vpc-lambda-authorizer-internal-jwks.md) の「JWKS プライベート化」は "アプリの検証トラフィックを VPC 内に寄せる" 意味であり、"エンドポイントを非公開にする" 意味ではない**（公開面は [ADR-013](../adr/013-cloudfront-waf-ip-restriction.md) L7 Rule#100 で JWKS / `.well-known` を全 IP 許可）。
+- **制約**: API Gateway の**ネイティブ JWT authorizer は AWS マネージド側が issuer の `jwks_uri` を取りに行くため、JWKS はパブリック到達可能である必要がある**（private VPC エンドポイント不可）。よって **JWKS の公開を IP 制限等で絞る選択は、L1 をネイティブ JWT authorizer にしている限り取れない**。絞りたい場合は **L1 を Lambda authorizer（VPC 内、ADR-012 パターン）へ替える**（[ADR-062](../adr/062-idm-api-execution-form-lambda.md) Constraints）。
+- **JWKS は「SPA/モバイルの有無」では要否が決まらない**（検証者＝ Resource Server が必要とする）。全 RP が BFF でも、下流 API の Bearer 検証（§5.6.3）と Back-Channel Logout の Logout Token 検証（§5.5.4）、Realm Key 90 日ローテ追随（D-U7-03）のため JWKS は必須。**公開が不要になるだけで、内部到達は必要**。
+
 ### 5.6.4 CORS / SameSite
 
 - API の `Access-Control-Allow-Origin` は**具体的 RP origin の許可リスト**（`*` 禁止）。Bearer 方式では `Access-Control-Allow-Credentials: false`（ADR-057 C-3）。
@@ -571,6 +599,7 @@ Back-Channel Logout はサーバ間 POST のため、**バックエンドを持�
 
 - 2026-07-24 (v1.2): **02a GAP-1/2 反映** — L3 に idpkc-oidc01 例外（既定 ON、自社基盤のため越境問題なし。OFF だと共有端末で無操作再ログイン可）、2 層セッション TTL 整合（IdP-KC は Broker 同値以下、P-09 絶対 24h は 2 層合成で担保）、既定到達範囲を「L1+L2+L4+IdP-KC 連鎖」に更新。
 
+- 2026-08-12: **§5.6.3b Discovery / JWKS 案内規約を新設（D-U5-15）** — OIDC 形式（追記）を正とし RFC 8414 形式（挿入）の提供有無は実機確認（00a A-11）、`jwks_uri` は Discovery から解決、JWKS の「公開面 vs VPC 内取得経路」を明確化、**API GW ネイティブ JWT authorizer は JWKS のパブリック到達性が必須**（絞るなら Lambda authorizer へ）。
 - 2026-08-12: **§5.10 継続アクセス・プロトコル堅牢化を新設**（網羅性再監査）— D-U5-09 CAEP(ADR-065)/D-U5-10 RFC 9470 API層step-up/D-U5-11 同時セッション制限/D-U5-12 TE act・may_act+ダウンスコープ/D-U5-13 FAPI姿勢(PAR/JAR)/D-U5-14 DPoPサイジング。§5.6.3 を 7 点化（at+jwt typ 検証 RFC 9068 追加）、§5.2.4 に CAEP 恒久解の参照。
 - 2026-07-23: 初版（Wave 2 起草）。`sid` 既定発行 + Back-Channel Logout 採用を確定（ADR-030 宙吊り解消）、クレーム辞書正式版（Stage 1+1.5 / 昇格規約 / `ext_` 規約 / PII チェックリスト C-1〜C-7）、TTL 最終値（AT 30 分 / RT=SSO 従属・offline 無効 / テナント短縮 = Client override 方式）とゾンビ窓 Z-1〜Z-5、Token Exchange V2 の Pattern 2/3 限定採用 + audience 短名規約、Revocation 3 粒度 + ITDR L4 手順、ログアウト 4 レイヤー採用範囲（L3 既定 OFF / SN SLO オプション）、RP 実装ガイド骨子、専用 API 層 `idm:*` CC スコープ設計を定義。
 - 2026-07-23 (v1.1): Wave 2 整合性レビュー反映 — §5.6.6 新設（403→Sorry 誘導の RP 必須規約、U4 受け皿 / H-1）+ `launchpad-spa` Client テンプレート追加依頼（§5.9.2）、max_age 確定（AAL2=900s / AAL3=300s、§5.9.1 #2 / M-7）、`/api/me/*` ユーザ AT 経路の明示（§5.8 / M-8）、参照修正（U3 §3.7.4 #4 / jit-scim §10.4.L / L-3）、Memory 保管の意図的厳格化注記（L-4）。
