@@ -98,6 +98,7 @@ ADR-039 の 5 アカウント体系を Broker/IdP-KC 分割で **6 アカウン�
 | G-SCIM | SCIM Facade の SCIM 2.0 準拠検証(Entra/Okta SCIM Validator + D1/D2 E2E + Soft Delete 写像 + deprovisioned_at セット確認。U3 §3.7.2 で再定義。旧 Metatavu 3 点は Metatavu 採用判断時のみ)。**2026-07-24 拡張(U3 §3.8)**: ① スケール次元(500/1000 テナント externalId 検索 p99 / バルク 5 万件中の他テナント遅延 / Writer 流量制御下 Aurora 負荷 — G-IdP-Scale と同一データセット併走)② 非 IdP E2E(D1 SCIM→EventBridge→統合射影→初回ログイン sub バックフィル + 読取 p99) | U3 |
 | ~~G-LDAP~~ | ❌ **廃止(2026-07-30、LDAP 顧客なし)** — B-SCIM-13 も不要 | — |
 | G-OSAKA | 大阪インスタンス在庫・vCPU クォータ実確認 | U6 |
+| G-SSF | **2026-08-12 追加**: Keycloak experimental SSF（transmitter-only・既定 off）の実機動作 + receiver 要否 + outbox からの自作 SET エミッタ比較。CAEP `session-revoked`/RISC でゾンビ窓（U5 §5.2.4）を数秒失効に短縮できるか（[ADR-065](../adr/065-continuous-access-caep-shared-signals.md)、hearing B-CAEP-1）。**Phase 1 は暫定ブリッジ〔短命 AT + not-before push + 高価値 Introspection + DPoP〕で成立、CAEP は本ゲート通過後に段階導入** | U5/U7 |
 | G-EGRESS | **合意方向(2026-07-30): 初期は一括、追加分は都度依頼（先方は依頼次第 当日〜翌日対応）→ 方式① + §NFR-3 リードタイム（次営業日以内）は成立**（U6 §6.7.3 D-U6-13、U9 §9.7.1） | U6/U9 |
 | ~~G-PCI-WAF~~ | ❌ **廃止(2026-07-30、PCI DSS 対応不要)** — B-MFA-PCI-1 も不要 | — |
 | G-DPA | **軟化(2026-07-30): クラウド利用の APPI 同意は取得方針。残は Red Hat SRE 越境閲覧の確認中 1 点**（U7 §7.7.4） | U7 |

@@ -602,6 +602,28 @@
 |---|:---:|:---:|------|---------|---------|---------|---------|------|:---:|
 | C-303 | `[C]` | 🔥 | RHBK サブスクリプション予算 | NFR-COST-006 | §C-2.3, §NFR-8 | 年 $15K〜90K 規模の予算枠? | Yes/No / 上限 | | ⏳ |
 
+### §5.6 継続アクセス・ガバナンス・新興ID（2026-08-12 網羅性再監査由来）
+
+> 大規模認証基盤のベストプラクティス（RFC 9700 / OpenID SSF-CAEP-RISC Final 2025-09 / NIST 800-63-4 / CSA NHI / IPSIE 等）と既存 170 決定の突合で判明した**真の漏れ 13 件 + FAPI/IPSIE 姿勢 2 件**。方式が重いものは新規 ADR（065/066/067）へ、実測は PoC ゲート（G-SSF）へ接続。
+
+| # | Phase | 優先度 | 項目 | 関連 NFR | 参照 | 質問内容 | 期待回答 | 回答 | 状態 |
+|---|:---:|:---:|------|---------|---------|---------|---------|------|:---:|
+| **B-CAEP-1** | `[C]` | 🔥 | **継続アクセス（CAEP/Shared Signals）の送受信可否**（ゾンビ窓の標準解、[ADR-065](../adr/065-continuous-access-caep-shared-signals.md) / gate G-SSF） | NFR-SEC | [ADR-065](../adr/065-continuous-access-caep-shared-signals.md), [U5 §5.2.4](../basic-design/05-token-session-authz-design.md) | 失効の near-real-time 伝播（数秒）を SSF/CAEP で行うか? ①顧客 IdP は SSF 送信（session-revoked/RISC）できるか ②RP に CAEP receiver SDK を配れるか（Phase 1 は暫定ブリッジ、CAEP は G-SSF 後） | 送受信可（方式）/ 片方向 / 当面暫定ブリッジのみ | | ⏳ |
+| **B-NHI-1** | `[C]` | 🟡 | **非人間ID（NHI）ガバナンスの責任分界**（[ADR-066](../adr/066-non-human-identity-governance.md)） | NFR-SEC / NFR-OPS | [ADR-066](../adr/066-non-human-identity-governance.md), [U7 D-U7-09](../basic-design/07-security-compliance-design.md) | M2M クライアント資格情報・サービスアカウントの棚卸し・所有者・ローテ・孤立検知の責任は?（テナント側 M2M クライアントの所有者アサインは顧客/弊社どちら） | 弊社台帳一元 / テナント分担 / 未整備（新規要件） | | ⏳ |
+| **B-SESS-1** | `[C]` | 🟡 | **同時セッション数制限** | NFR-SEC / FR-SSO-008 | [U5 §5.5](../basic-design/05-token-session-authz-design.md) | 管理者/高価値ロールの同時アクティブセッション上限を設けるか?（Keycloak Session Limits SPI） | 上限あり（ロール別）/ なし | | ⏳ |
+| **B-SESS-2** | `[C]` | 🟡 | **利用者セルフのセッション/デバイス管理** | FR-SSO-008 / NFR-SEC | [U4 §4.3](../basic-design/04-auth-ux-design.md) | 利用者が自分のアクティブセッション/デバイス一覧を見て自己失効できる機能を提供するか?（ATO 対応・DSAR 隣接） | 提供（Phase 1/2）/ 管理者失効のみ | | ⏳ |
+| **B-TENANT-ISO-1** | `[C]` | 🔥 | **テナント隔離契約 + 認証フローのテナント別公平性**（noisy-neighbor） | NFR-SCL / NFR-SEC | [U3 D3-11](../basic-design/03-identity-provisioning-design.md), [U6 REQ-IN](../basic-design/06-infra-network-design.md) | ログイン/token のテナント別レート制限・クォータを設けるか?（SCIM/管理は 10 req/s 済。認証フローは 1 テナントのバーストで共有 DB/Infinispan 枯渇の恐れ）+ 大口/規制テナントの realm 分離脱出条件 | テナント別スロットル要/不要 + realm 分離基準 | | ⏳ |
+| **B-TESTDATA-1** | `[C]` | 🟡 | **非本番環境の PII マスキング/合成データ** | NFR-COMP / NFR-SEC | §NFR-7, [U9 §9.5](../basic-design/09-operations-observability-design.md) | Staging/検証に本番相当 PII を投入しない方針（静的マスキング/合成生成）を要件化するか?（10M 実データの非本番露出は APPI/GDPR 責任） | マスキング必須 / 合成のみ / 制限なし | | ⏳ |
+| **B-IGA-REC-1** | `[C]` | 🟡 | **アクセス再認証（recertification）の頻度・実施主体**（[ADR-067](../adr/067-authz-decision-logging-and-access-recertification.md)） | NFR-COMP / NFR-OPS | [ADR-067](../adr/067-authz-decision-logging-and-access-recertification.md), [ADR-037](../adr/037-shared-responsibility-and-lightweight-iga.md) | 3 層管理スコープ・テナント管理者・NHI の権限棚卸しを誰が・どの頻度で実施し記録するか?（ISO 27001 A.9.2.5 = リスクベース + 完了記録） | 四半期/年次/リスクベース + 実施主体（弊社/テナント/監査） | | ⏳ |
+| **B-AUTHZLOG-1** | `[C]` | 🟡 | **認可判定ログ（説明可能性）の要否・粒度**（[ADR-067](../adr/067-authz-decision-logging-and-access-recertification.md)） | NFR-SEC / NFR-COMP | [ADR-067](../adr/067-authz-decision-logging-and-access-recertification.md), [U7 D-U7-13](../basic-design/07-security-compliance-design.md) | 認可判定（誰が・何に・なぜ許可/拒否・ポリシー版）の証跡を監査に求めるか?（現行 7 年監査は認証中心。SOC2 CC6.1 / ISO A.8/A.9） | 全判定/拒否+高権限のみ/不要 + 保持期間 | | ⏳ |
+| **B-ENROLL-1** | `[C]` | 🟡 | **セキュアな MFA/パスキー登録（登録 ATO 対策）** | NFR-SEC / FR-MFA | [U4 §4.3.2](../basic-design/04-auth-ux-design.md), [U7 D-U7-14](../basic-design/07-security-compliance-design.md) | 新規 MFA/パスキー登録に step-up / 検証済み文脈を必須化するか?（盗んだ第 1 要素で攻撃者が自分のパスキーを登録し正規利用者を締め出す ATO の防止） | step-up 必須 / 第 1 要素のみ許容 | | ⏳ |
+| **B-RECOV-1** | `[C]` | 🟡 | **パスキー専用/email 非保有ユーザのリカバリ方針** | NFR-SEC / FR-AUTH-013 | [U4 §4.3.3](../basic-design/04-auth-ux-design.md) | email OTP 除外下で、パスキー専用/email 非保有ユーザのアカウント回復をどう設計するか?（assurance 非降格・永久ロックアウト回避。2 台目パスキー推奨 or 管理者 JIT 承認 or 対面 proofing） | 2 台目必須 / 管理者承認経路 / proofing | | ⏳ |
+| **B-CONSENT-1** | `[C]` | 🟡 | **同意管理・同意レシート** | NFR-COMP | §NFR-7, [U7 §7.7.4](../basic-design/07-security-compliance-design.md) | フェデ属性リリース/越境/目的の同意を記録・撤回・監査証跡（レシート）として保持する要件はあるか?（KC 同意画面はあるが記録/目的拘束/撤回伝播は別設計） | 記録+撤回必須 / 画面のみ / 不要（ファーストパーティ） | | ⏳ |
+| **B-RTBF-1** | `[C]` | 🟡 | **忘れられる権利 vs 7 年不変監査の境界** | NFR-COMP | [U7 D-U7-13](../basic-design/07-security-compliance-design.md), [U10 D-U10-13](../basic-design/10-integration-migration-design.md) | DSAR 消去と改ざん不能監査の衝突をどう解くか?（消去対象と、不変ログで tombstone/仮名化する対象の境界を明文化。都度判断は不可） | 仮名化境界を契約明記 / 監査保持優先 / 個別判断 | | ⏳ |
+| **B-AGENT-1** | `[C]` | 🟢 | **AI エージェント/エージェンティック ID の姿勢**（新興 2025-26、[ADR-066](../adr/066-non-human-identity-governance.md) 特殊系） | NFR-SEC | [ADR-066](../adr/066-non-human-identity-governance.md), [U5 §5.3](../basic-design/05-token-session-authz-design.md) | ユーザ代理で動く AI エージェントに独立・スコープ限定・失効可能な ID を与える要件が将来あるか?（Token Exchange OBO + act クレーム写像。Phase 1 は姿勢決定のみ） | 将来要件あり / 当面対象外 | | ⏳ |
+| **B-FAPI-1** | `[C]` | 🟢 | **FAPI 2.0 姿勢（PAR/JAR/sender-constrained）** | NFR-SEC / FR-AUTH-007 | [U5 §5.6](../basic-design/05-token-session-authz-design.md), [D-U7-10b](../basic-design/07-security-compliance-design.md) | 金融グレード（FAPI 2.0）テナントが出た場合、PAR（RFC 9126）/ JAR / sender-constrained token を必須化するか?（Phase 1 基線は PKCE+iss+nonce、mTLS は Phase 3） | FAPI 対応テナント想定あり/なし | | ⏳ |
+| **B-IPSIE-1** | `[C]` | 🟢 | **IPSIE 準拠姿勢**（OpenID enterprise interop、新興 2024） | NFR-COMP | [ADR-065](../adr/065-continuous-access-caep-shared-signals.md) | 顧客調達で IPSIE（SSO/ライフサイクル/エンタイトルメント/リスク信号/ログアウトの secure-defaults profile）準拠を求められる想定はあるか? | 調達要件になりうる/当面不要 | | ⏳ |
+
 ---
 
 ## 統合済 ID 一覧（旧 ID 参照表）
