@@ -1,39 +1,57 @@
 # ADR-065: 継続アクセス評価 = CAEP / Shared Signals（ゾンビ窓の標準解）
 
-- **ステータス**: Proposed（**スタブ** — 2026-08-12 網羅性再監査で起票。方式確定は G-SSF PoC + B-CAEP-1 回答後）
-- **日付**: 2026-08-12 作成
-- **決定（方向性）**: **AT 失効後の「ゾンビ窓」（[U5 §5.2.4](../basic-design/05-token-session-authz-design.md) Z-1〜Z-5、失効後 ≤30 分）の恒久解として、OpenID Shared Signals Framework（SSF）+ CAEP を目標アーキテクチャに据える。** Phase 1 は暫定ブリッジ（短命 AT + not-before push + 高価値リソースの Introspection + DPoP Phase 2）で凌ぎ、CAEP は PoC ゲート **G-SSF** 通過後に段階導入する。
-- **関連**: [U5 §5.2.4 ゾンビ窓](../basic-design/05-token-session-authz-design.md) / [U5 §5.5 ログアウト4層](../basic-design/05-token-session-authz-design.md) / [ADR-060 §B Token Binding/DPoP](060-auth-protocol-attack-path-residual-tbd.md) / [ADR-064 削除伝播 outbox](064-deprovisioning-propagation-outbox.md) / [ITDR U7 §7.4](../basic-design/07-security-compliance-design.md) / hearing **B-CAEP-1** / gate **G-SSF**
+- **ステータス**: Proposed（2026-08-12 起票 → 2026-08-12 本設計化。Phase 1 スコープは確定、CAEP 本格導入の最終確定は G-SSF PoC + B-CAEP-1 回答後）
+- **日付**: 2026-08-12 作成・本設計化
+- **決定**: **AT 失効後の「ゾンビ窓」（[U5 §5.2.4](../basic-design/05-token-session-authz-design.md) Z-1〜Z-5、失効後 ≤30 分）の恒久解として OpenID SSF/CAEP を目標アーキテクチャに据え、3 フェーズで段階導入する。Phase 1 = 暫定ブリッジ（短命 AT + not-before push + 高価値リソースの Introspection + DPoP）+ ADR-064 outbox からの自作 SET エミッタ（transmitter 先行）。Phase 2 = Keycloak native SSF transmitter へ移行。Phase 3 = receiver（顧客 IdP からの inbound 信号）。**イベント語彙は CAEP/RISC 標準に合わせ、削除伝播（ADR-064）と統一する。**
+- **関連**: [U5 §5.2.4 ゾンビ窓](../basic-design/05-token-session-authz-design.md) / [U5 §5.4 Revocation/ITDR L4](../basic-design/05-token-session-authz-design.md) / [U5 §5.5 ログアウト4層](../basic-design/05-token-session-authz-design.md) / [ADR-064 削除伝播 outbox](064-deprovisioning-propagation-outbox.md) / [ADR-060 §B DPoP](060-auth-protocol-attack-path-residual-tbd.md) / [ITDR U7 §7.4](../basic-design/07-security-compliance-design.md) / hearing **B-CAEP-1** / gate **G-SSF** / WBS **DU-U5-06**
 
 ---
 
 ## Context
 
-- 本基盤のアプリ向け AT は **30 分の Stateless JWT**（RP がオフライン署名検証）ゆえ、失効操作（退職 SCIM 削除・管理者強制ログアウト・ITDR L4）後も**最大 30 分は有効**（U5 §5.2.4 で受容済みの構造的残余リスク）。
-- 現行の緩和は「短命化 + DPoP(Phase 2) + Introspection(Phase 3)」に留まり、**失効の near-real-time 伝播**（数秒での RP 側セッション/トークン失効）を担う標準経路がない。
-- **2-tier ブローカー**は顧客 IdP と下流アプリの間に位置するため、**双方向**が論点: ①上流（顧客 IdP）の失効/リスク信号を受信して伝播 ②下流（RP）へ失効イベントを送信。
-- 業界動向: **OpenID SSF 1.0 / CAEP 1.0 / RISC 1.0 が 2025-09-02 Final**。ただし **Keycloak の SSF は experimental・transmitter のみ・既定 off**（receiver 未完）で、商用（Okta 等）も `session-revoked`/`credential-change` 中心で risk/assurance 変化の相互運用は未成熟。
+- アプリ向け AT は **30 分の Stateless JWT**（RP がオフライン署名検証）ゆえ、失効操作後も**最大 30 分有効**（U5 §5.2.4 の構造的残余リスク）。現行緩和「短命化 + DPoP(P2) + Introspection(P3)」には**失効の near-real-time 伝播経路がない**。
+- **2-tier ブローカー**は顧客 IdP と下流アプリの中間に位置 → **双方向**が論点。①下流（RP）へ失効を送る *transmitter* ②上流（顧客 IdP）の失効/リスクを受ける *receiver*。
+- **業界動向**: OpenID **SSF 1.0 / CAEP 1.0 / RISC 1.0 が 2025-09-02 Final**（仕様リスクは解消）。ただし **Keycloak SSF は experimental・transmitter のみ・既定 off**（receiver 未完）、商用も `session-revoked`/`credential-change` 中心で risk/assurance 変化の相互運用は未成熟。
+- **既存資産との親和**: ADR-064 の削除 outbox（`user.deprovisioned` を authz DB 1Tx → リレー → EventBridge）は、**SET（Security Event Token）配信の基盤としてそのまま流用できる**。
 
-## Options
+## Decision
 
-| 案 | 内容 | 評価 |
-|---|---|---|
-| **A. 暫定ブリッジのみ（現行維持）** | 短命 AT + not-before push + 高価値 API は Introspection | ゾンビ窓は縮むが「数秒失効」には届かない。標準非依存で相互運用性なし |
-| **B. CAEP 目標 + 暫定ブリッジ（推奨方向）** | 目標を SSF/CAEP に置き、Phase 1 は A、G-SSF 通過後に transmitter（→RP）先行、receiver（←顧客 IdP）は成熟待ち | 標準準拠・段階導入。Keycloak SSF 成熟度が律速 |
-| **C. 独自 SET エミッタ自作** | CAEP イベント（`session-revoked` 等）を outbox/EventBridge から自作配信 | ADR-064 の outbox と親和。Keycloak native を待たず前倒し可能だが自作保守負担 |
+### フェーズ計画
 
-## Decision（TBD）
+| Phase | transmitter（→RP） | receiver（←顧客 IdP） | ゾンビ窓 |
+|---|---|---|---|
+| **1（本設計スコープ）** | **暫定ブリッジ** + **自作 SET エミッタ**（outbox 起点） | なし（顧客 IdP 失効は SCIM/90 日バッチ = ADR-064 既存） | 高価値 API は数秒、標準 API は ≤30 分 |
+| **2** | **Keycloak native SSF transmitter** へ移行（G-SSF 合格後） | なし | 全 API 数秒（受信 RP のみ） |
+| **3** | 同上 | **CAEP receiver**（顧客 IdP の `session-revoked`/RISC を取込） | 上流失効も数秒伝播 |
 
-- **方向 = B**（CAEP を目標、Phase 1 は暫定ブリッジ）。**C（outbox からの自作 SET エミッタ）を transmitter 早期実装の有力手段**として G-SSF で評価。
-- **確定前に必要**: ① **G-SSF PoC**（Keycloak experimental SSF の transmitter 動作 + receiver 要否 + 自作エミッタ比較）② **B-CAEP-1**（顧客 IdP 側の SSF 送受信可否・RP 側の受信 SDK 提供範囲）③ RISC（アカウント侵害/無効化）と ADR-064 削除伝播のイベント語彙整合。
+### Phase 1 = 暫定ブリッジ + 自作 SET エミッタ（確定）
 
-## Consequences（想定）
+1. **暫定ブリッジ（全 RP）**: ① AT 30 分維持 ② ITDR L4 / 管理者強制ログアウト時の **not-before push**（U5 §5.4.3）③ **高価値リソース（管理系・決済・PII 更新）は RP が Introspection（RFC 7662）**でオンライン確認 ④ DPoP（Phase 2、盗難 AT の窓内再利用を無効化）。
+2. **自作 SET エミッタ（transmitter 先行）**: ADR-064 の outbox/EventBridge に **CAEP イベントを相乗り**させ、CAEP receiver を実装した RP へ **SET（RFC 8417）を push（RFC 8935）or poll（RFC 8936）**で配信する。
+   - **発火イベント**: `session-revoked`（管理者強制ログアウト・削除）/ `token-claims-change`（権限剥奪）/ RISC `account-disabled`・`account-purged`（ADR-064 の `user.deprovisioned` を写像）。
+   - **配信先**: RP が登録した receiver エンドポイント（SSF Stream 管理）。**Phase 1 は opt-in の高価値 RP のみ**。
+   - **語彙統一**: ADR-064 の `user.deprovisioned` = RISC `account-disabled`、shadow 無効化 = CAEP `session-revoked` に対応付け、**削除伝播と CAEP を単一イベントモデル**にする。
 
-- **Positive**: ゾンビ窓を「数秒」オーダーへ短縮 / 失効・リスクの標準伝播 / RP 実装ガイド（U5 §5.6）に CAEP receiver 章を追加できる。
-- **Negative / 受容**: Keycloak SSF 成熟待ち・RP 側 SDK 配布の負担 / 相互運用は業界的に未成熟なため Phase 1 は暫定ブリッジ必須。
+### 確定に必要（trigger のみ hearing/PoC 依存）
+
+- **G-SSF PoC**: Keycloak experimental SSF transmitter の動作 + 自作エミッタとの機能差 + 性能（10M 規模の SET 配信）→ Phase 2 移行判定。
+- **B-CAEP-1**: ①顧客 IdP の SSF 送信可否（→ Phase 3 receiver の要否）②RP への CAEP receiver SDK 配布範囲（→ Phase 1 opt-in の対象）。
+
+## Consequences
+
+- **Positive**: ゾンビ窓を高価値経路で「数秒」化 / 失効・リスクの標準伝播 / ADR-064 と単一イベントモデルで実装重複なし / RP 実装ガイド（U5 §5.6）に CAEP receiver 章を追加。
+- **Negative / 受容**: Phase 1 は opt-in RP のみ（全 RP 即時ではない）/ Keycloak SSF 成熟待ち / RP 側 receiver SDK 配布の負担 / risk/assurance 変化の相互運用は業界的に未成熟ゆえ Phase 1 は基盤内評価に留める。
+
+## Alternatives Considered
+
+| 案 | 判定 |
+|---|---|
+| 暫定ブリッジのみ（CAEP 非採用） | 却下（標準非依存・数秒失効に届かない） |
+| Keycloak native SSF を Phase 1 から必須 | 却下（experimental・receiver 未完でブロッカー化） |
+| **暫定ブリッジ + outbox 自作 SET エミッタ（採用）** | **採用**（既存 outbox 流用で早期 transmitter、native は Phase 2 で置換） |
 
 ## Open Items
 
-- G-SSF の合格基準定義（transmitter/receiver/自作エミッタの 3 択と性能）。
-- CAEP Interoperability Profile 準拠の要否（2-tier + 1000+ IdP + RP fleet での相互運用）。
-- ITDR Risk Engine の risk-level 変化を CAEP `assurance-level-change` 等で RP へ出すか（業界的に未相互運用 = 当面は基盤内評価に留める）。
+- SSF Stream 管理（RP 登録・鍵・再送）の実装は idm-api（Lambda）側か Broker 側か（ADR-062 と整合）。
+- CAEP Interoperability Profile 準拠の要否（2-tier + 1000+ IdP）。
+- ITDR risk-level 変化の CAEP `assurance-level-change` 送出は業界未相互運用 → Phase 3 以降の再評価。

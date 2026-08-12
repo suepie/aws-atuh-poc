@@ -1,38 +1,69 @@
 # ADR-066: 非人間ID（NHI）ガバナンス
 
-- **ステータス**: Proposed（**スタブ** — 2026-08-12 網羅性再監査で起票。方式確定は B-NHI-1 回答 + IGA 設計時）
-- **日付**: 2026-08-12 作成
-- **決定（方向性）**: **本基盤が生成・保持する非人間ID（M2M クライアント資格情報・サービスアカウント・IRSA/Pod Identity ワークロード・SCIM/JIT コネクタ）を、棚卸し・所有者・目的・最小権限・ローテーション・失効の観点で統制する「NHI ガバナンス」を Phase 1 の運用設計に組み込む。**
-- **関連**: [U7 §7.5 IRSA/Workload D-U7-09](../basic-design/07-security-compliance-design.md) / [ADR-041 Workload Identity](041-workload-identity-spiffe.md) / [ADR-037 Shared Responsibility / 軽量 IGA](037-shared-responsibility-and-lightweight-iga.md) / [U5 §5.8 idm:* スコープ](../basic-design/05-token-session-authz-design.md) / hearing **B-NHI-1**
+- **ステータス**: Proposed（2026-08-12 起票 → 2026-08-12 本設計化。台帳スキーマ・規約・孤立検知は確定、責任分界の最終確定は B-NHI-1 回答後）
+- **日付**: 2026-08-12 作成・本設計化
+- **決定**: **本基盤が生成・保持する非人間ID（NHI）を「軽量 NHI 台帳 + 命名規約 + 孤立検知バッチ + 失効伝播」で統制する（案 B、[ADR-037](037-shared-responsibility-and-lightweight-iga.md) 軽量 IGA の傘下）。台帳は authz 系 Aurora に同居し、失効は ADR-064 の outbox 機構で伝播する。** 商用 NHI/ISPM 製品は Phase 2 以降の選択肢。
+- **関連**: [U7 §7.5 IRSA/Workload D-U7-09](../basic-design/07-security-compliance-design.md) / [ADR-041 Workload Identity](041-workload-identity-spiffe.md) / [ADR-037 軽量 IGA](037-shared-responsibility-and-lightweight-iga.md) / [ADR-064 失効伝播 outbox](064-deprovisioning-propagation-outbox.md) / [U5 §5.8 idm:* スコープ](../basic-design/05-token-session-authz-design.md) / [U9 §9.4 Runbook](../basic-design/09-operations-observability-design.md) / hearing **B-NHI-1** / WBS **DU-U7-10**
 
 ---
 
 ## Context
 
-- 1000+ テナント × M2M アプリ（Client Credentials）+ IRSA/Pod Identity + SCIM Facade/JIT コネクタ + Webhook Dispatcher = **人間IDの数十倍規模の非人間ID**が発生する。
-- 現行設計は個別の技術決定（IRSA=D-U7-09、client_secret 90 日ローテ、private_key_jwt 昇格=D-U7-10b）を持つが、**NHI 全体の「台帳・所有者・棚卸し・孤立検知」というガバナンス層が不在**。
-- 業界動向（2025-26）: NHI:人間 > 80:1・前年比 +44%、クラウドのマシンIDの数%が既定で管理者権限。NHI ガバナンス（CSA / ISPM）が最も見落とされる統制領域。
+- 1000+ テナント × M2M アプリ（Client Credentials）+ IRSA/Pod Identity + SCIM Facade/JIT コネクタ + Webhook Dispatcher + outbox/shadow 制御 Lambda = **人間 ID の数十倍規模の NHI**。
+- 現行は個別の技術決定（IRSA=D-U7-09、client_secret 90 日ローテ、private_key_jwt 昇格=D-U7-10b）を持つが、**NHI 全体の台帳・所有者・棚卸し・孤立検知のガバナンス層が不在**。
+- 業界（2025-26）: NHI:人間 > 80:1・前年比 +44%、クラウドマシン ID の数%が既定管理者権限。NHI ガバナンス（CSA / ISPM）が最も見落とされる統制領域。
 
-## Options
+## Decision（案 B = 軽量 NHI 台帳）
 
-| 案 | 内容 | 評価 |
-|---|---|---|
-| **A. 個別決定のまま（現状）** | 各 NHI を個別に設定・ローテ | 台帳・所有者・孤立検知が無く、スケール時に統制不能 |
-| **B. 軽量 NHI 台帳 + 規約（推奨方向）** | ADR-037 軽量 IGA の一部として NHI 台帳（種別・所有者・目的・スコープ・ローテ周期・最終使用）+ 命名規約 + 孤立検知バッチ | 自作コスト小・既存 IGA/監視に相乗り |
-| **C. 商用 NHI/ISPM 製品** | 専用ガバナンス製品導入 | Phase 1 予算外。Phase 2 以降の選択肢 |
+### 1. NHI 台帳スキーマ（authz 系 Aurora 同居、ADR-063 ブランドローカル）
 
-## Decision（TBD）
+| 列 | 内容 |
+|---|---|
+| `nhi_id` | 一意 ID |
+| `type` | `oidc-client`（M2M）/ `service-account` / `irsa-role` / `pod-identity` / `connector`（SCIM/JIT）/ `glue-lambda` |
+| `owner` | 責任者（人間ユーザ or チーム。**必須・空は CI で拒否**） |
+| `tenant_id` / `brand_id` | 帰属（横断は null） |
+| `purpose` | 用途（自由記述 + 分類） |
+| `scopes` | 付与スコープ（`idm:*` 等、最小権限の実体） |
+| `secret_type` | `client_secret` / `private_key_jwt` / `irsa`（無秘密） |
+| `rotation_period` / `last_rotated_at` | ローテ周期と最終ローテ |
+| `last_used_at` | 最終使用（孤立検知の起点） |
+| `status` | `active` / `disabled` / `retired` |
 
-- **方向 = B**（軽量 NHI 台帳 + 規約、ADR-037 の傘下）。
-- **確定前に必要**: ① **B-NHI-1**（顧客側 M2M クライアントの所有者・棚卸し責任分界、共有責任のどちら側か）② NHI 台帳の SSOT（idmap 系 authz DB 同居 or 別）③ 孤立検知（最終使用が閾値超のクライアント/SA の失効フロー）と ADR-064 削除伝播の整合。
+### 2. 命名規約
 
-## Consequences（想定）
+- OIDC クライアント: `nhi-<type>-<tenant|shared>-<purpose>`（例 `nhi-m2m-t042-expense`）。
+- IRSA/SA: 既存 IRSA 規約（D-U7-09）に `nhi_id` タグを付与し台帳と突合。
 
-- **Positive**: 資格情報スプロールの可視化 / 最小権限と定期ローテの機械強制 / 監査（SOC2/ISO）での NHI 証跡。
-- **Negative / 受容**: 台帳の維持運用 + 所有者アサインの運用負荷（軽量 IGA の範囲で吸収）。
+### 3. 孤立検知バッチ（ROSA infra Pool CronJob、D3-08/D-U9-17 と同基盤）
+
+- **`last_used_at` が閾値（既定 90 日）超**の `active` NHI を検出 → owner に通知 → 猶予後に `disabled`。
+- **owner 不在（退職）**の NHI を検出 → 再アサイン要求。
+- **ローテ期限超過**の secret を検出 → 強制ローテ or 失効。
+
+### 4. 失効伝播（ADR-064 機構の再利用）
+
+- NHI 失効（`disabled`/`retired`）は **outbox → EventBridge → 該当リソース無効化**（OIDC クライアント disable / IRSA ロール剥奪）。ADR-064 の `user.deprovisioned` と同じ必達 + 冪等 + リコンサイル。
+
+### 5. 確定に必要（責任分界のみ hearing 依存）
+
+- **B-NHI-1**: テナント側 M2M クライアントの owner（顧客 or 弊社）と棚卸し責任の分界（共有責任 = ADR-037）。
+
+## Consequences
+
+- **Positive**: 資格情報スプロールの可視化 / 最小権限・定期ローテの機械強制 / SOC2・ISO の NHI 証跡 / owner 必須で孤立を構造的に予防。
+- **Negative / 受容**: 台帳維持と owner アサインの運用負荷（軽量 IGA 範囲で吸収）/ 既存 NHI の初期棚卸しに一時工数。
+
+## Alternatives Considered
+
+| 案 | 判定 |
+|---|---|
+| 個別決定のまま | 却下（台帳・孤立検知なしでスケール時に統制不能） |
+| **軽量 NHI 台帳 + 規約（採用）** | **採用**（自作コスト小・既存 IGA/監視/outbox に相乗り） |
+| 商用 NHI/ISPM 製品 | Phase 2 以降（Phase 1 予算外） |
 
 ## Open Items
 
-- Client Credentials の所有者モデル（テナント × アプリ）と失効時の連鎖（[ADR-064](064-deprovisioning-propagation-outbox.md) と同機構で伝播できるか）。
-- IETF WIMSE（ワークロードID Token、2024 WG）の姿勢 — IRSA（AWS 限定）→ 将来ポータブル化の余地を台帳設計で殺さない。
-- AI エージェント/エージェンティックID（[hearing B-AGENT-1](../requirements/hearing-checklist.md)）は NHI の特殊系として本 ADR の枠組みで受ける。
+- Client Credentials owner モデル（テナント × アプリ）と失効連鎖の粒度。
+- IETF WIMSE（ワークロード ID Token、2024 WG）姿勢 — IRSA（AWS 限定）→ 将来ポータブル化の余地を台帳設計で殺さない。
+- AI エージェント/エージェンティック ID（[hearing B-AGENT-1](../requirements/hearing-checklist.md)）は NHI の特殊系として本台帳の `type` 拡張で受ける。

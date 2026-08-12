@@ -1,38 +1,69 @@
 # ADR-067: 認可判定ログ + アクセス再認証（IGA ガバナンス強化）
 
-- **ステータス**: Proposed（**スタブ** — 2026-08-12 網羅性再監査で起票。方式確定は B-AUTHZLOG-1 / B-IGA-REC-1 回答 + U9 監査設計時）
-- **日付**: 2026-08-12 作成
-- **決定（方向性）**: **① 認可判定（Backend DB エンタイトルメント）の「なぜ許可/拒否したか」を判定ログとして記録し、② 3 層管理スコープ・テナント管理者・NHI に対する定期アクセス再認証（recertification）を軽量 IGA に組み込む。** 現行の 7 年不変監査（認証イベント中心）を「認可の説明可能性」と「権限棚卸しの実施記録」で補完する。
-- **関連**: [ADR-037 軽量 IGA / Shared Responsibility](037-shared-responsibility-and-lightweight-iga.md) / [ADR-038 ユーザ管理画面 3 層スコープ](038-tenant-admin-portal.md) / [U7 §7.7.1 監査ログ 7 年 D-U7-13](../basic-design/07-security-compliance-design.md) / [U3 D3-14 粗粒度認可](../basic-design/03-identity-provisioning-design.md) / [U9 §9.3 ログ](../basic-design/09-operations-observability-design.md) / hearing **B-AUTHZLOG-1 / B-IGA-REC-1**
+- **ステータス**: Proposed（2026-08-12 起票 → 2026-08-12 本設計化。ログスキーマ・サンプリング・recert 枠組みは確定、粒度と実施主体の最終確定は B-AUTHZLOG-1 / B-IGA-REC-1 回答後）
+- **日付**: 2026-08-12 作成・本設計化
+- **決定**: **① idm-api の認可判定に「決定ログ」（対象/スコープ/結果/理由/ポリシー版、PII 非搭載）を出し U9 ログ 3 層に相乗りさせる。既定サンプリング = 拒否 + 高権限操作は全件、read 許可は集約。② 3 層管理スコープ・テナント管理者・NHI のアクセス再認証（recertification）を軽量 IGA（[ADR-037](037-shared-responsibility-and-lightweight-iga.md)）に組込み、リスクベース頻度 + 完了記録（reviewer/日付/判定）を残す。**
+- **関連**: [ADR-037 軽量 IGA](037-shared-responsibility-and-lightweight-iga.md) / [ADR-038 3 層スコープ](038-tenant-admin-portal.md) / [ADR-066 NHI 台帳](066-non-human-identity-governance.md) / [U7 §7.7.1 監査ログ D-U7-13](../basic-design/07-security-compliance-design.md) / [U3 D3-14 粗粒度認可](../basic-design/03-identity-provisioning-design.md) / [U9 §9.3 ログ](../basic-design/09-operations-observability-design.md) / hearing **B-AUTHZLOG-1 / B-IGA-REC-1** / WBS **DU-U9O-06**
 
 ---
 
 ## Context
 
-- 監査ログ（D-U7-13）は**認証イベント中心**。SOC 2 CC6.1 / ISO 27001 A.8/A.9 は**認可判定の証跡**（誰が・何に・なぜアクセスできたか、ポリシー版・入力）を求める傾向が強まっている。
-- 認可は Backend DB エンタイトルメント（D3-14、粗粒度）で行うが、**判定の決定ログを出す仕組みが未設計** → 「最小権限を強制している」ことを監査で証明できない。
-- **アクセス再認証（recertification）**: ADR-037 の軽量 IGA はあるが、**3 層管理スコープ・テナント管理者・NHI の定期棚卸し（誰が・いつ・判定を記録）が未定義**。ISO 27001 A.9.2.5 は一律年次でなくリスクベースの実施と**完了記録**を要求。
+- 監査ログ（D-U7-13）は**認証イベント中心**。SOC 2 CC6.1 / ISO 27001 A.8/A.9 は**認可判定の証跡**（誰が・何に・なぜ・ポリシー版）を求める傾向。認可は Backend DB エンタイトルメント（D3-14 粗粒度）で行うが**決定ログ機構が未設計** → 最小権限の強制を監査で証明できない。
+- **アクセス再認証**: ADR-037 軽量 IGA はあるが**3 層管理スコープ・テナント管理者・NHI の定期棚卸し（誰が・いつ・判定を記録）が未定義**。ISO 27001 A.9.2.5 = リスクベース + 完了記録。
 
-## Options
+## Decision
 
-| 案 | 内容 | 評価 |
+### 1. 認可判定ログ（decision log）
+
+**出力元 = idm-api（認可判定を行う Backend）**。判定ごとに構造化ログを出す:
+
+| フィールド | 内容 |
+|---|---|
+| `ts` / `request_id` | 時刻 / 相関 ID |
+| `subject` | 判定対象（`sub` — **PII 非搭載**、U5 §5.1.4 と整合） |
+| `actor` | 操作主体（管理者/テナント管理者/CC クライアント） |
+| `resource` / `action` | 対象リソース × 操作 |
+| `decision` | `allow` / `deny` |
+| `reason` | 根拠（付与エンタイトルメント / スコープ不足 / テナント不一致 等） |
+| `policy_version` | 適用したエンタイトルメント定義の版 |
+
+- **サンプリング（既定）**: `deny` は全件 / 高権限操作（`idm:*:write`・削除・権限変更）の `allow` は全件 / 一般 read の `allow` は集約（件数メトリクス + 逸脱時のみ詳細）。**量の律速を避けつつ「なぜ許可したか」を高リスク面で担保**。
+- **保管**: U9 ログ 3 層に相乗り（Hot 90 日 / Cold WORM。D-U9-05）。scrubbing 通過後保存（D-U7-07）。
+- **将来**: externalized authorization（OpenFGA/Cedar/OPA、U3 将来検討）へ移行しても decision log の形は不変 → PDP 決定ログへ素直に接続。
+
+### 2. アクセス再認証（recertification）キャンペーン
+
+| 対象 | 実施主体（既定） | 頻度（既定・リスクベース） |
 |---|---|---|
-| **A. 現状（認証監査のみ）** | authZ 判定ログ・recert なし | 監査で最小権限/棚卸しを証明不能 |
-| **B. 判定ログ + 軽量 recert（推奨方向）** | idm-api の認可判定に決定ログ（対象/スコープ/結果/理由/ポリシー版）を付与 + 3 層 × 四半期 or リスクベースの recert キャンペーン（reviewer/日付/判定を記録） | 自作コスト中・既存監査基盤に相乗り |
-| **C. 商用 IGA/PDP 製品** | 外部 PDP + IGA スイート | Phase 1 予算外。将来（[ReBAC/Cedar/OPA 検討](../basic-design/03-identity-provisioning-design.md)）と連動 |
+| L1 基盤運用者スコープ（P-1） | 弊社 Security Lead | 四半期 |
+| L2 テナント管理者権限 | テナント管理者（自テナント）+ 弊社サンプリング監査 | 半期 |
+| L3 アプリ/機能ロール | アプリオーナー | 年次 or 変更時 |
+| NHI（[ADR-066](066-non-human-identity-governance.md)） | NHI owner | 四半期（孤立検知と連動） |
 
-## Decision（TBD）
+- **完了記録**: reviewer / 日付 / 対象 / 判定（継続 or 剥奪）を監査ログに残す（ISO A.9.2.5）。剥奪は ADR-064/066 の失効機構で伝播。
+- **実装**: ユーザ管理画面（ADR-038）に recert ビューを追加、または軽量バッチ + レビュー記録テーブル。
 
-- **方向 = B**。判定ログは U9 ログ 3 層（Hot/Cold）に相乗り、recert は軽量 IGA（ADR-037）の運用に組み込む。
-- **確定前に必要**: ① **B-AUTHZLOG-1**（顧客・監査人が要求する認可証跡の粒度・保持）② **B-IGA-REC-1**（各層の再認証頻度・実施主体 = 弊社運用者 / テナント管理者 / 監査、共有責任分界）③ 決定ログの PII 非搭載（U5 §5.1.4 チェックリストと整合）。
+### 3. 確定に必要（粒度・主体のみ hearing 依存）
 
-## Consequences（想定）
+- **B-AUTHZLOG-1**: 顧客/監査人が要求する認可証跡の粒度・保持期間。
+- **B-IGA-REC-1**: 各層の再認証頻度・実施主体（弊社/テナント/監査）の共有責任分界。
 
-- **Positive**: 最小権限の証明 / 孤立権限・過剰権限の定期是正 / SOC2・ISO 監査対応。将来の externalized authorization（OpenFGA/Cedar/OPA）の決定ログ移行が容易。
-- **Negative / 受容**: 判定ログの量（サンプリング/集約要）+ recert 運用の負荷（軽量 IGA の範囲で吸収）。
+## Consequences
+
+- **Positive**: 最小権限の証明 / 過剰・孤立権限の定期是正 / SOC2・ISO 対応 / PDP 移行への布石。
+- **Negative / 受容**: 判定ログの量（サンプリングで抑制）+ recert 運用の負荷（軽量 IGA 範囲）。
+
+## Alternatives Considered
+
+| 案 | 判定 |
+|---|---|
+| 認証監査のみ（現状） | 却下（最小権限/棚卸しを証明不能） |
+| **判定ログ + 軽量 recert（採用）** | **採用**（既存監査基盤・ADR-037 に相乗り） |
+| 商用 IGA/PDP 製品 | Phase 2 以降（予算外・将来の externalized authz と連動） |
 
 ## Open Items
 
-- 判定ログの量とサンプリング方針（全 authZ 判定 or 拒否 + 高権限のみ）。
-- recert の対象に NHI（[ADR-066](066-non-human-identity-governance.md)）を含める範囲。
-- 忘れられる権利 vs 監査保持（[hearing B-RTBF-1](../requirements/hearing-checklist.md)）との整合 — 判定ログ内の主体識別子の仮名化方針。
+- 判定ログのサンプリング率の実測調整（10M 規模の量）。
+- recert 対象への NHI 包含範囲（ADR-066 と合同）。
+- decision log 内 `sub` の仮名化と RTBF（[hearing B-RTBF-1](../requirements/hearing-checklist.md)）の整合。
