@@ -528,6 +528,7 @@ flowchart TB
 - **Erasure と Phase 1 物理削除禁止の整合**: ADR-048 の「論理削除 30 日 → 物理削除」は、U3 D3-09（Phase 1 物理削除禁止 + 4 層ガードレール + `deprovisioned_at` 起算の Phase 2 バッチ）が**後発の確定決定として優先**する。Phase 1 の Erasure 請求は「Soft Delete + 表示属性の仮名化（`[Anonymized-xxxxxx]`、`sub`/監査 FK は保持）」で応答し、物理削除は Phase 2 バッチ（`retention_years` 起算）に統合する。この解釈は APPI/GDPR 上も成立する（監査・法的義務による保持は Art.17(3) 除外事由。B-SN-21 の推奨 B と同型）。**ADR-048 §C への注記追記をメインセッションに依頼**（§10.6.3）。
 - **SN 側の DSAR 連動**: SN `sys_user` の匿名化（SN guide §10 スクリプト）は**顧客 SN 管理者の責務**とし、弊社は手順書提供 + 実施記録の受領のみ（Shared Responsibility、ADR-037）。
 - **証跡**: 全 DSAR 対応を監査ログ 7 年保管（受領 / 本人確認 / 実施 / 完了通知。U7 の監査 Acct 保管体系に載せる）。月次レポート（ADR-048 §G.2）は Phase 2。
+- **忘れられる権利 vs 7 年不変監査の境界（2026-08-12 追加、B-RTBF-1）**: 消去要求と改ざん不能監査（D-U7-13）は衝突するため、**「消去する対象」と「不変監査で tombstone/仮名化して残す対象」の境界を明文化**する（都度判断は不可）。既定 = 個人データ本体は Soft Delete→物理削除（U3 D3-09）、監査ログ内の主体識別子は**仮名化して保持**（コンプラ証跡の法的保持根拠）。境界の最終確定は hearing **B-RTBF-1**（決定ログ内 `sub` の仮名化は ADR-067 と整合）。
 
 ---
 
@@ -549,6 +550,7 @@ flowchart TB
 | D-U10-10 | `GET /api/me/apps` スキーマ確定（entitled/requestable、app_id = Sorry・App Registry と同一名前空間、max-age 60s） | §10.2.4 | U4 D-U4-06、B-627 暫定 |
 | D-U10-11 | Webhook = EventBridge 正規化イベント（`basis.*`）SSOT + HMAC 署名 + event_id 冪等 + 指数バックオフ 8 回 + DLQ。イベント辞書 v1 = 7 種 + 予約 4 種（idp / maintenance 系は Phase 2）。配信先 FQDN は REQ-OUT-01 枠拡張 or 新 REQ-OUT-06 の起票を U6 へ依頼 | §10.3 | §FR-9.3、U3 D3-10、U6 §6.7.3 |
 | D-U10-12 | 移行 = 4 集団別方式マトリクス + PW ハッシュ判定フロー（既定 = User Storage SPI キャッシュ移行、Custom Hash Provider は条件付き）+ 旧 ID は `idmap` 記録（**`legacy_user_id` JWT クレーム不発行** = ADR-019 上書き）+ アプリ単位ロールバック 1h | §10.4 | ADR-019/054、U3 D3-03、P-10 |
+| D-U10-13b | RTBF vs 7 年監査の境界を明文化（消去対象 = 個人データ本体、監査ログ主体識別子は仮名化保持）。B-RTBF-1 で確定 | §10.5 | ADR-048、ADR-067、U7 D-U7-13 |
 | D-U10-13 | DSAR Phase 1 = 手動運用（JSON/SCIM エクスポート + Soft Delete + 仮名化）。Workflow Backend / Subject ポータル / Cryptographic Erasure = Phase 2。Erasure は U3 D3-09 が ADR-048 §C に優先 | §10.5 | ADR-048、U3 D3-09 |
 
 ### 10.6.2 未決事項 + ゲート追跡

@@ -185,6 +185,10 @@ flowchart LR
 
 ---
 
+### 9.3.3 決定 D-U9-20: 認可判定ログ（[ADR-067](../adr/067-authz-decision-logging-and-access-recertification.md)）
+
+**採用**: idm-api の認可判定に**決定ログ**（対象 `sub`〔PII 非搭載〕/操作主体/リソース×操作/allow・deny/理由/ポリシー版）を出し、本節のログ 3 層に相乗り（scrubbing 通過後保存）。**サンプリング** = `deny` 全件 + 高権限操作（`idm:*:write`・削除・権限変更）の `allow` 全件 + 一般 read は集約。**理由**: 現行監査（D-U7-13）は認証中心で、SOC2 CC6.1 / ISO A.8/A.9 が求める**認可の説明可能性（最小権限の証明）**が担保されない。アクセス再認証（recertification）と合わせ [ADR-067](../adr/067-authz-decision-logging-and-access-recertification.md)、粒度・保持は hearing **B-AUTHZLOG-1**。
+
 ## 9.4 Runbook 体系と禁則集
 
 ### 9.4.1 決定 D-U9-07: Phase 1 Runbook 一覧（NFR-6 ユースケース A〜G の実装写像）
@@ -335,6 +339,10 @@ flowchart LR
 **U6 引き渡し**: バッチ（Broker Acct）は排他ロック取得のため Broker Aurora へ短命接続を張る（KC の jdbc-ping プールとは別枠・少数接続。max_connections 予約枠に含める — U6 §6.4.2）。
 
 **一次資料（Kubernetes 標準セマンティクス）**: [CronJob concurrencyPolicy](https://kubernetes.io/docs/concepts/workloads/controllers/cron-jobs/) / [Job podReplacementPolicy](https://kubernetes.io/docs/concepts/workloads/controllers/job/#pod-replacement-policy) / [PostgreSQL Advisory Locks](https://www.postgresql.org/docs/current/explicit-locking.html#ADVISORY-LOCKS)。
+
+### 9.5.5 決定 D-U9-19: 非本番環境の PII マスキング/合成データ
+
+**採用**: Staging/検証環境に**本番相当 PII を投入しない**。①**静的マスキング**（本番からの複製時に不可逆マスキング）または②**合成データ生成**を IaC/CI で標準化し、非本番に平文 PII が着地しないことを機械検査する。**理由**: 10M 実データの非本番露出は APPI/GDPR の重大責任（テスト環境流出は制裁事例で相当割合）。負荷試験（E-2 / G-IdP-Scale）の 1000/2000 IdP・大量ユーザデータセットも本規約に従い合成生成する。適用範囲・マスキング方式は hearing **B-TESTDATA-1**。
 
 ## 9.6 CI/CD（ROSA HCP + RHBK Operator 前提）
 
@@ -541,6 +549,8 @@ flowchart TB
 ---
 
 ## 改訂履歴
+
+- 2026-08-12: **網羅性再監査反映** — D-U9-19 非本番 PII マスキング/合成データ（§9.5.5、B-TESTDATA-1）/ D-U9-20 認可判定ログ（§9.3.3、[ADR-067](../adr/067-authz-decision-logging-and-access-recertification.md)、B-AUTHZLOG-1）を新設。アクセス再認証キャンペーンは ADR-067（軽量 IGA 運用）。
 
 - 2026-07-24: 初版（Wave 3 起草）。Baseline v1（P-01/P-04/P-15/P-16/P-17/P-18）準拠。可観測性（OTel/AMP/AMG/X-Ray + IdP 数関数監視、D-U9-01〜03）、SLO 定義書 + Burn Rate（D-U9-04）、ログ 3 層 + SIEM 取込セット（D-U9-05〜06）、Runbook 27 冊 + 禁則 K-1〜11（D-U9-07〜08）、IaC 2 層 + keycloak-config-cli 不採用 + ドリフト検知（D-U9-09〜11）、CI/CD（GitHub Actions/ArgoCD/ECR + SPI サプライチェーン + KC 昇格ゲート、D-U9-12〜14）、IdP オンボーディング 6 ステップ（D-U9-15）、Central Canary 弊社監査 Acct 配置変更（D-U9-16）を決定。
 - 2026-08-06: **[ADR-062](../adr/062-idm-api-execution-form-lambda.md)（Lambda）/ [ADR-063 ブランドユニット](../adr/063-brand-unit-architecture.md)を反映** — §9.6.4 D-U9-18 新設（idm-api #2 + 非同期の糊の Lambda dev/release パイプライン: GitHub Actions→ECR コンテナイメージ Lambda→SAM/CDK で 2 アカウント、Secrets Manager+rotation、X-Ray、Lambda バッチ = EventBridge Scheduler。Keycloak の ROSA/GitOps と別系統 = クラスタ分離の実体）。決定一覧に D-U9-18。

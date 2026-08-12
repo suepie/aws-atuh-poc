@@ -393,6 +393,10 @@ P-18 により WAF の「/admin 全 IP Deny」は**他組織への要求（保�
 
 # B 部: 他組織への要求仕様
 
+### 6.6.3 決定 D-U6-14: テナント隔離契約 + 認証フローのテナント別公平性
+
+**採用**: 単一 Realm + Organizations は**論理**マルチテナンシーであり自動的な資源/障害隔離を伴わないため、隔離を「契約」として明文化する。**①テナント別公平性（noisy-neighbor 対策）**: ログイン/token フローに**テナント別レート制限・クォータ**を設ける（SCIM/管理 API は 10 req/s 済 = D3-11。認証フローは 1 テナントのバーストで共有 DB 接続プール/Infinispan を枯渇させ得るため、CloudFront/WAF or ALB 層 + KC 側で per-tenant スロットルを実装）。**②隔離の強制点**: `tenant_id` を DB 行（IDOR 防御 U5 §5.6.3）・ログ・キュー・射影・下流 API で一貫強制（Organization クレームは識別であり隔離ではない）。**③realm 分離の脱出条件**: realm 全体変更/障害/キャッシュが全テナントに波及するため、**大口/規制テナントは別 realm へ分離できる基準**（U2 §2.7.8 拡張パスと連動）を持つ。既定値・分離基準は hearing **B-TENANT-ISO-1** + U6 サイジングで確定。
+
 ## 6.7 ネットワーク監査 Acct / ネットワーク Acct への要求仕様
 
 本節は先方（NW 監査 Acct / NW Acct 管理組織）への**要求として出す形式**で記述する。各項目に REQ 番号を付与し、合意結果（可否・SLA）を本書に追記して管理する。前提となる責任分界は ADR-039 v3 注記。
@@ -521,6 +525,8 @@ Broker KC は顧客 IdP の authorization/token/JWKS/userinfo エンドポイン
 ---
 
 ## 改訂履歴
+
+- 2026-08-12: **D-U6-14 新設（§6.6.3）** — テナント隔離契約 + 認証フローのテナント別公平性（noisy-neighbor 対策 + `tenant_id` 一貫強制 + realm 分離脱出条件、B-TENANT-ISO-1）。
 
 - 2026-07-23: 初版（Wave 1 起草）。Baseline v1（P-01〜P-18）準拠。A 部（自管理設計）/ B 部（他組織要求仕様）の 2 部構成で確定。B-BROK-1 / G-OSAKA / G-EGRESS / In-A/In-B 先方確認は未決事項として §6.8 で追跡。
 - 2026-08-07: **認可データ配置粒度 = A+C を反映（[ADR-063](../adr/063-brand-unit-architecture.md) / U7 D-U7-19）** — idmap/authz/projection はブランド(IdP-KC)アカウントローカル（O-8 クローズ）、Keycloak identity Aurora とは別 Aurora/CMK/IAM/SG に内部分離（D-U6-07 に authz 系 Aurora 別建てを明記）。
