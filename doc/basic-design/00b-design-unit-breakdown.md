@@ -200,6 +200,25 @@ U1 は前提凍結（P-01〜18）と PoC・契約前ゲートの管理層。構�
 | （要件追記） | アカウントリンク / 利用者セルフセッション / OAuth 同意 | **Phase 1 非対応 or 対象外を明示**（穴を塞ぐ、要件文追記） |
 | （再分類） | Landing/管理API/Break-Glass/Sorry = スコープ増→書き漏れ | 要件側に追記（DU-U4-04/U10-02/U7-06/U4-05 の根拠付け） |
 
+## 12b. 継続アクセス・ガバナンス・新興ID 由来の追加 DU（2026-08-12 網羅性再監査 / ADR-065〜067）
+
+大規模認証 BP 突合（RFC 9700 / CAEP-SSF Final 2025-09 / NIST 800-63-4 / CSA NHI 等）で判明した真の漏れを ADR 化・設計反映済み。対応する新規 DU:
+
+| DU | 単元名 | 主要成果物 | DoD | 依存 | PoC | 工数 | 状態 |
+|---|---|---|---|---|---|---|---|
+| DU-U5-06 | 継続アクセス（CAEP/SSF） | App: outbox 起点 自作 SET エミッタ + SSF Stream 管理 + RP receiver SDK（[ADR-065](../adr/065-continuous-access-caep-shared-signals.md)） | Phase 1 = 暫定ブリッジ + opt-in RP へ `session-revoked`/RISC 配信、ゾンビ窓を高価値経路で数秒化 | DU-U3-05, DU-U5-03 | **G-SSF** | L | 🟡 |
+| DU-U5-07 | プロトコル堅牢化 | Config: at+jwt 検証(7点) / RFC 9470 API層 step-up / 同時セッション制限(SPI) / TE act・may_act+ダウンスコープ（U5 §5.10） | 7 点検証 + 重要 API チャレンジ + 管理系セッション上限が成立 | DU-U5-01, DU-U2-03 | — | M | 🔒 |
+| DU-U4-09 | セルフサービス セッション/デバイス管理 | App/Theme: 自セッション一覧 + 自己失効（D-U4-09） | 利用者が自端末を失効可・本基盤セッションのみ対象 | DU-U4-01 | — | S | 🔒 |
+| DU-U4-10 | セキュアなエンロール（登録 ATO） | Config: 2 台目/再登録に step-up 必須（D-U4-10） | 第 1 要素のみの追加登録を拒否 | DU-U4-03 | — | S | 🔒 |
+| DU-U7-10 | NHI ガバナンス台帳 | App/IaC: NHI 台帳 + 命名規約 + 孤立検知 CronJob + 失効伝播（[ADR-066](../adr/066-non-human-identity-governance.md)） | owner 必須・90 日孤立検知・ADR-064 機構で失効 | DU-U3-01, DU-U7-05 | — | M | 🔒 |
+| DU-U9O-06 | 認可判定ログ + アクセス再認証 | App/Doc: idm-api 決定ログ（サンプリング）+ 3 層 recert キャンペーン（[ADR-067](../adr/067-authz-decision-logging-and-access-recertification.md)） | deny+高権限全件ログ + recert 完了記録（ISO A.9.2.5） | DU-U10-02, DU-U9O-02 | — | M | 🔒 |
+| DU-U9O-07 | 非本番 PII マスキング | IaC/CI: 静的マスキング or 合成データ + 平文 PII 非着地の機械検査（D-U9-19） | 非本番に本番 PII が入らない・負荷試験データも合成 | DU-U9I-01 | — | S | 🔒 |
+| DU-U6-10 | テナント隔離契約・公平性 | IaC/Config: 認証フローの per-tenant レート制限 + `tenant_id` 一貫強制 + realm 分離基準（D-U6-14） | 1 テナントのバーストが他を枯渇させない・分離脱出条件明文 | DU-U6-02, DU-U6-04 | — | M | 🟡 |
+| DU-U7-11 | 同意管理・同意レシート | App/Doc: 同意記録 + 撤回 + レシート（D-U7-21、越境テナント必須） | 越境/第三者提供テナントで記録・撤回可 | DU-U10-02 | — | S | 🟡 |
+| DU-U10-07 | RTBF vs 監査境界 | Doc: 消去対象 vs 仮名化保持の境界 + 決定ログ `sub` 仮名化（D-U10-13b） | 都度判断でなく境界を契約明記 | DU-U3-06 | — | S | 🟡 |
+
+> 姿勢のみ（Phase 1 実装なし、hearing 回答待ち）: FAPI 2.0（PAR/JAR、B-FAPI-1）/ IPSIE 準拠（B-IPSIE-1）/ AI エージェント ID（B-AGENT-1、NHI 台帳 `type` 拡張で受ける）。
+
 ## 13. 未確定・引き渡し
 
 - **工数の総和**は [00a §5](00a-remaining-tasks-and-effort.md) の 325–455 人日レンジと整合させる（本表の S/M/L は配分の目安。確定は詳細設計時に PoC 実測を織り込んで再見積）。
@@ -208,4 +227,5 @@ U1 は前提凍結（P-01〜18）と PoC・契約前ゲートの管理層。構�
 
 ## 改訂履歴
 
+- 2026-08-12 (v1.1): **§12b 追加** — 継続アクセス・ガバナンス・新興ID 由来の追加 DU 10 件（DU-U5-06 CAEP/07 プロトコル堅牢化 / U4-09 自セッション/10 セキュア登録 / U7-10 NHI 台帳/11 同意 / U9O-06 認可ログ+recert/07 非本番マスキング / U6-10 テナント隔離 / U10-07 RTBF 境界）を ADR-065〜067 + U4/U5/U6/U7/U9/U10 反映と同期。gate G-SSF 追加。
 - 2026-08-10 (v1.0): 新規作成。basic-design 10 冊の正式決定 170 件 + ADR-062/063/064 + 網羅性監査を、実装可能単位（DU-U*-nn 約 60 単元）へ分解。DU グループ間依存 mermaid + クリティカルパス + PoC ゲート紐付け + 監査由来の新規 DU 4 群を収録。
