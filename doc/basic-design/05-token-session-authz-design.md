@@ -456,6 +456,7 @@ Back-Channel Logout はサーバ間 POST のため、**バックエンドを持�
 
 - **[ADR-012](../adr/012-vpc-lambda-authorizer-internal-jwks.md) の「JWKS プライベート化」は "アプリの検証トラフィックを VPC 内に寄せる" 意味であり、"エンドポイントを非公開にする" 意味ではない**（公開面は [ADR-013](../adr/013-cloudfront-waf-ip-restriction.md) L7 Rule#100 で JWKS / `.well-known` を全 IP 許可）。
 - **制約**: API Gateway の**ネイティブ JWT authorizer は AWS マネージド側が issuer の `jwks_uri` を取りに行くため、JWKS はパブリック到達可能である必要がある**（private VPC エンドポイント不可）。よって **JWKS の公開を IP 制限等で絞る選択は、L1 をネイティブ JWT authorizer にしている限り取れない**。絞りたい場合は **L1 を Lambda authorizer（VPC 内、ADR-012 パターン）へ替える**（[ADR-062](../adr/062-idm-api-execution-form-lambda.md) Constraints）。
+- **キャッシュ TTL の責務分界**: TTL を**実装・保持するのは RP（検証器）**だが、**安全性を担保するのは基盤側の鍵並走期間**。規約は「**既定 1h + `kid` 不一致時に即時リフレッシュ**」の**セットで必須**（TTL 単独では鍵ローテ直後に検証失敗、キャッシュ無しでは JWKS が per-request 経路化して SLO〔99.99%/<100ms〕とコストが崩れる）。**不変条件「鍵の並走期間 > 全検証者の最大キャッシュ TTL」は [U7 D-U7-03](07-security-compliance-design.md) で担保**（API GW ネイティブ JWT authorizer のように **TTL を制御できない検証者**を含む。現行 = 並走 30 日 ≫ RP 1h / API GW 2h）。
 - **JWKS は「SPA/モバイルの有無」では要否が決まらない**（検証者＝ Resource Server が必要とする）。全 RP が BFF でも、下流 API の Bearer 検証（§5.6.3）と Back-Channel Logout の Logout Token 検証（§5.5.4）、Realm Key 90 日ローテ追随（D-U7-03）のため JWKS は必須。**公開が不要になるだけで、内部到達は必要**。
 
 ### 5.6.4 CORS / SameSite

@@ -140,7 +140,7 @@ flowchart TB
 | 保管 | Realm Key（秘密鍵）は Broker Aurora 内 → `broker-aurora-mrk` で at-rest 暗号化（Envelope） |
 | ローテーション | **90 日 Cryptoperiod**（ADR-045 §D.4）: 新鍵生成 → active 切替（sign = 新鍵のみ）→ 旧鍵は passive（verify のみ）で **30 日並走** → 無効化。Keycloak Admin API + CronJob（U9 実装、実行 Role は IRSA） |
 | 緊急ローテ | Golden 検知 Critical（§7.4）発火時: 並走なしで旧鍵即時無効化 + not-before push（U5 §5.4.3）+ 全 RP へ JWKS 再取得注意喚起。SOP は U9 Runbook（B-GD-3 で承認体制確定） |
-| RP 側整合 | JWKS キャッシュは `kid` ベースで新鍵へ追従（U5 §5.6.3 検証 6 点 #1）。並走 30 日 > RP キャッシュ TTL を保証 |
+| RP 側整合 | JWKS キャッシュは `kid` ベースで新鍵へ追従（U5 §5.6.3 検証 7 点 #1 / §5.6.3b）。**不変条件: 鍵の並走期間 > 全検証者の最大キャッシュ TTL** — RP 規約は「既定 1h + `kid` 不一致時に即時リフレッシュ」だが、**TTL を自分で制御できない検証者**（**API GW ネイティブ JWT authorizer = AWS 側が最大 2h キャッシュ**、U5 §5.6.3b）も存在するため、**並走 30 日で全体を吸収**する（規約を守り損ねた RP がいても事故らない保険）|
 | DB ダンプ対策 | IdP-KC 側 Realm Key も同様（IdP-KC は 2-tier 内部トークンの署名のみ、アプリ向けトークンは Broker 再発行 — ADR-033）。MFA Secret 等のアプリ層追加暗号化（ADR-045 §B.2）は Phase 1 実装対象 |
 
 - **根拠**: ADR-045 §D.4（90 日は Auth0/Okta 業界標準・QSA 説明容易・Golden JWT 被害範囲 1/4）。PCI DSS Req 3 は PAN 保護鍵が対象で JWT 署名鍵は literal 対象外の可能性大だが「CDE セキュリティに影響する鍵」として同等管理（[reference/pci-dss-v401 §6.4](../reference/pci-dss-v401-scope-for-auth-platform.md)、QSA 事前確認は Phase 1 β 監査準備時）。
@@ -307,7 +307,7 @@ flowchart LR
 ```
 
 - **根拠**: ADR-060 §A（SAML P11 + OIDC O22 対応、収集段が全ソース横断で統一可能）、U5 §5.1.4 C-6（トークンペイロードのログ非出力）と同一線。
-- **代替**: Keycloak 書込前マスクのみ — KC 内部実装依存で網羅不能（ADR-060 §A.4）、補助に留める。OpenShift Cluster Logging（Vector）への乗り換え — マスキング Filter 資産（ADR-060 §A.7 の Fluent Bit 設定・PoC 資産）流用と upstream 情報量を優先し Phase 1 は Fluent Bit。運用中に Operator 管理の利点が上回れば U9 で再評価。
+- **代替**: Keycloak 書込前マスクのみ — KC 内部実装依存で網羅不能（ADR-060 §A.4）、補助に留める。OpenShift Cluster Logging（Vector）への乗り換え — マスキング Filter 資産（ADR-060 §A.7 の Fluent Bit 設定・PoC 資産）流用と upstream 情報量を優先し Phase 1 は Fluent Bit。運用中に Operator 管理の利点が上回れば U9 で再評価。**ROSA 固有の再評価材料（2026-08-12 追加）**: 自前 Fluent Bit DaemonSet は `/var/log/pods` の **hostPath 読取**を要し、OpenShift 既定の `restricted-v2` SCC では動作しないため **カスタム SCC または privileged の付与が必須**（= **Keycloak と同居ノードで特権 DaemonSet が動く**ブラスト半径の論点を伴う）。**OpenShift Logging Operator（Vector）は collector 用 SCC を Operator が自動管理**するため付与・維持が不要になる点を、「Operator 管理の利点」の具体項目として再評価に含める。
 - **未決**: B-LOG-1（マスク対象の追加要否、Compliance ヒアリング）。REQ-IN-10 の先方回答。
 
 ---
@@ -657,6 +657,7 @@ flowchart TB
 
 - 2026-07-26 (v1.2): 可読性向上のための図示追加（本文の決定内容の変更なし） — §7.1.1 KMS 3 階層 CMK × アカウント配置写像図（MRK / Regional 区別）、§7.2.3 ITDR パイプライン全体フロー（第 6 経路 PutEvents / L1〜L4 / Phase 1a→1b 段階活性化分岐）、§7.3.1 Log scrubbing 2 段構えパイプライン図、§7.7.3 漏えい報告 SOP 7 ステップフロー図。
 
+- 2026-08-12: **D-U7-03 に不変条件「鍵の並走期間 > 全検証者の最大キャッシュ TTL」を明示**（制御不能な検証者 = API GW ネイティブ JWT authorizer の 2h キャッシュを含む。U5 §5.6.3b と対）+ 検証点数の stale 参照を 6 点 → 7 点に是正。**§7.3.1 に ROSA 固有の再評価材料（自前 Fluent Bit は SCC 付与必須 / Operator 版は SCC 自動管理）を追記**。
 - 2026-08-12: **網羅性再監査反映** — D-U7-20 NHI ガバナンス（§7.5.5、[ADR-066](../adr/066-non-human-identity-governance.md)、B-NHI-1）/ D-U7-21 同意管理・同意レシート（§7.7.6、B-CONSENT-1）を新設。認可判定ログ + アクセス再認証は [ADR-067](../adr/067-authz-decision-logging-and-access-recertification.md)（U9 反映）、継続アクセス CAEP は [ADR-065](../adr/065-continuous-access-caep-shared-signals.md)（U5 §5.10）。
 - 2026-08-07: **D-U7-19 新設（ブランドアカウント内 credential/authz 分離 = Option C、[ADR-063](../adr/063-brand-unit-architecture.md)）** — identity(Keycloak)/authz 系を別 Aurora・別 CMK・別 IAM ロール・別 SG に内部分離、両方に届く単一ロール禁止、#2 堅牢化最優先。アカウント分割(案 B)は規制ブランド向け将来オプション。
 - 2026-07-23: 初版（Wave 2 起草）。Baseline v1（P-03/P-17/P-18）準拠。KMS 3 階層の 6 Acct 写像 + Realm Key 90 日 Cryptoperiod（D-U7-01〜03）、ITDR Phase 1（HIBP + Brute Force、Broker 集約、段階活性化、D-U7-04〜06）、Log scrubbing（infra Pool Aggregator + 辞書 M-1〜14、D-U7-07）、Golden 検知 Phase 1 = 4 シグナル（D-U7-08）、Workload Identity（IRSA 規約 + FedID + **private_key_jwt = Phase 2 昇格確定**、D-U7-09〜10）、**ADR-040 復活の取込**（6 Acct 読み替え + /admin 3 層整合 + 監査 Acct 一元、D-U7-11〜12）、PCI ギャップ 3 点 + APPI（Object Lock 7 年 / WebAuthn 必須範囲 / 漏えい SOP / Red Hat DPA ゲート / **zero-egress セキュリティ推奨**、D-U7-13〜16）、Bot/DDoS 分離 + Argon2id 確定（D-U7-17〜18）を決定。
