@@ -73,8 +73,8 @@ flowchart TB
         APIB[API GW / ALB<br/>認証実装]
     end
 
-    DISC -.読み取り AssumeRole：<br/>コミット差分・monitoring.yaml・spec 取得.-> REPOA
-    DISC -.同.-> REPOB
+    DISC -.->|"読み取り AssumeRole：<br/>コミット差分・monitoring.yaml・spec 取得"| REPOA
+    DISC -.->|"同"| REPOB
     DISC -->|自動登録・スナップショット・spec Put| Reg
     DISC -->|変化あり → M1 起動| CC
 
@@ -273,7 +273,7 @@ flowchart TB
     NET ==> CF ==>|"Origin Protection"| APIGW
     NET ==> KC
 
-    NFW -. "非経由（NW-2 の明示的例外、下記）" .- NET
+    NFW -.-|"非経由（NW-2 の明示的例外、下記）"| NET
 
     style Central fill:#fff3e0
     style OutAcct fill:#eeeeee,stroke-dasharray:5 5
