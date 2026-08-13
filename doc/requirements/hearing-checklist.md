@@ -317,6 +317,7 @@
 | **B-ITDR-3** | `[B]` | 🟡 | **SIEM 連携の要否・形式**（2026-06-18 追加）| NFR-SEC / NFR-OPS | §NFR-4.6, ADR-035 | 顧客 SIEM 連携必要?（**OCSF 推奨** / CEF / LEEF / Syslog / 不要）| 形式 + 顧客側 SIEM | | ⏳ |
 | **B-ITDR-4** | `[B]` | 🟢 | **顧客 SIEM 製品**（2026-06-18 追加）| NFR-OPS | §NFR-4.6, ADR-035 | 顧客が使用する SIEM?（Splunk / QRadar / Sentinel / Datadog / その他 / なし）| 製品名 | | ⏳ |
 | **B-ITDR-5** | `[B]` | 🟢 | **通知先**（2026-06-18 追加）| NFR-OPS | §NFR-4.6, ADR-035 | ITDR 検知時の通知先?（Slack / PagerDuty / メール / SIEM のみ）| 通知先 | | ⏳ |
+| **B-ITDR-7** | `[B]` | 🟡 | **不正検知に期待するリアルタイム性 / 自動遮断の要否**（2026-08-13 追加、[U7 D-U7-04a](../basic-design/07-security-compliance-design.md) 案 C の採否を分岐） | NFR-SEC / NFR-PERF | §NFR-4.6, ADR-035, [U7 §7.4.2](../basic-design/07-security-compliance-design.md) | 不正検知はどの程度の即時性が必要か?（**Phase 1a は「通知のみ・人間が対応」**で設計）。**自動遮断（Phase 1b 以降）を期待するか**で、検知パイプラインを「認証スレッドから同期 emit（即時）」と「ログ経路経由（数秒〜数十秒）」のどちらにするかが変わる | 即時（自動遮断あり）/ 数十秒可（通知のみ）/ 分単位で可 | | ⏳ |
 | **B-ITDR-6** | `[B]` | 🟡 | **False Positive 許容範囲**（2026-06-18 追加）| NFR-SEC / NFR-OPS | §NFR-4.6, ADR-035 | False Positive 許容?（厳格＝FP 多くても可 / 通常 / UX 優先＝FP 最小化）| 許容範囲 | | ⏳ |
 | **B-CAS-1** | `[B]` | 🔴 | **エンタープライズ顧客の獲得意思**（2026-06-18 追加）| NFR-COMPL | §NFR-7.5, ADR-036 | エンタープライズ顧客（SOC 2 監査人がエビデンス要求するレベル）獲得は?（必須 / 望ましい / 不要）| 意思 + 想定社数 | | ⏳ |
 | **B-CAS-2** | `[B]` | 🔴 | **規制業種顧客の比率見込み**（2026-06-18 追加）| NFR-COMPL | §NFR-7.5, ADR-036 | 規制業種顧客の見込みは?（金融 N 社 / 医療 N 社 / 公共 N 社 / なし）| 業種別社数 | | ⏳ |

@@ -329,9 +329,47 @@ flowchart LR
 | L-GD-1〜5（Golden LDAP） | LDAP Bind Service Account 乗っ取り | ⬜ 条件付き | **LDAP 顧客の受入（B-SCIM-13 ゲート通過）と同時に有効化**。VPC Flow Log + REQ-OUT-03（先方 NFW Alert ログ共有）が入力 |
 
 - 発火時の対応: 警戒（High 相当）= SOC 通知 + 手動調査 / **Critical = §7.1.3 の緊急鍵ローテ SOP + U5 §5.4.3 L4 手順**。Phase 1a は通知のみ → Phase 1b で G-2/G-5 の自動 L4 連動を判断（D-U7-06 と同じ段階活性化）。
-- Event Listener SPI の emit 対象イベント（CODE_TO_TOKEN / REFRESH_TOKEN / CLIENT_LOGIN / LOGIN / LOGIN_ERROR / TOKEN_EXCHANGE / USER_REACTIVATED / **`REVOKE_GRANT` / `LOGOUT` 系（revoke・ログアウト監査 — U5 §5.9.2 の依頼受領）**）は U2 の SPI 仕様に反映済み前提（ADR-060 §C.5、U5 §5.9.2 の監査イベントも同梱）。
+- Event Listener SPI の emit 対象イベントは **D-U7-04a（下記 §7.4.2）で流量制御込みに改訂**（旧: CODE_TO_TOKEN / REFRESH_TOKEN を成否問わず全量 emit）。U2 の SPI 仕様へ反映（ADR-060 §C.5、U5 §5.9.2 の監査イベントも同梱）。
 - **根拠**: ADR-060 §C（Golden 系は「検知 + 影響最小化」しかできない完全防御不可経路）。90 日 Cryptoperiod（§7.1.3）との組で被害ウィンドウを最大 90 日 → 実質「検知までの分単位」に短縮するのが設計意図。
 - **代替**: Phase 1 で 6 シグナル全実装 — G-1/G-4 は学習データなしでは FP 源泉にしかならず、段階導入が合理的。
+
+### 7.4.2 決定 D-U7-04a: Event Listener の emit 流量制御と実装制約（2026-08-13 新設）
+
+**背景**: 旧 emit セットは `CODE_TO_TOKEN` / `REFRESH_TOKEN` を**成否問わず全量**対象としていた。しかし **AT 30 分（P-09）ゆえアクティブユーザーは 30 分ごとに必ず refresh** するため、**10M MAU 規模では成功 refresh が最大流量イベント**になる（DAU 20% × 8h 利用で概算 **32M events/日・平常 ~370 events/秒**）。**Keycloak の Event Listener は認証スレッドで同期実行**されるため、これを全量 EventBridge へ PutEvents すると **Token API の SLO（p99 < 200ms、[D-U9-04](09-operations-observability-design.md)）を圧迫**し、**EventBridge の遅延・障害がトークン発行を直撃**する。
+
+**採用**:
+
+**① emit 対象の絞り込み — 「成功は外す / 失敗は残す」**
+
+| イベント | 旧 | 新 | 理由 |
+|---|:---:|:---:|---|
+| `REFRESH_TOKEN`（成功） | ✅ | **❌ 除外** | **量が最大・検知価値が最小**。Phase 1 スコープ（Compromised Credentials + Brute Force、D-U7-05）は LOGIN 系で成立。RT の不正再利用は **Keycloak の Reuse Detection が検知**し `REVOKE_GRANT` 等で出る |
+| `REFRESH_TOKEN_ERROR`（失敗） | — | **✅ 追加** | 量は小さく**異常のシグナル**。失敗側に情報がある |
+| `CODE_TO_TOKEN`（成功） | ✅ | **❌ 除外** | 同上（量が主・情報が従） |
+| `CODE_TO_TOKEN_ERROR`（失敗） | — | **✅ 追加** | 同上 |
+| `LOGIN` / `LOGIN_ERROR` / `CLIENT_LOGIN` | ✅ | ✅ 維持 | **ITDR Phase 1 の主入力** |
+| `TOKEN_EXCHANGE` / `USER_REACTIVATED` / `REVOKE_GRANT` / `LOGOUT` 系 | ✅ | ✅ 維持 | 量が小さく監査価値が高い |
+
+- **失う検知は限定的**: impossible travel / セッションハイジャックは**そもそも Phase 2 以降**（ベースライン学習が前提、ADR-034/035）。**Phase 2 で必要になった場合はログ 3 層（全イベントが残る）から拾える**。
+
+**② 実装制約（Event Listener は同期実行である前提）**
+
+- **emit 処理は軽量に保つ**（PutEvents のみ。リトライ・DLQ・購読管理・配信は**すべて Lambda 側**、[U10 §10.3](10-integration-migration-design.md) が「KC から直接 HTTP POST」を不採用にしたのと同一思想）。
+- **失敗は認証を壊さない** — Listener 内の例外は**握りつぶし、メトリクス化してアラート**する（例外を投げると認証フローに影響し得る）。
+- **ドロップ・失敗は必ず可視化**（「静かに落ちる」を防ぐ。U9 の可観測性へ引き渡し）。
+
+**③ 将来方向（案 C）= ログ経路への相乗り — 方向性のみ確定、実施はヒアリング後**
+
+**`stdout → Fluent Bit → Kinesis → Risk Engine`** に寄せれば、**認証スレッドから完全に分離**でき、自前 Event Listener SPI 自体が不要になる（**G-SPI-Compat の検証対象も 1 つ減る**）。**採用の前提条件**は次の 3 点:
+
+1. Fluent Bit を **filesystem buffer** に変更（Pod 再起動耐性）
+2. **backpressure 時のドロップをメトリクス化**（`mem_buf_limit` 超過は既定で意図的にドロップされるため）
+3. 高価値イベント（`USER_REACTIVATED` / `REVOKE_GRANT` 等）が**監査ログ側（Cold WORM 7 年）に必ず残る**ことを確認
+
+> **ロスト許容の根拠**: ITDR の検知は**閾値ベース**（例: 同一 IP・10 分で 10 ユーザー失敗）であり **1 件の欠落で成立しなくなる性質ではない**。かつ**完全性が必要な監査証跡は別経路（ログ 3 層・WORM 7 年）で担保済み**。「完全性が要る用途」と「検知が要る用途」を別経路に分けてあることが本案の前提。
+> **ただし検知のリアルタイム性は即時 → 数秒〜数十秒に変わる**ため、**自動遮断（Phase 1b 以降）を顧客が期待する場合は要再評価** → hearing **B-ITDR-7**。
+
+- **未決**: 案 C の採否（B-ITDR-7 回答後）。**Event Listener の emit 流量は負荷試験項目に追加**（[00a A-10](00a-remaining-tasks-and-effort.md)）。
 - **未決**: G-2/G-3 閾値の SOC 合意(B-GD-1/2)、緊急鍵ローテ SOP の承認体制（B-GD-3）。
 
 ---

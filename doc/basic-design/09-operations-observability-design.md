@@ -180,7 +180,7 @@ flowchart LR
 
 | 分類 | イベント | 由来 |
 |---|---|---|
-| 認証 | `LOGIN` / `LOGIN_ERROR` / `CLIENT_LOGIN` / `CODE_TO_TOKEN` / `REFRESH_TOKEN` | Golden 検知 G-2/G-3/G-6 の入力（U7 §7.4.1） |
+| 認証 | `LOGIN` / `LOGIN_ERROR` / `CLIENT_LOGIN` / **`CODE_TO_TOKEN_ERROR` / `REFRESH_TOKEN_ERROR`（失敗のみ）** | Golden 検知 G-2/G-3/G-6 の入力（U7 §7.4.1）。**2026-08-13: 成功の `CODE_TO_TOKEN` / `REFRESH_TOKEN` は emit 対象から除外**（10M MAU で最大流量・検知価値最小。[U7 D-U7-04a](07-security-compliance-design.md)）。**全量は SIEM ではなくログ 3 層に残る** |
 | トークン | `TOKEN_EXCHANGE`（subject / requester client / audience / scope 付き） | U5 §5.3.3 監査必須 |
 | **revoke / logout 系** | **`REVOKE_GRANT` / `LOGOUT` / `LOGOUT_ERROR`**（+ not-before push の Admin Event） | **U5 §5.9.2 依頼 → U7 v1.1 L-1 で emit セット確定済み**。本書で SIEM 取込側も確定 |
 | ライフサイクル | `USER_REACTIVATED`（Re-Activation SPI 監査、U3 D3-12）/ USER_DELETED・USER_DISABLED（SCIM Facade → EventBridge 経由） | jit-scim §10.4.I / U3 §3.5 |
@@ -560,6 +560,8 @@ flowchart TB
 ---
 
 ## 改訂履歴
+
+- 2026-08-13: **SIEM 取込セットを [U7 D-U7-04a](07-security-compliance-design.md) と整合** — 成功 `CODE_TO_TOKEN` / `REFRESH_TOKEN` を emit 対象から除外し失敗系（`*_ERROR`）を追加（Event Listener は認証スレッドで同期実行のため、10M MAU で最大流量の成功 refresh を全量 PutEvents すると Token API SLO を圧迫）。全量はログ 3 層に残る。
 
 - 2026-08-13: **禁則 K-12 追加（クラスタ audit profile の引き上げ禁止）** — `Default`（メタデータのみ）固定を IaC + 日次ドリフト検知で強制。[ADR-056 ガードレール L6（ログ経路制御）](../adr/056-rosa-adoption-decision.md) / U7 §7.7.4 のログ経路越境評価と対。
 

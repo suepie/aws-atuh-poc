@@ -94,7 +94,7 @@
 | A-7 | G-OSAKA | O-1/O-U8-2(U6 §6.8.1) | 大阪 c7g/c7i 在庫・vCPU クォータ・arm64 Machine Pool/RHBK Operator arm64 対応 | 3 | — |
 | A-8 | Argon2id スループット実測 | U6 §6.5.1 / U7 §7.8.2 | KC デフォルト(m=7MiB/t=5)での req/s 実測 → サイジング補正 | 2 | A-1 環境相乗り可 |
 | A-9 | **SAML メタデータ自動更新の実機確認** | 新規(外部突合: Discussion #27828 未解決 — 文書と実装の乖離疑い) | 「Use metadata descriptor URL + Refresh period」が実機に存在・動作するか。**1000+ IdP の証明書ローテ運用の前提**。無ければ運用代替(D-12 と連動) | 2 | — |
-| A-10 | SPI debounce 負荷試験(B-SCIM-9) | hearing L226 | 100 RPS × 24h × 10 万ユーザの Aurora IOPS / Infinispan invalidate / Pod リソース | 5 | A-1 環境相乗り可 |
+| A-10 | SPI 負荷試験(B-SCIM-9) | hearing L226、**U7 D-U7-04a** | ① SPI debounce: 100 RPS × 24h × 10 万ユーザの Aurora IOPS / Infinispan invalidate / Pod リソース ② **Event Listener の emit 流量**(同期 PutEvents が Token API p99 に与える遅延・EventBridge スロットリング・絞り込み後の実流量。案 C 採用時は Fluent Bit の filesystem buffer とドロップ率も測定) | 6 | A-1 環境相乗り可 |
 | A-11 | 小粒実機確認バンドル | O-U8-6(multi-cluster v2 版数)、O-U7-8(ROSA SA issuer JWKS)、E-11(Red Hat docs 403 分: EUS/Operator チャネル/監査ログ制約の本文確認)、**RFC 8414 形式 `/.well-known/oauth-authorization-server/realms/{realm}` の提供有無**(RFC 8414 準拠 RP・MCP 系クライアントの疎通可否。[kc#45271](https://github.com/keycloak/keycloak/issues/45271)、U5 §5.6.3b) | 4 点セットで 1 バッチ化 | 2 | — |
 | A-12 | **ServiceNow SP 連携の実機検証** | U10 D-U10-01〜06、B-SN-3(パターン②暫定) | SAML Client CL-SN-01(NameID=username / RSA-SHA256 / IdP-initiated 無効)実機 + L1 SCIM→L2 SAML JIT(パターン②)統合フロー + Matching Field(employee_number)突合 + Webhook 配信(HMAC/冪等)。パターン選択 B-SN-3 未回答のため暫定②で検証 | 6 | B-SN-3 は暫定でよい |
 
