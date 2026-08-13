@@ -21,7 +21,7 @@
 ```mermaid
 sequenceDiagram
     participant CC as 認証実装確認処理
-    participant Reg as App Registry DDB
+    participant Reg as App Registry（S3 台帳）
     participant OAR as OpenAPI Registry S3
     participant CF as アプリ CloudFront
     participant AR as Alert Router

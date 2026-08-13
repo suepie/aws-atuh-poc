@@ -9,8 +9,10 @@
 > - メタデータは資源タグでなく **リポジトリ内 `monitoring.yaml`（config-as-code）**、OpenAPI も **リポジトリ内の spec** を正本として取得（`GetFile`）。`apigateway:GET` の資材読取は廃止し、読み取りロールは **codecommit read のみ**に縮小。
 > - **モノリス（ALB 直）もリポジトリは列挙できるため自動発見の対象になる**（旧設計の「モノリスは手動登録」の穴が解消）。
 > - **受容した穴（git 単独の代償、ユーザー決定）**: ① コンソール直変更（Authorizer 外し等）は git に現れず**見逃す** ② コミット直後は未デプロイのため旧版検査の偽安心があり得る。補完: ① は検知 5 レイヤーの **L2 Config Rules**（AuthorizationType=NONE の drift 検知、§FR-API-7）と **M3 手動フル**、② は次回巡回の再検査と M3。
-> - Lambda 構成は **3 本**（発見 / 認証実装チェック / Alert Router）。**App Registry（DynamoDB）は台帳として維持**（状態 lastCheckedCommitId・通知先・enabled の置き場。ユーザー決定: DDB 維持 / git 単独 / 3 本分離）。
+> - Lambda 構成は **3 本**（発見 / 認証実装チェック / Alert Router）。
 > - 本文の「deploymentId 比較」「apigateway:GET」は上記に読み替える。基本設計 12/13/16/17/18 章は改訂反映済み。
+>
+> ⚠ **追記（2026-08-13）: 台帳ストアを DynamoDB → S3 に統合**。分析の結果、台帳で本当に消せない情報は **lastCheckedCommitId（巡回状態）/ alertRouting / enabled（中央管理項目）の 3 つだけ**で、書き手は発見 Lambda 1 本（1h 毎・直列）・データ量はアプリ数百でも MB 未満のため、DynamoDB の性能・整合性が必要な要素がない。**OpenAPI Registry と同じ S3 バケット（Monitoring Registry）に `registry/{appId}/{env}.json` として同居**させ、ストアを S3 1 つに集約（ユーザー決定 2026-08-13。2026-08-07 の「DDB 維持」を更新）。代償: enabled/alertRouting の運用操作が JSON 編集になる・巡回を並列化する場合は排他制御の作り込みが要る（ETag 条件付き PUT で対応可）。DynamoDB は構成から消滅し、AWS リソースは **S3×1 + Lambda×3 + Scheduler + SNS/CloudWatch/Secrets** に縮小。
 関連: [ADR-059 認証実装確認処理（Central Auth Check Canary）](059-central-auth-check-canary-architecture.md) / [基本設計 17 章](../api-platform/basic-design/17-deployment-integration-and-registration.md) / [18 章](../api-platform/basic-design/18-scan-modes-and-scheduling.md)
 
 ---

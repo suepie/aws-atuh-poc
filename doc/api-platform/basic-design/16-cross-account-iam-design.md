@@ -73,9 +73,9 @@
 
 | ロール | 使い手 | 権限 |
 |---|---|---|
-| `DiscoveryLambdaRole` | 発見 Lambda | `organizations:ListAccounts` / `sts:AssumeRole`（各 App の DiscoveryReadRole）/ `dynamodb:PutItem・UpdateItem・Scan`（App Registry）/ `s3:PutObject`（OpenAPI Registry）/ `lambda:InvokeFunction`（認証実装チェック Lambda）|
-| `CentralProbeRole` | 認証実装チェック Lambda | `dynamodb:Scan`（App Registry）/ `s3:GetObject`（OpenAPI Registry）/ `secretsmanager:GetSecretValue` / `cloudwatch:PutMetricData` / `lambda:InvokeFunction`（Alert Router）|
-| `alert-router-lambda-role` | Alert Router | `dynamodb:GetItem`（alertRouting 解決）/ `sns:Publish` |
+| `DiscoveryLambdaRole` | 発見 Lambda | `organizations:ListAccounts` / `sts:AssumeRole`（各 App の DiscoveryReadRole）/ `s3:PutObject・GetObject・ListBucket`（Monitoring Registry の `registry/*` + `openapi/*`）/ `lambda:InvokeFunction`（認証実装チェック Lambda）|
+| `CentralProbeRole` | 認証実装チェック Lambda | `s3:GetObject・ListBucket`（Monitoring Registry：台帳 + spec）/ `secretsmanager:GetSecretValue` / `cloudwatch:PutMetricData` / `lambda:InvokeFunction`（Alert Router）|
+| `alert-router-lambda-role` | Alert Router | `s3:GetObject`（`registry/*`、alertRouting 解決）/ `sns:Publish` |
 
 **各 App アカウント側（StackSets で配布）**
 

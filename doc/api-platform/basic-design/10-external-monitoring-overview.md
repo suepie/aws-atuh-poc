@@ -21,8 +21,8 @@
 | 対象 | 本章群で扱う |
 |---|---|
 | 認証実装チェック（Lambda / 検査ロジック probe lib）| ✅ 11 / 14 章 |
-| App Registry（DynamoDB）| ✅ 12 章 |
-| OpenAPI Registry（S3）| ✅ 13 章 |
+| App Registry（S3 台帳）| ✅ 12 章 |
+| OpenAPI Registry（S3・台帳と同一バケット）| ✅ 13 章 |
 | Alert Router（4×4 → SNS）| ✅ 15 章 |
 | クロスアカウント IAM / 配布 | ✅ 16 章 |
 | 静的解析 / Config Rules | ❌ 04 章・§FR-API-7（別領域）|
@@ -52,8 +52,7 @@ probe を**各アプリに配らず、共通基盤アカウントの認証実装
 flowchart TB
     subgraph Central["共通基盤アカウント（中央運用・自社管理）"]
         DISC[発見 Lambda<br/>1 時間毎巡回 ※17 章]
-        Reg[App Registry<br/>DynamoDB]
-        OAR[OpenAPI Registry<br/>S3]
+        Reg[Monitoring Registry S3<br/>台帳 registry/ + spec openapi/]
         CC[認証実装確認処理<br/>Lambda（probe lib 共通）<br/>M1 巡回差分/M3 フル ※18 章]
         AR[Alert Router<br/>Lambda]
         SNS[SNS<br/>P1 Security / P2 Platform / P3 App]
@@ -76,12 +75,10 @@ flowchart TB
 
     DISC -.読み取り AssumeRole：<br/>コミット差分・monitoring.yaml・spec 取得.-> REPOA
     DISC -.同.-> REPOB
-    DISC -->|自動登録・スナップショット| Reg
-    DISC -->|OpenAPI Put| OAR
+    DISC -->|自動登録・スナップショット・spec Put| Reg
     DISC -->|変化あり → M1 起動| CC
 
-    CC -->|Scan（M1 対象/M3 全量）| Reg
-    CC -->|Get spec| OAR
+    CC -->|台帳 List/Get + spec Get<br/>（M1 対象/M3 全量）| Reg
     CC -->|probe は実 UX と同じ境界経由| CFA
     CFA --> APIA
     CC --> CFB
@@ -125,8 +122,7 @@ flowchart TB
     subgraph Central["共通基盤アカウント（中央運用・自社管理）"]
         SCH["EventBridge Scheduler<br/>1 時間毎"]
         DISC["発見 Lambda<br/>発見・差分検知・OpenAPI 取得"]
-        REG["App Registry<br/>DynamoDB（台帳+スナップショット）"]
-        OAR["OpenAPI Registry<br/>S3"]
+        REG["Monitoring Registry S3<br/>registry/（台帳+スナップショット）<br/>openapi/（spec コピー）"]
         PROBE["認証実装チェック Lambda<br/>probe / classify lib 共通"]
         CWM["CloudWatch Metrics/Alarm<br/>AuthCheckCritical＞0"]
         ALR["Alert Router Lambda"]
@@ -148,12 +144,10 @@ flowchart TB
     SCH --> DISC
     DISC -->|"① AssumeRole（読み取り）"| ROLE
     ROLE -->|"② ListRepositories / GetBranch<br/>コミット ID 比較 / GetFile"| REPO
-    DISC -->|"③ 自動登録・lastCheckedCommitId 更新"| REG
-    DISC -->|"③ OpenAPI Put（repo の spec）"| OAR
+    DISC -->|"③ 自動登録・lastCheckedCommitId 更新<br/>+ spec Put（repo の openapi.yaml）"| REG
     DISC -->|"④ M1 起動（変更アプリのみ）"| PROBE
     MAN -->|"M3 フル監査"| PROBE
-    PROBE -->|"対象取得"| REG
-    PROBE -->|"spec 取得"| OAR
+    PROBE -->|"台帳 + spec 取得"| REG
     PROBE -->|"⑤ Neg/Pos probe（実 UX と同じ境界経由）"| CF
     CF --> APIGW
     PROBE -->|"⑥ 結果"| CWM
@@ -202,8 +196,7 @@ flowchart LR
 |---|---|---|:---:|
 | **EventBridge Scheduler** | EventBridge | **巡回の起点**。1 時間毎に発見 Lambda を起動 | 17 / 18 |
 | **発見 Lambda** | Lambda | **変更検知と登録の実行体（pull）**。各 App アカウントの **CodeCommit を読み取り巡回**し、リポジトリ発見・**コミット差分（lastCheckedCommitId 比較）**・台帳登録・spec 取得を行い、変更のあったアプリの検査を起動する | 17 |
-| **App Registry** | DynamoDB | **監視対象の台帳 + 巡回スナップショット**。アプリごとの baseUrl / 認証方式（authPattern）/ 通知先 / **前回確認コミット ID** を 1 レコードで保持（設定値は monitoring.yaml 由来、書き手は発見 Lambda）| 12 |
-| **OpenAPI Registry** | S3（Versioning）| **API 仕様（リポジトリ内 openapi.yaml が正本）のコピー置き場**。endpoint 一覧と公開印（MON-1）の情報源になる | 13 |
+| **Monitoring Registry** | **S3（Versioning）×1 バケット** | **台帳 + spec コピーの一体ストア**（DynamoDB は不使用、ADR-061 追記）。`registry/{appId}/{env}.json` = 監視対象の台帳＋巡回スナップショット（baseUrl / authPattern / 通知先 / **前回確認コミット ID**。設定値は monitoring.yaml 由来、書き手は発見 Lambda）。`openapi/…` = リポジトリ内 openapi.yaml（正本）のコピーで、endpoint 一覧と公開印（MON-1）の情報源 | 12 / 13 |
 | **認証実装チェック Lambda（認証実装確認処理）** | Lambda | **検査の実行体**。台帳と仕様を読み、各 endpoint に未認証/正規の 2 種リクエストを送って認証の効き具合を確かめる | 11 / 14 |
 | **CloudWatch Metrics / アラーム** | CloudWatch | **検査結果の記録と発報**。`AuthCheckCritical > 0` で認証漏れアラーム | 11 / 18 |
 | **Alert Router Lambda** | Lambda | **通知の振り分け役**。検知結果を 4×4 分類に従い P1/P2/P3 の宛先へ振り分ける（「全部 Security 行き」を防ぐ）| 15 |
@@ -241,8 +234,7 @@ flowchart TB
         SCH["EventBridge Scheduler<br/>rate(1 hour)"]
         DISC["発見 Lambda<br/>（VPC 外）"]
         PROBE["認証実装チェック Lambda<br/>（VPC 外）"]
-        DDB[("App Registry<br/>DynamoDB")]
-        S3R[("OpenAPI Registry<br/>S3")]
+        S3R[("Monitoring Registry S3<br/>registry/ 台帳 + openapi/ spec")]
         SM["Secrets Manager<br/>canary-central-readonly"]
         CW["CloudWatch<br/>Metrics / Alarm"]
         ALR["Alert Router Lambda<br/>（VPC 外）"]
@@ -270,9 +262,8 @@ flowchart TB
     end
 
     SCH --> DISC
-    DISC & PROBE --- DDB
-    DISC --- S3R
-    PROBE --- S3R & SM & CW
+    DISC & PROBE --- S3R
+    PROBE --- SM & CW
     PROBE -->|"Invoke（AWS 網内）"| ALR --> SNS
 
     DISC -.->|"AssumeRole + codecommit read<br/>（AWS API・境界非経由）"| ROLE
@@ -300,7 +291,7 @@ flowchart TB
 | A | **probe → アプリ**（Negative/Positive）| HTTPS 443（実 UX と同一）| Lambda マネージド egress → インターネット → **CloudFront+WAF（In）** → API GW。**Out（NWFW）は非経由（例外）** | なし（宛先は台帳の baseUrl のみ、下記代償統制）|
 | B | **probe → 認証基盤 /token**（Positive 用短命トークン）| HTTPS 443 | 同上（Out 非経由）| 同上（宛先は認証基盤ドメイン固定）|
 | C | **巡回読み取り**（発見 Lambda → App アカウントの CodeCommit）| AWS API（STS AssumeRole → codecommit `GetBranch`/`GetDifferences`/`GetFile`）| **境界非経由**（AWS 網）| DiscoveryReadRole（16 章）|
-| D | 中央内部（台帳/仕様/Secrets/Metrics/通知）| DynamoDB / S3 / Secrets / CloudWatch / SNS / Lambda Invoke | **境界非経由**（AWS 網。VPC Endpoint 不要）| IAM のみ |
+| D | 中央内部（台帳/仕様/Secrets/Metrics/通知）| S3（Monitoring Registry）/ Secrets / CloudWatch / SNS / Lambda Invoke | **境界非経由**（AWS 網。VPC Endpoint 不要）| IAM のみ |
 
 **VPC 外配置の判断（NW-2 例外の明示受容と代償統制）**:
 

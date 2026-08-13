@@ -30,7 +30,7 @@ flowchart LR
 | ファイル | 役割 | 検証 |
 |---|---|:---:|
 | `index.js` | handler。全アプリ横断のオーケストレーション | — |
-| `lib/registry.js` | App Registry(DDB) Scan | ✅ LocalStack |
+| `lib/registry.js` | App Registry 読み取り（**現実装は DynamoDB Scan。S3 台帳化に伴い List/Get へ改修要** M-Q-12-3）| ✅ LocalStack（旧 DDB 実装として）|
 | `lib/openapi.js` | OpenAPI(S3) 取得 + アノテーション解釈 | ✅ 7 test |
 | `lib/token.js` | test token 取得 + OAuth Bearer 取得 + cache | — |
 | `lib/probe.js` | 1 endpoint の Negative + Positive probe | ✅ 4 test |

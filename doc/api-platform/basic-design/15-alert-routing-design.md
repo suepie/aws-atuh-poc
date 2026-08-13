@@ -53,7 +53,7 @@ flowchart TD
     DF --> PUB
 ```
 
-1. **App Registry(DDB) の `alertRouting {p1,p2,p3}`** を appId/env で引く（12 章 §12.1）
+1. **App Registry（S3 台帳）の `alertRouting {p1,p2,p3}`** を `registry/{appId}/{env}.json` の GetObject で引く（12 章 §12.1）
 2. 無ければ **環境変数 `DEFAULT_P1/P2/P3_TOPIC_ARN`** に fallback
 3. どちらも無ければ ARN 未解決エラー → throw（DLQ / retry で可視化）
 

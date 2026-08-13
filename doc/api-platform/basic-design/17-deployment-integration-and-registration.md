@@ -52,9 +52,8 @@ flowchart TB
     SCH["EventBridge Scheduler<br/>rate(1 hour)"] --> DISC["発見 Lambda<br/>（共通基盤アカウント）"]
     DISC -->|"① ListAccounts"| ORG["AWS Organizations"]
     DISC -->|"② AssumeRole（codecommit read-only）"| CC["各 App アカウントの CodeCommit<br/>③ ListRepositories<br/>④ GetBranch（先端コミット ID）<br/>⑥ GetDifferences / GetFile"]
-    DISC -->|"⑤ lastCheckedCommitId と比較"| REG[("App Registry<br/>台帳 + コミットスナップショット")]
+    DISC -->|"⑤ lastCheckedCommitId と比較<br/>⑥ 台帳更新 + spec Put"| REG[("Monitoring Registry S3<br/>registry/ 台帳 + openapi/ spec")]
     DISC -->|"⑥ monitoring.yaml / openapi.yaml 取得"| CC
-    DISC -->|"OpenAPI Put"| OAR[("OpenAPI Registry S3")]
     DISC -->|"⑦ 変化のあったアプリを検査起動"| PROBE["認証実装チェック Lambda<br/>（M1、18 章）"]
     DISC -.->|"monitoring.yaml 不備"| ALERT["🟡 メタ不足アラート"]
     style DISC fill:#fff9c4

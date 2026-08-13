@@ -17,7 +17,7 @@
     ├─ monitoring.yaml 付きリポジトリを App Registry へ自動登録
     ├─ openapi.yaml（repo 正本）を OpenAPI Registry (S3) へ Put
     └─ 前回確認コミットから変更のあったアプリ → M1 probe 起動
-  App Registry (DynamoDB) … 台帳 + 巡回スナップショット
+  Monitoring Registry (S3×1) … registry/ 台帳+巡回スナップショット / openapi/ spec コピー
   認証実装確認処理 (Lambda, 共通 probe lib)
     │ M1 巡回差分（自動）/ M3 フル監査（手動）※18 章
     ├─ App Registry を Scan（M1 対象アプリ / M3 全アプリ取得）
@@ -45,17 +45,19 @@
 
 ## 2. データ契約（全コンポーネント共通、必ず遵守）
 
-### 2.1 App Registry（DynamoDB）スキーマ
+### 2.1 App Registry（S3 台帳）スキーマ
 
-**発見 Lambda が巡回（CodeCommit の monitoring.yaml）から自動登録・同期**する。認証実装確認処理がこれを Scan する。
+**発見 Lambda が巡回（CodeCommit の monitoring.yaml）から自動登録・同期**する。認証実装確認処理が `registry/` を List → Get する。
 
-| 属性 | 型 | 説明 | 例 |
+- 置き場: Monitoring Registry バケットの **`registry/{appId}/{env}.json`**（1 アプリ×環境 = 1 JSON オブジェクト。DynamoDB は不使用、[ADR-061 追記](../../../adr/061-deploy-detection-pull-model.md) / 12 章）
+
+| 項目 | 型 | 説明 | 例 |
 |---|---|---|---|
-| `appId` (PK) | S | アプリ一意識別子 | `expense-api` |
-| `env` (SK) | S | 環境 | `prod` / `stg` / `dev` |
+| `appId` | S | アプリ一意識別子（キーと同値）| `expense-api` |
+| `env` | S | 環境（キーと同値）| `prod` / `stg` / `dev` |
 | `baseUrl` | S | probe 先の CloudFront URL（Origin Protection 経由）| `https://expense.example.com` |
 | `authPattern` | S | 認証パターン（下記 enum）| `api-gw-jwt` |
-| `openApiS3Key` | S | OpenAPI Registry 内のキー | `111122223333/abc123/openapi.yaml` |
+| `openApiS3Key` | S | spec コピーのキー（§2.2）| `openapi/111122223333/expense-api/openapi.yaml` |
 | `testTokenSecret` | S | Positive test 用 token の Secret 名（共通基盤アカウント内）| `canary-central-readonly` |
 | `alertRouting` | M | 通知先設定（下記）| `{ p1: "arn:...:security", p2: "arn:...:platform", p3: "arn:...:app-team-x" }` |
 | `enabled` | BOOL | 監視有効フラグ（**中央管理**）| `true` |
@@ -82,8 +84,8 @@
 
 ### 2.2 OpenAPI Registry（S3）構造
 
-- バケット: `<common-platform-acct>-openapi-registry`（Versioning 有効）
-- キー: `{accountId}/{appId}/openapi.yaml`
+- バケット: `<common-platform-acct>-monitoring-registry`（Versioning 有効。**台帳 `registry/{appId}/{env}.json` と同居**、§2.1 / 12-13 章）
+- spec キー: `openapi/{accountId}/{appId}/openapi.yaml`
 - 発見 Lambda がリポジトリ内 openapi.yaml（正本）を GetFile で取得して Put（13 章）
 
 ### 2.3 OpenAPI アノテーション（アプリチームが付与、認証実装確認処理が解釈）

@@ -92,7 +92,7 @@ flowchart LR
 | 項目 | 内容 |
 |---|---|
 | トリガ | **手動**（運用者が CLI / コンソールから invoke）|
-| 範囲 | 全アプリ全 endpoint（App Registry を Scan）|
+| 範囲 | 全アプリ全 endpoint（台帳 registry/ を List）|
 | 用途 | 初回の全量確認 / 大きな変更後 / 監査前 / 定期棚卸し（人が判断）|
 | 実行基盤 | **M1 と同じ 認証実装チェック Lambda**（`mode=full`）。実装 1 つを payload で切替 |
 

@@ -51,7 +51,7 @@ API プラットフォーム標準の要件定義（`proposal/` 配下: §FR-API
 |---|---------|------|------------|:---:|
 | 10 | `10-external-monitoring-overview.md` | 外形監視 総論（ADR-059 要約 + 実装物ナビ）| ADR-059、§C-6.6.8 | 後続 |
 | 11 | `11-central-probe-architecture.md` | 認証実装チェック 詳細設計（処理フロー / Hybrid 検証 / 4×4 真偽値表 / Positive トークン管理）| ADR-059、§C-6.6.8 | 後続 |
-| 12 | `12-app-registry-design.md` | App Registry（DynamoDB）スキーマ・CRUD | ADR-059 | 後続 |
+| 12 | `12-app-registry-design.md` | App Registry（S3 台帳）スキーマ・巡回同期 | ADR-059 | 後続 |
 | 13 | `13-openapi-registry-design.md` | OpenAPI Registry（S3 コピー置き場。正本はリポジトリ内 openapi.yaml）| ADR-059、§C-API-5 | 後続 |
 | 14 | `14-probe-implementation-guide.md` | probe lib 実装ガイド + モノリス / Private 対応（Synthetics は将来オプション）| ADR-059 §D/§E | 後続 |
 | 15 | `15-alert-routing-design.md` | 4×4 真偽値表 Alert Router 設計（P1/P2/P3 分岐）| §C-6.6.8 | 後続 |

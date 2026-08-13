@@ -12,17 +12,18 @@
 
 ---
 
-## §13.1 S3 バケット構造
+## §13.1 S3 バケット構造（Monitoring Registry に同居）
 
-共通基盤アカウントに 1 バケット。
+共通基盤アカウントに **1 バケット（Monitoring Registry）**。台帳（[12 章](12-app-registry-design.md)）と spec コピーを**プレフィックスで同居**させ、監視系のストアを S3 1 つに集約する（[ADR-061 追記 2026-08-13](../../adr/061-deploy-detection-pull-model.md)）。
 
 | 項目 | 値 |
 |---|---|
-| バケット | `<common-platform-acct>-openapi-registry` |
-| キー | `{accountId}/{appId}/openapi.yaml` |
-| Versioning | 有効（正本の履歴を保持）|
+| バケット | `<common-platform-acct>-monitoring-registry` |
+| spec コピー | `openapi/{accountId}/{appId}/openapi.yaml`（本章）|
+| 台帳 | `registry/{appId}/{env}.json`（12 章）|
+| Versioning | 有効（履歴を保持）|
 
-認証実装確認処理は App Registry の `openApiS3Key` でこのキーを引き、`lib/openapi.js` の `fetchSpec` で取得・parse する。
+認証実装確認処理は台帳の `openApiS3Key` でこのキーを引き、`lib/openapi.js` の `fetchSpec` で取得・parse する。
 
 > ⚠ **実装注意（Phase 4 検証で判明）**: LocalStack でのローカルテストは S3 の **virtual-host addressing** で失敗する（`forcePathStyle` 要）。これは LocalStack 固有で**実 AWS では発生しない**。full-run は SAM local か実 AWS で（[research](research/phase4-local-verification-results.md)）。
 
@@ -41,7 +42,7 @@ sequenceDiagram
     Note over DISC: 巡回でコミット ID の変化を検知（17 章）
     DISC->>CC: GetFile（monitoring.yaml の openapi: パス、対象コミット）
     CC-->>DISC: openapi.yaml（fileContent）
-    DISC->>S3: PutObject（同一アカウント、{accountId}/{appId}/openapi.yaml）
+    DISC->>S3: PutObject（同一アカウント、openapi/{accountId}/{appId}/openapi.yaml）
 ```
 
 > **⚠ 正本の性質（drift 注意）**: リポジトリの spec は「**コードが宣言する形**」であり、本番デプロイと乖離（drift）し得る。乖離は probe の実測で顕在化する（spec にあるが本番に無い → 404/WARN、公開印漏れ → P1）が、能動検出の要否は M-Q-17-6。旧方式（deploy 後の API GW から GetExport した「本番の実態」正本）との比較・変更経緯は ADR-061。
