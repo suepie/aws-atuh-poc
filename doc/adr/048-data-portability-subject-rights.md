@@ -305,7 +305,9 @@ flowchart LR
 }
 ```
 
-→ GDPR Recital 26：「匿名化されたデータは個人データに該当しない」、APPI 仮名加工情報も同様。
+→ GDPR Recital 26：「匿名化されたデータは個人データに該当しない」。
+
+> **⚠ 2026-08-13 是正（PPC 一次資料調査による）**: 旧記述「**APPI 仮名加工情報も同様**」は**誤り**につき削除した。APPI の**仮名加工情報は「個人情報に該当しない」わけではない** —— 作成事業者は通常、元の個人情報や削除情報等（対応表）を保有するため、**仮名加工情報は原則として「個人情報」に該当し続ける**（[GL 仮名加工・匿名加工編 2-2-1](https://www.ppc.go.jp/files/pdf/260401_guidelines04.pdf) / [Q&A Q14-1](https://www.ppc.go.jp/files/pdf/250701_APPI_QA.pdf)）。「個人情報に該当しない」のは**匿名加工情報**（法 2 条 6 項＝復元不可）であり、両者は別制度。**本節の仮名化（表示属性の `[Anonymized-xxxxxx]` 置換）は安全管理措置であって仮名加工情報の作成ではない**（[U7 §7.7.7 D-U7-22](../basic-design/07-security-compliance-design.md)）。
 
 ### C.4 Cryptographic Erasure（大規模顧客 L3 CMK）
 
