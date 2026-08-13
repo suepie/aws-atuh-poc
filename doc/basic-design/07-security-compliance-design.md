@@ -536,6 +536,18 @@ flowchart TB
 | その他 SaaS（PagerDuty 等 Phase 1 β 導入分） | 法 25 | 導入時に第三者監査証跡（SOC 2 等）確認を必須プロセス化 |
 | （逆方向）顧客 → 本基盤 | 本基盤 = 受託者 | **Responsibility Matrix + 12.9.2 written acknowledgment を契約書内明文で提供**（Portal 掲載単独では不可 — [reference §9](../reference/pci-dss-v401-scope-for-auth-platform.md)）。Trust Portal 静的版は B-PCI-7 判定次第（ADR-036） |
 
+**ログ経路の越境評価（2026-08-13 追加）**: 「個人データ本体の etcd 非流入」は**保存状態**の統制であり、**ログ経路**は別に評価する必要がある。整理は次のとおり:
+
+| ログ | 出力先 | Red Hat 管理面に渡るか | 統制 |
+|---|---|---|---|
+| **Keycloak アプリログ**（PII が最も出る） | **Worker Node の `/var/log/pods`（= 弊社 AWS アカウント内）** → Fluent Bit → 自社 3 層 | **渡らない**（ROSA HCP で Red Hat 側にあるのは Control Plane〔API server / etcd〕のみ。Worker Node は弊社 VPC） | §7.3.1 のパイプライン |
+| **コントロールプレーン監査ログ**（kube-apiserver 等） | Red Hat 管理の Control Plane | **メタデータのみ**（誰が・いつ・何のリソースに・何の verb）。**既定 `Default` プロファイルはリクエスト/レスポンスのボディを記録しない** | **[ADR-056 ガードレール L6](../adr/056-rosa-adoption-decision.md)**（profile 固定 + 引き上げ禁止 = U9 禁則 **K-12**） |
+| **個人データ本体の読み書き** | Keycloak → **Aurora へ JDBC 直**（API server 非経由） | **渡らない**（K8s API を通らないため監査ログにも現れない） | 設計原則（ADR-056 L6 後段） |
+
+- **⚠ 逆転リスク**: audit profile を `AllRequestBodies` に引き上げると「監査を厚くしたつもりが、Secret のボディを Red Hat 管理面のログへ流入させる」逆効果になる。**L6 / K-12 で構造的に禁止**する。
+- **残る論点**: `kubectl logs` / `kubectl exec` は API server を経由するため、**実行者（Red Hat SRE を含む）はアプリログの内容を閲覧し得る**（監査ログに残るのはメタデータのみ）。ここは L4 運用監査 + **DPA の SRE 越境アクセスログ取得**でカバーする領域。
+- **切り分け注意**: OpenShift 4.17.2 以降 audit ログに含まれる OAuth ログは **OpenShift 自身のクラスタログイン（= 弊社運用者アカウント）**であり、**Keycloak が扱う顧客エンドユーザーとは別物**。法 28 の評価では「従業員の個人データ」として顧客 PII と切り分けて説明する。
+
 - **根拠**: APPI 法 25/28、ADR-056 §採用条件、gap doc §6。
 - **未決**: Red Hat DPA 法務確認の完了（**Phase 1 契約前ゲート**、ADR-056）。B-PCI-7（Trust Portal）。
 

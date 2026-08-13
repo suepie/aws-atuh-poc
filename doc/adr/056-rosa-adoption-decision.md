@@ -184,7 +184,7 @@ ROSA HCP モデル特有のコンプライアンス影響を整理:
 
   → **完全な etcd 非流入は K8s アーキ上不可能**。現実的なラインは「個人データ本体・CHD 本体の非流入を維持し、不可避な鍵類は etcd KMS 暗号化 + BYOK で保護」
 
-- **ガードレール 5 階層**（採用時に整備必要）:
+- **ガードレール 6 階層**（採用時に整備必要。**L1-L5 = 保存状態〔etcd〕の統制 / L6 = ログ経路の統制**）:
 
   | レベル | 内容 |
   |---|---|
@@ -193,6 +193,7 @@ ROSA HCP モデル特有のコンプライアンス影響を整理:
   | **L3. 静的解析** | Kubescape / Polaris で manifest スキャン |
   | **L4. 運用監査** | CronJob で定期に `kubectl get secrets -A` の中身を監査 + アラート |
   | **L5. バックアップ制御** | Velero 等 K8s backup ツールが etcd snapshot を国外 S3 に送らない設定 + Red Hat 側 cluster backup 保管先確認 |
+  | **L6. ログ経路制御**（2026-08-13 追加） | **クラスタ audit profile を `Default`（メタデータのみ）に固定**し、`WriteRequestBodies` / `AllRequestBodies` への引き上げを**禁止**する。引き上げると `kubectl get secret` 等の**レスポンスボディ（機密・PII）が Red Hat 管理面のコントロールプレーン監査ログへ流入**する（[OpenShift audit-log-policy](https://docs.redhat.com/en/documentation/openshift_container_platform/4.20/html/security_and_compliance/audit-log-policy-config)）。IaC 固定 + 日次ドリフト検知で強制（U9 禁則 **K-12**）。**加えて「個人データ本体を K8s API を通る経路に載せない」**（Keycloak → Aurora は JDBC 直で API server 非経由）を設計原則として明示 |
 
 **Upstream OSS + ECS Fargate (Default)** の場合、ECS タスク + RDS 全て顧客 AWS アカウント内に閉じるため、上記のコントロールプレーン越境論点 + ガードレール L1-L5 整備コスト**いずれも発生しない**（PCI DSS / APPI 評価範囲がシンプル）。
 

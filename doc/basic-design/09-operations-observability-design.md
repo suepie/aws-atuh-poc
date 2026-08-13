@@ -252,6 +252,7 @@ flowchart LR
 | K-9 | **単一 Terraform state に 1000 IdP 級のテナント層リソースを置かない** | U2 §2.7.5（設計として不成立） | §9.5.1 の 2 層分離で構造的に排除 |
 | K-10 | **Admin REST API クライアント（Terraform / 管理画面 Backend / パイプライン）は内部ホスト名 + 内部経路経由に統一**（公開 `/admin` 経路は 3 層防御で遮断済み） | U6 §6.6.1 / D-U6-11 | provider 設定を IaC テンプレート固定 |
 | K-11 | OLM 自動更新禁止（Explicit Strategy。パッチも Staging 1000 IdP 回帰通過が必須） | U2 §2.7.1 / U8 §8.1.4 | Subscription CR を IaC 固定 + ドリフト検知 |
+| K-12 | **クラスタ audit profile の引き上げ禁止**（`Default`〔メタデータのみ〕に固定。`WriteRequestBodies` / `AllRequestBodies` へ変更しない — 変更すると Secret 等のボディが **Red Hat 管理面のコントロールプレーン監査ログへ流入**し APPI 法 28 評価が崩れる） | [ADR-056 ガードレール L6](../adr/056-rosa-adoption-decision.md) / U7 §7.7.4 | APIServer CR を IaC 固定 + 日次ドリフト検知（§9.5.3）の検査項目 |
 
 - **根拠**: 各行の由来欄。禁則を「知識」でなく「機械強制 + チェックリスト」に落とすことが本決定の趣旨（運用者の記憶に依存しない）。
 
@@ -559,6 +560,8 @@ flowchart TB
 ---
 
 ## 改訂履歴
+
+- 2026-08-13: **禁則 K-12 追加（クラスタ audit profile の引き上げ禁止）** — `Default`（メタデータのみ）固定を IaC + 日次ドリフト検知で強制。[ADR-056 ガードレール L6（ログ経路制御）](../adr/056-rosa-adoption-decision.md) / U7 §7.7.4 のログ経路越境評価と対。
 
 - 2026-08-12: **§9.3.1 に「Keycloak 側の出力前提（実装必須設定）」を追加** — ① `jboss-logging` の success-level=info（**既定では成功イベントが DEBUG で stdout に出ず監査証跡が欠落する**罠の回避）② `log-console-output=json` ③ User/Admin Events 両方有効化。**O-U9-10（Admin Events の representation 要否）/ O-U9-11（KC DB イベントストアの無効化・保持）を未決に起票**。要件側 FR-INT-008 の評価是正（⚠自前実装 → ✅、自前 SPI 不要）と対。
 
