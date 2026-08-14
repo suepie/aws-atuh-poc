@@ -225,7 +225,7 @@ U1 は前提凍結（P-01〜18）と PoC・契約前ゲートの管理層。構�
 
 | DU | 単元名 | 主要成果物 | DoD | 依存 | PoC | 工数 | 人日 | 状態 |
 |---|---|---|---|---|---|---|---|---|
-| DU-U2-09 🆕 | ブランド=Realm マルチ Realm モデリング | Config/IaC: 1 Broker=N Realm 派生テンプレ + per-realm ログインテーマ + per-brand IdP-KC Realm 対応表（ADR-063 §3.8.0） | 現行「単一 Realm」と ADR-063「brand=Realm」の整合を確定し N Realm を IaC 機械派生・per-realm theme/issuer 非衝突 | DU-U2-01, DU-U9I-01 | G-IdP-Scale | L | 18 | 🟡先行 |
+| DU-U2-09 | ブランド=Realm モデリング（方式確定 + issuer 規律） | Config/IaC: **brand=Realm 確定**（[ADR-063 §ブランド Realm モデリング](../adr/063-brand-unit-architecture.md)、2026-08-15）→ Realm を IaC モジュール化しブランドをパラメータ化（Phase 1 は 1 Realm のみ instantiate）+ **issuer をブランド設定から解決する RP 規律/トークン検証**（不変条件⑤）。※N Realm 機械派生・per-realm テーマ自動化・per-brand IdP-KC Realm 対応表の運用は**将来 Phase 2+**（本 DU から分離） | brand=Realm 凍結（テナント軸単一 Realm と非衝突を明記）・1 Realm 稼働のまま将来 N Realm がテンプレ派生可能・アプリは issuer ハードコードなし | DU-U2-01, DU-U9I-01 | G-IdP-Scale | M | 8 | 🔒 |
 | DU-U2-10 🆕 | 2-tier セッション整合（§2.2.5 GAP-1〜5） | Config/SPI: backchannel logout 連鎖 + 両 Realm TTL 共通変数 + acr/prompt/max_age 転送 + login_hint 書式契約 | 5 ギャップが実機成立（storeToken=false 下 id_token_hint 取回し含む） | DU-U2-02, DU-U2-03, DU-U5-03 | G-SPI-Compat | M | 10 | 🟡 |
 | DU-U3-09 🆕 | 再有効化の対称伝播 | App: IdP-KC 再有効化→outbox `user.reactivated`→中央 shadow 制御 Lambda が Broker shadow `enabled=true`（冪等、ADR-064 対称） | 削除 outbox と対称に 1Tx・必達・数分リコンサイル整合 | DU-U3-05, DU-U3-07 | — | M | 9 | 🔒 |
 | DU-U3-10 🆕 | federated 初回 sub 通知の整合 | App: Broker→ブランド EventBridge（初回 sub 通知）+ Event Listener SPI emit（RC-3）+ federated authz 行生成 | 射影キー先行作成→sub バックフィル、順序到着/冪等/最新勝ち、越境は write 時のみ | DU-U3-04, DU-U2-04 | G-SCIM | M | 9 | 🔒 |
@@ -257,7 +257,7 @@ U1 は前提凍結（P-01〜18）と PoC・契約前ゲートの管理層。構�
 
 **GAP 小計 = 226 人日**（🔴Phase1 必須 ≈196 / 🟡将来・条件付 ≈30）。
 
-**先行判断（着手前）**: **「単一 broker Realm」vs「ブランド=Realm」** — DU-U2-09 とエッジ per-brand issuer/JWKS 検証は現行の単一 Realm/単一 issuer 前提（§5.6.3）と正面衝突する将来項目。Phase 1=1 ブランドなので急がないが**方式は先に固定**（将来移行回避）。DU-U9O-09（監査ログ per-brand/中央）も決定先行。
+**先行判断（着手前）**: ~~**「単一 broker Realm」vs「ブランド=Realm」**~~ → **確定（2026-08-15、ユーザー承認）= brand=Realm**。テナント軸（単一 Realm + Organizations）とブランド軸（brand=Realm）は別粒度で非衝突（[ADR-063 §ブランド Realm モデリング](../adr/063-brand-unit-architecture.md)）。issuer は「ブランド毎に単一」に読み替え、Phase 1 から RP 規律をロック（不変条件⑤）。§5.6.3 の単一 issuer 前提もこの読み替えで整合。DU-U2-09 は 🔒 化（方式確定・18→8 人日、N Realm 機械派生は将来へ分離）。**残る決定先行 = DU-U9O-09（監査ログ per-brand/中央）**。
 
 **既存 DU の DoD 追記推奨（新規 DU 不要）**: DU-U2-02（§2.2.5 logout id_token_hint）/ DU-U4-03（ステップアップ専用文言）/ DU-U4-02（A' Theme Override）/ DU-U6-03（接続予算 pool 等値化 D-U6-08）/ DU-U6-05（Broker 側 shadow 制御 内部 NLB 明示）/ DU-U10-02（テナント開示用 DynamoDB 射影 §10.2.5）/ DU-U8-04（H2 論理破壊 Game Day）/ DU-U9O-03（D-U6-12 VPN 併用切替 Runbook）。
 

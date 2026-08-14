@@ -43,6 +43,7 @@ P-01（ROSA HCP + RHBK）/ P-02（10M MAU）/ P-06（L2 単一 Realm + Organizat
 **採用**: Broker KC = **単一 Realm `broker`** + Organizations、IdP-KC = **単一 Realm `idp`** + Organizations。両クラスタとも `master` Realm は Keycloak 自体の管理専用とし、業務ユーザ・業務 Client を置かない。
 
 - **根拠**: ADR-017（マルチ Realm は 100-400 で運用劣化、L2 論理分離採用）+ ADR-033（両 Tier とも Single Realm + Organizations）。Realm 名は issuer URL（`https://<host>/realms/broker`）に埋め込まれ事実上変更不可のため、環境名・バージョン等を含まない普遍的な短名とする。
+- **「単一 Realm」の適用軸（2026-08-15 明確化、[ADR-063 ブランド Realm モデリング](../adr/063-brand-unit-architecture.md)）**: ここでの「単一 Realm」は**テナント軸**の決定（数千テナントに Realm を割らず Organizations で分離）。**ブランド軸は別**で、**ブランド = Realm（brand=Realm 確定）**。ADR-017 のマルチ Realm 劣化はテナント数千を Realm 化した場合の話であり、**ブランドは少数（Phase 1 = 1、将来も数個）なので非衝突**。Phase 1 = 1 ブランド = 本 `broker` / `idp` の単一 Realm のまま。将来ブランド追加時は Realm を IaC テンプレートから機械派生（[DU-U2-09](00b-design-unit-breakdown.md)、per-realm theme/issuer/IdP-KC Realm）。issuer は**ブランド毎に単一**（[U5 §5.6.3 の単一 issuer 前提はこの読み替え](05-token-session-authz-design.md)、アプリはブランド設定から解決）。
 - **代替案**: テナント別 Realm（B 案）— 規制要件でデータ物理分離が契約上強制される顧客のみ例外適用（ADR-017 の例外条件 3 つ）。その場合も既定 Realm 設計のコピーではなく本書設定のサブセットを IaC で派生させる。
 - **未決事項**: ホスト名（`auth.<domain>`）と admin 専用ホスト名分離（`hostname-admin`）は U6。DR（大阪）側 Realm 複製方式は U8（§2.7.4 の realm export 禁止制約と要整合）。
 

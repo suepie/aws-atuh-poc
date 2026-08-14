@@ -431,6 +431,7 @@ Back-Channel Logout はサーバ間 POST のため、**バックエンドを持�
 
 - 認可判定（リソース単位の can/cannot）はアプリ責務（§FR-6.0.A、パターン A〜D はアプリ選択）。
 - AT ペイロードをアプリログへ出力しない（§5.1.4 C-6）。
+- **issuer 規律（2026-08-15、[ADR-063 brand=Realm](../adr/063-brand-unit-architecture.md) 不変条件⑤）**: 点 2「iss 完全一致」の照合値は**ブランド毎に単一**。プラットフォーム全体は将来 N issuer（ブランド=Realm＝ブランド毎に issuer）だが、**各アプリは 1 ブランドに閉じるため照合する issuer は常に 1 つ**。RP は issuer を**ハードコードせずブランド設定（環境変数/Discovery）から解決**する（将来ブランド追加時の再計装回避）。Phase 1 = 1 ブランド = 現行の単一 issuer `.../realms/broker` のまま。「単一 issuer 前提」はこの「ブランド毎に単一」の読み替えで成立。
 
 ### 5.6.3b Discovery / JWKS エンドポイントの案内規約（D-U5-15、2026-08-12 追加）
 

@@ -1,7 +1,7 @@
 # ADR-063: ブランドユニット・アーキテクチャ（共有 Broker + ブランド別 backend、authz/idmap をブランド配置）
 
 - **ステータス**: Proposed（基本設計フェーズで Accepted 昇格予定）
-- **日付**: 2026-08-06 作成、2026-08-07 更新（§認可データ配置粒度 = A+C 追記、U7 D-U7-19 連動）
+- **日付**: 2026-08-06 作成、2026-08-07 更新（§認可データ配置粒度 = A+C 追記、U7 D-U7-19 連動）、**2026-08-15 更新（ブランド Realm モデリング = brand=Realm 確定、不変条件⑤ issuer per brand 追加、参照切れ §3.8.0 解消）**
 - **決定**: **Broker は共有（1 つ）。ブランドを将来の隔離/複製単位とし、authz / idmap / projection / CRUD / アプリをブランドユニット（IdP-KC 側）に置く。Broker は authz を持たない。** Phase 1 スコープ = 1 ブランド。物理 per-brand 分割は将来（本 ADR では論理境界のみ確定）。
 - **関連**:
   - [ADR-062 idm-api 実行形態 = Lambda](062-idm-api-execution-form-lambda.md)（実行形態。本 ADR の authz 配置と直交、両立）
@@ -46,6 +46,7 @@
 2. **authz / idmap / ユーザー各レコードに `brand_id` を一級キーとして持つ**。
 3. **cross-brand の join / クエリを設計に作らない**（ブランドは独立サイロ）。
 4. **Broker は共有関心のみ**。per-brand データは brand スコープで、将来そのまま per-brand へ切り出せる形にする。
+5. **issuer はブランド毎に単一**（2026-08-15 追加、下記「ブランド Realm モデリング」）。アプリ/RP は issuer をハードコードせず**ブランド設定から解決**する。プラットフォーム全体は将来 N issuer（ブランド毎）だが、各アプリは自ブランドの単一 issuer のみを見る。
 
 ## Consequences
 
@@ -92,10 +93,42 @@
 - **B（ブランドを credential/データの 2 アカウントに分割）**: アカウントレベル侵害には強いが #2 乗っ取りには無効 + ブランドあたり 2 アカウント + ブランド内クロスアカウント経路増。**規制ブランド（アカウントレベル分離が契約/監査要件）向けの将来オプションとして予約**。不変条件（sub グローバル / brand_id 一級キー）により、データアカウントの切り出しはクリーン移行可。
 - **D（authz を共有 Broker へ戻す）**: 却下。将来 per-brand 移行が必要 + 共有 Broker に cross-brand データ集中 = 不変条件 ③④ 違反。
 
+## ブランド Realm/Organization モデリング（brand=Realm 確定、2026-08-15）
+
+> 旧 DU-U2-09 が参照していた「§3.8.0」は本節。**先行判断「単一 broker Realm vs ブランド=Realm」をここで確定する**（[00b DU-U2-09](../basic-design/00b-design-unit-breakdown.md) / [01 §1.5 G-SRE… 隣接](../basic-design/01-architecture-baseline.md)）。
+
+### 論点の本質 = 2 軸の取り違え
+
+「Realm をいくつにするか」で **テナント軸**と**ブランド軸**という別粒度を衝突扱いしていたのが混乱の原因。両者は両立する。
+
+| 軸 | 基数 | モデリング | 根拠 |
+|---|---|---|---|
+| **テナント（顧客）** | 数千 | **Realm 内の Organizations**（1 顧客 = 1 Org） | [ADR-017](017-multitenant-l2-single-realm.md)：マルチ Realm は 100–400 で運用劣化 → テナントに Realm を割らない。[02 §2.1.1](../basic-design/02-keycloak-logical-design.md) |
+| **ブランド** | 少数（Phase 1 = 1、将来も数個） | **Realm（brand = Realm）**。将来は別クラスタ/アカウントへ | 本 ADR：ブランド = 将来の隔離/複製単位 |
+
+**ADR-017 の「マルチ Realm 禁止」はテナント軸の話**であり、ブランドは数個なのでブランド=Realm にしてもスケール劣化に当たらない（マルチ Realm の劣化はテナント数千を Realm 化した場合の話）。→ **非衝突**。
+
+### 決定 = brand = Realm
+
+- **1 Broker = N Realm（ブランド毎）**。Phase 1 = 1 ブランド = **現行の単一 Realm `broker` / `idp` のまま（今の設定は不変）**。
+- ブランド追加 = **Realm を IaC テンプレートから機械派生**（per-realm ログインテーマ / per-realm issuer / per-brand IdP-KC Realm 対応）。将来ブランドを別クラスタ/アカウントへ出す時も、Realm が単位なので**クラスタ分割が自然に別 Realm=別 issuer になり、Realm を割る移行が発生しない**。
+- テナント（Organizations）は**各ブランドの Realm 内**にそのまま入る（テナント軸の単一 Realm + Organizations 設計〔[02 §2.1.1](../basic-design/02-keycloak-logical-design.md)〕はブランド Realm 内で不変）。
+- **issuer 規律を Phase 1 からロック**（不変条件 ⑤）：[U5 の単一 issuer 前提](../basic-design/05-token-session-authz-design.md)を**「ブランド毎に単一 issuer」**と読み替え。アプリ/RP は issuer をハードコードせずブランド設定から解決する（各アプリは 1 ブランドに閉じるため、見る issuer は常に 1 つ）。→ 将来ブランド追加時にアプリ再計装が不要。
+
+### 却下：brand = 単一 Realm 内の Organizations グループ
+
+全ブランドで 1 Realm を共有し、ブランドを Organizations のグループ/属性で表す案。単一 issuer を維持できるが、**(1) Keycloak に「Organization のグループ」概念がなく不自然**、**(2) 将来ブランドを別クラスタに出す時に Realm 分割の移行が必要**（本 ADR の「将来移行回避」目的に反する）。不採用。
+
+### Phase 1 実装への影響
+
+- **設定変更なし**（1 ブランド = 現行単一 Realm）。確定するのは "方式" と不変条件⑤のみ。
+- Phase 1 の実作業 = ① Realm を IaC モジュール化しブランドをパラメータ化（1 Realm のみ instantiate）② issuer をブランド設定から解決する RP 実装ガイド規律 + トークン検証設計。
+- **将来分（Phase 2+）**: N Realm 機械派生の完成 + per-realm テーマ自動化 + per-brand IdP-KC Realm 対応表の運用。→ DU-U2-09 の残工数。
+
 ## Open Items
 
 - **物理 per-brand 分割の時期・方式**（アカウント/クラスタをブランド別に）→ マルチブランド要件が出た時。
 - **front door / shadow 制御トポロジ = 確定済み**：**ブランド主役**＝ #2 が CRUD + authz + projection の実体、中央は **shadow 制御 Lambda のみ**、ルーティングはエッジ。**削除伝播（shadow 無効化）は [ADR-064](064-deprovisioning-propagation-outbox.md) で確定**（A 案 outbox: 1Tx outbox + リレー必達 + 数分リコンサイル。旧「案 i 直接発行 / 日次リコンサイル」から更新）。残論点 = ロックアウト SLA（ADR-064 Open Items）。
 - **federated `sub` 通知**（authz 行生成用）の具体（EventBridge Broker→ブランド、整合設計）。
 - **cross-brand 横断管理ビュー**を将来作る場合の越境 read 設計（作らなければ不要）。
-- ブランドの Realm/Organization モデリング（1 Realm + Organizations でブランドをどう表すか）→ U2。
+- ~~ブランドの Realm/Organization モデリング~~ → **確定（2026-08-15、上記「ブランド Realm/Organization モデリング」節）= brand=Realm**。残 = N Realm 機械派生の IaC 完成（将来、DU-U2-09）。
