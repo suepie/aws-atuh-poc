@@ -74,9 +74,10 @@ ROSA の概要・アーキテクチャ・価格・SLA・本基盤での移行考
 | **DB/キャッシュ** | Aurora PostgreSQL（顧客 VPC 内、SG 直接続）+ jdbc-ping | KC 26.1 で jdbc-ping デフォルト化。keycloak-benchmark 公式が「ROSA クロスサイト + Aurora」を手順化（ADR-051 と整合） |
 
 **採用条件（Accepted 完全昇格の前提、未充足の間は条件付き）**:
-1. PCI DSS / APPI 追加要件（下記「採用時のコンプライアンス追加要件」: etcd 非流入設計 + ガードレール L1-L5 + Red Hat AOC/DPA）の整備計画承認
+1. PCI DSS / APPI 追加要件（下記「採用時のコンプライアンス追加要件」: etcd 非流入設計 + ガードレール L1-L7 + Red Hat AOC/DPA）の整備計画承認
 2. 3 年契約見積の取得（worker ROSA fee 55% 引はコンソール未対応、AWS パートナーチーム経由）
 3. Stage A Terraform 書き換え（6-8 週間）の工数承認
+4. **Approved Access の有効化**（既定 OFF・要サポートチケット）+ **ソース側 stdout ログマスキング/本番ログレベル統制の実機確認（G-SRE-LogVis）** — Red Hat SRE のライブ Pod ログ閲覧（APPI 28 条）への技術対策（ガードレール L7、[research 2026-08-14](../basic-design/research/rosa-sre-live-log-visibility-2026-08-14.md)）
 
 **残 TBD**: ① 大阪側インスタンス在庫・vCPU クォータ実確認 ② HCP cluster fee（$182.5/月/クラスタ）の契約割引有無 ③ RHBK 26.4 × upstream 26.x の Custom SPI 互換実証（[ADR-055 §A.6/A.7](055-hrd-implementation-method-selection.md)） ④ multi-cluster v2（外部 Infinispan 不要）の RHBK サポート版数確認
 
@@ -194,6 +195,7 @@ ROSA HCP モデル特有のコンプライアンス影響を整理:
   | **L4. 運用監査** | CronJob で定期に `kubectl get secrets -A` の中身を監査 + アラート |
   | **L5. バックアップ制御** | Velero 等 K8s backup ツールが etcd snapshot を国外 S3 に送らない設定 + Red Hat 側 cluster backup 保管先確認 |
   | **L6. ログ経路制御**（2026-08-13 追加） | **クラスタ audit profile を `Default`（メタデータのみ）に固定**し、`WriteRequestBodies` / `AllRequestBodies` への引き上げを**禁止**する。引き上げると `kubectl get secret` 等の**レスポンスボディ（機密・PII）が Red Hat 管理面のコントロールプレーン監査ログへ流入**する（[OpenShift audit-log-policy](https://docs.redhat.com/en/documentation/openshift_container_platform/4.20/html/security_and_compliance/audit-log-policy-config)）。IaC 固定 + 日次ドリフト検知で強制（U9 禁則 **K-12**）。**加えて「個人データ本体を K8s API を通る経路に載せない」**（Keycloak → Aurora は JDBC 直で API server 非経由）を設計原則として明示 |
+  | **L7. ライブ Pod ログ経路制御**（2026-08-14 追加） | L6 が塞ぐのは**コントロールプレーン監査ログ**経路のみ。**`oc logs` / `oc debug node` / EC2 serial console は worker ノード上の生 stdout（`/var/log/pods`）を読む別経路**で、**cluster-admin へ昇格した Red Hat SRE または break-glass 時の SRE がマスク前平文 PII を閲覧しうる**（[research 2026-08-14](../basic-design/research/rosa-sre-live-log-visibility-2026-08-14.md)、[Approved Access](https://docs.redhat.com/en/documentation/red_hat_openshift_service_on_aws/4/html/support/approved-access)）。マスキング（M-1〜14）は Fluent Bit 下流＝ stdout の後段のため本経路を覆わない。**3 段対策**: ① **ソース側 stdout マスキング + 本番ログレベル `DEBUG`/`TRACE` 禁止**（生 PII をノードに書かせない＝根本対策、U9 禁則 **K-13**）② **Approved Access 有効化**（SRE 昇格に顧客承認ゲート、既定 OFF・要サポートチケット → **採用条件 ④**）③ **SRE アクセス監査の顧客保全**（Cluster Logging Operator → CloudWatch）。実機確認 = **ゲート G-SRE-LogVis**（DU-U7-16） |
 
 **Upstream OSS + ECS Fargate (Default)** の場合、ECS タスク + RDS 全て顧客 AWS アカウント内に閉じるため、上記のコントロールプレーン越境論点 + ガードレール L1-L5 整備コスト**いずれも発生しない**（PCI DSS / APPI 評価範囲がシンプル）。
 

@@ -605,7 +605,7 @@ flowchart TB
 | **個人データ本体の読み書き** | Keycloak → **Aurora へ JDBC 直**（API server 非経由） | **渡らない**（K8s API を通らないため監査ログにも現れない） | 設計原則（ADR-056 L6 後段） |
 
 - **⚠ 逆転リスク**: audit profile を `AllRequestBodies` に引き上げると「監査を厚くしたつもりが、Secret のボディを Red Hat 管理面のログへ流入させる」逆効果になる。**L6 / K-12 で構造的に禁止**する。
-- **残る論点**: `kubectl logs` / `kubectl exec` は API server を経由するため、**実行者（Red Hat SRE を含む）はアプリログの内容を閲覧し得る**（監査ログに残るのはメタデータのみ）。ここは L4 運用監査 + **DPA の SRE 越境アクセスログ取得**でカバーする領域。
+- **残る論点（2026-08-14 深掘り・[research](research/rosa-sre-live-log-visibility-2026-08-14.md)）**: `oc logs` / `oc debug node` / EC2 serial console は **worker ノード上の生 stdout（`/var/log/pods`）を読む経路**で、**cluster-admin へ昇格した Red Hat SRE または break-glass 時の SRE がマスク前平文 PII を閲覧しうる**（一次情報で「条件付き Yes」を確定）。マスキング（§7.3.1 の M-1〜14）は **Fluent Bit 下流＝ stdout の後段**のため本経路を覆わない。**⚠ 従前の「L4 運用監査でカバー」は不正確**（ADR-056 の L4 = `kubectl get secrets -A` の中身監査であり `oc logs` 閲覧は監視しない）。→ **3 段対策に再定義**: ① **ソース側 stdout マスキング + 本番ログレベル `DEBUG`/`TRACE` 禁止**（生 PII をノードに書かせない＝根本対策、[ADR-056 L7](../adr/056-rosa-adoption-decision.md) / 禁則 **K-13** / DU-U7-16）② **Approved Access 有効化**（SRE 昇格に顧客承認ゲート、既定 OFF・要サポートチケット、ADR-056 採用条件 ④）③ **SRE アクセス監査の顧客保全**（Cluster Logging Operator → CloudWatch）+ **DPA の SRE 越境アクセスログ取得**。実機確認 = **ゲート G-SRE-LogVis**（G-DPA の技術的裏付け）。**未確認**: `oc logs` read の顧客監査可視性（B-SRE-LOG-2）/ Approved Access の break-glass ゲート有無・HCP GA 版数（B-SRE-LOG-1）/ SRE 地理制限の契約保証（B-DPA-2）。
 - **切り分け注意**: OpenShift 4.17.2 以降 audit ログに含まれる OAuth ログは **OpenShift 自身のクラスタログイン（= 弊社運用者アカウント）**であり、**Keycloak が扱う顧客エンドユーザーとは別物**。法 28 の評価では「従業員の個人データ」として顧客 PII と切り分けて説明する。
 
 - **根拠**: APPI 法 25/28、ADR-056 §採用条件、gap doc §6。

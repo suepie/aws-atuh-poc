@@ -101,7 +101,8 @@ ADR-039 の 5 アカウント体系を Broker/IdP-KC 分割で **6 アカウン�
 | G-SSF | **2026-08-12 追加**: Keycloak experimental SSF（transmitter-only・既定 off）の実機動作 + receiver 要否 + outbox からの自作 SET エミッタ比較。CAEP `session-revoked`/RISC でゾンビ窓（U5 §5.2.4）を数秒失効に短縮できるか（[ADR-065](../adr/065-continuous-access-caep-shared-signals.md)、hearing B-CAEP-1）。**Phase 1 は暫定ブリッジ〔短命 AT + not-before push + 高価値 Introspection + DPoP〕で成立、CAEP は本ゲート通過後に段階導入** | U5/U7 |
 | G-EGRESS | **合意方向(2026-07-30): 初期は一括、追加分は都度依頼（先方は依頼次第 当日〜翌日対応）→ 方式① + §NFR-3 リードタイム（次営業日以内）は成立**（U6 §6.7.3 D-U6-13、U9 §9.7.1） | U6/U9 |
 | ~~G-PCI-WAF~~ | ❌ **廃止(2026-07-30、PCI DSS 対応不要)** — B-MFA-PCI-1 も不要 | — |
-| G-DPA | **軟化(2026-07-30): クラウド利用の APPI 同意は取得方針。残は Red Hat SRE 越境閲覧の確認中 1 点**（U7 §7.7.4） | U7 |
+| G-DPA | **軟化(2026-07-30): クラウド利用の APPI 同意は取得方針。残は Red Hat SRE 越境閲覧の確認中 1 点**（U7 §7.7.4）。**技術的裏付けは G-SRE-LogVis に細分化(2026-08-14)** | U7 |
+| G-SRE-LogVis | **2026-08-14 追加(G-DPA の技術的裏付け)**: Red Hat SRE のライブ Pod ログ閲覧経路（`oc logs`／ノード生 stdout）への対策実証 — ① **`oc logs` に PII が出ないソース側 stdout マスキング + 本番ログレベル固定**（[ADR-056 L7](../adr/056-rosa-adoption-decision.md)／禁則 K-13）② **Approved Access 有効化**（既定 OFF・要サポートチケット）③ **SRE アクセス監査の顧客保全**。マスキング(M-1〜14)は stdout 下流のため本経路を覆わない点が起点（[research 2026-08-14](research/rosa-sre-live-log-visibility-2026-08-14.md)、hearing B-SRE-LOG-1/2・B-DPA-2） | U7/U9 |
 | G-EDGE-DR | **転換(2026-07-30): 手動 DR / RTO ≈ 14 日で大阪オンデマンド再構築 → RTO 1h・エッジ自動切替合意は不要。論点は「大阪再構築 Runbook」へ**（U8 要改訂） | U8 |
 
 > 用語注意: L1〜L4 は文脈で意味が異なる(U5 ログアウトレイヤー / ITDR 対応レベル / PAM 4 層 / U3 責任分界 / SN L1/L2)。各書で参照先を明記する。
