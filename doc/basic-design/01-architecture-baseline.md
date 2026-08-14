@@ -14,7 +14,7 @@
 |---|------|--------|--------------|------------------|
 | P-01 | プラットフォーム | **Keycloak / ROSA HCP + RHBK Operator**（RHBK サブスクは ROSA 内包・追加費用なし） | 2026-07-23 ユーザー指示 + [ADR-056 改訂](../adr/056-rosa-adoption-decision.md)・[research](research/rosa-hcp-adoption-research.md) | 全単元 |
 | P-02 | MAU 規模 | **10M MAU 上限で設計** | 2026-07-23 ユーザー凍結。ADR-032/033 整合 | U2/U6/U8（サイジング・コスト） |
-| P-03 | FIPS 140-2 | **不要（確定 2026-07-30）** | hearing C-201 回答 = 必須ではない | U7 |
+| P-03 | **FIPS 140-3**（暗号モジュール認定、旧 140-2）| **不要（確定 2026-07-30）** | hearing C-201 回答 = 必須ではない。**140-2 は 2026-09-21 に CMVP historical list へ移行**するため、将来 Yes に転じた場合の対象は 140-3（[CMVP](https://csrc.nist.gov/projects/fips-140-3-transition-effort)、2026-08-15 名称更新）| U7 |
 | P-04 | SLA | 99.9%（暫定） | NFR-AVL-001 推奨デフォルト。ROSA HCP 自体は 99.95% | U6/U8/U9 |
 | P-05 | DR | **Tier 3+: 手動 DR / RTO ≈ 14 日（大阪でオンデマンド再構築）/ RPO は Aurora 自動バックアップ + PITR 依存（2026-07-30 転換）**。**2 シナリオ: ① リージョン災害=大阪再構築+リストア / ② 論理破壊(IdP データ破壊・ランサム)=PITR・イミュータブルスナップショット(Backup Vault Lock)からリストア**。従前のピロットライト RTO 1h・大阪ウォーム待機は廃止 → **U8/U6/ADR-051 要改訂** | 2026-07-30 決定、ADR-051（要改訂） | U8/U6 |
 | P-06 | テナント分離 | L2 単一 Realm + Organizations + tenant_id クレーム | ADR-017（2026-07-23 更新） | U2/U3 |

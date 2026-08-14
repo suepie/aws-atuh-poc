@@ -25,7 +25,7 @@
 |---|-----------|--------|------------|
 | P-01 | プラットフォーム | Keycloak（Cognito 不採用確定）、**実行基盤 = ROSA HCP + RHBK Operator 推奨**（変更可能性あり） | 2026-07-23 ユーザー指示 + 同日調査（[research/rosa-hcp-adoption-research.md](research/rosa-hcp-adoption-research.md)）: Classic は新規作成期限公式化で HCP 一択 / **RHBK は ROSA 内包で追加サブスク不要** / 大阪対応済み。ADR-056 は改訂骨子作成済み |
 | P-02 | MAU 規模 | **10M MAU 上限で設計（2026-07-23 ユーザー凍結）** | ADR-032/033 と整合。NFR-3 のレンジ記述（1 万〜100 万）は U1 で 10M 上限に改訂。過大なら縮小は容易 |
-| P-03 | FIPS 140-2 | 不要 | Yes なら RHBK 必須化で全面見直し |
+| P-03 | **FIPS 140-3**（旧 140-2）| 不要 | Yes なら RHBK 必須化で全面見直し。140-2 は 2026-09-21 に CMVP historical list へ移行（2026-08-15 名称更新、[U1 P-03](01-architecture-baseline.md)）|
 | P-04 | SLA | 99.9% | NFR-AVL-001 推奨デフォルト |
 | P-05 | DR | Tier 2: RTO 1h / RPO 1min、Active-Passive（東京→大阪） | ADR-051 |
 | P-06 | テナント分離 | L2 単一 Realm + Organizations + tenant_id クレーム | ADR-017/033/058 |

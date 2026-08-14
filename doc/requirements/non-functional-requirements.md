@@ -203,7 +203,7 @@ NFR-OPS は性質の異なる 3 つの観点を含む。
 NFR-COMPLIANCE は性質の異なる 3 つの観点を含む。
 
 - **§7.1 規制・法令対応**（NFR-COMP-001, 002, 008）— 個人情報保護法 / GDPR / データ所在地など、地域・業界の法的要件
-- **§7.2 業界認定・監査**（NFR-COMP-003〜007, 010）— SOC 2 / ISO 27001 / PCI DSS / FIPS / 監査ログ保存
+- **§7.2 業界認定・監査**（NFR-COMP-003〜007, 010）— SOC 2 / ISO 27001 / PCI DSS / FIPS 140-3 / 監査ログ保存
 - **§7.3 データガバナンス**（NFR-COMP-009, 011）— データ主体権利・暗号鍵ローテーション
 
 ### 7.1 規制・法令対応
@@ -221,7 +221,7 @@ NFR-COMPLIANCE は性質の異なる 3 つの観点を含む。
 | NFR-COMP-003 | SOC 2 Type II | (TBD) | ✅ AWS 認定 | ⚠ 自前運用責任 | 🔴 |
 | NFR-COMP-004 | ISO 27001 | (TBD) | ✅ AWS 認定 | ⚠ 自前運用責任 | 🔴 |
 | NFR-COMP-005 | PCI DSS（金融） | (TBD) | ✅ AWS 認定 | ⚠ 自前 | 🔴 |
-| NFR-COMP-006 | FIPS 140-2 認定 | (TBD) | ⚠ FIPS Endpoint 利用 | ⚠ **RHBK 必須** | 🔴 |
+| NFR-COMP-006 | **FIPS 140-3 認定**（暗号モジュール認定、旧 140-2）| **不要（C-201 確定 2026-07-30）** | ⚠ FIPS Endpoint 利用 | ⚠ RHBK 必須 | ✅ |
 | NFR-COMP-007 | 監査ログ保存期間（法令要件） | (TBD) **業種次第（〜10 年）** | ✅ S3 ライフサイクル | ✅ S3 ライフサイクル | 🔴 |
 | NFR-COMP-010 | アクセス監査の追跡可能性 | (D) **全認証イベント記録** | ✅ CloudTrail | ✅ Event Listener | 🟡 |
 
@@ -232,7 +232,11 @@ NFR-COMPLIANCE は性質の異なる 3 つの観点を含む。
 | NFR-COMP-009 | 個人データ削除権（GDPR Right to Erasure） | (TBD) | ✅ AdminDeleteUser | ✅ Cascade Delete | 🟡 |
 | NFR-COMP-011 | 暗号鍵のローテーション | (D) **年 1 回以上** | ✅ KMS 自動 | ⚠ Realm Key Rotation 設定 | 🟡 |
 
-**ヒアリング論点**: NFR-COMP-006（FIPS）が **RHBK 必要要因**。NFR-COMP-008（データ所在地）が **リージョン設計の決め手**。
+**ヒアリング論点**: NFR-COMP-006（FIPS）は **不要で確定（C-201、2026-07-30）** — RHBK 必須要因としては解消済み。NFR-COMP-008（データ所在地）が **リージョン設計の決め手**。
+
+> **要件名の更新（2026-08-15）— FIPS 140-2 → FIPS 140-3**: NIST CMVP は **2026-09-21 をもって FIPS 140-2 の validation を historical list へ移行**し、**新規システムでの historical モジュール採用は非推奨**とする（[CMVP FIPS 140-3 Transition Effort](https://csrc.nist.gov/projects/fips-140-3-transition-effort) / [CMVP Programmatic Transitions](https://csrc.nist.gov/projects/cryptographic-module-validation-program/programmatic-transitions)）。**本要件の結論「不要」は不変**（C-201、2026-07-30 確定）だが、将来 Yes に転じた場合の対象は **FIPS 140-3** である。
+> なお **RHBK / AWS KMS 等の製品側「FIPS 140-2 対応」表記は各社の公式表記のまま引用しており**、本要件名の更新とは独立（一括置換していない）。NIST **FIPS 203/204/205** は PQC 標準であり本件と無関係（[ADR-047](../adr/047-post-quantum-cryptography-migration-plan.md)）。
+
 
 ---
 
@@ -279,7 +283,7 @@ NFR-COMPLIANCE は性質の異なる 3 つの観点を含む。
 | NFR-SCL-001 | MAU スケール（1〜3 年） | コスト損益分岐 |
 | NFR-AVL-001 | SLA（99.9 / 99.95 / 99.99%） | Keycloak HA 設計 / RHBK 必要性 |
 | NFR-DR-001 / 002 | RTO / RPO | DR コスト差 |
-| NFR-COMP-006 | FIPS 認定 | RHBK 必須要因 |
+| ~~NFR-COMP-006~~ | ~~FIPS 認定~~ | ✅ 解消 — **不要で確定**（C-201、2026-07-30）|
 | NFR-COMP-008 | データ所在地 | リージョン選定 |
 
 ### 🟡 重要（運用設計に直結）

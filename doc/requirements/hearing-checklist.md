@@ -133,7 +133,7 @@
 |---|:---:|:---:|------|----------|---------|---------|---------|------|:---:|
 | A-8 | `[A]` | 🟡 | データ所在地要件 | NFR-COMP-008 | §NFR-7 | 国内限定 / 特定リージョン制約はあるか? | リージョン名 | | ⏳ |
 | A-9 | `[A]` | 🟡 | 業界規制 | NFR-COMP-001〜005 | §FR-1.2, §NFR-7 | 顧客の業界（金融/医療/政府等）| 業界名 + 規制名（PCI DSS / FFIEC / FISC 等）| | ⏳ |
-| C-201 | `[C]` | 🔥 | **FIPS 140-2 認定** | NFR-COMP-006 | §NFR-7 | 業界規制で必須か?（Yes → RHBK 必須）| Yes/No | **No — FIPS 不要で確定（2026-07-30）** | ✅ |
+| C-201 | `[C]` | 🔥 | **FIPS 140-3 認定**（暗号モジュール認定、旧 140-2。140-2 は 2026-09-21 に CMVP historical list へ移行）| NFR-COMP-006 | §NFR-7 | 業界規制で必須か?（Yes → RHBK 必須）| Yes/No | **No — FIPS 不要で確定（2026-07-30）** | ✅ |
 | C-202 | `[C]` | 🔥 | コンプライアンス認証 | NFR-COMP-002〜005 | §NFR-7 | SOC2 / ISO27001 / PCI DSS / FFIEC の必要性? | 認証リスト | | ⏳ |
 | C-209 | `[C]` | 🟢 | 個人データ削除権 | NFR-COMP-009 | §NFR-7 | GDPR 等の対応必要? | Yes/No | | ⏳ |
 
@@ -627,6 +627,7 @@
 | **B-SRE-LOG-1** | `[B]` | 🔥 | **Approved Access の適用範囲確認（Red Hat 照会）**（2026-08-14 追加、G-SRE-LogVis）| NFR-COMPLIANCE | [ADR-056 L7](../adr/056-rosa-adoption-decision.md), [research 2026-08-14](../basic-design/research/rosa-sre-live-log-visibility-2026-08-14.md) | Red Hat に確認: ① Approved Access は **緊急 break-glass（EC2 serial console）経路もゲートするか**、事後監査型か / ② **ROSA HCP での GA・対象版数** / ③ 有効化手順（要サポートチケット）| 回答（3 点）+ 有効化可否 | | ⏳ |
 | **B-SRE-LOG-2** | `[B]` | 🔥 | **SRE の `oc logs` read が顧客監査で追えるか（Red Hat 照会）**（2026-08-14 追加、G-SRE-LogVis）| NFR-COMPLIANCE | [ADR-056 L7](../adr/056-rosa-adoption-decision.md), [U7 §7.7.4](../basic-design/07-security-compliance-design.md) | SRE がライブ Pod ログを閲覧した read イベントが、**顧客取得可能な監査ログ（Cluster Logging Operator→CloudWatch 等）から個人識別子付きで追跡できるか**。追えない場合の代替監督手段は? | 追跡可否 + 代替 | | ⏳ |
 | **B-DPA-2** | `[B]` | 🔥 | **Red Hat SRE 所在地域の地理制限を契約保証できるか**（2026-08-14 追加、G-DPA 技術裏付け）| NFR-COMPLIANCE | [ADR-056](../adr/056-rosa-adoption-decision.md), [U7 §7.7.4](../basic-design/07-security-compliance-design.md), [Subprocessor List/DPA](https://www.redhat.com/en/about/agreements/dpl) | DPA / Subprocessor List で **SRE 所在（follow-the-sun: 米/EMEA/APAC）と越境提供根拠（基準適合体制）を確認**。地理制限（国内限定等）を契約で保証できるか、不可なら APPI 28 条の相当措置をどう構成するか（法務連動、DU-U7-14）| 保証可否 + 相当措置構成 | | ⏳ |
+| **B-APPI-R8-1** | `[C]` | 🟡 | **令和 8 年改正 APPI 法 58 条の 2（受託者の適用特例）の該当性**（2026-08-15 追加、[U7 §7.7.8 D-U7-23](../basic-design/07-security-compliance-design.md) 起票分を正式登録）| NFR-COMPLIANCE / NFR-COMP-009 | [U7 §7.7.8](../basic-design/07-security-compliance-design.md), [U10 D-U10-13](../basic-design/10-integration-migration-design.md), [PPC 令和 8 年改正](https://www.ppc.go.jp/personalinfo/legal/r8kaiseihogohou/), [appi-legal-issues-summary](../common/appi-legal-issues-summary.md) | 本基盤は 58 条の 2 の特例（委託契約に規則所定事項が定められ取扱いが契約の定めに従う場合、**開示等請求対応 = 32〜39 条を含む第 4 章第 2〜4 節の大半が適用除外**）に該当するか。**本基盤は HRD 自動振分け・JIT 自動登録など「取扱いの方法を自ら決定する」機能を持つため該当性は微妙**。なお **23〜26 条（安全管理・従業者監督・委託先監督・漏えい報告）と 30 条の 3 は適用継続**のため、**漏えい報告体制の設計は該当可否によらず不変**。施行 = 公布(2026-07-17)から 2 年以内（PPC 想定 2028 年春〜7 月）、委員会規則は 2027 年後半〜2028 年前半公布見込み | いま法務確認 / 規則公布後に再評価（推奨）/ 未定 | | ⏳ |
 
 ---
 
@@ -799,6 +800,7 @@ C-210（NIST AAL レベル）が確定すれば、C-211 / C-206-2 / C-206-3 / B-
 
 | 日付 | 内容 |
 |---|---|
+| 2026-08-15 | **B-APPI-R8-1 新規登録**（令和 8 年改正 APPI 法 58 条の 2 受託者特例の該当性、§5.6。U7 §7.7.8 D-U7-23 で起票済みだったが一覧未登録だったものを是正） / **C-201 の項目名を FIPS 140-2 → FIPS 140-3 へ更新**（140-2 は 2026-09-21 に CMVP historical list 移行、結論「不要」は不変）|
 | 2026-07-23 | Wave 2 整合性レビュー（M-11）: **B-GD-1/2/3**（Golden 検知系 — 顧客 IdP の SAML 署名鍵ローテ通知体制 / IdP 側異常検知の共有可否 / 合同調査体制、ADR-060 §F 正式化）+ **B-LOG-1**（RP アプリログ scrubbing 実施状況）+ **B-KMS-3**（テナント別 CMK 要否、ADR-045 転記）を §5.3 末尾に、**B-DR-1〜5**（RTO/RPO 顧客要件 / DR 訓練参加 / 通知 SLA / Failover 時再認証許容 / エッジ DR 切替体制、§NFR-5 転記）を §5.1 末尾に新規登録（U7/U8 基本設計連動）|
 | 2026-05-25 | **構造再編成**: 旧 Phase A/B/C/D（ステークホルダー軸）→ §0〜§5（subject-matter 軸）に移行。Phase は項目タグとして保持し後方互換。BFF / リレー / Revocation 等の K1〜K8 系は §3.2 マスター表 C に統合済（見落とし防止チェックリストを §3.3 冒頭に明示）|
 | 2026-05-24 | K1 Token Exchange と K8 Access Token Revocation のリッチコンテンツ統合: **B-304（業務シナリオ 7 軸）** と **C-207（B-704 と完全重複）** を追加で統合。マスター表 C 補足 2 K1/K8 にシーケンス図・代替策表・判定フローチャート・TTL トレードオフ表が完全保存 |

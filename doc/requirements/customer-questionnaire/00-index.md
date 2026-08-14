@@ -181,10 +181,10 @@
 
 ## 本質問状の作成過程で判明した弊社内の宿題（顧客送付版には含めません）
 
-| # | 内容 | 対応先 |
-|---|---|---|
-| 1 | **要件名が失効した規格を指している** — NFR-COMP-006 の名称「FIPS 140-2 認定」は、FIPS 140-2 が 2026 年 9 月に失効し FIPS 140-3 へ移行するため、**要件名を FIPS 140-3 に更新する必要がある**。要否の結論（不要）は変わらない | [非機能要件一覧](../non-functional-requirements.md) NFR-COMP-006 / [前提 P-03](../../basic-design/01-architecture-baseline.md) |
-| 2 | **ヒアリング項目が未登録** — Q67（2028 年ごろ施行見込みの法改正で本基盤が「代行する立場」に該当するか）は設計書 §7.7.8 で `B-APPI-R8-1` として起票予定だが、**ヒアリング一覧に未登録**（引用 ID 実在確認 37 件中、唯一の不在） | [ヒアリング項目一覧](../hearing-checklist.md) |
+| # | 内容 | 状態 | 対応先 |
+|---|---|---|---|
+| 1 | **要件名が失効した規格を指していた** — NFR-COMP-006 / 前提 P-03 / C-201 の名称「FIPS 140-2 認定」を **FIPS 140-3 へ更新**。NIST CMVP は **2026-09-21 に FIPS 140-2 の validation を historical list へ移行**し、新規システムでの採用を非推奨とする（[CMVP](https://csrc.nist.gov/projects/fips-140-3-transition-effort)）。**要否の結論「不要」は不変**。なお **RHBK / AWS KMS 等の製品側「FIPS 140-2 対応」表記は各社の公式表記のため据え置き**（一括置換していない）。NIST FIPS 203/204/205 は PQC 標準で無関係 | ✅ 2026-08-15 対応 | [非機能要件](../non-functional-requirements.md) NFR-COMP-006 / [P-03](../../basic-design/01-architecture-baseline.md) / [C-201](../hearing-checklist.md) / [§NFR-7](../proposal/nfr/07-compliance.md) / [U7](../../basic-design/07-security-compliance-design.md) |
+| 2 | **ヒアリング項目が未登録だった** — Q67 は設計書 §7.7.8（D-U7-23）で `B-APPI-R8-1` として起票済みだったが**ヒアリング一覧に未登録**（引用 ID 実在確認 37 件中、唯一の不在）。**§5.6 へ正式登録**し、U7 側からも相互リンク | ✅ 2026-08-15 対応 | [ヒアリング一覧 §5.6](../hearing-checklist.md) |
 
 ---
 
