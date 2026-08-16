@@ -1,6 +1,6 @@
 # ADR-019: 既存システムからの移行戦略（並走 + User Storage SPI キャッシュ移行）
 
-- **ステータス**: **凍結（2026-08-17）** — 移行は**アプリ側で実施**する方針に変更（NFR-MIG-001 = 対象外）。本 ADR の中核である **User Storage SPI 並走は Phase 1 で実装しない**。削除でなく凍結とし、基盤側で引き受ける判断に転じた場合に再開する。**副作用**: 旧ローカル PW 利用者は再設定が必要（メール経路を持たない前提のため配布手段の別途設計が要る）
+- **ステータス**: **凍結（2026-08-17）** — 移行は**アプリ側で実施**する方針に変更（NFR-MIG-001 = 対象外）。本 ADR の中核である **User Storage SPI 並走は Phase 1 で実装しない**。削除でなく凍結とし、基盤側で引き受ける判断に転じた場合に再開する。**2026-08-17 同日訂正**: 「アプリ側移行 = パスワード引き継ぎ不可」は誤りだった。**Keycloak Admin REST API は `credentials[].credentialData` / `secretData` でハッシュを投入できる**ため、アプリが SCIM ではなく Admin REST API を使い、かつ旧方式が Keycloak ネイティブ（PBKDF2-SHA256/512・Argon2id）であれば**再設定は不要**。bcrypt 等の場合のみ Custom PasswordHashProvider SPI（DU-U10-11）が要る。**再設定が必要になった場合の配布手段**（メール経路を持たない前提）は B-MIG-10 / 質問状 Q68 で確認する
 - **日付**: 2026-06-12 作成、**2026-07-24 更新（`legacy_user_id` クレーム廃止確定 — [U10 D-U10-12](../basic-design/10-integration-migration-design.md)、idmap API 参照へ一本化）**
 - **関連**:
   - [§FR-1.2.0.E 既存システムからの混在モデル移行戦略](../requirements/proposal/fr/01-auth.md#fr-120e-既存システムからの混在モデル移行戦略ローカル--フェデ併存からの集約)

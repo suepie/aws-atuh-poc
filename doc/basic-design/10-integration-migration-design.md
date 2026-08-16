@@ -419,7 +419,7 @@ flowchart LR
 ### 10.4.1 移行方式マトリクス（D-U10-12）
 
 > 🚫 **2026-08-17 スコープ変更: 旧システムからの移行は本基盤の対象外（アプリ側で実施）**。本節（4 集団分類 / User Storage SPI 並走 / PW ハッシュ判定）は**削除でなく凍結**し、将来基盤側で引き受ける判断に転じた場合の出発点として残す。**本基盤が提供するのは受け入れ口（SCIM 受信 / idm-api CRUD / JIT）まで**。
-> **⚠ 副作用**: 集団 B（ローカル PW 利用者）に割り当てていた User Storage SPI 並走は「**利用者に再設定を求めずに移行できる**」ことが価値だった。これが無くなるため**集団 B は全員パスワード再設定が必要**になり、かつ**メール送付経路を持たない前提**（D-U4-11 / D-U7-14）ゆえ別の配布手段が要る。詳細は [§NFR-8 の注記](../requirements/non-functional-requirements.md)。
+> **パスワードの扱い（2026-08-17 訂正）**: 「アプリ側移行なら引き継げない」は誤り。**Admin REST API はハッシュを投入できる**（`credentials[].credentialData` / `secretData`）。よって **① アプリが SCIM でなく Admin REST API を使う ② 旧方式が Keycloak ネイティブ（PBKDF2-SHA256/512・Argon2id）** の 2 条件を満たせば**集団 B も再設定不要**。**bcrypt 等なら Custom PasswordHashProvider SPI（DU-U10-11）が必要**で、これは基盤側の作り込み。条件を満たさず一斉再設定になる場合は、**メール送付経路を持たない前提**（D-U4-11 / D-U7-14）ゆえ別の配布手段が要る。詳細は [§NFR-8 の注記](../requirements/non-functional-requirements.md)。
 
 **採用（凍結）**: [ADR-019](../adr/019-existing-system-migration.md)（並走 + User Storage SPI）を基本設計として確定し、移行対象を**ユーザ集団の性質**で 4 分類して方式を割り当てる。
 
