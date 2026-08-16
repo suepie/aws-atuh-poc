@@ -147,9 +147,9 @@ NFR-SEC は性質の異なる 4 つの観点を含む。
 
 | ID | 要件 | 推奨値 | Cognito | Keycloak | 状態 |
 |----|------|------|--------|----------|:---:|
-| NFR-DR-001 | RTO（目標復旧時間） | (TBD) **N 分 / N 時間** | ✅ Cognito 別リージョン | ⚠ Aurora Global DB + ECS 設計 | 🔴 |
-| NFR-DR-002 | RPO（目標復旧地点） | (TBD) **N 分 / 0** | ✅ ユーザーデータ複製可 | ⚠ Aurora Global DB（〜1 秒） | 🔴 |
-| NFR-DR-003 | フェイルオーバー方式 | (TBD) **自動 / 手動** | ✅ Route 53 Health Check | ⚠ 設計要 | 🔴 |
+| NFR-DR-001 | RTO（目標復旧時間） | **(暫定) 1 日 / DR 障害時 3 日**（2026-08-16 顧客希望値）— **現行設計値は ≈ 14 日（P-05 コールド DR）で未達。ヒアリング確定待ち** | — | **大阪に事前構築された受け皿が必要**（[U8 §8.3.1a-2](../basic-design/08-availability-dr-design.md)）| 🔴 |
+| NFR-DR-002 | RPO（目標復旧地点） | **(暫定) 5 分**（2026-08-16 顧客希望値）— **東京内は成立（Aurora PITR 1 秒精度・典型 5 分未満）／大阪へは不成立（連続バックアップはクロスリージョン複製不可、スナップショット最短 1 時間）**。ヒアリング確定待ち | — | 大阪で 5 分以下は **Aurora Global DB 必須**（[U8 §8.3.1a-2](../basic-design/08-availability-dr-design.md)）| 🔴 |
+| NFR-DR-003 | フェイルオーバー方式 | **手動**（2026-08-16 確認、P-05 / G-EDGE-DR と一致。エッジ自動切替 REQ-DR-01/02 は撤回済み）| — | 大阪オンデマンド再構築 + リストア | 🟡 |
 | NFR-DR-004 | バックアップ保存期間 | (D) **30 日** | ✅ AWS 自動 | ✅ RDS Automated Backup | 🟡 |
 | NFR-DR-005 | PITR（Point-in-Time Recovery） | (D) **5 分粒度 / 35 日** | ✅ | ✅ Aurora PITR | 🟡 |
 | NFR-DR-006 | クロスリージョンバックアップ | (D) **必須** | ✅ User Pool 別リージョン | ⚠ Aurora Cross-Region Replica | 🟡 |
