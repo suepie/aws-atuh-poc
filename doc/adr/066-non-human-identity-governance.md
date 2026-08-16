@@ -1,6 +1,6 @@
 # ADR-066: 非人間ID（NHI）ガバナンス
 
-- **ステータス**: Proposed（2026-08-12 起票 → 2026-08-12 本設計化。台帳スキーマ・規約・孤立検知は確定、責任分界の最終確定は B-NHI-1 回答後）
+- **ステータス**: **Accepted（縮小、2026-08-17）** — B-NHI-1 に回答が出た（「機械通信＝API から API の呼び出しであれば**アプリ側で管理**」）。**本 ADR の適用範囲を「本基盤自身が発行・保持する NHI」に限定**し、テナント業務アプリ間の M2M 資格情報はアプリ側責任として**対象外**とする。台帳スキーマ・命名規約・孤立検知は本基盤スコープ分のみ実装
 - **日付**: 2026-08-12 作成・本設計化
 - **決定**: **本基盤が生成・保持する非人間ID（NHI）を「軽量 NHI 台帳 + 命名規約 + 孤立検知バッチ + 失効伝播」で統制する（案 B、[ADR-037](037-shared-responsibility-and-lightweight-iga.md) 軽量 IGA の傘下）。台帳は authz 系 Aurora に同居し、失効は ADR-064 の outbox 機構で伝播する。** 商用 NHI/ISPM 製品は Phase 2 以降の選択肢。
 - **関連**: [U7 §7.5 IRSA/Workload D-U7-09](../basic-design/07-security-compliance-design.md) / [ADR-041 Workload Identity](041-workload-identity-spiffe.md) / [ADR-037 軽量 IGA](037-shared-responsibility-and-lightweight-iga.md) / [ADR-064 失効伝播 outbox](064-deprovisioning-propagation-outbox.md) / [U5 §5.8 idm:* スコープ](../basic-design/05-token-session-authz-design.md) / [U9 §9.4 Runbook](../basic-design/09-operations-observability-design.md) / hearing **B-NHI-1** / WBS **DU-U7-10**
@@ -47,7 +47,7 @@
 
 ### 5. 確定に必要（責任分界のみ hearing 依存）
 
-- **B-NHI-1**: テナント側 M2M クライアントの owner（顧客 or 弊社）と棚卸し責任の分界（共有責任 = ADR-037）。
+- ~~**B-NHI-1**~~: ✅ **回答済み（2026-08-16）** — 「API から API の呼び出しであればアプリで管理の認識」。**テナント業務アプリ間の M2M は本基盤の管理対象外**。本基盤が管理するのは ① 基盤自身のサービスアカウント（idm-api / SCIM Facade / バッチの資格情報）② 基盤が発行するテナント向け管理 API クライアントに限定する。**アプリ間 M2M の棚卸し責任はアプリチーム**（責任分担表に明記すること）。
 
 ## Consequences
 

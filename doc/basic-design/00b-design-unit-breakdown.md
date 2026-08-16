@@ -257,7 +257,7 @@ U1 は前提凍結（P-01〜18）と PoC・契約前ゲートの管理層。構�
 
 **GAP 小計 = 226 人日**（🔴Phase1 必須 ≈196 / 🟡将来・条件付 ≈30）。
 
-**先行判断（着手前）**: ~~**「単一 broker Realm」vs「ブランド=Realm」**~~ → **確定（2026-08-15、ユーザー承認）= brand=Realm**。テナント軸（単一 Realm + Organizations）とブランド軸（brand=Realm）は別粒度で非衝突（[ADR-063 §ブランド Realm モデリング](../adr/063-brand-unit-architecture.md)）。issuer は「ブランド毎に単一」に読み替え、Phase 1 から RP 規律をロック（不変条件⑤）。§5.6.3 の単一 issuer 前提もこの読み替えで整合。DU-U2-09 は 🔒 化（方式確定・18→8 人日、N Realm 機械派生は将来へ分離）。**残る決定先行 = DU-U9O-09（監査ログ per-brand/中央）**。
+**先行判断（着手前）**: ~~**DU-U9O-09 管理操作監査ログの配置**~~ → **確定（2026-08-16、ユーザー回答 B-AUDITLOG-BRAND-1）= per-brand（ブランドごと）**。中央監査 Acct への一本集約ではなく**ブランドユニット内に置く**（ADR-063 の「cross-brand join を作らない」「越境は write 時のみ」と整合し、越境ゼロを維持）。保持年数は WORM 7 年と整合させる。DU-U9O-09 は 🟡先行 → 🔒 化。 / ~~**「単一 broker Realm」vs「ブランド=Realm」**~~ → **確定（2026-08-15、ユーザー承認）= brand=Realm**。テナント軸（単一 Realm + Organizations）とブランド軸（brand=Realm）は別粒度で非衝突（[ADR-063 §ブランド Realm モデリング](../adr/063-brand-unit-architecture.md)）。issuer は「ブランド毎に単一」に読み替え、Phase 1 から RP 規律をロック（不変条件⑤）。§5.6.3 の単一 issuer 前提もこの読み替えで整合。DU-U2-09 は 🔒 化（方式確定・18→8 人日、N Realm 機械派生は将来へ分離）。**残る決定先行 = DU-U9O-09（監査ログ per-brand/中央）**。
 
 **既存 DU の DoD 追記推奨（新規 DU 不要）**: DU-U2-02（§2.2.5 logout id_token_hint）/ DU-U4-03（ステップアップ専用文言）/ DU-U4-02（A' Theme Override）/ DU-U6-03（接続予算 pool 等値化 D-U6-08）/ DU-U6-05（Broker 側 shadow 制御 内部 NLB 明示）/ DU-U10-02（テナント開示用 DynamoDB 射影 §10.2.5）/ DU-U8-04（H2 論理破壊 Game Day）/ DU-U9O-03（D-U6-12 VPN 併用切替 Runbook）。
 

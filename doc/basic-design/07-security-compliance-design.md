@@ -131,6 +131,22 @@ flowchart TB
 - **代替**: Key Administrator を CISO 専任部門とする案（ADR-045 原文）— Phase 1 は 10 名体制（ADR-040 §H）に CISO 部門が存在しないため、Security Lead + Infra Lead のクロス担当に読み替え。組織拡大時に専任へ移管。
 - **未決**: なし。
 
+### 7.1.3a 決定 D-U7-25: 鍵インベントリ（所在の可視化、2026-08-16 ユーザー要求）
+
+**採用**: 本基盤が保持する暗号鍵・シークレットを**単一の一覧（鍵インベントリ）で横断的に把握できる状態**にする。理由 = 鍵が 3 系統に分散しており、「どこに何があるか」を口頭でしか説明できない状態は監査・顧客説明・Break-Glass のいずれでも詰まるため。
+
+| 系統 | 保管先 | 主な中身 | 交換周期 |
+|---|---|---|---|
+| ① Keycloak Realm Key | Aurora（KMS で at-rest 暗号化） | ES256 JWT 署名鍵 | **90 日交換・30 日並走**（D-U7-03） |
+| ② KMS CMK | AWS KMS | Aurora / S3 / バックアップの暗号化鍵、Break-Glass 用 | KMS 自動（年 1） |
+| ③ Secrets Manager | AWS Secrets Manager | client_secret、SCIM Bearer、DB 資格情報 | **90 日自動ローテ・2 世代並走**（D-U7-10b） |
+
+**インベントリの必須項目**: 鍵 ID / 系統 / 用途 / 保管先 ARN or Realm / 所有アカウント（Broker / IdP-KC / 監査）/ 交換周期 / 最終交換日 / 次回交換予定 / 参照している構成要素。
+
+**実現方法**: 台帳を手書きで持たず、**タグと API から日次で自動生成**する（KMS `ListKeys` + Secrets Manager `ListSecrets` + Keycloak Admin API の Realm Keys）。手書き台帳は必ず実体とずれるため禁止。出力先は監査ログ 3 層に相乗りし、四半期ごとに棚卸し結果として保管する。
+
+**未決（O-U7-11）**: 生成した一覧を顧客へ開示するか（開示する場合は ARN 等の内部識別子をマスクする必要がある）。[ADR-036 Trust Center](../adr/036-customer-audit-support.md) の開示範囲と合わせて決める。
+
 ### 7.1.3 決定 D-U7-03: ES256 JWT 署名鍵 — Keycloak Realm Key 管理 + 90 日 Cryptoperiod
 
 **採用**: JWT 署名鍵（ES256、P-09）は **Keycloak 標準の Realm Keys（DB 保管の generated key）** で管理し、KMS には持ち込まない。保護は多層で行う:
@@ -732,7 +748,7 @@ flowchart TB
 |---|------|-----|
 | D-U7-01 | CMK 命名 `alias/<scope>-<purpose>[-mrk]`、6 アカウント体系へ分割配置、Aurora 系は MRK / Break-Glass・Secrets は Regional | §7.1.1 |
 | D-U7-02 | Key Policy 3 ロール SoD（Key Admin = Security+Infra Lead の Custodian 2 名 / Key User = IRSA Role のみ / 人間への Key User 付与禁止） | §7.1.2 |
-| D-U7-03 | ES256 署名鍵 = Keycloak Realm Key（DB + KMS at-rest）+ **90 日 Cryptoperiod・30 日並走**、KMS 署名 SPI は Phase 2 再評価 | §7.1.3 |
+| D-U7-03 | ES256 署名鍵 = Keycloak Realm Key（DB + KMS at-rest）+ **90 日 Cryptoperiod・30 日並走**、KMS 署名 SPI は Phase 2 再評価。**2026-08-16 追加要求（NFR-COMP-011）= 鍵インベントリ**: 鍵が Keycloak Realm Key / KMS CMK / Secrets Manager の 3 箇所に分散するため、**「どの鍵がどこにあり、いつ交換されるか」を横断一覧で示せるようにする**（監査・顧客説明・Break-Glass の前提） | §7.1.3 / §7.1.3a |
 | D-U7-04 | ITDR パイプライン = SPI（emit 専任）→ EventBridge → Risk Engine Lambda → DynamoDB を **Broker Acct 集約**、IdP-KC からは PutEvents 第 6 経路（U6 差分要求） | §7.2.1 |
 | D-U7-05 | Phase 1 検知 = HIBP（k-Anonymity、fail-open）+ Brute Force（5 回/30 分 + Spraying 横断検知）、L4 は手動承認 + U5 §5.4.3 手順 | §7.2.2 |
 | D-U7-06 | 誤検知運用 = Phase 1a 通知のみ → 3 ヶ月チューニング（FP<5%）→ Phase 1b 自動アクション、allowlist IaC 管理 | §7.2.3 |

@@ -127,7 +127,7 @@ NFR-SEC は性質の異なる 4 つの観点を含む。
 | NFR-SEC-010-2 | **侵害クレデンシャル検出**（Compromised Credentials Detection / Have I Been Pwned 相当）| (TBD) | ⚠ **Plus ティア**（+$0.02/MAU）必要 | ⚠ プラグイン / カスタム要件 | 🔴 |
 | NFR-SEC-012 | DDoS 対策 | (D) **Shield Standard** | ✅ AWS 標準 | ✅ AWS 標準 | ✅ |
 | NFR-SEC-013 | ペネトレーションテスト | (TBD) 年 N 回 | — | — | 🔴 |
-| NFR-SEC-014 | 脆弱性スキャン | (D) **ECR Image Scan + Inspector** | — | ✅ ECR Scan | 🟡 |
+| NFR-SEC-014 | 脆弱性スキャン | (D) **ECR Image Scan + Inspector**。**2026-08-16 新論点: ROSA の worker ノードは EC2 として立つが、これを検査・パッチ対象にどう扱うか未整理**（ノード OS の更新は Red Hat SRE 管理領域。Inspector を入れるか / 入れられるか / 誰が是正するか の責任分界が ADR-056 の分界表に無い）| — | ✅ ECR Scan（コンテナ側）/ **⚠ worker ノード側が未定** | 🔴 |
 
 ### 4.4 ネットワーク・境界制御
 
@@ -230,7 +230,7 @@ NFR-COMPLIANCE は性質の異なる 3 つの観点を含む。
 | ID | 要件 | 推奨値 | Cognito | Keycloak | 状態 |
 |----|------|------|--------|----------|:---:|
 | NFR-COMP-009 | 個人データ削除権（GDPR Right to Erasure） | (TBD) | ✅ AdminDeleteUser | ✅ Cascade Delete | 🟡 |
-| NFR-COMP-011 | 暗号鍵のローテーション | (D) **年 1 回以上** | ✅ KMS 自動 | ⚠ Realm Key Rotation 設定 | 🟡 |
+| NFR-COMP-011 | 暗号鍵のローテーション**と所在の可視化** | (D) **署名鍵 90 日交換・30 日並走**（D-U7-03、旧「年 1 回以上」を是正）+ **2026-08-16 追加要求: どの鍵がどこにあるかを一覧で分かるようにする（鍵インベントリ）** | ✅ KMS 自動 | Realm Key + KMS CMK + Secrets Manager に分散 → **横断インベントリが必要**（U7 §7.1.3） | 🟡 |
 
 **ヒアリング論点**: NFR-COMP-006（FIPS）は **不要で確定（C-201、2026-07-30）** — RHBK 必須要因としては解消済み。NFR-COMP-008（データ所在地）が **リージョン設計の決め手**。
 

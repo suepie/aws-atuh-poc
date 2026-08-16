@@ -79,7 +79,7 @@ ROSA の概要・アーキテクチャ・価格・SLA・本基盤での移行考
 3. Stage A Terraform 書き換え（6-8 週間）の工数承認
 4. **Approved Access の有効化**（既定 OFF・要サポートチケット）+ **ソース側 stdout ログマスキング/本番ログレベル統制の実機確認（G-SRE-LogVis）** — Red Hat SRE のライブ Pod ログ閲覧（APPI 28 条）への技術対策（ガードレール L7、[research 2026-08-14](../basic-design/research/rosa-sre-live-log-visibility-2026-08-14.md)）
 
-**残 TBD**: ① 大阪側インスタンス在庫・vCPU クォータ実確認 ② HCP cluster fee（$182.5/月/クラスタ）の契約割引有無 ③ RHBK 26.4 × upstream 26.x の Custom SPI 互換実証（[ADR-055 §A.6/A.7](055-hrd-implementation-method-selection.md)） ④ multi-cluster v2（外部 Infinispan 不要）の RHBK サポート版数確認
+**残 TBD**: ⓪ **worker ノード（EC2）の脆弱性検査・パッチの責任分界（2026-08-16 追加、NFR-SEC-014）** — ROSA HCP の worker は顧客 VPC 内に EC2 として立つが、**ノード OS の更新は Red Hat SRE 管理領域**。Amazon Inspector を入れられるか / 入れるべきか / 検出された脆弱性を誰が是正するか（Red Hat が machine pool 更新で対応する範囲との境界）が本 ADR の責任分界表に無い。**顧客監査で必ず問われる論点**のため Phase 1 前に整理する。① 大阪側インスタンス在庫・vCPU クォータ実確認 ② HCP cluster fee（$182.5/月/クラスタ）の契約割引有無 ③ RHBK 26.4 × upstream 26.x の Custom SPI 互換実証（[ADR-055 §A.6/A.7](055-hrd-implementation-method-selection.md)） ④ multi-cluster v2（外部 Infinispan 不要）の RHBK サポート版数確認
 
 **波及改訂**: ADR-041（EKS Pod Identity → ROSA pod identity webhook + IRSA 方式）/ ADR-055 §A.6-A.7（ROSA パターン確定）/ ADR-051（大阪成立）/ rosa-detailed-analysis.md（TCO の RHBK サブスク行・PrivateLink 記述の訂正）
 

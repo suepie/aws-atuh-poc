@@ -45,8 +45,8 @@ FR-AUTH は性質の異なる 2 つの観点を含む。
 | FR-AUTH-003 | Authorization Code + client_secret（SSR） | Must | ✅ App Client（Confidential） | ✅ Confidential Client | ❌ 未検証 | 🟡 |
 | FR-AUTH-004 | Client Credentials（M2M） | Must | ⚠ Resource Server + custom scope 必要 | ✅ Service Account | ❌ 未検証 | 🟡 |
 | FR-AUTH-005 | Token Exchange（RFC 8693） | TBD | ❌ 非対応 | ✅ ネイティブ対応 | ❌ | 🔴 |
-| FR-AUTH-006 | Device Code Flow | TBD | ❌ 非対応 | ✅ ネイティブ対応 | ❌ | 🔴 |
-| FR-AUTH-007 | mTLS Client Authentication（RFC 8705） | Could | ❌ 非対応 | ✅ FAPI Profile | ❌ | 🔴 |
+| FR-AUTH-006 | Device Code Flow（画面のない機器・CLI 向けログイン）| **不要（2026-08-16 ユーザー判断で Phase 1 対象外）** | — | ✅ 製品としては対応可（P-01） | ❌ | ⬜ |
+| FR-AUTH-007 | mTLS Client Authentication（RFC 8705、証明書によるアプリ認証）| **不要（2026-08-16 ユーザー判断）** — Phase 1/2/3 とも実装しない。金融グレード顧客が現れた場合のみ B-FAPI-1 で再評価（D-U7-10b の「Phase 3 条件付き」は**条件成立時のみ**と読む）| — | ✅ FAPI Profile | ❌ | ⬜ |
 | FR-AUTH-008 | ROPC（Password Grant） | Won't | ✅（非推奨） | ✅（非推奨） | — | ✅ 不採用 |
 
 **Broker パターンとの関係**: 001〜003（Must）はいずれも OIDC/OAuth 標準フロー（RFC 6749 / 7636）であり、Broker が OIDC OP として実装されている限り構造的に提供可能。004 は実装上の設定差はあるが Broker パターンとして対応可能。005〜007 は実装依存（Cognito 非対応・Keycloak 対応）であり、要否次第でプラットフォーム選定に直結する（§9.1 参照）。
@@ -345,7 +345,7 @@ FR-INT は性質の異なる 3 つの観点を含む。
 |----|------|:----:|:------:|:------:|:---:|:---:|
 | FR-INT-005 | Webhook イベント通知（user.created 等） | Should | ⚠ Pre Token / Post Conf Lambda | ✅ Event Listener | ❌ | 🔴 |
 | FR-INT-006 | 管理 REST API | Must | ✅ AWS SDK | ✅ Admin REST API | ⚠ | 🟡 |
-| FR-INT-010 | Terraform / IaC 管理 | Must | ✅ | ⚠ Realm 部分は別管理 | ✅ | ✅ |
+| FR-INT-010 | Terraform / IaC 管理 | Must（**方針は合意、実現方法は検討中** — 2026-08-16「なるべくやりたいがどのようにするかは検討」）| — | 方式は D-U9-12 + 禁則 K-5/K-9 で決定済みだが**適用範囲の詰めが残る** | ✅ | 🟡 |
 
 ---
 
