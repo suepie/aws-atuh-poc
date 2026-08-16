@@ -185,7 +185,7 @@ U1 は前提凍結（P-01〜18）と PoC・契約前ゲートの管理層。構�
 | DU-U10-01 | ServiceNow SP 連携 | Config/Test: SAML Client CL-SN-01 + L1 SCIM→L2 SAML JIT（パターン②） | Matching Field 突合 + IdP-initiated 無効 + 実機検証（A-12） | DU-U2-07, DU-U3-03 | — | M | 🔒 |
 | DU-U10-02 | idm-api v1（OpenAPI×2） | App: idm-api Lambda + OpenAPI 2 本 + `/api/me/apps` | CRUD/権限/authz/projection の実体・ユーザ AT/CC 経路差替 | DU-U6-06, DU-U3-01, DU-U5-04 | — | L | 🔒 |
 | DU-U10-03 | Webhook Dispatcher | App: HMAC 署名 + DLQ + 再送 8 回/24h + 待避 14 日 | 配信 7 種・個人情報非搭載・冪等・±5 分リプレイ防止 | DU-U10-02 | — | M | 🔒 |
-| DU-U10-04 | 移行 4 集団 | Doc/App: PW ハッシュ判定 + legacy_user_id 廃止 + 引き当て | 突合項目選定 + 内部 ID 保全 + 集団別移行手順 | DU-U3-01, DU-U3-03 | — | M | 🟡 |
+| ~~DU-U10-04~~ 🚫 | **移行 4 集団（2026-08-17 対象外 — 移行はアプリ側）** | Doc/App: PW ハッシュ判定 + legacy_user_id 廃止 + 引き当て | 突合項目選定 + 内部 ID 保全 + 集団別移行手順 | DU-U3-01, DU-U3-03 | — | M | 🟡 |
 | DU-U10-05 | DSAR Phase 1（手動） | Doc: 削除要求対応 SOP（仮名化 + 7 年保管、応答期限決定） | 物理削除しない方針・NFR-COMP-009 応答日数を契約確定 | DU-U3-06 | — | S | 🟡 |
 | DU-U10-06 | 退職時 削除連鎖 T-1〜5 | Doc/App: 遮断連鎖 + 一括ログアウト + 残余時間契約明示 | SN 側 sys_user 残置 + 認証チェーン遮断・残余 30 分を契約化 | DU-U3-05, DU-U5-03 | — | S | 🔒 |
 
@@ -253,7 +253,7 @@ U1 は前提凍結（P-01〜18）と PoC・契約前ゲートの管理層。構�
 | DU-U10-08 🆕 | SN オンボーディング並走 4 Phase(実機) | Doc/App: M0-M3 テナント別 Runbook+提供6点+重複 sys_user 統合スクリプト(B-SN-19)+受入テスト T-1〜5（D-U10-04） | 4 Phase 巻き戻し各段成立・mandatory=false→true 収束・Pilot で sys_id 不変実証 | DU-U10-01, DU-U9O-03 | — | M | 12 | 🔒 |
 | DU-U10-09 🆕 | SN Break Glass 管理者構成 | Config/Doc: 2-3名の sso_source 空欄+side_door+HW MFA+IP 制限+SIEM 即時通知+四半期テスト（D-U10-05） | KC バイパス経路が KC 障害時生存・使用時通知→24h PW ローテ | DU-U10-01, DU-U7-06 | — | S | 5 | 🔒 |
 | DU-U10-10 🆕 | SN→他アプリ OIDC 貫通 | Config: SN=OAuth クライアント設定(フロー2 CC)+他アプリ OIDC RP 登録(フロー3、§10.1.7) | SN セッション後に aud 別 API を Bearer 認可・SAML→Broker SSO→OIDC サイレント発行成立 | DU-U10-01, DU-U5-02, DU-U2-02 | — | S | 6 | 🔒 |
-| DU-U10-11 🆕 | Custom PasswordHashProvider SPI(条件付) | SPI: bcrypt/旧 Argon2 恒久維持用ハッシュプロバイダ(B-MIG-10 該当時のみ、§10.4.2) | 旧 algo で既存 PW 検証が RHBK 26.x 成立・G-SPI-Compat 追加 | DU-U2-04, DU-U10-04 | G-SPI-Compat | M | 8 | 🟡条件付 |
+| ~~DU-U10-11~~ 🚫 | **Custom PasswordHashProvider SPI（2026-08-17 対象外 — 移行がアプリ側になり旧ハッシュ持ち越しが不要）** | SPI: bcrypt/旧 Argon2 恒久維持用ハッシュプロバイダ(B-MIG-10 該当時のみ、§10.4.2) | 旧 algo で既存 PW 検証が RHBK 26.x 成立・G-SPI-Compat 追加 | DU-U2-04, DU-U10-04 | G-SPI-Compat | M | 8 | 🟡条件付 |
 
 **GAP 小計 = 226 人日**（🔴Phase1 必須 ≈196 / 🟡将来・条件付 ≈30）。
 
@@ -264,6 +264,7 @@ U1 は前提凍結（P-01〜18）と PoC・契約前ゲートの管理層。構�
 ## 13. 未確定・引き渡し
 
 - **工数（人日・工程分割、[網羅監査 §9](research/wbs-gap-audit-2026-08-12.md)）**: 全 DU（既存 + §12c GAP 28）= 詳細設計+構築 ≈**1,044 人日**（**②詳細設計 418 + ③構築 626**、40/60 分割。IaC/Config/Doc 系は②③融合）。**①基本設計 244**（[00a §1-4](00a-remaining-tasks-and-effort.md)、進行中）・**④テスト ≈363**（フルスコープ+フル再計上、[監査レポート §10](research/wbs-gap-audit-2026-08-12.md) で 30 項目に精緻化）は別掲。総計 ≈**1,651**。**注: 00a §6「構築+テスト 325–455」は詳細設計を含まない別スコープ**で単純合算不可。S/M/L は配分目安、確定は詳細設計時に PoC 実測で再見積。
+- **🚫 2026-08-17 スコープ縮小（移行のアプリ側移管、NFR-MIG-001）**: **DU-U10-04（14 人日）+ DU-U10-11（8 人日）= 22 人日が対象外**。**詳細設計+構築 ≈1,044 → ≈1,022 人日**（U10 は 110 → 88）。別枠の [00a §6 構築見積](00a-remaining-tasks-and-effort.md) からも **I-12 移行ツール 12–18 人日が落ちる**（325–455 → **313–437**）。**この 2 枠はスコープが異なるため合算しないこと**（前者=詳細設計+構築 / 後者=構築+テスト）。テスト枠 363 に移行専用項目は無いため変動なし。**ServiceNow の並走 4 Phase（DU-U10-08）は旧システム移行とは別物のため対象外にしない**。
 - **PoC ゲート未通過 DU（🟡）は着手可だが「凍結」まで進めない**（G-IdP-Scale/G-SPI-Compat/G-SCIM/G-UProfile-Email/G-EDGE-DR/G-EGRESS）。
 - 本書は Wave 進行（[00a §4](00a-remaining-tasks-and-effort.md)）と接続: W0（外部依頼・ゲート実測）→ 基盤 DU（U6/U7/U9I）→ 認証コア DU（U2/U3/U5）→ 体験・連携 DU（U4/U10）→ 回復性・運用 DU（U8/U9O）。
 

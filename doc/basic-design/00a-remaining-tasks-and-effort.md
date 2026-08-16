@@ -274,7 +274,7 @@ flowchart LR
 | I-9 | ライフサイクルバッチ | 退職者遮断 CronJob + 日次リコンサイル | 8–12 |
 | I-10 | 可観測性 | OTel/AMP/AMG・SLO・Fluent Bit scrubbing・ITDR 検知 | 25–35 |
 | I-11 | CI/CD | GitHub Actions・ArgoCD・ESO・ドリフト検知 | 18–25 |
-| I-12 | 移行ツール | 旧 IAM 用 User Storage SPI + 移行スクリプト | 12–18 |
+| ~~I-12~~ | ~~移行ツール~~ 🚫 **対象外（2026-08-17 — 移行はアプリ側）** | ~~旧 IAM 用 User Storage SPI + 移行スクリプト~~ | **0**（旧 12–18） |
 | I-13 | セキュリティ構成 | KMS・IRSA・PAM(IIC/SSM)・WAF 要求連携(**PCI 除外で軽減**) | 12–18 |
 | | **構築 小計** | | **285–393** |
 | T-1 | テスト | 結合/E2E + 負荷試験本番(E-2 計画)+ DR Game Day + A11y + ペネトレ | 40–60 |
