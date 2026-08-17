@@ -31,6 +31,7 @@
 | P-17 | アカウント/クラスタ | **⚠ 2026-08-16 再検討中（「そもそも IdP Keycloak の方をどうするか」）** — 2 クラスタ構成そのものが揺れているため**凍結を解除し検討中に戻す**。従前の凍結値: **IdP-KC は Broker と別 AWS アカウント、ROSA HCP × 2 クラスタ**（2026-07-23）。なお「同 Acct アプリからのユーザ CRUD 想定」は **2026-08-06 の E 判断（[ADR-063](../adr/063-brand-unit-architecture.md)）で「業務アプリは同居させない = App Acct 推奨」に更新済み**（旧記述を是正） | ADR-033 更新 | U3/U6/U7 |
 | P-18 | インターネット境界 | **他組織管理の監査 Acct**（In: CF+WAF+ALB or NLB+NWFW / Out: NWFW ドメインフィルタ）。当該設定は**要求仕様**として起こす | ADR-039 v3 | U6/U7/U9 |
 | **P-19** | **ブランドユニット**（2026-08-17 新規採番） | **Broker は共有 1 つ。ブランドを将来の隔離/複製単位とし、authz / idmap / projection / CRUD / アプリをブランドユニット（IdP-KC 側）に置く。Broker は authz を持たない。**ブランド = Realm**（2026-08-15 ユーザー承認）で issuer は「ブランド毎に単一」。**Phase 1 スコープ = 1 ブランド**、物理 per-brand 分割は将来 | [ADR-063](../adr/063-brand-unit-architecture.md)（2026-08-06 作成 / 08-15 brand=Realm 確定）。**本前提は従来 P 表に不在で、Excel 側が仮採番 `P-BRAND-1` で追跡していたものを正式採番**（2026-08-17） | U2/U3/U5/U6/U7/U8/U9/U10（authz・idmap・projection の配置と DR 対象範囲） |
+| **P-20** | **管理コントロールプレーンの実行形態**（2026-08-17 新規採番） | **idm-api（ブランド管理 API #2）+ 非同期の糊（射影フィード / Webhook Dispatcher / shadow 制御）= Lambda**。auth-critical な Keycloak（P0）と管理ツール（P1）を**別障害ドメインに分離**する。`api.` は API GW、Keycloak Admin API へは**各クラスタの内部 NLB**（scheme=internal・インターネット非露出・SG 限定・TLS・アプリ層認証）| [ADR-062](../adr/062-idm-api-execution-form-lambda.md)（2026-08-06 確定、旧 O-9）。**O-* は未決トラッカーで解消時に消える番号のため、恒久的な構成前提として P 採番**（Excel 側が仮採番 `D-IDMAPI-1` で追跡していたものを正式化、2026-08-17） | U6/U9/U10（内部ルート・CI/CD・監視の別体系） |
 
 ## 1.2 アカウント体系（P-17/P-18 反映版）
 
@@ -78,7 +79,7 @@ ADR-039 の 5 アカウント体系を Broker/IdP-KC 分割で **6 アカウン�
 | §NFR-3「10K IdPs 実証あり」誤記 | ✅ 修正済み(2026-07-23、3 箇所) |
 | ADR-040(PAM) OOS 残存参照 | ⬜ 残 — §FR-8.6 / §NFR-4 側の記述を「運用体制側で別途」の参照に整理(軽微、U7 着手時に実施) |
 | §C-7 の EKS 記述・Auth Platform Acct 単一表記 | ⬜ 残 — ROSA HCP / Broker+IdP-KC 分割への改訂は U6 の成果物確定後に一括反映(SSOT の二重更新を避ける) |
-| O-9 管理コントロールプレーン実行形態（idm-api） | ✅ 解消 — **Lambda で確定（[ADR-062](../adr/062-idm-api-execution-form-lambda.md)、2026-08-06）**。反映先 = U6 O-9 / D-U6-11・U10 §10.2 / §1.2 E 判断 |
+| O-9 管理コントロールプレーン実行形態（idm-api） | ✅ 解消 — **Lambda で確定（[ADR-062](../adr/062-idm-api-execution-form-lambda.md)、2026-08-06）**。**2026-08-17 に恒久前提 P-20 として採番**（O-* は解消時に消える番号のため）。反映先 = U6 O-9 / D-U6-11・U10 §10.2 / §1.2 E 判断 |
 
 ## 1.4a 2026-07-30 意思決定による前提・スコープ更新
 

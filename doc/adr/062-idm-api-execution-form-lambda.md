@@ -3,6 +3,7 @@
 - **ステータス**: Proposed（基本設計フェーズで Accepted 昇格予定）
 - **日付**: 2026-08-06 作成、2026-08-08 更新（本文をブランド主役トポロジに反映〔[ADR-063](063-brand-unit-architecture.md)〕、削除/デプロビ伝播を [ADR-064](064-deprovisioning-propagation-outbox.md) へ分離。**実行形態=Lambda の決定は不変**）
 - **決定**: **idm-api（管理コントロールプレーン = ブランド管理 API #2〔主役〕+ 中央 shadow 制御 + 非同期の糊）を AWS Lambda で実装する**（ROSA 常駐案を退け、O-9 を Lambda で確定）。**本 ADR のスコープは実行形態（Lambda）**。トポロジ(#2 主役)は [ADR-063](063-brand-unit-architecture.md)、削除伝播は [ADR-064](064-deprovisioning-propagation-outbox.md)。
+- **対応する前提**: **[P-20 管理コントロールプレーンの実行形態](../basic-design/01-architecture-baseline.md)**（2026-08-17 正式採番。旧 O-9。それまで P 表に不在で、Excel 側が仮採番 `D-IDMAPI-1` で追跡していた）
 - **関連**:
   - [ADR-038 ユーザ管理画面](038-tenant-admin-portal.md)（本 API の親。SPA + idm-api の構成）
   - [ADR-056 ROSA 採用判断](056-rosa-adoption-decision.md)（Keycloak は ROSA HCP。本 ADR は "idm-api は ROSA に載せない" と決める）
