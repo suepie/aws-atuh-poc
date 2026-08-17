@@ -80,7 +80,7 @@ NFR-PERF は性質の異なる 2 つの観点を含む。
 | NFR-SCL-003 | 顧客テナント数（IdP 数）スケール | (TBD) **N 顧客 / 年** | ✅ User Pool に複数 IdP | ✅ Realm に複数 IdP | 🟡 |
 | NFR-SCL-004 | IdP 追加リードタイム | (D) **< 1 営業日** | ✅ Console / IaC | ✅ Console / IaC | 🟡 |
 | NFR-SCL-005 | 自動スケーリング | (D) **必須（負荷に応じて）** | ✅ AWS 透過 | ⚠ ECS Auto Scaling 設計要 | 🟡 |
-| NFR-SCL-006 | マルチリージョン対応 | (TBD) **必要 / 不要** | ✅ User Pool 別リージョン | ⚠ Aurora Global DB 設計要 | 🔴 |
+| NFR-SCL-006 | マルチリージョン対応（**複数地域での同時稼働**）| **外部待ち — DR の結論に従属（2026-08-17）**。現行 P-15 は「大阪は平時プロビジョニングなし」で**同時稼働しない**前提。質問状 [Q04](customer-questionnaire/01-scale-availability-dr.md) の 3 択で決まる: ①コールド → **不要** / ②データ複製のみ → **ストレージのみ複製（コンピュートは非稼働）** / ③パイロットライト以上 → **必要** | — | Aurora Global DB の要否が連動 | 🔴 |
 | NFR-SCL-007 | データベーススケール（Keycloak） | — | — | ⚠ Aurora Auto Scaling | 🟡 |
 
 **ヒアリング論点**: NFR-SCL-001（MAU 規模）が**最重要**。コスト損益分岐 175,000 MAU（[ADR-006](../adr/006-cognito-vs-keycloak-cost-breakeven.md)）の判断材料。
@@ -212,7 +212,7 @@ NFR-COMPLIANCE は性質の異なる 3 つの観点を含む。
 |----|------|------|--------|----------|:---:|
 | NFR-COMP-001 | 個人情報保護法対応 | (D) **必須** | ✅ | ✅ | 🟡 |
 | NFR-COMP-002 | GDPR / CCPA（海外展開時） | (TBD) | ✅ | ✅ | 🔴 |
-| NFR-COMP-008 | データ所在地（リージョン制限） | (TBD) **国内 / 特定リージョン** | ✅ リージョン選択 | ✅ リージョン選択 | 🔴 |
+| NFR-COMP-008 | データ所在地（リージョン制限） | **外部待ち**（2026-08-17 Excel 側の判定に追従）— 設計は P-15（東京 + 大阪、国外に置かない）で凍結だが、**質問状 [Q46](customer-questionnaire/04-compliance-operations.md)（国外に住む利用者の有無）の回答待ち** | ✅ リージョン選択 | ✅ リージョン選択 | 🔴 |
 
 ### 7.2 業界認定・監査
 
