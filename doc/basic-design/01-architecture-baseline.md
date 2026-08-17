@@ -30,6 +30,7 @@
 | P-16 | 接続 IdP 数 | **1000 超想定 — 条件付き成立**。必須対策 7 点を U2 設計制約とする。**G-IdP-Scale は実測困難のため仮定値（1000/2000 IdP・フェデ:IdP-KC = 50:50〔B-BROK-1 暫定〕）で設計継続、PoC は後追い検証に格下げ（2026-07-30）** | [research](research/keycloak-1000idp-scalability-research.md)、ADR-017 更新 | U2/U6/U9 |
 | P-17 | アカウント/クラスタ | **⚠ 2026-08-16 再検討中（「そもそも IdP Keycloak の方をどうするか」）** — 2 クラスタ構成そのものが揺れているため**凍結を解除し検討中に戻す**。従前の凍結値: **IdP-KC は Broker と別 AWS アカウント、ROSA HCP × 2 クラスタ**（2026-07-23）。なお「同 Acct アプリからのユーザ CRUD 想定」は **2026-08-06 の E 判断（[ADR-063](../adr/063-brand-unit-architecture.md)）で「業務アプリは同居させない = App Acct 推奨」に更新済み**（旧記述を是正） | ADR-033 更新 | U3/U6/U7 |
 | P-18 | インターネット境界 | **他組織管理の監査 Acct**（In: CF+WAF+ALB or NLB+NWFW / Out: NWFW ドメインフィルタ）。当該設定は**要求仕様**として起こす | ADR-039 v3 | U6/U7/U9 |
+| **P-19** | **ブランドユニット**（2026-08-17 新規採番） | **Broker は共有 1 つ。ブランドを将来の隔離/複製単位とし、authz / idmap / projection / CRUD / アプリをブランドユニット（IdP-KC 側）に置く。Broker は authz を持たない。**ブランド = Realm**（2026-08-15 ユーザー承認）で issuer は「ブランド毎に単一」。**Phase 1 スコープ = 1 ブランド**、物理 per-brand 分割は将来 | [ADR-063](../adr/063-brand-unit-architecture.md)（2026-08-06 作成 / 08-15 brand=Realm 確定）。**本前提は従来 P 表に不在で、Excel 側が仮採番 `P-BRAND-1` で追跡していたものを正式採番**（2026-08-17） | U2/U3/U5/U6/U7/U8/U9/U10（authz・idmap・projection の配置と DR 対象範囲） |
 
 ## 1.2 アカウント体系（P-17/P-18 反映版）
 
@@ -52,6 +53,14 @@ ADR-039 の 5 アカウント体系を Broker/IdP-KC 分割で **6 アカウン�
   - **不変条件（今ロック）**: ① `sub` はグローバル安定 UUID（Broker 発番）② authz/idmap/ユーザーに `brand_id` を一級キー ③ cross-brand join を作らない ④ Broker は共有関心のみ。
 - **IdP-KC = 隔離した自前アカウント**（VPC 分割でなく**アカウント分割**）: PW ハッシュのブラスト半径のため、**業務アプリを同居させない**（同居アプリは App Acct 推奨。旧 P-17「同居前提」を緩める提案）。
 - **管理コントロールプレーン実行形態 = Lambda で確定（O-9、[ADR-062](../adr/062-idm-api-execution-form-lambda.md)）**: auth-critical な Keycloak（P0）と管理ツール idm-api（P1）を別障害ドメインに分離。**#2（ブランド側）が CRUD + 権限 + projection の実体。中央 front door は置かず、ルーティングはエッジ（CloudFront/API GW）、中央に残るのは shadow 制御 Lambda のみ**（IdP-KC 削除トリガーで Broker shadow を無効化、[ADR-063](../adr/063-brand-unit-architecture.md)）。詳細は [U6 O-9](06-infra-network-design.md) / [U10 §10.2](10-integration-migration-design.md)。
+
+**P-19 の不変条件（今ロック、[ADR-063](../adr/063-brand-unit-architecture.md)）**:
+
+1. `sub` はグローバル安定 UUID（Broker 発番）
+2. authz / idmap / ユーザーに `brand_id` を一級キーとして持つ
+3. **cross-brand join を作らない**
+4. Broker は共有関心のみ（横断認証 / SSO / ログイン画面描画 / `sub` 発番 / ルーティング / shadow 遮断）
+5. **issuer はブランド毎に単一**（brand=Realm、2026-08-15 確定）
 
 ## 1.3 コア/エッジ境界基準（§C-6 ハイブリッドの適用）
 

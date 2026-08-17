@@ -3,6 +3,7 @@
 - **ステータス**: Proposed（基本設計フェーズで Accepted 昇格予定）
 - **日付**: 2026-08-06 作成、2026-08-07 更新（§認可データ配置粒度 = A+C 追記、U7 D-U7-19 連動）、**2026-08-15 更新（ブランド Realm モデリング = brand=Realm 確定、不変条件⑤ issuer per brand 追加、参照切れ §3.8.0 解消）**
 - **決定**: **Broker は共有（1 つ）。ブランドを将来の隔離/複製単位とし、authz / idmap / projection / CRUD / アプリをブランドユニット（IdP-KC 側）に置く。Broker は authz を持たない。** Phase 1 スコープ = 1 ブランド。物理 per-brand 分割は将来（本 ADR では論理境界のみ確定）。
+- **対応する前提**: **[P-19 ブランドユニット](../basic-design/01-architecture-baseline.md)**（2026-08-17 正式採番。それまで P 表に不在で、Excel 側が仮採番 `P-BRAND-1` で追跡していた）
 - **関連**:
   - [ADR-062 idm-api 実行形態 = Lambda](062-idm-api-execution-form-lambda.md)（実行形態。本 ADR の authz 配置と直交、両立）
   - [ADR-017 マルチテナント L2](017-multitenant-single-realm.md) / [ADR-033 2-tier](033-keycloak-2tier-architecture.md)（Broker/IdP-KC の 2 層）
