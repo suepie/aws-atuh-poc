@@ -1,0 +1,21 @@
+区分	リソース／サービス	用途（設計上の根拠）	数量の考え方	数量 100万人	数量 500万人	数量 1000万人	単位	単価(USD)	月額 100万人	月額 500万人	月額 1000万人	単価の出典URL	案①コールド	案②複製のみ	案③常時稼働
+DB	スナップショットのクロスリージョンコピー	D-U8-14 のL2。定期取得の控えを予備地域へ複製	東京側 Aurora データ量と同程度×世代分	400	2000	4000	GB・月	0	0	0	0	https://aws.amazon.com/rds/aurora/pricing/	○	○	○
+セキュリティ	変更不能な控え（Backup Vault Lock・予備地域）	D-U8-14 のL3。攻撃者にも消せない最後の砦	上記スナップショットと同量	400	2000	4000	GB・月	0	0	0	0	https://aws.amazon.com/backup/pricing/	○	○	○
+セキュリティ	暗号鍵の予備地域レプリカ（KMS MRK）	ADR-045 / U7 D-U7-01。復元時に鍵が無いと開けない	Aurora・監査ログ系の鍵のみ（Secrets/Break-Glass は対象外）	4	4	4	鍵・月	0	0	0	0	https://aws.amazon.com/kms/pricing/	○	○	○
+NW	データ転送（東京→大阪・複製分）	スナップショット複製に伴う拠点間転送	月次の増分データ量	100	500	1000	GB	0	0	0	0	https://aws.amazon.com/ec2/pricing/on-demand/	○	○	○
+DB	Aurora Global Database 副系ストレージ（認証用）	D-U8-14 のL1。計算資源ゼロでデータ層のみ維持。RPO<1分の唯一の手段	東京側 Aurora ストレージと同量	200	1000	2000	GB・月	0	0	0	0	https://aws.amazon.com/rds/aurora/pricing/	—	○	○
+DB	Aurora Global Database 副系ストレージ（権限系）	同上。ブランド側 authz/idmap/projection（DU-U8-10）	権限系ストレージと同量	100	500	1000	GB・月	0	0	0	0	https://aws.amazon.com/rds/aurora/pricing/	—	○	○
+DB	Aurora Global Database 複製 I/O	副系への継続レプリケーション。書込量に比例	東京側 Aurora I/O の書込分	20000000	100000000	200000000	100万リクエスト	0	0	0	0	https://aws.amazon.com/rds/aurora/pricing/	—	○	○
+APP	DynamoDB Global Tables（予備地域）	ADR-051 §B.2。ITDR/Adaptive/テナント監査/DSAR	東京側テーブルの複製書込単位	5000000	25000000	50000000	書込単位	0	0	0	0	https://aws.amazon.com/dynamodb/pricing/	—	○	○
+運用	S3 クロスリージョンレプリケーション	ADR-051 §B.3。監査ログ・SPA・DSAR エクスポート	東京側 S3 の月次増分	300	1500	3000	GB	0	0	0	0	https://aws.amazon.com/s3/pricing/	—	○	○
+運用	ECR クロスリージョンレプリケーション	D-U8-14。SPI・コンテナ像。無いと再構築が始められない	イメージ総量（規模非依存）	50	50	50	GB・月	0	0	0	0	https://aws.amazon.com/ecr/pricing/	—	○	○
+計算	ROSA 制御部分（予備地域）×2クラスタ	案③のみ。クラスタを平時から維持	0.25ドル×2クラスタ×730時間	1460	1460	1460	クラスタ時間	0.25	365	365	365	https://aws.amazon.com/rosa/pricing/	—	—	○
+計算	ROSA 計算ノード（予備地域・縮小構成）	案③のみ。東京の最小構成相当。被災時に増設	2台×2クラスタ×730時間（縮小待機）	2920	2920	2920	インスタンス時間	0	0	0	0	https://aws.amazon.com/ec2/pricing/on-demand/	—	—	○
+計算	ROSA サービス料（予備地域ワーカー）	案③のみ。ノードvCPU総数に比例	ノード合計vCPU÷4×730時間	730	730	730	4vCPU時間	0.171	124.83	124.83	124.83	https://aws.amazon.com/rosa/pricing/	—	—	○
+計算	EBS（予備地域ノード用）	案③のみ。待機ノードのOS・作業領域	1台100GB×4台	400	400	400	GB・月	0	0	0	0	https://aws.amazon.com/ec2/pricing/on-demand/	—	—	○
+DB	Aurora 読取インスタンス（予備地域・認証用）	案③のみ。副系に計算資源を置き昇格を数分で完了させる	1台×730時間	730	730	730	インスタンス時間	0	0	0	0	https://aws.amazon.com/rds/aurora/pricing/	—	—	○
+DB	Aurora 読取インスタンス（予備地域・権限系）	案③のみ。同上	1台×730時間	730	730	730	インスタンス時間	0	0	0	0	https://aws.amazon.com/rds/aurora/pricing/	—	—	○
+NW	内部接続点（内部NLB・予備地域）×2	案③のみ。管理APIへの到達経路を平時から用意	2台×730時間	1460	1460	1460	NLB時間	0	0	0	0	https://aws.amazon.com/elasticloadbalancing/pricing/	—	—	○
+NW	負荷分散装置（ALB・予備地域）	案③のみ。3層防御の生命線を予備地域にも	1台×730時間	730	730	730	ALB時間	0	0	0	0	https://aws.amazon.com/elasticloadbalancing/pricing/	—	—	○
+NW	接続点群（VPCエンドポイント・予備地域）	案③のみ。ゼロ egress 構成の維持	東京側と同数	10	10	10	エンドポイント・月	0	0	0	0	https://aws.amazon.com/privatelink/pricing/	—	—	○
+運用	外形監視（予備地域 Canary）	案③のみ。待機系が生きているかの常時確認	1分間隔×730時間	43800	43800	43800	実行回数	0	0	0	0	https://aws.amazon.com/cloudwatch/pricing/	—	—	○
