@@ -1,0 +1,36 @@
+区分	リソース／サービス	数量の考え方	数量 100万人	数量 500万人	数量 1000万人	単位	単価(USD)	月額 100万人	月額 500万人	月額 1000万人	単価の出典URL	備考
+計算	ROSA 計算ノード（認証製品専用・仲介側）	台数×730時間。100万=3台／500万=6台／1000万=9台	2190	4380	6570	インスタンス時間	0.1819	398.36	796.72	1195.08	https://aws.amazon.com/jp/ec2/pricing/on-demand/	c7g.xlarge（D-U6-04）
+計算	ROSA 計算ノード（認証製品専用・自社受け皿側）	100万=3台／500万=9台／1000万=18台	2190	6570	13140	インスタンス時間	0.1819	398.36	1195.08	2390.17	https://aws.amazon.com/jp/ec2/pricing/on-demand/	c7g.xlarge（D-U6-04）
+計算	ROSA 計算ノード（管理系）×2クラスタ	3台×2クラスタ×730時間で固定	4380	4380	4380	インスタンス時間	0.091	398.58	398.58	398.58	https://aws.amazon.com/jp/ec2/pricing/on-demand/	c7g.large（default/infra Pool）
+計算	ROSA サービス料（制御部分）	0.25×2クラスタ×730時間	1460	1460	1460	クラスタ時間	0.25	365.00	365.00	365.00	https://aws.amazon.com/jp/rosa/pricing/	取得済（変更なし）
+計算	ROSA サービス料（ワーカーノード）	ノード合計vCPU÷4×730時間	1642	3103	5658	4vCPU時間	0.171	280.78	530.61	967.52	https://aws.amazon.com/jp/rosa/pricing/	取得済（変更なし）
+計算	EBS（ノード用ブロックストレージ）	1台100GB×ノード数	900	1900	3150	GB・月	0.096	86.40	182.40	302.40	https://aws.amazon.com/jp/ebs/pricing/	gp3
+DB	Aurora インスタンス（認証用・書込1＋読取2）	3台×730時間	2190	2190	2190	インスタンス時間	0.665	1456.35	1456.35	1456.35	https://aws.amazon.com/jp/rds/aurora/pricing/	db.r7g.xlarge 標準ストレージ構成
+DB	Aurora インスタンス（権限系・書込1＋読取2）	3台×730時間	2190	2190	2190	インスタンス時間	0.665	1456.35	1456.35	1456.35	https://aws.amazon.com/jp/rds/aurora/pricing/	db.r7g.xlarge 標準ストレージ構成
+DB	Aurora ストレージ	利用者数に比例。1人あたり約2KB＋索引	200	1000	2000	GB・月	0.12	24.00	120.00	240.00	https://aws.amazon.com/jp/rds/aurora/pricing/	
+DB	Aurora I/O	ログイン回数に比例	50000000	250000000	500000000	I/O 件	0.00000024	12.00	60.00	120.00	https://aws.amazon.com/jp/rds/aurora/pricing/	※既存シートの単位表記「100万リクエスト」は誤り。件数×単価で計算
+DB	Aurora バックアップストレージ	データ量と同程度＋世代分	400	2000	4000	GB・月	0.023	9.20	46.00	92.00	https://aws.amazon.com/jp/rds/aurora/pricing/	
+DB	Aurora グローバル複製（予備地域へのデータ保全）	複製データ量	200	1000	2000	GB・月	0.12	24.00	120.00	240.00	https://aws.amazon.com/jp/rds/aurora/pricing/	※DR案②③でのみ発生。案①では0
+NW	内部接続点（内部NLB）×2	2台×730時間	1460	1460	1460	NLB時間	0.0243	35.48	35.48	35.48	https://aws.amazon.com/jp/elasticloadbalancing/pricing/	別途 LCU 0.006/時
+NW	負荷分散装置（ALB）	1台×730時間	730	730	730	ALB時間	0.0243	17.74	17.74	17.74	https://aws.amazon.com/jp/elasticloadbalancing/pricing/	別途 LCU
+NW	配信網（CloudFront）	データ転送量	500	2500	5000	GB	0.114	57.00	285.00	570.00	https://aws.amazon.com/jp/cloudfront/pricing/	日本向け転送。別途リクエスト 0.0000012/件
+NW	不正アクセス遮断（WAF）	ルール数＋リクエスト数。自管理分のみ	10	50	100	100万リクエスト	0.6	6.00	30.00	60.00	https://aws.amazon.com/jp/waf/pricing/	0.0000006/件×100万。別途 Rule 1.0/月
+NW	私設接続（PrivateLink）	エンドポイント×730時間	1460	1460	1460	エンドポイント時間	0.014	20.44	20.44	20.44	https://aws.amazon.com/jp/privatelink/pricing/	
+NW	接続点群（VPCエンドポイント）	10個×730時間	7300	7300	7300	エンドポイント時間	0.014	102.20	102.20	102.20	https://aws.amazon.com/jp/privatelink/pricing/	
+NW	名前解決（Route 53 私設ゾーン）	クエリ数	10000000	50000000	100000000	クエリ	0.0000004	4.00	20.00	40.00	https://aws.amazon.com/jp/route53/pricing/	別途ゾーン 0.50/月
+NW	データ転送（拠点間）	東京→大阪	100	500	1000	GB	0.09	9.00	45.00	90.00	https://aws.amazon.com/jp/ec2/pricing/on-demand/	
+NW	データ転送（インターネット向け）	CloudFront 経由のため直接転送は限定的	50	250	500	GB	0.114	5.70	28.50	57.00	https://aws.amazon.com/jp/ec2/pricing/on-demand/	
+APP	関数実行（管理API）	実行回数×実行時間	10000000	30000000	50000000	リクエスト	0.0000002	2.00	6.00	10.00	https://aws.amazon.com/jp/lambda/pricing/	別途 GB秒 0.0000166667
+APP	関数実行（糊付け：影ユーザ制御・伝播・通知配信）	同上	5000000	15000000	25000000	リクエスト	0.0000002	1.00	3.00	5.00	https://aws.amazon.com/jp/lambda/pricing/	別途 GB秒
+APP	API入口（API Gateway）	HTTP API のリクエスト数	10000000	30000000	50000000	リクエスト	0.00000129	12.90	38.70	64.50	https://aws.amazon.com/jp/api-gateway/pricing/	HTTP API
+APP	イベントバス（EventBridge）	カスタムイベント件数	5000000	15000000	25000000	イベント	0.0000001	0.50	1.50	2.50	https://aws.amazon.com/jp/eventbridge/pricing/	8Kチャンク
+APP	キー・バリューストア（DynamoDB）	書込単位	5000000	25000000	50000000	書込単位	0.00000089	4.45	22.25	44.50	https://aws.amazon.com/jp/dynamodb/pricing/	オンデマンド
+セキュリティ	暗号鍵（KMS CMK）	鍵数	10	10	10	鍵・月	1	10.00	10.00	10.00	https://aws.amazon.com/jp/kms/pricing/	別途 API 0.000003/件
+セキュリティ	秘密情報の保管（Secrets Manager）	シークレット数	30	30	30	シークレット・月	0.4	12.00	12.00	12.00	https://aws.amazon.com/jp/secrets-manager/pricing/	
+セキュリティ	自社認証局（Private CA）	CA 1台	1	1	1	CA・月	400	400.00	400.00	400.00	https://aws.amazon.com/jp/private-ca/pricing/	汎用モード。短期証明書モードなら 50.0
+セキュリティ	変更不能な控え（AWS Backup Vault Lock）	クロスリージョン保管量	400	2000	4000	GB・月	0.09	36.00	180.00	360.00	https://aws.amazon.com/jp/backup/pricing/	
+運用	ログ（即時参照90日）	取り込み量	100	500	1000	GB	0.76	76.00	380.00	760.00	https://aws.amazon.com/jp/cloudwatch/pricing/	取り込み。別途保管 0.033/GB-月
+運用	ログ検索基盤（1年）	インスタンス×730時間	1460	2190	2920	インスタンス時間	0.164	239.44	359.16	478.88	https://aws.amazon.com/jp/opensearch-service/pricing/	m6g.large.search 想定
+運用	長期保管（S3＋Glacier Deep Archive）	7年保管の累積量	5000	25000	50000	GB・月	0.002	10.00	50.00	100.00	https://aws.amazon.com/jp/s3/glacier/pricing/	Deep Archive
+運用	メール送信（SES）	送信通数	100000	500000	1000000	通	0.0001	10.00	50.00	100.00	https://aws.amazon.com/jp/ses/pricing/	
+運用	外形監視（Canary）	1分間隔×730時間×系統数	131400	131400	131400	実行回数	0.0019	249.66	249.66	249.66	https://aws.amazon.com/jp/cloudwatch/pricing/	3系統
