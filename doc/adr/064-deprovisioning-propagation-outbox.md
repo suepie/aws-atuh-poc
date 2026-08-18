@@ -17,6 +17,19 @@
 - 要件（ユーザー確定）: **削除されたユーザは確実に遮断したい**。
 - 制約: ブランド主役で中央 front door（旧トポロジ）は無く、「中央→ブランド idm-api」PrivateLink 委譲も撤回済み（ADR-063）。越境は EventBridge に寄せたい。
 
+### 伝播スコープ（認可変更は非伝播 / 削除・無効化のみ authz-anchor 伝播）
+
+**Broker へ伝播するのは「認証を止める二値の事実（`enabled=false`）」だけ**。以下の非対称性を明確にする:
+
+| 変更の種類 | 意味 | Broker へ伝播? | 反映経路 |
+|---|---|---|---|
+| **authz（権限）変更** | 認可 | **しない** | アプリが **`/api/me/context`（ブランドローカル read）で pull** → 次の取得で反映（即時性 = context キャッシュ TTL）。**token revoke 不要** |
+| **削除 / 無効化 / 再有効化** | 認証を止める/戻す | **する** | 本 ADR（outbox → EventBridge → shadow 制御で shadow `enabled` を切替） |
+
+- **なぜ権限変更は非伝播か**: **Broker は authz 非保持**（[ADR-063](063-brand-unit-architecture.md)）・**JWT に authz 非搭載**（[ADR-030](030-minimal-jwt-claim-design.md)）。認可は authz Aurora が SSOT で、アプリは API pull。→ Broker は authz でゲートしないので、伝えるものが無い。
+- **なぜ削除は authz にアンカーするか**: 削除は authz を transactional に触る（soft-delete + outbox を 1 Tx）ので、そこが**喪失なしの唯一確実な信号源**。identity（Keycloak）側は非トランザクショナルな Admin API 呼び + イベントが best-effort（喪失しうる）ゆえ信号源にできない（[Alternatives](#alternatives-considered) の Keycloak イベント/SCIM 却下と同根）。
+- ＝ **Broker = 認証ゲート（token を出すか）/ ブランド = 認可（API pull）** の分離。権限編集はブランド完結、削除だけが二値 disable を Broker へ届ける。
+
 ## Decision（A 案 = outbox）
 
 1. **idm-api が IdP-KC Soft Delete**（Keycloak: `enabled=false` + `deprovisioned_at`）。
