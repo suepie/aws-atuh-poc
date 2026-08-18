@@ -42,7 +42,7 @@
 **idm-api（ブランド管理 API）・shadow 制御 Lambda・非同期の糊 とも AWS Lambda で実装する。** 具体:
 
 1. **Ingress**：`CloudFront(api.basis, WAF) → API Gateway（JWT authorizer L1 + throttle）→ Lambda（ネイティブ invoke）`。VPC Link/NLB を ingress に挟まない（最短）。**（2026-08-06 補足: 組織方針 = 全 inbound NFW 通過必須、ただし **静的 SPA と API GW は例外**〔U6 REQ-IN-12〕。API GW はこの例外ゆえ本 ingress は NFW 経路外で準拠 = そのまま維持。Option 2〔ALB→Lambda ターゲット〕/ Option 3〔Private API GW〕は不要）**
-2. **Lambda の VPC アタッチ**：サブネット層③（[06a §A.5.3](../basic-design/06a-network-flow-diagrams.md)）。egress のため。
+2. **Lambda の VPC アタッチ**：**2 VPC 分離（B 案）採用（2026-08-18）** — idm-api Lambda は **管理 VPC（VPC-M）** にアタッチ（旧: クラスタ VPC 層③に同居）。VPC-M で authz Aurora へ SG 直、**Keycloak Admin API へは PrivateLink 単方向（EPS-Admin）**、identity Aurora（VPC-K）へはルート/SG を持たない。根拠＝[単一 VPC リスク評価](../basic-design/research/single-vpc-consolidation-risk-2026-08-18.md)（SEC05-BP01 アンチパターン）、構成図用 詳細＝[2-VPC トポロジ](../basic-design/research/brand-unit-2vpc-topology-2026-08-18.md)。
 3. **Keycloak Admin API 到達**：各クラスタに **内部 NLB（`scheme=internal`）** を新設し、**SG を Lambda の SG に限定 + 最低 server-TLS + Admin API のアプリ層認証**で守る。ClusterIP 単独方針（D-U6-11）を本用途に限り "内部 NLB + 厳格 SG" に見直す。
 4. **越境**：CRUD/権限はブランド(idm-api)内でローカル完結。**旧「中央→ブランド idm-api の PrivateLink 委譲」は [ADR-063](063-brand-unit-architecture.md) で撤回**。越境は EventBridge 2 本（削除 `user.deprovisioned`=[ADR-064](064-deprovisioning-propagation-outbox.md) / 初回 sub 通知）+ フェデ backchannel PrivateLink（Broker→IdP-KC、[D-U6-06](../basic-design/06-infra-network-design.md)）。
 5. **非同期の糊**（shadow 制御 / outbox リレー / Webhook Dispatcher / idmap・projection ハンドラ〔ブランドローカル〕）も **Lambda（層③）**（U9 D-U9-18）。
