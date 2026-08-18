@@ -30,6 +30,11 @@
 - **なぜ削除は authz にアンカーするか**: 削除は authz を transactional に触る（soft-delete + outbox を 1 Tx）ので、そこが**喪失なしの唯一確実な信号源**。identity（Keycloak）側は非トランザクショナルな Admin API 呼び + イベントが best-effort（喪失しうる）ゆえ信号源にできない（[Alternatives](#alternatives-considered) の Keycloak イベント/SCIM 却下と同根）。
 - ＝ **Broker = 認証ゲート（token を出すか）/ ブランド = 認可（API pull）** の分離。権限編集はブランド完結、削除だけが二値 disable を Broker へ届ける。
 
+**EventBridge が運ぶもの = ライフサイクル状態遷移のみ（属性同期ではない）**:
+- 越境イベントの対象は **`user.deprovisioned`（削除/無効化）・再有効化**という**認証をゲートする状態遷移**に限る。**氏名/メール等の属性の一般同期は行わない**（Broker shadow は認証の二値ゲートで、業務属性・authz はブランド側 `/api/me/context` の pull ゆえ real-time 同期は不要。属性はログイン時に per-Mapper syncMode で再取込する程度）。
+- **IdP-KC → Broker の作成同期 = JIT**（First Broker Login、ログイン時の遅延生成）で push ではない。**リアルタイムに push したいのは "enabled=false" だけ**で、それが本 ADR の EventBridge 経路。
+- **内部（IdP-KC ↔ Broker）伝播に SCIM は使わない**（[Alternatives](#alternatives-considered) で却下）。SCIM は**顧客境界の受信**（顧客 IdP/HRIS → SCIM Facade、D1/D2）専用で、内部伝播とは別レイヤ。
+
 ## Decision（A 案 = outbox）
 
 1. **idm-api が IdP-KC Soft Delete**（Keycloak: `enabled=false` + `deprovisioned_at`）。
