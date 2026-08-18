@@ -312,3 +312,43 @@ sequenceDiagram
 ```
 
 > **能動 vs 受動の分岐点 = 削除信号の有無**。§8.3（idm-api 削除）と §8.4（SCIM DELETE）は「我々が観測できる削除」ゆえ**同一の能動パス**（outbox→EventBridge→shadow 制御）に合流。§8.5（顧客 IdP + JIT のみ）は**信号が構造的に来ない**ため受動（フェデ自然失敗＋90 日バッチ）。統一は **SCIM / CAEP のオプトイン**で提供される（[03 §3.8 経路表](../03-identity-provisioning-design.md) line 113-135、責任分界 L1-L3）。
+
+### 8.6 EventBridge のトリガー詳細（publish=エンドポイント通信 / trigger=invoke）
+
+**混同しやすい 2 種類の通信を分離する**:
+- **publish（＝EventBridge を"叩く/キックする"）** = VPC 内 Lambda が `PutEvents` API を呼ぶ。zero-egress なので **`com.amazonaws.<region>.events` Interface Endpoint** の ENI を通る。← **ここだけがエンドポイント通信**。
+- **trigger（＝EventBridge が Lambda を"起動する"）** = バス上の **Rule** が **Event Pattern** で一致 → **Target**（別バス or Lambda）へ push。Lambda Target なら **EventBridge が `lambda:InvokeFunction` で非同期 invoke**。consumer Lambda は**待ち受けエンドポイントを持たず、呼ばれる側**（VPC/エンドポイント非経由）。
+
+**用語**: Event Bus（土管）／ Rule（Event Pattern で待ち受ける条件）／ Target（一致時の push 先）。
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant REL as outbox リレー Lambda(VPC-M)
+  participant EEP as events IF Endpoint(VPC-M)
+  participant BUSA as EventBridge brand bus(IdP-KC Acct)
+  participant BUSR as EventBridge Broker bus(Broker Acct)
+  participant SHC as shadow 制御 Lambda(Broker)
+  participant BKC as Broker KC Admin API
+  rect rgb(235,245,255)
+  Note over REL,EEP: 【publish = 唯一の"エンドポイント通信"】
+  REL->>REL: DNS: events.region.amazonaws.com<br/>→ IF Endpoint の private IP(Private DNS)
+  REL->>EEP: HTTPS 443 PutEvents{Source, DetailType=user.deprovisioned, Detail={sub,brand_id}}
+  EEP-->>BUSA: PrivateLink backbone でサービスへ到達
+  end
+  rect rgb(240,255,240)
+  Note over BUSA,BUSR: 【trigger = Rule が Event Pattern 照合 → Target へ push】
+  BUSA->>BUSA: Rule(pattern: detail-type=user.deprovisioned) に一致?
+  BUSA->>BUSR: 一致 → Target=Broker bus(クロスアカウント)<br/>※Broker bus の resource policy が brand Acct を許可
+  BUSR->>BUSR: Rule(同 pattern) に一致?
+  BUSR->>SHC: 一致 → Target=Lambda を非同期 invoke<br/>(EventBridge が lambda:InvokeFunction、event=payload / エンドポイント不要)
+  end
+  SHC->>BKC: shadow enabled=false + not_before + session revoke(冪等)
+  Note over BUSR,SHC: invoke 失敗時は Target の DLQ(SQS) + 自動リトライ
+```
+
+**要点**:
+- 「Lambda が EventBridge を叩く」= **PutEvents（IF Endpoint 経由の API コール）**。
+- 「EventBridge が Lambda を起動する」= **Rule 一致 → Target invoke**（push・エンドポイント不要）。
+- クロスアカウントは **bus→bus**（宛先 bus の resource policy 許可、VPC/PrivateLink 非経由）。
+- **1 つの Lambda（outbox リレー）が publish 側、別の Lambda（shadow 制御）が invoke される側**で、両者は EventBridge を挟んで**疎結合**（直接は繋がらない）。
