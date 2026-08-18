@@ -94,6 +94,8 @@
 - **B（ブランドを credential/データの 2 アカウントに分割）**: アカウントレベル侵害には強いが idm-api 乗っ取りには無効 + ブランドあたり 2 アカウント + ブランド内クロスアカウント経路増。**規制ブランド（アカウントレベル分離が契約/監査要件）向けの将来オプションとして予約**。不変条件（sub グローバル / brand_id 一級キー）により、データアカウントの切り出しはクリーン移行可。
 - **D（authz を共有 Broker へ戻す）**: 却下。将来 per-brand 移行が必要 + 共有 Broker に cross-brand データ集中 = 不変条件 ③④ 違反。
 
+**VPC 境界の次元（2026-08-18 追記、[research](../basic-design/research/single-vpc-consolidation-risk-2026-08-18.md)）**: 上記 A/B/C は「データ層（Aurora/CMK/SG/アカウント）の分離粒度」だが、**ネットワーク境界（VPC）は直交する別次元**。現行 U6 は idm-api Lambda ENI をクラスタ VPC に同居させる**単一 VPC（A 案）**だが、**AWS SEC05-BP01 は単一 VPC 集約を High リスクのアンチパターン**とする。→ **2 VPC 分離（Keycloak/identity VPC ＋ 管理/authz VPC、idm-api は 1 本のまま管理 VPC・Admin API へ PrivateLink 単方向）を基本方向**とし、**identity Aurora〔PW ハッシュ〕は Keycloak VPC で Pod のみが触る／idm-api は Admin API 経由のみ**を担保する。上記オプション B（2 アカウント分割）は、この VPC 分離をさらにアカウント境界まで格上げした規制ブランド向けの上位形。受容条件・分離トリガーは U6 §6.2 / research 参照。
+
 ## ブランド Realm/Organization モデリング（brand=Realm 確定、2026-08-15）
 
 > 旧 DU-U2-09 が参照していた「§3.8.0」は本節。**先行判断「単一 broker Realm vs ブランド=Realm」をここで確定する**（[00b DU-U2-09](../basic-design/00b-design-unit-breakdown.md) / [01 §1.5 G-SRE… 隣接](../basic-design/01-architecture-baseline.md)）。
