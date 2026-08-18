@@ -5,7 +5,7 @@
 
 ## A.0 本書の位置づけ
 
-> **【現行トポロジの SSOT = [§A.6](#a6-アカウント別-詳細構成broker--idp-kc-ブランド2026-08-07-新設)】** §A.1〜§A.3 の一部図は初期トポロジ（`idm-api #1 = 管理画面 Backend`、IdP-KC「同居アプリ」、中央 front door）の表記を残す。**現行は ADR-062（idm-api=Lambda）/ ADR-063（ブランド主役: idm-api は #2＝ブランド側が CRUD/権限/authz/projection の実体、中央は shadow 制御 Lambda のみ、業務アプリは非同居）/ ADR-064（削除=outbox）で更新済み**。図中の `idm-api #1`・「同居アプリ」表記は §A.6 で読み替えること。
+> **【現行トポロジの SSOT = [§A.6](#a6-アカウント別-詳細構成broker--idp-kc-ブランド2026-08-07-新設)】** §A.1 の全体図のみ初期トポロジ（旧「中央 front door / 管理画面 Backend」・IdP-KC「同居アプリ」）の表記を履歴として残す。**現行呼称に統一（2026-08-18）: 管理コントロールプレーン = `idm-api`（ブランド管理 API・ブランド側が CRUD/権限/authz/projection の実体）＋ `shadow 制御 Lambda`（中央 Broker・遮断のみ）。旧「idm-api #1／#2」番号は撤去**（ADR-062 Lambda / ADR-063 ブランド主役 / ADR-064 削除 outbox）。§A.1 の全体図に残る旧表記は本注記で読み替えること（`ROSA #1/#2` はクラスタ番号で別物）。
 
 U6 §6.1.1 の簡略図を、**入口・出口の全フロー(ID 付き)** と **ROSA HCP クラスタ内部** の 2 レベルに詳細化する。作図前提:
 
@@ -364,7 +364,7 @@ flowchart TB
 |------|-----------|-----------|
 | KC Pool max | 9(署名系 CPU) | 18(Argon2id 支配、フェデ比率感度) |
 | 外向き(インターネット) | **重い**: B-O1 フェデ 1000+ FQDN + B-O7 Webhook + B-O8 HIBP | **HIBP(I-O7)と SES のみ**(外部 IdP へフェデしない) |
-| 追加コンポーネント | idm-api #1(管理画面 Backend)/ ITDR / Webhook Dispatcher | idm-api #2(専用 API 層)/ 同居アプリ |
+| 追加コンポーネント | shadow 制御 Lambda / ITDR / Webhook Dispatcher | idm-api(ブランド管理 API・業務アプリは非同居) |
 | PrivateLink | IdP-KC への **送信側**(Endpoint) | Ingress NLB を **Endpoint Service 化して着信のみ**(逆流不能) |
 | DB | Broker DB + **idmap 別 DB** | IdP-KC DB(**PW ハッシュ**) |
 
@@ -475,7 +475,7 @@ flowchart TB
 
 | # | フロー | 内容 | 根拠 |
 |---|--------|------|------|
-| B-I6 | **管理画面 SPA / launchpad / idm-api 公開入口** | テナント管理者 → CF(admin. REQ-IN-03)→ idm-api #1。launchpad SPA 配信(REQ-IN-11)+ `GET /api/me/apps`(REQ-IN-12)+ **Sorry SPA(/sorry)** も同系 | U10 D-U10-08、U4 D-U4-06/07 |
+| B-I6 | **管理画面 SPA / launchpad / idm-api 公開入口** | テナント管理者 → CF(admin. REQ-IN-03)→ idm-api（ブランド管理 API）。launchpad SPA 配信(REQ-IN-11)+ `GET /api/me/apps`(REQ-IN-12)+ **Sorry SPA(/sorry)** も同系 | U10 D-U10-08、U4 D-U4-06/07 |
 | B-O7 | **Webhook 配信** | Dispatcher(SQS+λ)→ 顧客アプリ endpoint。**REQ-OUT-06(送信元が KC Pod でない別枠)** | U10 D-U10-11 |
 | B-O8 / I-O7 | **HIBP Egress** | `api.pwnedpasswords.com`(k-Anonymity・fail-open)。**IdP-KC が主利用者** — 「IdP-KC は外向きほぼ無し」の重要な例外(REQ-OUT-01 の送信元スコープ拡張要求済み) | U7 §7.2.2 |
 | B-O9 / I-O8 | **メール送信(SES)** | 招待・PW リセット・MFA 登録・侵害通知テンプレート(U4 §4.3)。SES VPC Endpoint 経由なら zero-egress 維持。**SES サンドボックス解除・SPF/DKIM(Route 53)が未設計 → U6/U9 未決に追加すべき** | U4/U7 |
@@ -597,7 +597,7 @@ flowchart TB
     IKC["IdP-KC KC(ROSA#2)<br/>hosted identity(local PW)"]
     IAur[("identity Aurora<br/>PWハッシュ・専用CMK/SG")]
     APIGW["API GW(JWT L1)"]
-    API2["idm-api #2 = Lambda(主役)<br/>CRUD/権限/authz/projection"]
+    API2["idm-api = Lambda(主役)<br/>CRUD/権限/authz/projection"]
     ZAur[("authz系 Aurora<br/>authz+idmap+projection<br/>別CMK/別SG:Option C")]
     OBX["outbox リレー Lambda"]
   end
@@ -644,15 +644,15 @@ flowchart TB
 |---|---|---|
 | クラスタ | **ROSA HCP #2（IdP-KC KC）** | hosted identity（IdP なしテナントの local PW ユーザ）。Broker から `idpkc-oidc01` でフェデ |
 | DB① identity | **identity Aurora** | PW ハッシュ・ユーザ本体。**専用 CMK・専用 SG（Keycloak Pod のみ）**（Option C、D-U7-19） |
-| DB② authz系 | **authz系 Aurora** | **authz + idmap + projection**（`sub`+`brand_id`）。**別 Aurora・別 CMK・別 SG（idm-api #2 のみ）**（Option C、D-U7-19）。projection は規模次第でリードレプリカ |
-| 管理 CP | **idm-api #2 = Lambda（層③・専用サブネット）** | **主役: CRUD + 権限 + authz + projection**。入口 = API GW（JWT L1）→ invoke |
+| DB② authz系 | **authz系 Aurora** | **authz + idmap + projection**（`sub`+`brand_id`）。**別 Aurora・別 CMK・別 SG（idm-api のみ）**（Option C、D-U7-19）。projection は規模次第でリードレプリカ |
+| 管理 CP | **idm-api = Lambda（層③・専用サブネット）** | **主役: CRUD + 権限 + authz + projection**。入口 = API GW（JWT L1）→ invoke |
 | 削除伝播 | **outbox リレー Lambda（層③）** | authz DB の outbox を EventBridge へ**必達送信**（`user.deprovisioned`、A 案） |
 | SCIM | **SCIM Facade Lambda（層③）** | 顧客 IdP/HRIS の SCIM 受信（D1）→ 属性正準化（D3-15）。REQ-IN-09 |
 | Ingress① idp. | **Internal ALB→IngressController→IdP-KC KC** | idp.（ログイン UI）= 他組織 CloudFront+WAF+**NFW**→TGW（REQ-IN-02/13） |
-| Ingress② api. | **API GW（JWT L1）→ idm-api #2 Lambda invoke** | api. = 他組織 CloudFront+WAF→**API GW（NFW 例外）**（REQ-IN-12）。ALB は挟まない |
-| 内部 NLB | `kc-admin`（`scheme=internal`） | idm-api #2 Lambda → IdP-KC KC Admin API（CRUD。SG 限定・TLS・アプリ層認証） |
+| Ingress② api. | **API GW（JWT L1）→ idm-api Lambda invoke** | api. = 他組織 CloudFront+WAF→**API GW（NFW 例外）**（REQ-IN-12）。ALB は挟まない |
+| 内部 NLB | `kc-admin`（`scheme=internal`） | idm-api Lambda → IdP-KC KC Admin API（CRUD。SG 限定・TLS・アプリ層認証） |
 | KMS | **identity CMK / authz系 CMK（別）** | Option C（D-U7-19） |
-| IAM | Keycloak SA の IRSA（D-U7-09）/ **idm-api #2 実行ロール（別）** | **両方に届く単一ロール禁止**（D-U7-19）。#2 = Admin API 資格情報 + authz Aurora 接続のみ |
+| IAM | Keycloak SA の IRSA（D-U7-09）/ **idm-api 実行ロール（別）** | **両方に届く単一ロール禁止**（D-U7-19）。idm-api = Admin API 資格情報 + authz Aurora 接続のみ |
 | Egress | 運用系（ECR/registry 等）。**VPC エンドポイント（EventBridge/Secrets Manager）** | 顧客 IdP フェデは Broker 側ゆえ IdP-KC に顧客 IdP egress なし |
 | 越境 OUT | **EventBridge: ブランド→Broker**（`user.deprovisioned`、outbox 発） | D-U6-02 |
 | 越境 IN | **EventBridge: Broker→ブランド**（初回 sub 通知）/ **PrivateLink: Broker→IdP-KC**（フェデ backchannel） | D-U6-02 / D-U6-06 |

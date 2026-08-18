@@ -2,7 +2,7 @@
 
 - **ステータス**: Proposed（基本設計フェーズで Accepted 昇格予定）
 - **日付**: 2026-08-06 作成、2026-08-08 更新（本文をブランド主役トポロジに反映〔[ADR-063](063-brand-unit-architecture.md)〕、削除/デプロビ伝播を [ADR-064](064-deprovisioning-propagation-outbox.md) へ分離。**実行形態=Lambda の決定は不変**）
-- **決定**: **idm-api（管理コントロールプレーン = ブランド管理 API #2〔主役〕+ 中央 shadow 制御 + 非同期の糊）を AWS Lambda で実装する**（ROSA 常駐案を退け、O-9 を Lambda で確定）。**本 ADR のスコープは実行形態（Lambda）**。トポロジ(#2 主役)は [ADR-063](063-brand-unit-architecture.md)、削除伝播は [ADR-064](064-deprovisioning-propagation-outbox.md)。
+- **決定**: **idm-api（管理コントロールプレーン = ブランド管理 API〔主役〕+ 中央 shadow 制御 Lambda + 非同期の糊）を AWS Lambda で実装する**（ROSA 常駐案を退け、O-9 を Lambda で確定）。**本 ADR のスコープは実行形態（Lambda）**。トポロジ(ブランド主役)は [ADR-063](063-brand-unit-architecture.md)、削除伝播は [ADR-064](064-deprovisioning-propagation-outbox.md)。
 - **対応する前提**: **[P-20 管理コントロールプレーンの実行形態](../basic-design/01-architecture-baseline.md)**（2026-08-17 正式採番。旧 O-9。それまで P 表に不在で、Excel 側が仮採番 `D-IDMAPI-1` で追跡していた）
 - **関連**:
   - [ADR-038 ユーザ管理画面](038-tenant-admin-portal.md)（本 API の親。SPA + idm-api の構成）
@@ -18,7 +18,7 @@
 
 ### 決めること（O-9）
 
-管理コントロールプレーン **idm-api**（[ADR-038](038-tenant-admin-portal.md) の Backend、単一 OpenAPI × 2 デプロイ = #1 テナント管理 API〔Broker Acct〕/ #2 ユーザー連携 API〔IdP-KC Acct〕）を **どの実行形態で動かすか**（O-9）。**トポロジ(#2 ブランド主役)は [ADR-063](063-brand-unit-architecture.md)**。候補は 3 つ:
+管理コントロールプレーン **idm-api**（[ADR-038](038-tenant-admin-portal.md) の Backend、単一 OpenAPI をブランド〔IdP-KC Acct〕へデプロイ = idm-api〔主役: CRUD/権限/authz/projection〕。中央〔Broker Acct〕は shadow 制御 Lambda のみ）を **どの実行形態で動かすか**（O-9）。**トポロジ(ブランド主役)は [ADR-063](063-brand-unit-architecture.md)**。候補は 3 つ:
 
 - **A: ROSA 常駐 + Route**（既存 ingress チェーンに `api.` で相乗り、L1 JWT はクラスタ内フィルタ）
 - **B: ROSA 常駐 + API GW**（API GW → VPC Link → Private NLB → IngressController → Pod）
@@ -39,7 +39,7 @@
 
 ## Decision
 
-**idm-api #1 / #2 とも AWS Lambda で実装する。** 具体:
+**idm-api（ブランド管理 API）・shadow 制御 Lambda・非同期の糊 とも AWS Lambda で実装する。** 具体:
 
 1. **Ingress**：`CloudFront(api.basis, WAF) → API Gateway（JWT authorizer L1 + throttle）→ Lambda（ネイティブ invoke）`。VPC Link/NLB を ingress に挟まない（最短）。**（2026-08-06 補足: 組織方針 = 全 inbound NFW 通過必須、ただし **静的 SPA と API GW は例外**〔U6 REQ-IN-12〕。API GW はこの例外ゆえ本 ingress は NFW 経路外で準拠 = そのまま維持。Option 2〔ALB→Lambda ターゲット〕/ Option 3〔Private API GW〕は不要）**
 2. **Lambda の VPC アタッチ**：サブネット層③（[06a §A.5.3](../basic-design/06a-network-flow-diagrams.md)）。egress のため。

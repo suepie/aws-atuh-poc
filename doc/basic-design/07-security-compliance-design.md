@@ -474,10 +474,10 @@ flowchart LR
 |---|---|---|
 | Aurora | **identity Aurora**（PW ハッシュ） | **authz 系 Aurora**（別クラスタ。projection は規模次第でリードレプリカ可） |
 | KMS CMK | identity 用 CMK | authz 系用 CMK（別） |
-| IAM ロール | Keycloak SA の IRSA（D-U7-09） | idm-api #2 の実行ロール（別） |
-| SG | identity Aurora SG（Keycloak Pod のみ） | authz 系 Aurora SG（idm-api #2 Lambda のみ） |
+| IAM ロール | Keycloak SA の IRSA（D-U7-09） | idm-api の実行ロール（別） |
+| SG | identity Aurora SG（Keycloak Pod のみ） | authz 系 Aurora SG（idm-api Lambda のみ） |
 
-- **両方に届く単一 IAM ロール / 単一 SG を作らない**。idm-api #2 は「Keycloak Admin API（内部 NLB、CRUD）」と「authz 系 Aurora（SG 直）」の**両方に最小権限で到達する唯一の橋渡し**ゆえ、#2 実行ロールは必要最小（Admin API 管理クライアント資格情報 + authz Aurora 接続のみ）に絞り、**#2 の堅牢化（依存最小・監査・レビュー）を最優先**とする（主脅威 = #2 乗っ取りはアカウント分割でも防げないため）。
+- **両方に届く単一 IAM ロール / 単一 SG を作らない**。idm-api は「Keycloak Admin API（内部 NLB、CRUD）」と「authz 系 Aurora（SG 直）」の**両方に最小権限で到達する唯一の橋渡し**ゆえ、idm-api 実行ロールは必要最小（Admin API 管理クライアント資格情報 + authz Aurora 接続のみ）に絞り、**idm-api の堅牢化（依存最小・監査・レビュー）を最優先**とする（主脅威 = idm-api 乗っ取りはアカウント分割でも防げないため）。
 - **背景**: [ADR-063 認可データ配置粒度](../adr/063-brand-unit-architecture.md)。脅威分解で「アカウント分離が効くのはアカウントレベル侵害のみ」→ Phase 1 は単一 + 内部強分離で足りる。規制ブランドで account-level 分離が要件化したら案 B（2 アカウント分割）へ（不変条件でクリーン移行）。
 
 ### 7.5.5 決定 D-U7-20: 非人間ID（NHI）ガバナンス（[ADR-066](../adr/066-non-human-identity-governance.md)）
@@ -802,6 +802,6 @@ flowchart TB
 
 - 2026-08-12: **D-U7-03 に不変条件「鍵の並走期間 > 全検証者の最大キャッシュ TTL」を明示**（制御不能な検証者 = API GW ネイティブ JWT authorizer の 2h キャッシュを含む。U5 §5.6.3b と対）+ 検証点数の stale 参照を 6 点 → 7 点に是正。**§7.3.1 に ROSA 固有の再評価材料（自前 Fluent Bit は SCC 付与必須 / Operator 版は SCC 自動管理）を追記**。
 - 2026-08-12: **網羅性再監査反映** — D-U7-20 NHI ガバナンス（§7.5.5、[ADR-066](../adr/066-non-human-identity-governance.md)、B-NHI-1）/ D-U7-21 同意管理・同意レシート（§7.7.6、B-CONSENT-1）を新設。認可判定ログ + アクセス再認証は [ADR-067](../adr/067-authz-decision-logging-and-access-recertification.md)（U9 反映）、継続アクセス CAEP は [ADR-065](../adr/065-continuous-access-caep-shared-signals.md)（U5 §5.10）。
-- 2026-08-07: **D-U7-19 新設（ブランドアカウント内 credential/authz 分離 = Option C、[ADR-063](../adr/063-brand-unit-architecture.md)）** — identity(Keycloak)/authz 系を別 Aurora・別 CMK・別 IAM ロール・別 SG に内部分離、両方に届く単一ロール禁止、#2 堅牢化最優先。アカウント分割(案 B)は規制ブランド向け将来オプション。
+- 2026-08-07: **D-U7-19 新設（ブランドアカウント内 credential/authz 分離 = Option C、[ADR-063](../adr/063-brand-unit-architecture.md)）** — identity(Keycloak)/authz 系を別 Aurora・別 CMK・別 IAM ロール・別 SG に内部分離、両方に届く単一ロール禁止、idm-api 堅牢化最優先。アカウント分割(案 B)は規制ブランド向け将来オプション。
 - 2026-07-23: 初版（Wave 2 起草）。Baseline v1（P-03/P-17/P-18）準拠。KMS 3 階層の 6 Acct 写像 + Realm Key 90 日 Cryptoperiod（D-U7-01〜03）、ITDR Phase 1（HIBP + Brute Force、Broker 集約、段階活性化、D-U7-04〜06）、Log scrubbing（infra Pool Aggregator + 辞書 M-1〜14、D-U7-07）、Golden 検知 Phase 1 = 4 シグナル（D-U7-08）、Workload Identity（IRSA 規約 + FedID + **private_key_jwt = Phase 2 昇格確定**、D-U7-09〜10）、**ADR-040 復活の取込**（6 Acct 読み替え + /admin 3 層整合 + 監査 Acct 一元、D-U7-11〜12）、PCI ギャップ 3 点 + APPI（Object Lock 7 年 / WebAuthn 必須範囲 / 漏えい SOP / Red Hat DPA ゲート / **zero-egress セキュリティ推奨**、D-U7-13〜16）、Bot/DDoS 分離 + Argon2id 確定（D-U7-17〜18）を決定。
 - 2026-07-23 (v1.1): Wave 2 整合性レビュー反映 — §7.2.3 に DR/Game Day ウィンドウの G-2/G-3 自動降格 + Brute Force 感度引上げを追加（M-4）、§7.2.2 HIBP Egress を送信元スコープ拡張（IdP-KC KC Pod CIDR）+ zero-egress 非代替の明記へ拡張（M-5）、§7.5.2 の管理画面 Backend（Broker Acct）/ 専用 API 層（IdP-KC Acct）を 2 行に分割（M-6）、G-PCI-WAF / G-DPA のゲート採番付記（M-11、U1 §1.5 登録）、Event Listener emit セットに REVOKE_GRANT / LOGOUT 系追加（L-1、U5 §5.9.2 受領）、Fluent Bit DaemonSet の KC Pool taint toleration 必須を明記（L-2）。

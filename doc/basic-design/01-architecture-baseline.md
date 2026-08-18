@@ -31,7 +31,7 @@
 | P-17 | アカウント/クラスタ | **⚠ 2026-08-16 再検討中（「そもそも IdP Keycloak の方をどうするか」）** — 2 クラスタ構成そのものが揺れているため**凍結を解除し検討中に戻す**。従前の凍結値: **IdP-KC は Broker と別 AWS アカウント、ROSA HCP × 2 クラスタ**（2026-07-23）。なお「同 Acct アプリからのユーザ CRUD 想定」は **2026-08-06 の E 判断（[ADR-063](../adr/063-brand-unit-architecture.md)）で「業務アプリは同居させない = App Acct 推奨」に更新済み**（旧記述を是正） | ADR-033 更新 | U3/U6/U7 |
 | P-18 | インターネット境界 | **他組織管理の監査 Acct**（In: CF+WAF+ALB or NLB+NWFW / Out: NWFW ドメインフィルタ）。当該設定は**要求仕様**として起こす | ADR-039 v3 | U6/U7/U9 |
 | **P-19** | **ブランドユニット**（2026-08-17 新規採番） | **Broker は共有 1 つ。ブランドを将来の隔離/複製単位とし、authz / idmap / projection / CRUD / アプリをブランドユニット（IdP-KC 側）に置く。Broker は authz を持たない。**ブランド = Realm**（2026-08-15 ユーザー承認）で issuer は「ブランド毎に単一」。**Phase 1 スコープ = 1 ブランド**、物理 per-brand 分割は将来 | [ADR-063](../adr/063-brand-unit-architecture.md)（2026-08-06 作成 / 08-15 brand=Realm 確定）。**本前提は従来 P 表に不在で、Excel 側が仮採番 `P-BRAND-1` で追跡していたものを正式採番**（2026-08-17） | U2/U3/U5/U6/U7/U8/U9/U10（authz・idmap・projection の配置と DR 対象範囲） |
-| **P-20** | **管理コントロールプレーンの実行形態**（2026-08-17 新規採番） | **idm-api（ブランド管理 API #2）+ 非同期の糊（射影フィード / Webhook Dispatcher / shadow 制御）= Lambda**。auth-critical な Keycloak（P0）と管理ツール（P1）を**別障害ドメインに分離**する。`api.` は API GW、Keycloak Admin API へは**各クラスタの内部 NLB**（scheme=internal・インターネット非露出・SG 限定・TLS・アプリ層認証）| [ADR-062](../adr/062-idm-api-execution-form-lambda.md)（2026-08-06 確定、旧 O-9）。**O-* は未決トラッカーで解消時に消える番号のため、恒久的な構成前提として P 採番**（Excel 側が仮採番 `D-IDMAPI-1` で追跡していたものを正式化、2026-08-17） | U6/U9/U10（内部ルート・CI/CD・監視の別体系） |
+| **P-20** | **管理コントロールプレーンの実行形態**（2026-08-17 新規採番） | **idm-api（ブランド管理 API）+ 非同期の糊（射影フィード / Webhook Dispatcher / shadow 制御）= Lambda**。auth-critical な Keycloak（P0）と管理ツール（P1）を**別障害ドメインに分離**する。`api.` は API GW、Keycloak Admin API へは**各クラスタの内部 NLB**（scheme=internal・インターネット非露出・SG 限定・TLS・アプリ層認証）| [ADR-062](../adr/062-idm-api-execution-form-lambda.md)（2026-08-06 確定、旧 O-9）。**O-* は未決トラッカーで解消時に消える番号のため、恒久的な構成前提として P 採番**（Excel 側が仮採番 `D-IDMAPI-1` で追跡していたものを正式化、2026-08-17） | U6/U9/U10（内部ルート・CI/CD・監視の別体系） |
 
 ## 1.2 アカウント体系（P-17/P-18 反映版）
 
@@ -42,8 +42,8 @@ ADR-039 の 5 アカウント体系を Broker/IdP-KC 分割で **6 アカウン�
 | ネットワーク監査 Acct | **他組織（管理外）** | Inbound: CloudFront + WAF + ALB or NLB + Network Firewall / Outbound: Network Firewall（ドメインフィルタ）。我々からは**要求仕様書**で連携 |
 | ネットワーク Acct | 他組織想定（要確認） | Transit GW / DX / VPN |
 | 監査 Acct | 弊社 | Org Trail / 監査ログ集約 S3 |
-| **Broker Acct** | 弊社 | Broker KC（ROSA HCP クラスタ #1）+ Aurora + ITDR + 管理画面 Backend |
-| **IdP-KC Acct（ブランドユニット、ADR-063）** | 弊社 | IdP-KC（ROSA HCP クラスタ #2）+ Aurora + **idm-api #2（ブランド管理 API、Lambda、主役）+ authz/idmap/projection**。**2026-08-06 E 判断: 業務アプリは同居させず App Acct 推奨**（PW ハッシュのブラスト半径隔離、CRUD は #2 をエッジ経由で呼ぶ）|
+| **Broker Acct** | 弊社 | Broker KC（ROSA HCP クラスタ #1）+ Aurora + ITDR + shadow 制御 Lambda |
+| **IdP-KC Acct（ブランドユニット、ADR-063）** | 弊社 | IdP-KC（ROSA HCP クラスタ #2）+ Aurora + **idm-api（ブランド管理 API、Lambda、主役）+ authz/idmap/projection**。**2026-08-06 E 判断: 業務アプリは同居させず App Acct 推奨**（PW ハッシュのブラスト半径隔離、CRUD は idm-api をエッジ経由で呼ぶ）|
 | App Acct × N | 各アプリチーム | Internal ALB + アプリ本体 |
 
 補足: 旧「Auth Platform Acct」は Broker Acct / IdP-KC Acct に分割された。DR(大阪)側は Broker/IdP-KC のオンデマンド再構築対象（2026-07-30 コールド DR、U8 D-U8-14。旧パイロットライト表記から更新）。
@@ -53,7 +53,7 @@ ADR-039 の 5 アカウント体系を Broker/IdP-KC 分割で **6 アカウン�
   - **authz / idmap / projection はブランドユニットに配置**（Broker は authz 非保持。federated も `sub` + `brand_id` で保持、初回ログイン時に Broker→ブランドへ sub 通知〔write 時のみ越境〕）。**`/api/me/context` はブランドローカル read（越境ゼロ）**。
   - **不変条件（今ロック）**: ① `sub` はグローバル安定 UUID（Broker 発番）② authz/idmap/ユーザーに `brand_id` を一級キー ③ cross-brand join を作らない ④ Broker は共有関心のみ。
 - **IdP-KC = 隔離した自前アカウント**（VPC 分割でなく**アカウント分割**）: PW ハッシュのブラスト半径のため、**業務アプリを同居させない**（同居アプリは App Acct 推奨。旧 P-17「同居前提」を緩める提案）。
-- **管理コントロールプレーン実行形態 = Lambda で確定（O-9、[ADR-062](../adr/062-idm-api-execution-form-lambda.md)）**: auth-critical な Keycloak（P0）と管理ツール idm-api（P1）を別障害ドメインに分離。**#2（ブランド側）が CRUD + 権限 + projection の実体。中央 front door は置かず、ルーティングはエッジ（CloudFront/API GW）、中央に残るのは shadow 制御 Lambda のみ**（IdP-KC 削除トリガーで Broker shadow を無効化、[ADR-063](../adr/063-brand-unit-architecture.md)）。詳細は [U6 O-9](06-infra-network-design.md) / [U10 §10.2](10-integration-migration-design.md)。
+- **管理コントロールプレーン実行形態 = Lambda で確定（O-9、[ADR-062](../adr/062-idm-api-execution-form-lambda.md)）**: auth-critical な Keycloak（P0）と管理ツール idm-api（P1）を別障害ドメインに分離。**idm-api（ブランド側）が CRUD + 権限 + projection の実体。中央 front door は置かず、ルーティングはエッジ（CloudFront/API GW）、中央に残るのは shadow 制御 Lambda のみ**（IdP-KC 削除トリガーで Broker shadow を無効化、[ADR-063](../adr/063-brand-unit-architecture.md)）。詳細は [U6 O-9](06-infra-network-design.md) / [U10 §10.2](10-integration-migration-design.md)。
 
 **P-19 の不変条件（今ロック、[ADR-063](../adr/063-brand-unit-architecture.md)）**:
 
@@ -68,7 +68,7 @@ ADR-039 の 5 アカウント体系を Broker/IdP-KC 分割で **6 アカウン�
 §C-6 の判定基準をそのまま基本設計の入口基準として凍結する:
 - コア層(標準 80%): 本基盤(Broker KC)に OIDC で統合
 - エッジ層(〜20%): 次のいずれかに該当するアプリのみ独自基盤を許容し Federation で SSO 維持 — ①コア層で対応不可の技術要件 ②コア層 SLA/AAL を大幅超過 ③完全独自の認証フロー ④アプリオーナーの強い独自運用要望 ⑤規制上の物理独立要件
-- **P-17 の「IdP-KC 同居アプリ」はエッジ層ではない**(IdP-KC を利用する基盤側コンポーネント扱い)。U3 で CRUD 経路を設計する。**2026-08-06 E 判断: 業務アプリは IdP-KC 非同居 = App Acct 推奨、CRUD は ブランドの idm-api #2 を（エッジ経由）呼ぶ（§1.2、[ADR-063](../adr/063-brand-unit-architecture.md)）**
+- **P-17 の「IdP-KC 同居アプリ」はエッジ層ではない**(IdP-KC を利用する基盤側コンポーネント扱い)。U3 で CRUD 経路を設計する。**2026-08-06 E 判断: 業務アプリは IdP-KC 非同居 = App Acct 推奨、CRUD は ブランドの idm-api を（エッジ経由）呼ぶ（§1.2、[ADR-063](../adr/063-brand-unit-architecture.md)）**
 
 ## 1.4 解消済みの矛盾と残タスク
 
@@ -124,7 +124,7 @@ U2(Keycloak 論理設計)/ U3(ID・プロビジョニング)/ U6(インフラ・
 ## 改訂履歴
 
 - 2026-08-03: §1.5 ゲート表に **G-UProfile-Email** 追加（FC-5、email 非保有ユーザー収容のための User Profile `email` 任意化の実機検証。U2 §2.6 設計制約 4 / §2.8.1）。あわせて移行系の是正 4 件を各書へ反映（ADR-019 §B 方式②前提+方式①フォールバック / §NFR-9.1 Partial Import 1000 件バッチ規約 / §FR-2.3.2.B email 非保有版 周知差分 / ADR-038 §C 資格情報配布モード）。
-- 2026-08-06: **[ADR-063 ブランドユニット](../adr/063-brand-unit-architecture.md) 反映の整合** — §1.2 アカウント体系表の IdP-KC Acct 行を「ブランドユニット（idm-api #2 = ブランド管理 API 主役 + authz/idmap/projection、CRUD は #2 をエッジ経由で呼ぶ）」に更新（§1.2 E 判断ブロックの brand-unit 記述と整合。旧「#1 経由で委譲」を修正）。
-- 2026-08-06: **[ADR-062](../adr/062-idm-api-execution-form-lambda.md)（idm-api 実行形態 = Lambda、O-9）を反映** — §1.2 に E 判断（編集アプリ=呼出側どこでも / IdP-KC=隔離アカウント・業務アプリ非同居 / 管理コントロールプレーン=Lambda）を追記、IdP-KC Acct 行を idm-api #2 Lambda + 業務アプリ非同居に更新、残タスク表に O-9 解消行を追加（認可 DB 配置は後日 ADR-063 でブランドユニットへ改訂）。
+- 2026-08-06: **[ADR-063 ブランドユニット](../adr/063-brand-unit-architecture.md) 反映の整合** — §1.2 アカウント体系表の IdP-KC Acct 行を「ブランドユニット（idm-api = ブランド管理 API 主役 + authz/idmap/projection、CRUD は idm-api をエッジ経由で呼ぶ）」に更新（§1.2 E 判断ブロックの brand-unit 記述と整合。旧「中央 front door 経由で委譲」を修正）。
+- 2026-08-06: **[ADR-062](../adr/062-idm-api-execution-form-lambda.md)（idm-api 実行形態 = Lambda、O-9）を反映** — §1.2 に E 判断（編集アプリ=呼出側どこでも / IdP-KC=隔離アカウント・業務アプリ非同居 / 管理コントロールプレーン=Lambda）を追記、IdP-KC Acct 行を idm-api Lambda + 業務アプリ非同居に更新、残タスク表に O-9 解消行を追加（認可 DB 配置は後日 ADR-063 でブランドユニットへ改訂）。
 - 2026-07-30: **ユーザー意思決定 10 件を反映**（§1.4a 新設）。P-03 FIPS 不要確定 / P-05・P-15 DR を手動 14 日・大阪オンデマンド再構築へ転換 / P-07 全ユーザーフェデ化（管理者ローカル前提の U2/U3/U4/U7 要改訂 D-17）/ P-12 LDAP 対象外 / P-16 G-IdP-Scale 仮定値化。ゲート表: G-LDAP・G-PCI-WAF 廃止 / G-DPA・G-EGRESS 軟化・合意方向 / G-EDGE-DR 転換（D-18）。
 - 2026-07-23: Wave 2 整合性レビュー反映 — §1.5 ゲート表に G-PCI-WAF / G-DPA / G-EDGE-DR の 3 行追加(M-11)、L1〜L4 用語注意の 1 行追加(L-7)。Baseline v1 の凍結前提(P-01〜P-18)自体は変更なし。

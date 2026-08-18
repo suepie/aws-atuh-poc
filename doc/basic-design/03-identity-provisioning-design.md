@@ -390,14 +390,14 @@ stateDiagram-v2
 
 ### 3.8.0 管理コントロールプレーン全体構成（ブランド主役 + EventBridge 2 本、2026-08-06 [ADR-063](../adr/063-brand-unit-architecture.md)/[ADR-062](../adr/062-idm-api-execution-form-lambda.md)）
 
-CRUD・権限・authz・projection はブランド側（#2）でローカル完結し、**アカウント越境は EventBridge の 2 本のみ**（① 削除 `user.deprovisioned` = #2→Broker〔outbox で必達〕/ ② 初回 sub 通知 = Broker→ブランド）。ホットパス（`/api/me/context`）はブランドローカル read で越境ゼロ。
+CRUD・権限・authz・projection はブランド側（idm-api）でローカル完結し、**アカウント越境は EventBridge の 2 本のみ**（① 削除 `user.deprovisioned` = idm-api→Broker〔outbox で必達〕/ ② 初回 sub 通知 = Broker→ブランド）。ホットパス（`/api/me/context`）はブランドローカル read で越境ゼロ。
 
 ```mermaid
 flowchart TB
   ADM["管理者SPA / アプリ(M2M)"]
   CF["他組織 CloudFront(api.basis)+WAF<br/>→ API GW(JWT L1)"]
   subgraph BRAND["ブランドユニット(IdP-KC Acct・同一VPC)"]
-    A2["idm-api #2 = Lambda(主役)<br/>CRUD/権限/authz/projection"]
+    A2["idm-api = Lambda(主役)<br/>CRUD/権限/authz/projection"]
     DB[("authz/projection/idmap Aurora<br/>+ outbox テーブル")]
     REL["outbox リレー Lambda"]
     IKC["IdP-KC KC<br/>(内部NLB→Admin API)"]
@@ -408,11 +408,11 @@ flowchart TB
     BKC["Broker KC shadow<br/>(内部NLB)"]
     RC["数分リコンサイル"]
   end
-  ADM --> CF -->|"brand→#2 invoke"| A2
+  ADM --> CF -->|"brand→idm-api invoke"| A2
   A2 -->|"CRUD 内部NLB"| IKC
   A2 -->|"soft-delete + outbox 1Tx"| DB
   DB --> REL
-  REL ==>|"EventBridge #2→Broker<br/>user.deprovisioned(必達)"| SH
+  REL ==>|"EventBridge idm-api→Broker<br/>user.deprovisioned(必達)"| SH
   SH -->|"shadow 無効化 内部NLB"| BKC
   BKC -.->|"EventBridge Broker→ブランド<br/>初回 sub 通知"| DB
   APP -->|"/api/me/context<br/>ローカルread(越境ゼロ)"| DB
@@ -486,20 +486,20 @@ flowchart LR
 
 **採用**: 非 IdP テナント = **mode A（管理画面 = SoT）単独**。テナント管理者がユーザ一覧/編集画面から作成・編集・削除。**mode B（HRIS/D1 SCIM — 要念押し確認）・mode C（アプリ発 CRUD = 経路 ⑤）・EventBridge 削除経路・非 IdP の 90 日休眠バッチは Phase 1 対象外**（mode C を将来提供する場合のみ EventBridge 復活、note §8.5。「数年休眠で削除」が要件化したらテナント別リテンションポリシーとして後付け）。**※ここでの「EventBridge 削除経路」は mode C 由来のアプリ発削除伝播を指す。mode A の shadow 無効化 EventBridge（ADR-063、下記削除フロー）は別物で Phase 1 スコープ内**。
 
-**CRUD モデル（2026-08-06 [ADR-063 ブランドユニット](../adr/063-brand-unit-architecture.md): ブランド側 #2 がオーケストレーション。作成/編集はブランド内同期、削除は IdP-KC トリガーのイベント駆動）**:
+**CRUD モデル（2026-08-06 [ADR-063 ブランドユニット](../adr/063-brand-unit-architecture.md): ブランド側 idm-api がオーケストレーション。作成/編集はブランド内同期、削除は IdP-KC トリガーのイベント駆動）**:
 
 | 操作 | 同期の中身 | Broker 関与 |
 |---|---|---|
 | 作成 | IdP-KC のみ（Broker shadow は初回ログインで遅延生成） | なし |
 | 編集（組織属性等） | IdP-KC + ブランド projection（D3-16、ローカル）更新 | なし（projection はブランド側） |
-| **削除（2026-08-06 A 案 = outbox で確実伝播、[ADR-063](../adr/063-brand-unit-architecture.md)）** | **① #2 が IdP-KC Soft Delete（`enabled=false` + `deprovisioned_at`）→ ② projection deprovisioned + `user.deprovisioned` outbox 行を authz DB の 1 Tx で書く（喪失なし）→ ③ outbox リレーが EventBridge へ必達送信（IdP-KC→Broker）→ ④ 中央 shadow 制御 Lambda が Broker shadow を `enabled=false` + `not_before` + session revoke（冪等・内部 NLB）** | shadow 制御 Lambda のみ（イベント駆動、数分リコンサイルが砦） |
+| **削除（2026-08-06 A 案 = outbox で確実伝播、[ADR-063](../adr/063-brand-unit-architecture.md)）** | **① idm-api が IdP-KC Soft Delete（`enabled=false` + `deprovisioned_at`）→ ② projection deprovisioned + `user.deprovisioned` outbox 行を authz DB の 1 Tx で書く（喪失なし）→ ③ outbox リレーが EventBridge へ必達送信（IdP-KC→Broker）→ ④ 中央 shadow 制御 Lambda が Broker shadow を `enabled=false` + `not_before` + session revoke（冪等・内部 NLB）** | shadow 制御 Lambda のみ（イベント駆動、数分リコンサイルが砦） |
 
 削除操作の outbox イベント駆動シーケンスを図示する（2026-08-06 A 案、[ADR-063](../adr/063-brand-unit-architecture.md)）:
 
 ```mermaid
 sequenceDiagram
     participant SRC as 削除元(管理者/SCIM)
-    participant A2 as idm-api #2 (ブランド/IdP-KC)
+    participant A2 as idm-api (ブランド/IdP-KC)
     participant IK as IdP-KC KC
     participant DB as authz/projection Aurora(+outbox)
     participant REL as outbox リレー
@@ -532,7 +532,7 @@ sequenceDiagram
 
 - 2026-08-06: **属性正準化（[attribute-canonicalization ノート](research/attribute-canonicalization-notes.md)）と 射影 vs 都度 join 結論（[me-context-projection 比較ノート](research/me-context-projection-comparison-notes.md)）を反映** — D3-15 に「顧客 IdP 素通し不可・正準スキーマ写像/基盤付与・source 3 ケース・②が①で上書きされない規約・hosted 編集可/federated 読取のみ・移行マッピング表」、D3-16 に「Option A（射影）維持・都度 join は P-17 抵触で却下・ハイブリッド案 2 部分射影・G-SCIM 実測」を追記（[ADR-062](../adr/062-idm-api-execution-form-lambda.md) 系の管理コントロールプレーン確定と連動）。
 - 2026-08-06: **削除の確実性 = A 案（outbox）確定** — D3-17 を「IdP-KC トリガーのイベント駆動」から **outbox パターン**（soft-delete + outbox を authz DB 1 Tx / リレーが EventBridge へ必達送信 / shadow 制御 Lambda 冪等 / **遮断チェックのみ数分リコンサイル**）に更新。楽観文言「数秒/24h 回避」を worst-case 正しく是正（通常数秒 / worst = リコンサイル間隔）。**ロックアウト SLA を Open Item に格上げ**。§3.8.0 に管理コントロールプレーン全体構成図（ブランド主役 + EventBridge 2 本 + outbox）を新設。
-- 2026-08-06: **[ADR-063 ブランドユニット](../adr/063-brand-unit-architecture.md) を反映** — D3-16 に per-brand（authz/idmap/projection はブランドユニット・`/api/me/context` はブランドローカル read・越境ゼロ / 都度 join 却下前提は per-brand で消える / RC-1〜4 は単一マルチテナント前提として保持）を追記、**D3-17 削除フローを「Broker-first 同期 2 コール」→「IdP-KC トリガーのイベント駆動」に改訂**（#2 soft-delete → `user.deprovisioned` EventBridge → shadow 制御 Lambda が Broker shadow 無効化、数秒窓は AT30分+リコンサイルで許容、旧 PrivateLink 委譲は撤回、federated は SCIM/90 日バッチ）。
+- 2026-08-06: **[ADR-063 ブランドユニット](../adr/063-brand-unit-architecture.md) を反映** — D3-16 に per-brand（authz/idmap/projection はブランドユニット・`/api/me/context` はブランドローカル read・越境ゼロ / 都度 join 却下前提は per-brand で消える / RC-1〜4 は単一マルチテナント前提として保持）を追記、**D3-17 削除フローを「Broker-first 同期 2 コール」→「IdP-KC トリガーのイベント駆動」に改訂**（idm-api soft-delete → `user.deprovisioned` EventBridge → shadow 制御 Lambda が Broker shadow 無効化、数秒窓は AT30分+リコンサイルで許容、旧 PrivateLink 委譲は撤回、federated は SCIM/90 日バッチ）。
 - 2026-07-26 (v1.4): 可読性向上のため mermaid 図 4 点を追加（D3-04 プロビ経路全体図 / D3-09 状態機械の stateDiagram 化〔ASCII 置換、内容不変〕/ D3-16 統合射影データフロー図 / D3-17 mode A 両側同期削除シーケンス図）。決定内容の変更なし（図示のみ）。
 - 2026-07-24 (v1.3): §3.8 に D3-17 追加（非 IdP mode A 単独・両側同期削除・日次リコンサイル・SCIM 内部伝播却下・Phase スコープ、note §8）。D3-04 ④ 注記 + D3-09 に idpkc shadow バッチ除外。
 - 2026-07-24 (v1.2): §3.8 新設（D3-14〜16: 認可境界・組織属性・統合射影。research/idp-kc-user-mgmt-authz-boundary-notes.md の本体反映 + 訂正 2 点〔manager 参照型の正規化 / RC-3 emit は Event Listener SPI 経由〕）。

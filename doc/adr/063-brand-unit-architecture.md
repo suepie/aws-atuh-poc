@@ -60,7 +60,7 @@
 ### Negative / 留意
 
 - **federated ユーザーの authz 行生成**：初回ログイン時に **Broker → ブランドへ `sub` 通知（EventBridge、write 時のみ越境）** → ブランドが authz スタブ行作成。順序/整合（at-least-once + 冪等）が要る。
-- **idm-api トポロジが変わる**：#2（ブランド側）が **CRUD + 権限 + projection** を担う（主役）。**中央 front door（旧 #1）は置かず、ルーティングはエッジ（CloudFront/API GW）、中央に残るのは shadow 制御 Lambda のみ**（front door トポロジは Open Items で確定）。
+- **idm-api トポロジが変わる**：idm-api（ブランド側）が **CRUD + 権限 + projection** を担う（主役）。**中央 front door（旧トポロジ）は置かず、ルーティングはエッジ（CloudFront/API GW）、中央に残るのは shadow 制御 Lambda のみ**（front door トポロジは Open Items で確定）。
 - **Phase 1（1 ブランド）ではやや冗長**に見えるが、将来移行回避のため受容。
 
 ### 改訂・影響
@@ -68,7 +68,7 @@
 - **U1 §1.2 E 判断**：「認可 DB = Broker」→ **「authz/idmap/projection = ブランドユニット（IdP-KC 側）、Broker は authz 非保持」** + 不変条件 1〜4。
 - **control-plane ノート**：構成図・フロー③を per-brand に更新。
 - **射影比較ノート**：per-brand ではブランドローカル read で越境問題が消える旨。
-- **ADR-062（Lambda）**：影響なし（実行形態と直交）。#2 が authz も担う点だけ注記。
+- **ADR-062（Lambda）**：影響なし（実行形態と直交）。idm-api が authz も担う点だけ注記。
 
 ## Alternatives Considered
 
@@ -83,15 +83,15 @@
 
 ブランドユニット内で **credential（IdP-KC Keycloak の PW ハッシュ）と authz 系（authz/idmap/projection）をどう分離するか**。
 
-**脅威分解**: アカウント分離が効くのは「アカウントレベル侵害（IAM 権限昇格・アカウント乗っ取り）」のみ。**主脅威の idm-api #2 乗っ取りは、#2 が CRUD のため Admin API（credential）と authz DB の双方に正当アクセスするので、データを別アカウントにしても防げない**。DB 単体侵害は identity/authz が元々別 Aurora・別資格情報ゆえ一方から他方は取れない。
+**脅威分解**: アカウント分離が効くのは「アカウントレベル侵害（IAM 権限昇格・アカウント乗っ取り）」のみ。**主脅威の idm-api 乗っ取りは、idm-api が CRUD のため Admin API（credential）と authz DB の双方に正当アクセスするので、データを別アカウントにしても防げない**。DB 単体侵害は identity/authz が元々別 Aurora・別資格情報ゆえ一方から他方は取れない。
 
 **決定 = A + C**:
 - **A（単一アカウント）** の単純さ + ブランドローカル完結を維持。
 - **C（内部強分離）**: identity(Keycloak) Aurora と authz 系 Aurora を **別 Aurora・別 KMS CMK・別 IAM ロール・別 SG** に分け、**両方に届く単一ロールを作らない**（最小権限 + SCP）→ [U7 D-U7-19](../basic-design/07-security-compliance-design.md)。
-- 主脅威（#2 乗っ取り）は #2 の堅牢化（最小権限実行ロール・依存最小・監査）で守る。
+- 主脅威（idm-api 乗っ取り）は idm-api の堅牢化（最小権限実行ロール・依存最小・監査）で守る。
 
 **却下/保留**:
-- **B（ブランドを credential/データの 2 アカウントに分割）**: アカウントレベル侵害には強いが #2 乗っ取りには無効 + ブランドあたり 2 アカウント + ブランド内クロスアカウント経路増。**規制ブランド（アカウントレベル分離が契約/監査要件）向けの将来オプションとして予約**。不変条件（sub グローバル / brand_id 一級キー）により、データアカウントの切り出しはクリーン移行可。
+- **B（ブランドを credential/データの 2 アカウントに分割）**: アカウントレベル侵害には強いが idm-api 乗っ取りには無効 + ブランドあたり 2 アカウント + ブランド内クロスアカウント経路増。**規制ブランド（アカウントレベル分離が契約/監査要件）向けの将来オプションとして予約**。不変条件（sub グローバル / brand_id 一級キー）により、データアカウントの切り出しはクリーン移行可。
 - **D（authz を共有 Broker へ戻す）**: 却下。将来 per-brand 移行が必要 + 共有 Broker に cross-brand データ集中 = 不変条件 ③④ 違反。
 
 ## ブランド Realm/Organization モデリング（brand=Realm 確定、2026-08-15）
@@ -129,7 +129,7 @@
 ## Open Items
 
 - **物理 per-brand 分割の時期・方式**（アカウント/クラスタをブランド別に）→ マルチブランド要件が出た時。
-- **front door / shadow 制御トポロジ = 確定済み**：**ブランド主役**＝ #2 が CRUD + authz + projection の実体、中央は **shadow 制御 Lambda のみ**、ルーティングはエッジ。**削除伝播（shadow 無効化）は [ADR-064](064-deprovisioning-propagation-outbox.md) で確定**（A 案 outbox: 1Tx outbox + リレー必達 + 数分リコンサイル。旧「案 i 直接発行 / 日次リコンサイル」から更新）。残論点 = ロックアウト SLA（ADR-064 Open Items）。
+- **front door / shadow 制御トポロジ = 確定済み**：**ブランド主役**＝ idm-api が CRUD + authz + projection の実体、中央は **shadow 制御 Lambda のみ**、ルーティングはエッジ。**削除伝播（shadow 無効化）は [ADR-064](064-deprovisioning-propagation-outbox.md) で確定**（A 案 outbox: 1Tx outbox + リレー必達 + 数分リコンサイル。旧「案 i 直接発行 / 日次リコンサイル」から更新）。残論点 = ロックアウト SLA（ADR-064 Open Items）。
 - **federated `sub` 通知**（authz 行生成用）の具体（EventBridge Broker→ブランド、整合設計）。
 - **cross-brand 横断管理ビュー**を将来作る場合の越境 read 設計（作らなければ不要）。
 - ~~ブランドの Realm/Organization モデリング~~ → **確定（2026-08-15、上記「ブランド Realm/Organization モデリング」節）= brand=Realm**。残 = N Realm 機械派生の IaC 完成（将来、DU-U2-09）。
