@@ -382,6 +382,35 @@ P-18 により WAF の「/admin 全 IP Deny」は**他組織への要求（保�
 
 **Admin API への到達（2026-08-06、[ADR-062](../adr/062-idm-api-execution-form-lambda.md) 反映 — O-9 = idm-api 実行形態 Lambda 確定に伴う D-U6-11 の一部見直し）**: idm-api が Lambda（Pod ネットワーク外）になったため、Keycloak Admin API へは **各クラスタの内部 NLB（`scheme=internal` + SG を idm-api Lambda の SG に限定 + 最低 server-TLS + Admin API のアプリ層認証〔管理クライアント資格情報〕）** で到達する（経路 = `idm-api Lambda（層③）→ 内部 NLB → IngressController → Admin API`）。**ClusterIP 単独方針は "Lambda からの管理 API 到達" 本用途に限り "内部 NLB + 厳格 SG" へ見直す**（エンドユーザー認証経路の L2 `/admin` 403 は不変）。**到達主体は 2 つ**（[ADR-063](../adr/063-brand-unit-architecture.md)）: (a) **ブランド側 idm-api → IdP-KC Admin API**（CRUD、内部 NLB）(b) **中央 shadow 制御 Lambda → Broker Admin API**（shadow 無効化、IdP-KC 削除イベントで発火）。**内部 NLB は `scheme=internal` = インターネット非露出**（公開面は in-cluster でも Lambda でも `api.basis` で同じ）。in-cluster（ClusterIP）との差は **VPC 内の到達経路が 1 本増える（東西）** ことで、**送信元 SG を Lambda の SG に限定 + server-TLS + アプリ層認証**で緩和する。※idm-api 自体が侵害された場合の Admin API 到達は in-cluster と同じ（引き分け）で、残る差は「VPC 層経路が増える・正しく保つ設定対象が増える」程度。**idm-api（IdP-KC = credential アカウント）側はこの東西経路を特に厳格に絞る**（SG 限定・監査必須・可能なら mTLS 優先検討 — ADR-062 Open Items「idm-api Admin API 堅牢化」。ここでの「厳格」は "インターネット露出" の意味ではなく内部到達の厳格化）。
 
+
+#### 6.6.1a 決定 D-U6-15: 内部 TLS の PKI と、ゼロ egress のためのエンドポイント（2026-08-18 新設）
+
+**背景**: `DU-U6-11`（内部 NLB server-TLS PKI + NetworkPolicy）は網羅監査（2026-08-12）で新設された DU だが、**U6 本文に対応する設計記述が無かった**。加えて、コスト見積り 35 項目との突合で **DynamoDB / Secrets Manager 向けの VPC エンドポイントが本文に無い**ことが判明した（ゼロ egress 構成の穴）。
+
+**採用 ①: 内部 TLS の認証局**
+
+| 項目 | 決定 |
+|---|---|
+| 発行元 | **ACM Private CA**（アカウントごとに 1 台。Broker Acct / IdP-KC Acct） |
+| 用途 | **内部 NLB の server-TLS 証明書**（idm-api Lambda → Keycloak Admin API、D-U6-11） |
+| モード | **短期証明書モード（月 50 USD）を第一候補**。汎用モードは月 400 USD で、内部通信用途には過剰。**要検証**（短期モードの有効期間 7 日が自動更新運用に耐えるか） |
+| 信頼の配布 | Lambda 側は環境変数 or Secrets 経由で CA 証明書を保持。**IaC で配布し手動配置を禁止** |
+| **DR** | **リージョン資源で複製不可**。案①② は被災時に新規 CA を作成 → **新しい信頼チェーンの再配布が復旧手順に必要**（[U8 D-U8-15](08-availability-dr-design.md)） |
+| 監視 | **残存有効期間を監視**（30 日前警告 / 7 日前重大、[U9 D-U9-21](09-operations-observability-design.md)）。**切れると管理操作が全断する** |
+
+**採用 ②: VPC エンドポイントの追加**
+
+ゼロ egress（NAT 経由のインターネット出口を持たない）を維持するため、以下を追加する。**本文に無かったもの**:
+
+| サービス | 種別 | 用途 |
+|---|---|---|
+| **DynamoDB** | **Gateway 型**（無料） | ITDR / Adaptive / テナント監査 / DSAR（U7・U8 で使用が確定していたが U6 に記載が無かった） |
+| **Secrets Manager** | Interface 型 | idm-api Lambda / Pod からの資格情報取得。**DR ではレプリカ側にも必要**（U8 D-U8-15） |
+| **AWS Backup** | Interface 型 | バックアップ操作を VPC 内から実行する場合 |
+| **ACM PCA** | Interface 型 | 証明書の自動更新を VPC 内から実行 |
+
+**注**: Gateway 型（DynamoDB / S3）は**無料**、Interface 型は**エンドポイント時間 0.014 USD + データ処理料**が発生する。コスト見積りの「接続点群（VPCエンドポイント）」の数量 10 個はこの追加分を織り込んで再確認すること。
+
 ### 6.6.2 決定 D-U6-12: Internal 運用経路
 
 | 経路 | 方式 | 用途 |
