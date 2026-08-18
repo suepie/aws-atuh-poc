@@ -4,6 +4,9 @@
 更新: 2026-07-23 ユーザー指示によりインフラ前提を大幅更新（ROSA 想定 / IdP 1000+ / IdP-KC 別アカウント / インターネット境界は他組織管理）
 ステータス: Draft（暫定前提で着手、ヒアリング結果で更新）
 
+> **決定を追加するときは [00c 配布先チェックリスト](00c-decision-distribution-checklist.md) を通すこと**（2026-08-18 新設）。
+> 前提表 / 影響単元 / DR / 監視 / 禁則 / コスト / Runbook の 7 箇所への配布を確認する。機械照合は `python3 tools/check_design_consistency.py`。
+
 ## 0. 背景・なぜここで決めるか
 
 要件定義（FR 75 件 / NFR 75 件 / ADR 60 本 / hearing-checklist 127 項目）は約 80-85% 完成。
