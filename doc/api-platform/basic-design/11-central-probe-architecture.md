@@ -281,7 +281,7 @@ paths:
 
 | ID | 内容 |
 |---|---|
-| M-Q-11-1 | probe 頻度（5min / 15min）とコストのバランス |
+| ~~M-Q-11-1~~ | ~~probe 頻度（5min / 15min）~~ → **解決**: M1=巡回差分（1h）/ M3=手動の 2 モードに再設計済みで定期 probe 自体が無い（18 章 / ADR-061）|
 | M-Q-11-2 | SigV4 Positive（api-gw-iam）の実装（`@aws-sdk/signature-v4` 手動署名、Phase 2）|
 | M-Q-11-3 | Cookie モノリス Positive（Puppeteer ログイン）の実装 |
 | M-Q-11-4 | **Positive トークン スコープ B（canary 専用テナント/合成データ）の設計**（認証基盤 Keycloak へ引き渡し、§11.3.1）。Phase 1 は A、機微データ API から B へ移行 |

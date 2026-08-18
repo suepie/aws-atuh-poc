@@ -2,7 +2,9 @@
 
 作成日: 2026-07-23
 ステータス: Draft v1（Wave 1）
-前提: [01-architecture-baseline.md](01-architecture-baseline.md) **Baseline v1（P-01〜P-18）**
+前提: [01-architecture-baseline.md](01-architecture-baseline.md) **Baseline v1（P-01〜P-20）**
+> **[P-19 ブランドユニット](01-architecture-baseline.md)**: ブランドユニット = IdP-KC アカウント側。**業務アプリは同居させない**（パスワードハッシュのブラスト半径隔離、E 判断）
+> **[P-20 管理コントロールプレーンの実行形態](01-architecture-baseline.md)**: **idm-api + 非同期の糊 = Lambda**（Pod ネットワーク外）。ゆえに Keycloak Admin API へは**内部 NLB 経由**（`scheme=internal`・SG を Lambda SG 限定・server-TLS・アプリ層認証）。本書 §6.6.1 の設計はこの前提に立つ
 上位文書: [00-basic-design-plan.md](00-basic-design-plan.md) U6
 
 ---
@@ -382,6 +384,24 @@ P-18 により WAF の「/admin 全 IP Deny」は**他組織への要求（保�
 
 **Admin API への到達 — 禁則 [K-10](09-operations-observability-design.md) の実体（2026-08-06、[ADR-062](../adr/062-idm-api-execution-form-lambda.md) 反映 — O-9 = idm-api 実行形態 Lambda 確定に伴う D-U6-11 の一部見直し）**: idm-api が Lambda（Pod ネットワーク外）になったため、Keycloak Admin API へは **各クラスタの内部 NLB（`scheme=internal` + SG を idm-api Lambda の SG に限定 + 最低 server-TLS + Admin API のアプリ層認証〔管理クライアント資格情報〕）** で到達する（経路 = `idm-api Lambda（層③）→ 内部 NLB → IngressController → Admin API`）。**ClusterIP 単独方針は "Lambda からの管理 API 到達" 本用途に限り "内部 NLB + 厳格 SG" へ見直す**（エンドユーザー認証経路の L2 `/admin` 403 は不変）。**到達主体は 2 つ**（[ADR-063](../adr/063-brand-unit-architecture.md)）: (a) **ブランド側 idm-api → IdP-KC Admin API**（CRUD、内部 NLB）(b) **中央 shadow 制御 Lambda → Broker Admin API**（shadow 無効化、IdP-KC 削除イベントで発火）。**内部 NLB は `scheme=internal` = インターネット非露出**（公開面は in-cluster でも Lambda でも `api.basis` で同じ）。in-cluster（ClusterIP）との差は **VPC 内の到達経路が 1 本増える（東西）** ことで、**送信元 SG を Lambda の SG に限定 + server-TLS + アプリ層認証**で緩和する。※idm-api 自体が侵害された場合の Admin API 到達は in-cluster と同じ（引き分け）で、残る差は「VPC 層経路が増える・正しく保つ設定対象が増える」程度。**idm-api（IdP-KC = credential アカウント）側はこの東西経路を特に厳格に絞る**（SG 限定・監査必須・可能なら mTLS 優先検討 — ADR-062 Open Items「idm-api Admin API 堅牢化」。ここでの「厳格」は "インターネット露出" の意味ではなく内部到達の厳格化）。
 
+
+#### 6.2.2a 決定 D-U6-16: ノードのディスク種別と容量（2026-08-18 新設）
+
+**背景**: `D-U6-04` は Machine Pool のインスタンス種別（c7g.xlarge / c7g.large）を定めているが、**ディスクの種別・容量に一切言及が無かった**。コスト見積りには「EBS（ノード用ブロックストレージ）1 台 100GB」と数量だけが入っており、**設計上の根拠が無い状態**だった。
+
+| 項目 | 決定 | 根拠 |
+|---|---|---|
+| **種別** | **gp3**（0.096 USD/GB-月） | io2 は不要。ROSA ワーカーのディスクは**コンテナイメージ・ログバッファ・一時領域**が主で、IOPS 要求は Aurora 側に寄っている |
+| **容量（KC Pool）** | **120 GB/台** | 内訳: OS + OpenShift 基盤 約 40GB / RHBK イメージ + Custom SPI（3 JAR）約 20GB / **コンテナログのローテーション前バッファ 30GB** / 空き 30GB |
+| **容量（infra Pool）** | **100 GB/台** | monitoring スタックのローカル保持分を含む |
+| **IOPS / スループット** | **gp3 既定（3,000 IOPS / 125 MB/s）** | 追加購入はしない。**不足が実測で判明した場合のみ引き上げ**（gp3 は無停止で変更可） |
+| **暗号化** | **KMS CMK（アカウント別）** | D-U7-01 の鍵体系に従う |
+
+**監視**: **使用率 80% 警告 / 90% 重大**（[D-U9-21](09-operations-observability-design.md) #14、観点「飽和」）。**ログ滞留とイメージ蓄積が枯渇の 2 大要因**であり、どちらも徐々に進行するため閾値監視が有効。
+
+**コスト影響**: 従来の見積り（100GB × ノード数）に対し **KC Pool を 120GB へ引き上げる**ため、1000 万人規模で月額 +約 30 USD。**誤差の範囲**。
+
+---
 
 #### 6.6.1a 決定 D-U6-15: 内部 TLS の PKI と、ゼロ egress のためのエンドポイント（2026-08-18 新設）
 

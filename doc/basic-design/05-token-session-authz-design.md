@@ -2,7 +2,8 @@
 
 作成日: 2026-07-23
 ステータス: Draft v1（Wave 2）
-**前提: [01-architecture-baseline.md](01-architecture-baseline.md) Baseline v1（P-01〜P-18、特に P-08/P-09/P-10/P-11/P-14）**
+**前提: [01-architecture-baseline.md](01-architecture-baseline.md) Baseline v1（P-01〜P-20、特に P-08/P-09/P-10/P-11/P-14/**P-19**）**
+> **[P-19 ブランドユニット](01-architecture-baseline.md)**: **issuer は「ブランド毎に単一」**と読み替える（不変条件⑤）。**authz はブランド側**にあり Broker は持たない。`/api/me/context` は**ブランドローカル read（越境ゼロ）**
 上位文書: [00-basic-design-plan.md](00-basic-design-plan.md) §U5
 
 > **決定の採番について**: 本書の決定は原則 **節参照（`U5 §5.x.y`）** で識別する（他単元の `D-Ux-nn` 形式と異なる点に注意）。ただし **2026-08-12 追加分（§5.6.3b / §5.10）は他単元・ADR から参照されるため `D-U5-09〜15` の明示 ID を併記**している。両者は同じ「本書の正式決定」であり、重み付けの差はない。

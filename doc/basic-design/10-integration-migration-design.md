@@ -2,7 +2,8 @@
 
 作成日: 2026-07-24
 ステータス: Draft v1.1（Wave 3）
-**前提: [01-architecture-baseline.md](01-architecture-baseline.md) Baseline v1（P-01〜P-18、特に P-06 / P-08 / P-13 / P-14 / P-17 / P-18）**
+**前提: [01-architecture-baseline.md](01-architecture-baseline.md) Baseline v1（P-01〜P-20、特に P-06 / P-08 / P-13 / P-14 / P-17 / P-18 / **P-19** / **P-20**）**
+> **[P-19 ブランドユニット](01-architecture-baseline.md)**: **projection（テナント開示用の射影）はブランド側**。**[P-20](01-architecture-baseline.md)**: idm-api は Lambda で、§10.2 の管理 API 設計はこの実行形態を前提とする
 上位文書: [00-basic-design-plan.md](00-basic-design-plan.md) §U10
 
 ---

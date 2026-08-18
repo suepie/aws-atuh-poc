@@ -2,7 +2,7 @@
 
 作成日: 2026-07-23
 ステータス: Draft v1（Wave 2）
-前提: [01-architecture-baseline.md](01-architecture-baseline.md) **Baseline v1**（特に P-04 SLA 99.9% / P-05 DR Tier 2: RTO 1h・RPO 1min・Active-Passive / P-15 東京+大阪 / P-01 ROSA HCP + RHBK Operator / P-02 10M MAU）
+前提: [01-architecture-baseline.md](01-architecture-baseline.md) **Baseline v1**（**P-19 ブランドユニット** = authz/idmap/projection の Aurora も DR 対象〔DU-U8-10〕/ **P-20** = Lambda 群は IaC 再適用で復旧、特に P-04 SLA 99.9% / P-05 DR Tier 2: RTO 1h・RPO 1min・Active-Passive / P-15 東京+大阪 / P-01 ROSA HCP + RHBK Operator / P-02 10M MAU）
 上位文書: [00-basic-design-plan.md](00-basic-design-plan.md) U8
 物理配置の前提: [06-infra-network-design.md](06-infra-network-design.md)（D-U6-03/05/07、§6.8.2 の U8 引き渡し）
 

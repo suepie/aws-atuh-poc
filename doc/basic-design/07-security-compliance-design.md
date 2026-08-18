@@ -2,7 +2,8 @@
 
 作成日: 2026-07-23
 ステータス: Draft v1（Wave 2）
-**前提: [01-architecture-baseline.md](01-architecture-baseline.md) Baseline v1（P-01〜P-18、特に P-03 / P-17 / P-18）**
+**前提: [01-architecture-baseline.md](01-architecture-baseline.md) Baseline v1（P-01〜P-20、特に P-03 / P-17 / P-18 / **P-19**）**
+> **[P-19 ブランドユニット](01-architecture-baseline.md)**: **authz / idmap はブランド側**。**cross-brand join を作らない**ことが分離の担保であり、権限データの越境は **write 時のみ**（初回ログイン時の `sub` 通知）
 上位文書: [00-basic-design-plan.md](00-basic-design-plan.md) §U7
 
 > ⚠ **2026-07-30 意思決定による改訂待ち（[00a §0 決定ログ](00a-remaining-tasks-and-effort.md) / C-7・D-17）**:

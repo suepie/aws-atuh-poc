@@ -2,7 +2,8 @@
 
 作成日: 2026-07-23
 ステータス: Draft v1（Wave 1）
-**前提: [01-architecture-baseline.md](01-architecture-baseline.md) Baseline v1（P-01〜P-18）**
+**前提: [01-architecture-baseline.md](01-architecture-baseline.md) Baseline v1（P-01〜P-20）**
+> **[P-19 ブランドユニット](01-architecture-baseline.md)（2026-08-17 採番）**: **brand=Realm**（2026-08-15 確定）。本書の Realm 設計は「Broker = 共有 1 Realm」+「ブランドごとに Realm」の 2 軸で読む。テナント軸（単一 Realm + Organizations、P-06）とは**別粒度で非衝突**。Phase 1 スコープ = 1 ブランド
 上位文書: [00-basic-design-plan.md](00-basic-design-plan.md) §U2
 
 ---

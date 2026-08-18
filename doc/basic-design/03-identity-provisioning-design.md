@@ -2,7 +2,8 @@
 
 作成日: 2026-07-23
 ステータス: **ドラフト（Wave 1）** — Phase 1 契約前ゲート 8 項目（§3.7）の回答で該当節のみ差し替える
-前提: [01-architecture-baseline.md](01-architecture-baseline.md) **Baseline v1**（特に P-06 / P-07 / P-08 / P-12 / P-17）
+前提: [01-architecture-baseline.md](01-architecture-baseline.md) **Baseline v1**（特に P-06 / P-07 / P-08 / P-12 / P-17 / **P-19**）
+> **[P-19 ブランドユニット](01-architecture-baseline.md)**: **`idmap` と属性正準化はブランド側に配置**する。不変条件として **`brand_id` を一級キー**とし、**cross-brand join を作らない**。`sub` は Broker 発番のグローバル安定 UUID
 上位文書: [00-basic-design-plan.md](00-basic-design-plan.md) §U3
 
 ## 3.0 背景・なぜここで決めるか / スコープ

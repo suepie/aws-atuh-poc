@@ -2,7 +2,9 @@
 
 作成日: 2026-07-24
 ステータス: Draft v1.1（Wave 3）
-前提: [01-architecture-baseline.md](01-architecture-baseline.md) **Baseline v1（P-01〜P-18）**
+前提: [01-architecture-baseline.md](01-architecture-baseline.md) **Baseline v1（P-01〜P-20）**
+> **[P-19 ブランドユニット](01-architecture-baseline.md)**: **管理操作の監査ログは per-brand（ブランドユニット内）に置く**（2026-08-16 確定、B-AUDITLOG-BRAND-1）。中央集約は cross-brand join を生むため採らない
+> **[P-20 管理コントロールプレーンの実行形態](01-architecture-baseline.md)**: Lambda は Keycloak（GitOps）と**別系統の CI/CD**（D-U9-18）で回し、**別障害ドメイン**として監視する（DU-U9O-08）
 上位文書: [00-basic-design-plan.md](00-basic-design-plan.md) §2 U9
 主インプット: [ADR-053](../adr/053-observability-strategy.md) / [ADR-059](../adr/059-central-auth-check-canary-architecture.md) / [ADR-046](../adr/046-supply-chain-security.md) / [ADR-055 §A.6-A.7](../adr/055-hrd-implementation-method-selection.md) / [§NFR-6](../requirements/proposal/nfr/06-operations.md) / [research/keycloak-1000idp-scalability-research.md](research/keycloak-1000idp-scalability-research.md) / Wave 1-2 各書の U9 引き渡し節（U2 §2.8 / U3 §3.7 / U4 §4.7.4 / U5 §5.9 / U6 §6.8.3 / U7 §7.9.3 / U8 §8.9.2）
 
@@ -59,6 +61,7 @@ Wave 1/2 の 7 単元（U2/U3/U4/U5/U6/U7/U8）は、設計決定と同時に**�
 | **14** | **ノードのディスク使用率**（EBS / ROSA ワーカー） | Node Exporter | **80% で警告 / 90% で重大**。ログ滞留やイメージ蓄積で枯渇する典型経路。2026-08-18 追加（D-U9-21） |
 | **15** | **メール送信のバウンス率・苦情率**（SES） | SES メトリクス | **バウンス 5% / 苦情 0.1% で警告**。閾値超過が続くと **AWS 側で送信停止**となり招待メールが全断。2026-08-18 追加（D-U9-21） |
 | **16** | **Route 53 ヘルスチェックの状態** | Route 53 メトリクス | DR の自動切替（EventBridge Global Endpoints、U8 D-U8-15）がこれに依存。**誤発火・戻し忘れの検知**。2026-08-18 追加（D-U9-21） |
+| **17** | **AWS サービスクォータの使用率**（Lambda 同時実行 / API GW スロットル / KMS リクエストレート / EventBridge PutEvents / Secrets Manager API / ELB ターゲット数 / VPC あたり ENI） | Service Quotas + CloudWatch `AWS/Usage` | **使用率 70% で警告 / 85% で重大**。**観点「枯渇」の実体（D-U9-22）**。**1000 IdP / 10M MAU 規模で最初に当たる壁**であり、上限は事前申請で引き上げるため**気づいてから申請では間に合わない**（引き上げに数営業日）。2026-08-18 追加（D-U9-23）|
 | 12 | HIBP 照会失敗率（fail-open 発生数） | ITDR Lambda | fail-open 多発 = 侵害 PW 検知の穴（U7 §7.2.2） |
 | 13 | 東西 ECR digest 一致 / 大阪外形監視 | 日次 CI + Synthetic | U8 §8.9.2 |
 | 14 | KMS 監視（CMK 無効化・Key Policy 変更・Decrypt 失敗急増） | CloudTrail → EventBridge | U7 §7.1.2 引き渡し |
@@ -73,6 +76,25 @@ AMG に「**IdP スケールダッシュボード**」を常設し、#1〜5 を 
 **採用**: ADR-053 §G/§C.4 をそのまま規約化する:
 
 > **ベンダーリスク管理との接続（2026-08-18 追記）**: [ADR-049](../adr/049-vendor-risk-management-tprm.md)（TPRM）が U9 本文から参照されていなかったため接続する。**本基盤の外部依存は Red Hat（ROSA/RHBK）と AWS の 2 社に集中**しており、**[G-DPA](../requirements/hearing-checklist.md)（Red Hat SRE の越境閲覧）と [ADR-056 残 TBD ⓪](../adr/056-rosa-adoption-decision.md)（worker ノードの責任分界）はいずれも TPRM の実務そのもの**。ADR-049 の評価プロセスを、この 2 件の照会に適用する。
+
+#### 9.1.2c 決定 D-U9-23: AWS サービスクォータの使用率監視（観点「枯渇」の実体、2026-08-18 新設）
+
+**採用**: 下表のクォータについて **Service Quotas + CloudWatch `AWS/Usage` で使用率を監視**し、**70% 警告 / 85% 重大**でアラートする。
+
+| クォータ | 既定値の目安 | 本基盤で当たる理由 |
+|---|---|---|
+| **Lambda 同時実行数** | 1,000/リージョン | idm-api + 糊 5 種 + バッチが同一アカウントで競合。**朝の認証ピークと 90 日バッチが重なると枯渇** |
+| **API Gateway スロットル** | 10,000 req/s | 管理 API の入口（P-20）。テナント管理者の一斉操作 |
+| **KMS リクエストレート** | 対称鍵 50,000 req/s 等 | Aurora の暗号化・シークレット復号が全リクエストに乗る |
+| **EventBridge PutEvents** | リージョン既定 | **削除伝播 outbox（ADR-064）の再送が集中すると突入する** |
+| **Secrets Manager API** | 5,000 req/s | Lambda 起動ごとの資格情報取得 |
+| **ELB ターゲット数 / VPC あたり ENI** | — | Pod 数の増加に比例。**スケールアウトの上限を規定する** |
+
+**なぜ監視が要るか**: **クォータの引き上げは事前申請制で数営業日かかる**。上限に当たってから申請したのでは間に合わず、**その間サービスが劣化し続ける**。使用率の傾向を見て**当たる前に申請する**運用が必要。
+
+**Runbook**: 引き上げ申請の手順（対象クォータ・申請先・所要日数・暫定回避策）を **RB-PLT 系に追加**する（残タスク）。
+
+---
 
 #### 9.1.2b 決定 D-U9-22: 監視観点の 8 分類（網羅性を担保する型、2026-08-18 新設）
 

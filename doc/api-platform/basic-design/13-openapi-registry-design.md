@@ -132,6 +132,6 @@ paths:
 
 | ID | 内容 |
 |---|---|
-| M-Q-13-1 | OpenAPI を持たないレガシー API の扱い（App Registry に固定 endpoint リストを持たせる代替、14 章 §14.4）|
+| ~~M-Q-13-1~~ | ~~OpenAPI を持たないレガシー API の扱い~~ → **解消**: monitoring.yaml に endpoint リストを直接列挙して代替可（17 §17.4）|
 | M-Q-13-2 | S3 Object Lock（改ざん防止）の要否 |
 | M-Q-13-3 | probe の S3Client に forcePathStyle 相当のテスト用オプションを持たせるか（本番不要）|
