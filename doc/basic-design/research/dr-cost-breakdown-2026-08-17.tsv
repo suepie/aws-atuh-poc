@@ -19,3 +19,6 @@ NW	内部接続点（内部NLB・予備地域）×2	案③のみ。管理APIへ�
 NW	負荷分散装置（ALB・予備地域）	案③のみ。3層防御の生命線を予備地域にも	1台×730時間	730	730	730	ALB時間	0.0243	17.74	17.74	17.74	https://aws.amazon.com/jp/elasticloadbalancing/pricing/	—	—	○
 NW	接続点群（VPCエンドポイント・予備地域）	案③のみ。ゼロ egress 構成の維持	10個×730時間	7300	7300	7300	エンドポイント時間	0.014	102.20	102.20	102.20	https://aws.amazon.com/jp/privatelink/pricing/	—	—	○
 運用	外形監視（予備地域 Canary）	案③のみ。待機系が生きているかの常時確認	1分間隔×730時間	43800	43800	43800	実行回数	0.0012	52.56	52.56	52.56	https://aws.amazon.com/jp/cloudwatch/pricing/	—	—	○
+セキュリティ	Secrets Manager レプリカシークレット（予備地域）	D-U8-15。事前設定必須。無いと切替時に DB 接続情報も client_secret も無く起動できない	シークレット 30 個	30	30	30	シークレット・月	0.4	12.00	12.00	12.00	https://aws.amazon.com/jp/secrets-manager/pricing/	○	○	○
+セキュリティ	ACM Private CA（予備地域・待機系の内部TLS用）	D-U8-15。案③は待機系が常時 TLS を張るため事前作成が必須。案①②は被災時に新規作成（信頼ストア再配布が必要）	CA 1 台	1	1	1	CA・月	400	400.00	400.00	400.00	https://aws.amazon.com/jp/private-ca/pricing/	—	—	○
+APP	EventBridge カスタムバス + イベント複製（予備地域）	D-U8-15。Global Endpoints は両リージョンに同名バスの事前作成が前提。バス自体とGlobal Endpointsは無料、複製のみ課金	複製イベント件数	5000000	15000000	25000000	イベント	0.0000001	0.50	1.50	2.50	https://aws.amazon.com/jp/eventbridge/pricing/	—	○	○

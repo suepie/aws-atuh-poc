@@ -119,9 +119,40 @@ ADR-051 の骨格は維持する（変更するのは復元戦略 §8.3 と待�
 | `idmap` 補助 DB（U6 §6.4.1） | Broker Acct Aurora 別 DB | **同一 Aurora Global クラスタに同居** → 追加機構不要 | < 1 min |
 | IaC / SPI 成果物 | Git / ECR | Git（リージョン非依存）+ **ECR クロスリージョンレプリケーション** | 0 |
 
+> **⚠ 本表はデータ層のみを扱う。**アプリ層・基盤層のマネージドサービス（Secrets Manager / ACM Private CA / EventBridge / SES / Lambda / API Gateway / OpenSearch）は **§8.2.3 決定 D-U8-15** を参照（2026-08-18 新設）。**特に Secrets Manager は事前設定しないと切替時に起動できない。**
+
 ---
 
 ## 8.3 DR 構成の再設計 — 構成データ復元戦略（ADR-051 改訂案の中核）
+
+### 8.2.3 決定 D-U8-15: アプリ層・基盤層サービスの DR（2026-08-18 新設）
+
+**背景**: §8.2.2 の SSOT 表は**データ層のみ**（Aurora / KMS / DynamoDB / S3 / ECR）を扱っており、**アプリ層・基盤層のマネージドサービスが 1 つも載っていない**。`ADR-062`（idm-api = Lambda）と `ADR-064`（削除伝播 = EventBridge outbox）は 2026-08-06 以降の決定で、本表がそれに追随していなかった。コスト見積り 35 項目（= 使用サービスの全量）と本表を突合して判明。
+
+**採用**: 各サービスを「**事前設定が必須か / 再構築時に作れるか**」で分類し、前者を平常時のタスクとして確定する。
+
+| サービス | 区分 | DR 手段 | **事前設定** | 平常時費用 |
+|---|:---:|---|:---:|---|
+| **Secrets Manager** | 🔴 | **レプリカシークレット**（[公式](https://docs.aws.amazon.com/secretsmanager/latest/userguide/create-manage-multi-region-secrets.html)）。ローテーションは主系で回り副系へ伝播。被災時は promote して独立化 | **必須** | 約 12 USD/月（30 個 × 0.40） |
+| **ACM Private CA** | 🔴 | **リージョン資源で複製不可**。[公式は両リージョンに冗長 CA を作る方式](https://docs.aws.amazon.com/privateca/latest/userguide/disaster-recovery-resilience.html)を案内 | 案③のみ必須 | 案③ 400 USD/月（汎用）or 50（短期証明書モード） |
+| **EventBridge** | 🟡 | **Global Endpoints**（Route 53 ヘルスチェック連動、[公式](https://docs.aws.amazon.com/eventbridge/latest/userguide/eb-global-endpoints.html)）。**東京・大阪とも対応**、RTO/RPO ≈ 360 秒（最大 420 秒）、機能自体は無料 | 案②③で推奨 | バス自体は無料。イベント複製は課金 |
+| **SES** | 🟡 | **ドメイン認証（DKIM）はリージョンごと**。事前に大阪でも通しておく | **必須** | **0 円**（DNS レコード追加のみ） |
+| **Lambda**（idm-api + 糊 5 種） | 🟡 | IaC 再適用。`DU-U9I-03` のパイプラインは 2 アカウント向けで**大阪向けの記述がない** | 不要 | 0 |
+| **API Gateway** | 🟡 | IaC 再適用。**カスタムドメインの証明書もリージョンごと**に必要 | 不要 | 0 |
+| **OpenSearch / CloudWatch Logs** | 🟢 | リージョン資源。**東京の直近ログは失われる**が長期保管は S3 CRR で残る | 不要 | 0 |
+
+**EventBridge の制約（重要）**:
+- **カスタムバスを使う場合、両リージョンに同名のバスを同一アカウントで事前作成しておく必要がある**（公式明記）。**案①（大阪に何も置かない）では Global Endpoints を使えない**
+- **イベント複製を有効にしないと、復旧後に手動で Route 53 ヘルスチェックを healthy へ戻す操作が要る**（無人での自動復帰は不可）
+- ただし `ADR-064` の削除伝播は **outbox 方式**（Aurora へ書いてから送出）のため、**未送出分は Aurora Global DB で保全される**。バスを再作成すれば再送でき、この点は設計が効いている
+
+**最も重い制約 — Secrets Manager**: `U7 D-U7-01` は「**Secrets / Break-Glass は Regional**」と明記しており、現状**複製していない**。このままだと**案①②③のいずれを選んでも「大阪へ切り替えたが DB 接続情報も client_secret も存在せず起動できない」**という結末になる。**レプリカは事前設定が必須で被災後には作れない**。費用は月 12 USD 程度で費用対効果は極めて高い。
+
+**Private CA の判断**: 案①② は被災時に新規 CA を作成する運用でよい（平常時費用ゼロ）。ただし**新 CA = 新しい信頼チェーン**のため、**全クライアントの信頼ストア更新を再構築手順に組み込む**必要がある（RTO に加算）。案③は待機系が常時 TLS を張るため事前作成が必須。
+
+**残タスク**: `DU-U8-11`（削除伝播 outbox の DR 整合、8 人日）に**EventBridge バスそのものの扱い**が含まれていないため、DoD へ追記する。`DU-U9I-03`（Lambda パイプライン）に**大阪向けデプロイ**を追記する。
+
+---
 
 ### 8.3.1 決定 D-U8-06: Realm Export を全面廃止し、復元経路を 2 系統に再定義する
 
