@@ -3,6 +3,15 @@
 - **ステータス**: **Scope Reduced**（2026-06-24 — 認証 API への Rate Limit のみ本基盤対象、それ以外は API プラットフォーム側で別途検討）
 - **日付**: 2026-06-23 作成、2026-06-24 スコープ縮小
 
+
+> ⚠ **Scope Reduced + 二重定義に注意（2026-08-18 追記）**
+>
+> 本 ADR の「Per-tenant Rate Limit」は、**[U6 D-U6-14](../basic-design/06-infra-network-design.md)（テナント隔離契約、2026-08-12 新設）と同じ題材**を扱っている。
+> **実装方式が異なる**点に注意: 本 ADR は **API Gateway Usage Plan + Lambda Authorizer** を前提としていたが、
+> 現行設計は **CloudFront/WAF or ALB 層 + Keycloak 側の per-tenant スロットル**（認証フローは API GW を通らないため）。
+> **認証フローのレート制限は D-U6-14 が正**。本 ADR の方式は **API GW を通る管理 API（idm-api）にのみ適用可能**。
+>
+> 顧客への確認は [質問状 Q85](../requirements/customer-questionnaire/06-additional.md)（流量上限と別環境への分離基準）で行う。
 ---
 
 > **⚠ 2026-06-24 スコープ縮小**

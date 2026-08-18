@@ -8,6 +8,15 @@
   - [ADR-018 ユーザー識別子 3 階層戦略](018-user-identifier-3layer-emailless.md)
   - [common/identity-broker-multi-idp.md §10](../common/identity-broker-multi-idp.md)
 
+
+> 🚫 **Superseded（2026-08-18）— 収容先の結論が現行アーキテクチャと異なる**
+>
+> 本 ADR は「**IdP なし一般顧客 = 共通 Pool でローカル管理**（ハッシュ + `tenant_id` タグ）/ 規制顧客 = 専用 Pool」を採用していたが、
+> **[ADR-033](033-keycloak-2tier-broker-idp-architecture.md)（2-tier）+ [P-07](../basic-design/01-architecture-baseline.md) + [P-17](../basic-design/01-architecture-baseline.md) で置き換わった**:
+> **IdP なしテナントは IdP-KC（別クラスタ・別 AWS アカウント）に収容**する。
+> 本 ADR が提起した「**パスワードハッシュの同居問題**」は、**2-tier のクラスタ分離とアカウント分離（ブラスト半径の隔離）で解決済み**。
+>
+> **問題提起と 4 選択肢の比較は判断の記録として保持する**（削除しない）。**収容先の結論は ADR-033 / P-07 / P-17 が正**。
 ---
 
 ## Context
