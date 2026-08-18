@@ -75,7 +75,7 @@ ROSA の概要・アーキテクチャ・価格・SLA・本基盤での移行考
 
 **採用条件（Accepted 完全昇格の前提、未充足の間は条件付き）**:
 1. PCI DSS / APPI 追加要件（下記「採用時のコンプライアンス追加要件」: etcd 非流入設計 + ガードレール L1-L7 + Red Hat AOC/DPA）の整備計画承認
-2. 3 年契約見積の取得（worker ROSA fee 55% 引はコンソール未対応、AWS パートナーチーム経由）
+2. 3 年契約見積の取得（worker ROSA fee 55% 引はコンソール未対応、AWS パートナーチーム経由） — **2026-08-18 に一次資料で再確認済み**: [AWS ROSA 料金ページ](https://aws.amazon.com/rosa/pricing/) に 「*3-year contracts are not yet available through the AWS console but can be obtained by contacting **aws-redhat-partnerteam@amazon.com***」と明記。割引は 1 年 33% / 3 年 55%（4vCPU・年で $1,500 → $1,000 → $667）。**問い合わせ先が公式に示されているため、Red Hat 経由より直接依頼が最短の可能性がある**
 3. Stage A Terraform 書き換え（6-8 週間）の工数承認
 4. **Approved Access の有効化**（既定 OFF・要サポートチケット）+ **ソース側 stdout ログマスキング/本番ログレベル統制の実機確認（G-SRE-LogVis）** — Red Hat SRE のライブ Pod ログ閲覧（APPI 28 条）への技術対策（ガードレール L7、[research 2026-08-14](../basic-design/research/rosa-sre-live-log-visibility-2026-08-14.md)）
 
