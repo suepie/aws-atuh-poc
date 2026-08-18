@@ -168,7 +168,7 @@ SCP: apigateway:POST /restapis / apigateway:PATCH 等を Deny
 | ID | 内容 |
 |---|---|
 | M-Q-17-1 | SCP 強制（製品外の API GW 作成・変更禁止）の採否 — git 単独検知の穴を入口で塞ぐ鍵 |
-| M-Q-17-2 | **対象アカウントの列挙方式**。⚠ `organizations:ListAccounts` は管理アカウント（or delegated admin）でしか呼べないため、共通基盤の発見 Lambda から直接は不可。案 a: 管理アカウントに列挙用読み取りロールを置き AssumeRole / 案 b: 静的リスト（SSM Parameter 等）。範囲（全体 / OU / 明示リスト）とあわせて確定（10 §10.1.7 W3）|
+| M-Q-17-2 | **対象アカウントの列挙方式**。⚠ `organizations:ListAccounts` は既定では管理アカウント限定。**案 c（推奨・2026-08 調査で判明）: Organizations の委任ポリシー（resource-based delegation policy）で共通基盤アカウントに `organizations:ListAccounts` を委任** → 発見 Lambda から直接呼べる（管理アカウントでの一度のポリシー設定のみ・AssumeRole 不要）/ 案 a: 管理アカウントに列挙用読み取りロールを置き AssumeRole / 案 b: 静的リスト（SSM Parameter 等）。範囲（全体 / OU / 明示リスト）とあわせて確定（10 §10.1.7 W3）|
 | M-Q-17-3 | API リポジトリの判定規約（命名規約 `*-api` 等）と monitoring.yaml 置き忘れ検出の運用 |
 | M-Q-17-4 | 発見 Lambda の実装 + PoC（Phase 3/4。CodeCommit `GetDifferences`/`GetFile` のページング・レート制御含む）|
 | M-Q-17-5 | 消滅検知（enabled=false 化）とアプリ廃止手続きの運用整合 |

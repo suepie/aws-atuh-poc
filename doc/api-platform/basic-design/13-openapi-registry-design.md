@@ -46,6 +46,7 @@ sequenceDiagram
 ```
 
 > **⚠ 正本の性質（drift 注意）**: リポジトリの spec は「**コードが宣言する形**」であり、本番デプロイと乖離（drift）し得る。乖離は probe の実測で顕在化する（spec にあるが本番に無い → 404/WARN、公開印漏れ → P1）が、能動検出の要否は M-Q-17-6。旧方式（deploy 後の API GW から GetExport した「本番の実態」正本）との比較・変更経緯は ADR-061。
+> **⚠ サイズ上限（AWS 公式）**: CodeCommit の `GetFile` は**個別ファイル 6 MB 上限**（超過は FileTooLargeException）。openapi.yaml が 6 MB を超える巨大 spec は分割等の個別対応が要る（通常は到達しない）。
 > 旧 GetExport 実装（[`openapi-export-lambda/`](code-samples/openapi-export-lambda/)、body=Uint8Array 等の公式確認済み）は参考保管。
 
 ---

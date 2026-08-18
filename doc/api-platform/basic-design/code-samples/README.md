@@ -128,6 +128,8 @@
 | 404 | any | WARN（構成ミス）| P2 | Platform |
 | null(skip) | 200 | OK（public + health）| — | 通知なし |
 
+> ⚠ 表の 401/403 は「アプリの認証レイヤーが返したもの」が前提。**WAF が probe をブロックした 403 は WARN（境界でブロック＝テスト構成問題）として別分類**する（11 §11.2.4。偽陰性・誤 CRITICAL の防止）。
+
 ### 2.6 Alert イベント形式（probe → alert-router）
 
 ```json

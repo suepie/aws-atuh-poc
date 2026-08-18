@@ -345,7 +345,7 @@ sequenceDiagram
 |---|---|---|---|---|---|
 | W1 | git push | App / 開発者端末・CI（CodeBuild 等）| App / CodeCommit リポジトリ | `git-codecommit.ap-northeast-1.amazonaws.com`（git HTTPS）| 443、IAM 認証（git-remote-codecommit / HTTPS Git 認証情報）|
 | W2 | 定期起動 | 共通基盤 / EventBridge Scheduler | 共通基盤 / 発見 Lambda | AWS サービス間（Scheduler → `lambda.ap-northeast-1.amazonaws.com`）| Scheduler 実行ロールで Invoke |
-| W3 | 対象アカウント列挙 | 共通基盤 / 発見 Lambda | 方式未確定（**M-Q-17-2**）| ⚠ `organizations:ListAccounts` は**管理アカウント（or delegated admin）でしか呼べない** → 案 a: 管理アカウントの列挙用ロールへ AssumeRole（`organizations.us-east-1.amazonaws.com`、グローバル）/ 案 b: 静的リスト（SSM / 設定ファイル）| 443、IAM |
+| W3 | 対象アカウント列挙 | 共通基盤 / 発見 Lambda | 方式未確定（**M-Q-17-2**）| ⚠ `organizations:ListAccounts` は既定では管理アカウント限定 → **案 c（推奨）: Organizations 委任ポリシーで共通基盤に ListAccounts を委任し直接呼ぶ**（`organizations.us-east-1.amazonaws.com`、グローバル）/ 案 a: 管理アカウントの列挙用ロールへ AssumeRole / 案 b: 静的リスト（SSM）| 443、IAM |
 | W4 | AssumeRole | 共通基盤 / 発見 Lambda（DiscoveryLambdaRole）| App / **DiscoveryReadRole** | `sts.ap-northeast-1.amazonaws.com`（リージョナル STS）| 443、sts:AssumeRole + ExternalId（16 §16.2）|
 | W5 | リポジトリ列挙・先端取得 | 共通基盤 / 発見 Lambda（DiscoveryReadRole の一時クレデンシャル）| App / CodeCommit（コントロールプレーン）| `codecommit.ap-northeast-1.amazonaws.com` | 443、`ListRepositories` / `GetBranch` |
 | W6 | 台帳読取 | 共通基盤 / 発見 Lambda | 共通基盤 / Monitoring Registry S3 `registry/` | `s3.ap-northeast-1.amazonaws.com` | 443、`GetObject`（同一アカウント IAM）|
@@ -385,7 +385,7 @@ flowchart LR
 | N1 | 検知イベント（即時系）| 共通基盤 / 認証実装チェック Lambda | 共通基盤 / Alert Router | `lambda.ap-northeast-1.amazonaws.com` | 4×4 分類済み（README §2.6 形式）|
 | N2 | 通知先解決 | 共通基盤 / Alert Router | 共通基盤 / S3 `registry/{appId}/{env}.json` | `s3.ap-northeast-1.amazonaws.com` | `alertRouting` → 無ければ環境変数デフォルト（15 §15.2）|
 | N3 | 通知発行 | 共通基盤 / Alert Router | 共通基盤 / SNS トピック P1/P2/P3 | `sns.ap-northeast-1.amazonaws.com` | severity で振り分け（P1=Security 即時 / P2=Platform 24h / P3=App）|
-| N4 | 配信 | 共通基盤 / SNS | 各チーム（メール / AWS Chatbot → Slack 等）| SNS サブスクリプション | 接続方式は M-Q-15-1 |
+| N4 | 配信 | 共通基盤 / SNS | 各チーム（メール / Amazon Q Developer〔旧 AWS Chatbot、2025-02 改名〕→ Slack 等）| SNS サブスクリプション | 接続方式は M-Q-15-1 |
 | N5 | メトリクス（保険系）| 共通基盤 / 認証実装チェック Lambda | 共通基盤 / CloudWatch | `monitoring.ap-northeast-1.amazonaws.com` | P5 と同一 |
 | N6 | アラーム発報 | 共通基盤 / CloudWatch アラーム（`AuthCheckCritical > 0`）| 共通基盤 / SNS（P1）| CloudWatch → SNS（サービス間）| **即時系（N1〜N4）が落ちても検知を失わない保険**（11 §11.6 / 18 §18.4）|
 
