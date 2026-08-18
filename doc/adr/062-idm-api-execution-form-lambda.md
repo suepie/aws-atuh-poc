@@ -44,7 +44,7 @@
 1. **Ingress**：`CloudFront(api.basis, WAF) → API Gateway（JWT authorizer L1 + throttle）→ Lambda（ネイティブ invoke）`。VPC Link/NLB を ingress に挟まない（最短）。**（2026-08-06 補足: 組織方針 = 全 inbound NFW 通過必須、ただし **静的 SPA と API GW は例外**〔U6 REQ-IN-12〕。API GW はこの例外ゆえ本 ingress は NFW 経路外で準拠 = そのまま維持。Option 2〔ALB→Lambda ターゲット〕/ Option 3〔Private API GW〕は不要）**
 2. **Lambda の VPC アタッチ**：サブネット層③（[06a §A.5.3](../basic-design/06a-network-flow-diagrams.md)）。egress のため。
 3. **Keycloak Admin API 到達**：各クラスタに **内部 NLB（`scheme=internal`）** を新設し、**SG を Lambda の SG に限定 + 最低 server-TLS + Admin API のアプリ層認証**で守る。ClusterIP 単独方針（D-U6-11）を本用途に限り "内部 NLB + 厳格 SG" に見直す。
-4. **越境**：CRUD/権限はブランド(#2)内でローカル完結。**旧「`#1 → #2` PrivateLink 委譲」は [ADR-063](063-brand-unit-architecture.md) で撤回**。越境は EventBridge 2 本（削除 `user.deprovisioned`=[ADR-064](064-deprovisioning-propagation-outbox.md) / 初回 sub 通知）+ フェデ backchannel PrivateLink（Broker→IdP-KC、[D-U6-06](../basic-design/06-infra-network-design.md)）。
+4. **越境**：CRUD/権限はブランド(idm-api)内でローカル完結。**旧「中央→ブランド idm-api の PrivateLink 委譲」は [ADR-063](063-brand-unit-architecture.md) で撤回**。越境は EventBridge 2 本（削除 `user.deprovisioned`=[ADR-064](064-deprovisioning-propagation-outbox.md) / 初回 sub 通知）+ フェデ backchannel PrivateLink（Broker→IdP-KC、[D-U6-06](../basic-design/06-infra-network-design.md)）。
 5. **非同期の糊**（shadow 制御 / outbox リレー / Webhook Dispatcher / idmap・projection ハンドラ〔ブランドローカル〕）も **Lambda（層③）**（U9 D-U9-18）。
 
 ### 決め手
@@ -62,7 +62,7 @@
 
 ### Negative（受容するリスク）
 
-- **Keycloak Admin API に内部 NLB エンドポイントができる**（ClusterIP 単独でなくなる。ただし `scheme=internal` で**インターネット非露出**、公開面は in-cluster と同じ）。差は VPC 内東西経路が 1 本増える分で、SG を Lambda SG 限定 + server-TLS + アプリ層認証で緩和（**idm-api 侵害時の Admin API 到達は in-cluster と同等=引き分け**）。#2 側（credential アカウント）は特に厳格に。
+- **Keycloak Admin API に内部 NLB エンドポイントができる**（ClusterIP 単独でなくなる。ただし `scheme=internal` で**インターネット非露出**、公開面は in-cluster と同じ）。差は VPC 内東西経路が 1 本増える分で、SG を Lambda SG 限定 + server-TLS + アプリ層認証で緩和（**idm-api 侵害時の Admin API 到達は in-cluster と同等=引き分け**）。idm-api 側（credential アカウント）は特に厳格に。
 - **cold start**（対話 UX）。→ 許容。厳しければ provisioned concurrency（scale-to-zero を失う点は承知）。
 - **証明書/シークレット運用を自前**（Secrets Manager + rotation Lambda）。mesh の自動化は使えない。
 - **Lambda 別パイプライン**（GitOps と別系統）。
@@ -70,8 +70,8 @@
 ### Constraints（実装時の必須条件）
 
 - 内部 NLB は **`scheme=internal`**・**SG を idm-api Lambda の SG のみ許可**・**最低 server-TLS**・**Admin API のアプリ層認証（管理クライアント資格情報）必須**。
-- **#2（IdP-KC = credential アカウント）側の内部 NLB は特に厳格に**（`scheme=internal` でインターネット非露出。SG を Lambda SG 限定・監査・可能なら mTLS 優先検討）。
-- **越境は EventBridge 中心**（削除=ADR-064 / 初回 sub 通知）。S2S 認可（shadow 制御 Lambda 等）= Client Credentials（`idm:*` scope、U5 §5.8）。**旧「#1→#2 PrivateLink 委譲」は ADR-063 で撤回**。
+- **idm-api（IdP-KC = credential アカウント）側の内部 NLB は特に厳格に**（`scheme=internal` でインターネット非露出。SG を Lambda SG 限定・監査・可能なら mTLS 優先検討）。
+- **越境は EventBridge 中心**（削除=ADR-064 / 初回 sub 通知）。S2S 認可（shadow 制御 Lambda 等）= Client Credentials（`idm:*` scope、U5 §5.8）。**旧「中央→ブランド idm-api の PrivateLink 委譲」は ADR-063 で撤回**。
 - Lambda は VPC 層③ に ENI アタッチ。Aurora は SG 直。越境の全体像は [06a §A.6](../basic-design/06a-network-flow-diagrams.md)、削除伝播は ADR-064。
 - **L1 = API GW ネイティブ JWT authorizer を採る場合、Broker の JWKS はパブリック到達可能である必要がある**（AWS マネージド側が issuer の `jwks_uri` を取得。private VPC エンドポイント不可、公開鍵は最大 2h キャッシュ）。現設計は `auth.` が公開（[ADR-013](013-cloudfront-waf-ip-restriction.md) L7 Rule#100 で JWKS / `.well-known` 全 IP 許可）ゆえ成立するが、**JWKS 公開を IP 制限等で絞る要件が出た場合は L1 を Lambda authorizer（VPC 内、[ADR-012](012-vpc-lambda-authorizer-internal-jwks.md)）へ切り替える**（U5 §5.6.3b）。
 
@@ -82,11 +82,13 @@
 | **A: ROSA 常駐 + Route** | 既存 ingress 再利用、Admin API は ClusterIP（露出なし）| idm-api が Keycloak クラスタに**同居**＝デプロイ/資源/ライフサイクルを共有。**中核認証への波及リスクを断てない** |
 | **B: ROSA 常駐 + API GW** | A + API GW（JWT/throttle）| A と同じ同居問題 + ingress にホップ増 |
 | **A': ROSA + 専用ノードプール** | 専用ノード + namespace + 独立 GitOps で資源/デプロイを分離、Admin API は ClusterIP 維持 | **資源・デプロイ分離は満たすが、クラスタのコントロールプレーン/アップグレード周期は共有**。"クラスタ ライフサイクルごと分離したい" 要件を満たさないため不採用（ただし将来 Lambda を退く場合の第一代替として保持）|
+| **C: idm-api を CRUD/authz の 2 Lambda に分割** | Lambda-CRUD（Keycloak Admin API）と Lambda-Authz（authz Aurora）に責務分割 | **不採用（Phase 1）**。1 操作（例: ユーザ＋ロール追加）は Keycloak（HTTP Admin API）と authz Aurora（JDBC）の **2 システムへの dual write** で、これは **1 ACID Tx に入らない**（2 相コミット不可）。分割してもこの dual write は消えず、逆に **Lambda↔Lambda という 2 つ目の分散境界**を足す → 部分失敗の孤児（Keycloak にユーザだけ/authz 行だけ）・**冪等性**・**補償（saga）**・リコンサイルが増える。さらに **outbox の「1 トランザクショナルストアにアンカー」（[ADR-064](064-deprovisioning-propagation-outbox.md)）が崩れる**（authz Lambda の outbox Tx に Keycloak 作用を含められない）。**整合性は改善しない**。→ **単一 Lambda（1 実行内で try/compensate）＋ outbox** で足りる。セキュリティ動機（両方に届く単一コンポーネントを消す）も、各半分の被害が依然重大＋オーケストレータが実質両方に届くため**実利薄**（[ADR-063 §認可データ配置粒度の脅威分解](063-brand-unit-architecture.md)と同じ結論）。**規制の職務分離（identity 変更と authz 変更の実行主体分離）が要件化したら ADR-063 オプション B とセットで再評価** |
+| **D: Step Functions でオーケストレーション** | idm-api を分割し Step Functions で saga 制御 | **不採用（Phase 1）**。分割時のサーガを堅牢化する**正しい道具**（durable 実行・Retry/Catch・補償の宣言化・可視性）だが、**ACID は生まれない**（結果整合 Saga のまま）→ 中間不整合の窓・**冪等性は Lambda 側の責任**・補償自体の失敗処理・状態遷移課金/レイテンシは残る。2 書込程度の管理操作には**オーバーキル**で、C と同じく単一 Lambda＋outbox で足りる。**採用局面 = 分割が強制される時（規制 SoD、案 C 再評価とセット）／本質的に多段・長時間・承認ゲート付きワークフロー（例: SN オンボーディング多段調整、人手承認付きプロビジョニング）**。Step Functions は「分割のデメリットを消す魔法」ではなく「分割を選んだ後にそれを堅牢に回す手段」 |
 
 ## Open Items
 
-- **O-12（再定義）**: 旧「#1→#2 PrivateLink 委譲」は ADR-063 で撤回。残論点 = **越境イベント経路（削除/初回 sub 通知）の S2S 認可の具体**（shadow 制御 Lambda、ADR-064 / U5 §5.8）。
+- **O-12（再定義）**: 旧「中央→ブランド idm-api の PrivateLink 委譲」は ADR-063 で撤回。残論点 = **越境イベント経路（削除/初回 sub 通知）の S2S 認可の具体**（shadow 制御 Lambda、ADR-064 / U5 §5.8）。
 - **O-APP-1**: API GW を公開 or Private（VPC Endpoint 経由 NFW）。P-18 露出最小化との兼ね合い（U6）。
 - **cold start 緩和**：provisioned concurrency の要否・コスト（管理系トラフィック実測後）。
-- **#2 Admin API の内部 NLB 堅牢化**：credential アカメントゆえ mTLS 優先検討 + G-DPA（SRE 越境）とのセキュリティレビュー。
+- **idm-api の Admin API 内部 NLB 堅牢化**：credential アカウントゆえ mTLS 優先検討 + G-DPA（SRE 越境）とのセキュリティレビュー。
 - U6 §6.3（D-U6-11「Admin API in-cluster 単独」）と U10 §10.2（idm-api 実行形態）を本 ADR に合わせて改訂。
