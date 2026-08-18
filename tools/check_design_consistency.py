@@ -9,6 +9,7 @@
   C 前提の追跡    前提 P-* の「影響単元」が実際にその前提 ID を参照しているか
   D 監視の網羅    監視観点 8 分類それぞれに U9 のメトリクスが存在するか
   E Runbook 整合  必須 N 冊の定義が 00a と U9 で一致するか
+  F ADR の配布    ADR が設計書から参照されているか / ADR 索引に登録されているか
 
 使い方: python3 tools/check_design_consistency.py [--strict]
   --strict を付けると検出時に exit 1（CI 用）
@@ -107,13 +108,40 @@ for label, txt in (("00a", a00), ("U9", u9)):
     if n and cnt and n != cnt:
         add("E Runbook 整合", f"{label}: 「必須 {n} 冊」と記載だが列挙は {cnt} 冊")
 
+# ---- F ADR の配布 ------------------------------------------------------
+# 設計書 10 冊から参照されていない ADR を検出する。
+# 「ADR で決めたのに設計へ配られていない」= 別名で二重起票される温床
+#   （実例: ADR-047 の「暗号インベントリ」と D-U7-25 の「鍵インベントリ」が同一作業だった）
+ADR_DIR = os.path.join(ROOT, "doc/adr")
+# PoC 期・製品比較の記録。設計から参照されないのが正常
+HISTORICAL = {"001","002","003","004","005","006","007","008","009","010",
+              "011","012","013","014","015","016","032","058"}
+# 意図的に無効化したもの（バナーで明示済み）
+RETIRED_MARK = ("Superseded", "Scope Reduced", "凍結", "廃止", "Deprecated", "Out of Scope")
+adr_index = read(os.path.join(ADR_DIR, "00-index.md"))
+for fn in sorted(os.listdir(ADR_DIR)):
+    m = re.match(r"^(\d{3})-(.+)\.md$", fn)
+    if not m: continue
+    num = m.group(1)
+    body = read(os.path.join(ADR_DIR, fn))
+    st = re.search(r"\*\*ステータス\*\*:\s*(.+)", body)
+    status = st.group(1) if st else ""
+    # 索引への登録漏れ（実例: ADR-061）
+    if f"({num}-" not in adr_index and f"[{num}]" not in adr_index:
+        add("F ADR の配布", f"ADR-{num} が ADR 索引（00-index.md）に未登録")
+    if num in HISTORICAL: continue
+    if any(k in status for k in RETIRED_MARK) or any(k in body[:1200] for k in RETIRED_MARK):
+        continue  # 無効化済みは参照ゼロで正常
+    if not any((f"adr/{num}-" in t) or (f"ADR-{num}" in t) for t in UNITS.values()):
+        add("F ADR の配布", f"ADR-{num}（{status[:24]}）が設計書 10 冊から参照ゼロ")
+
 # ---- 出力 --------------------------------------------------------------
 by = defaultdict(list)
 for c, m in findings: by[c].append(m)
 print("=" * 66)
 print("  設計整合性チェック")
 print("=" * 66)
-for c in ("A サービス網羅", "B 禁則の逆参照", "C 前提の追跡", "D 監視の網羅", "E Runbook 整合"):
+for c in ("A サービス網羅", "B 禁則の逆参照", "C 前提の追跡", "D 監視の網羅", "E Runbook 整合", "F ADR の配布"):
     items = by.get(c, [])
     print(f"\n■ {c}: {len(items)} 件")
     for m in items: print(f"   - {m}")

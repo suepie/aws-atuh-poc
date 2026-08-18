@@ -156,4 +156,4 @@ M2（常時 heartbeat）を追加する / HAR・スクリーンショット・Mu
 
 - [11-central-probe-architecture.md](11-central-probe-architecture.md) — probe / classify / 4×4 の詳細（実行モデルは本章が上書き）
 - [17-deployment-integration-and-registration.md](17-deployment-integration-and-registration.md) — M1 トリガとなるデプロイ検知・登録
-- [13-openapi-registry-design.md](13-openapi-registry-design.md) — OpenAPI の S3 versioning（差分の元データ）
+- [13-openapi-registry-design.md](13-openapi-registry-design.md) — OpenAPI の spec コピー置き場（正本はリポジトリ。差分判定はコミット ID、S3 Versioning は履歴用）

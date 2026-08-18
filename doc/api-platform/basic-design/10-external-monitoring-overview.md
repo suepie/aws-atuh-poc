@@ -37,6 +37,7 @@
 | **probe lib（検査ロジック）** | 上記の検査を実装した共通ライブラリ（[central-probe-lib/](code-samples/central-probe-lib/)）。認証実装チェック Lambda が実行する |
 | **Pattern β** | 検査を各アプリに配らず**中央 1 箇所**から横断実行する方式（§10.1）|
 | **M1 / M3** | 実行モード。M1=巡回差分（自動・1 時間毎の巡回で変化アプリのみ検査）/ M3=フル監査（手動）（17/18 章）|
+| **STS / AssumeRole** | AWS Security Token Service =「**一時的な認証情報の発行所**」。AssumeRole で他アカウントのロール（例: DiscoveryReadRole）を引き受け、**期限付き・最小権限の一時キー**を得る。恒久キーを配らずにクロスアカウント読み取りを実現する標準手段（16 §16.2、§10.1.7 W4）|
 
 ---
 
@@ -307,6 +308,88 @@ flowchart TB
 - 経路 C/D は AWS API・AWS 網内であり、インターネット境界（In/Out とも）は**無関係**
 
 > ⚠ **Phase 2（Private API の probe、14 章 §14.4）では認証実装チェック Lambda のみ VPC 化が必要**になる（VPC + TGW で Internal ALB へ到達）。その時点で経路 A の Out 統制接続も再検討する。発見 Lambda と Alert Router は Phase 2 でも VPC 外のまま。
+
+---
+
+### §10.1.7 詳細通信フロー（構成図作成用：アカウント × リソース × 経由エンドポイント）
+
+§10.1.6 の経路 A〜D を、**構成図に矢印を引ける粒度**（ステップごとの発信元 / 宛先 / 経由エンドポイント / 認証）まで分解する。リージョンは例として `ap-northeast-1`。VPC 外 Lambda の通信は **AWS API 宛 = AWS 網内**、**インターネット宛（probe / token）= Lambda マネージド egress から直接**（Out 境界非経由、§10.1.6 の例外）。
+
+#### F1. git 連携フロー（開発者 push → 巡回検知 → M1 起動）
+
+```mermaid
+sequenceDiagram
+    participant DEV as 開発者 / CI（App アカウント）
+    participant REPO as CodeCommit（App アカウント）
+    participant SCH as Scheduler（共通基盤）
+    participant DISC as 発見 Lambda（共通基盤・VPC 外）
+    participant STS as STS
+    participant S3 as Monitoring Registry S3（共通基盤）
+    participant PROBE as 認証実装チェック Lambda（共通基盤）
+
+    DEV->>REPO: W1 git push（HTTPS）
+    Note over SCH,DISC: 1 時間毎
+    SCH->>DISC: W2 スケジュール起動
+    DISC->>DISC: W3 対象アカウント列挙（方式は M-Q-17-2）
+    DISC->>STS: W4 AssumeRole（DiscoveryReadRole + ExternalId）
+    STS-->>DISC: DiscoveryReadRole の一時クレデンシャル（期限付き）
+    Note over DISC,REPO: 以降 W5/W7 は App アカウントの DiscoveryReadRole の<br/>権限（codecommit read-only）で実行
+    DISC->>REPO: W5 ListRepositories / GetBranch
+    DISC->>S3: W6 registry/{appId}/{env}.json 取得（lastCheckedCommitId 比較）
+    DISC->>REPO: W7 変更あり → GetDifferences / GetFile（monitoring.yaml・openapi.yaml）
+    DISC->>S3: W8 台帳更新 + spec Put
+    DISC->>PROBE: W9 M1 起動（mode=delta, appId, env）
+```
+
+| # | 通信 | 発信元（アカウント / リソース）| 宛先（アカウント / リソース）| 経由・エンドポイント | プロトコル・認証 |
+|---|---|---|---|---|---|
+| W1 | git push | App / 開発者端末・CI（CodeBuild 等）| App / CodeCommit リポジトリ | `git-codecommit.ap-northeast-1.amazonaws.com`（git HTTPS）| 443、IAM 認証（git-remote-codecommit / HTTPS Git 認証情報）|
+| W2 | 定期起動 | 共通基盤 / EventBridge Scheduler | 共通基盤 / 発見 Lambda | AWS サービス間（Scheduler → `lambda.ap-northeast-1.amazonaws.com`）| Scheduler 実行ロールで Invoke |
+| W3 | 対象アカウント列挙 | 共通基盤 / 発見 Lambda | 方式未確定（**M-Q-17-2**）| ⚠ `organizations:ListAccounts` は**管理アカウント（or delegated admin）でしか呼べない** → 案 a: 管理アカウントの列挙用ロールへ AssumeRole（`organizations.us-east-1.amazonaws.com`、グローバル）/ 案 b: 静的リスト（SSM / 設定ファイル）| 443、IAM |
+| W4 | AssumeRole | 共通基盤 / 発見 Lambda（DiscoveryLambdaRole）| App / **DiscoveryReadRole** | `sts.ap-northeast-1.amazonaws.com`（リージョナル STS）| 443、sts:AssumeRole + ExternalId（16 §16.2）|
+| W5 | リポジトリ列挙・先端取得 | 共通基盤 / 発見 Lambda（DiscoveryReadRole の一時クレデンシャル）| App / CodeCommit（コントロールプレーン）| `codecommit.ap-northeast-1.amazonaws.com` | 443、`ListRepositories` / `GetBranch` |
+| W6 | 台帳読取 | 共通基盤 / 発見 Lambda | 共通基盤 / Monitoring Registry S3 `registry/` | `s3.ap-northeast-1.amazonaws.com` | 443、`GetObject`（同一アカウント IAM）|
+| W7 | 差分・ファイル取得 | 共通基盤 / 発見 Lambda | App / CodeCommit | `codecommit.ap-northeast-1.amazonaws.com` | 443、`GetDifferences` / `GetFile` |
+| W8 | 台帳更新 + spec 配置 | 共通基盤 / 発見 Lambda | 共通基盤 / Monitoring Registry S3（`registry/` + `openapi/`）| `s3.ap-northeast-1.amazonaws.com` | 443、`PutObject` |
+| W9 | M1 起動 | 共通基盤 / 発見 Lambda | 共通基盤 / 認証実装チェック Lambda | `lambda.ap-northeast-1.amazonaws.com` | 443、`lambda:InvokeFunction` |
+
+> **構成図のポイント**: W1 は App アカウント内で完結（開発者 → repo）。W4/W5/W7 だけが**アカウント跨ぎ（共通基盤 → App）**で、すべて AWS API（境界 In/Out とも非経由）。
+
+#### F2. 検査（probe）フロー — M1/M3 の 1 実行
+
+| # | 通信 | 発信元 | 宛先 | 経由・エンドポイント | プロトコル・認証 |
+|---|---|---|---|---|---|
+| P1 | 台帳・spec 取得 | 共通基盤 / 認証実装チェック Lambda | 共通基盤 / Monitoring Registry S3 | `s3.ap-northeast-1.amazonaws.com`（M1=対象 1 件 Get / M3=`registry/` List→Get）| 443、IAM |
+| P2 | クライアント資格情報取得 | 同上 | 共通基盤 / Secrets Manager（canary-central-readonly）| `secretsmanager.ap-northeast-1.amazonaws.com` | 443、IAM（+KMS）|
+| P3 | 短命トークン取得（Positive 用）| 同上 | **Broker（認証基盤）/ Keycloak 公開 `/token`** | Lambda マネージド egress → **インターネット** → 認証基盤の公開エンドポイント（認証基盤側の境界・経路はそちらの設計に従う）| 443、OAuth client_credentials（11 §11.3.1）|
+| P4 | **Negative / Positive probe** | 同上 | **App / API GW・ALB**（ただし直接ではない）| Lambda マネージド egress → **インターネット** → **ネットワーク監査 / アプリごとの CloudFront + WAF** → Origin Protection（`X-Origin-Verify` + prefix list）→ App / API GW（`execute-api` リージョナル）or ALB | 443。Negative=認証ヘッダなし / Positive=Bearer（P3 のトークン）|
+| P5 | メトリクス発行 | 同上 | 共通基盤 / CloudWatch Metrics（`APIPlatform/AuthCheck`）| `monitoring.ap-northeast-1.amazonaws.com` | 443、`PutMetricData` |
+| P6 | 検知イベント送付（severity≠OK 時）| 同上 | 共通基盤 / Alert Router Lambda | `lambda.ap-northeast-1.amazonaws.com` | 443、`lambda:InvokeFunction` |
+
+> **構成図のポイント**: probe（P4）だけが**インバウンド境界（ネットワーク監査アカウントの CloudFront+WAF）を通る**。P4 の最終宛先は App アカウントだが、**矢印は必ず CloudFront を経由**させて描く（直接 App へ引かない）。P3/P4 はアウトバウンド境界（NWFW）を通らない（明示的例外、§10.1.6）。
+
+#### F3. 発報（アラート）フロー — 2 系統
+
+```mermaid
+flowchart LR
+    PROBE["認証実装チェック Lambda<br/>（共通基盤）"] -->|"N1 classify 済みイベント Invoke"| ALR["Alert Router Lambda<br/>（共通基盤）"]
+    ALR -->|"N2 alertRouting 解決<br/>（S3 registry/ Get）"| S3[("Monitoring Registry S3")]
+    ALR -->|"N3 Publish"| SNS["SNS P1/P2/P3<br/>（共通基盤）"]
+    SNS -->|"N4 配信"| DST["Security オンコール / Platform / アプリチーム<br/>（メール・Chatbot→Slack 等）"]
+    PROBE -->|"N5 PutMetricData"| CW["CloudWatch<br/>AuthCheckCritical"]
+    CW -->|"N6 アラーム（>0）"| SNS
+```
+
+| # | 通信 | 発信元 | 宛先 | 経由・エンドポイント | 備考 |
+|---|---|---|---|---|---|
+| N1 | 検知イベント（即時系）| 共通基盤 / 認証実装チェック Lambda | 共通基盤 / Alert Router | `lambda.ap-northeast-1.amazonaws.com` | 4×4 分類済み（README §2.6 形式）|
+| N2 | 通知先解決 | 共通基盤 / Alert Router | 共通基盤 / S3 `registry/{appId}/{env}.json` | `s3.ap-northeast-1.amazonaws.com` | `alertRouting` → 無ければ環境変数デフォルト（15 §15.2）|
+| N3 | 通知発行 | 共通基盤 / Alert Router | 共通基盤 / SNS トピック P1/P2/P3 | `sns.ap-northeast-1.amazonaws.com` | severity で振り分け（P1=Security 即時 / P2=Platform 24h / P3=App）|
+| N4 | 配信 | 共通基盤 / SNS | 各チーム（メール / AWS Chatbot → Slack 等）| SNS サブスクリプション | 接続方式は M-Q-15-1 |
+| N5 | メトリクス（保険系）| 共通基盤 / 認証実装チェック Lambda | 共通基盤 / CloudWatch | `monitoring.ap-northeast-1.amazonaws.com` | P5 と同一 |
+| N6 | アラーム発報 | 共通基盤 / CloudWatch アラーム（`AuthCheckCritical > 0`）| 共通基盤 / SNS（P1）| CloudWatch → SNS（サービス間）| **即時系（N1〜N4）が落ちても検知を失わない保険**（11 §11.6 / 18 §18.4）|
+
+> **構成図のポイント**: 発報は**即時系（N1〜N4: Alert Router 経由・アプリ別の宛先解決あり）**と**保険系（N5〜N6: メトリクス→アラーム・宛先固定）**の 2 系統を両方描く。すべて共通基盤アカウント内で完結し、境界・App アカウントは関与しない。
 
 ---
 

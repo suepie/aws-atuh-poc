@@ -29,6 +29,7 @@ proposal（§FR-API-* / §NFR-API-* / §C-API-*）は参照物として維持。
 | **認証実装確認処理 E2E フロー**（deploy→検知→通知→是正）| [10 §10.1.4](10-external-monitoring-overview.md) |
 | **認証実装確認処理 リソース一覧**（何が・どこで・何をするか）| [10 §10.1.5](10-external-monitoring-overview.md) |
 | **認証実装確認処理 AWS 構成図**（リソース単位・In/Out 境界アカウント込み・通信経路一覧）| [10 §10.1.6](10-external-monitoring-overview.md) |
+| **詳細通信フロー**（git 連携 W1-9 / 検査 P1-6 / 発報 N1-6。アカウント×リソース×エンドポイント）| [10 §10.1.7](10-external-monitoring-overview.md) |
 | 用語（probe とは何か 等）| [10 §10.0.4](10-external-monitoring-overview.md) |
 | 認証実装確認処理 実行シーケンス（1 実行の中身）| [11 §11.1](11-central-probe-architecture.md) |
 | 課金按分パイプライン概念図 | [03 §3.1.2](03-billing-cost-allocation-rules.md) |
@@ -103,7 +104,7 @@ proposal（§FR-API-* / §NFR-API-* / §C-API-*）は参照物として維持。
 - P4-2 SDK 実挙動: **LocalStack 3.8.1** で app-registry PutItem / alert-router SNS Publish（App Registry DDB 経由の本番ルーティング）を end-to-end 実証。⚠ LocalStack `latest`(2026.7.0) は auth token 必須 → community は `3.8.1` ピン留め必須
 - P4-3 probe lib logic: **27 PASS**（classify 16 + probe統合 4 + extractEndpoints 7）。full orchestration は registry Scan が LocalStack で成立、S3 は LocalStack の virtual-host addressing（`forcePathStyle` 要、実 AWS 無関係）で境界
 
-> **要 PoC 検証（P4-3 full / P4-4 / P4-5、実 AWS or SAM が必要）**: 認証実装チェック Lambda E2E（SAM local）/ Positive probe（Bearer・SigV4）/ Cookie モノリス Positive / get-export（API GW）/ CloudWatch metrics 着地 / マルチアカウント E2E。手順は [research/phase4-environment-setup-guide.md](research/phase4-environment-setup-guide.md)。
+> **要 PoC 検証（P4-3 full / P4-4 / P4-5、実 AWS or SAM が必要）**: 認証実装チェック Lambda E2E（SAM local）/ Positive probe（Bearer・SigV4）/ Cookie モノリス Positive / **発見 Lambda（CodeCommit GetBranch・GetDifferences・GetFile + S3 台帳）E2E** / CloudWatch metrics 着地 / マルチアカウント E2E。手順は [research/phase4-environment-setup-guide.md](research/phase4-environment-setup-guide.md)（旧 get-export 検証は push 型時代の記録）。
 
 ## 参照する主要 proposal / ADR
 

@@ -68,7 +68,7 @@ API プラットフォームのインターネット境界は **ネットワー�
 | # | 死守事項 |
 |---|---|
 | **NW-1** | Public API は CloudFront 経由必須（Origin Protection、直アクセス 403）|
-| **NW-2** | Outbound は Approved SaaS Allowlist 経由（未許可ドメインは遮断前提）|
+| **NW-2** | Outbound は Approved SaaS Allowlist 経由（未許可ドメインは遮断前提）。※中央の認証実装確認処理の probe は**明示的例外**（宛先固定 + 代償統制、[10 §10.1.6](10-external-monitoring-overview.md) / 承認 M-Q-10-3）|
 | **NW-3** | ネットワーク層に依存せず認証を必須化（Zero Trust）|
 | **NW-4** | credential は Secrets Manager（環境変数/コード埋込禁止）|
 
