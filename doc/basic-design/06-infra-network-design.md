@@ -282,7 +282,7 @@ Tier ごとに CPU プロファイルが 10-30 倍異なる（Broker = JWT/SAML 
 | 接続 | **KC Pod SG → Aurora SG の直接続**（HCP でも worker は自 Acct VPC 内のため PrivateLink 不要 — 旧調査の「PrivateLink 経由」は CP↔worker 間の話） | research #8 |
 | `authz` / `idmap` / `projection` | **2026-08-07 [ADR-063](../adr/063-brand-unit-architecture.md): ブランド(IdP-KC)アカウントローカルに配置**（旧「Broker Acct Aurora 別 DB」= O-8 は上書き）。**Option C: Keycloak identity Aurora とは別 Aurora・別 CMK・別 IAM ロール・別 SG**（[U7 D-U7-19](07-security-compliance-design.md)）。federated の authz 行は初回 sub 通知(EventBridge Broker→ブランド、§6.1.2)で生成 | U3 D3-03/D3-11/D3-16、U7 D-U7-19 |
 
-### 6.4.2 決定 D-U6-08: jdbc-ping 前提のコネクション設計
+### 6.4.2 決定 D-U6-08: jdbc-ping 前提のコネクション設計（禁則 [K-2](09-operations-observability-design.md) の根拠）
 
 KC 26.1 以降 **jdbc-ping がデフォルト**（ノードディスカバリを KC DB の `JGROUPSPING` テーブル経由で実施、multicast 不要。PoC 前提と完全整合 — research #8）。これを前提に:
 

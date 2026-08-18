@@ -72,9 +72,9 @@ U6 D-U6-03/04（3 AZ × Machine Pool、c7g.xlarge ベースライン）を前提
 
 - 構成: Writer + Reader × 2（3 AZ、U6 D-U6-07）。**リージョン内 Writer 障害は Aurora Managed Failover（< 1 分）で自動**（ADR-051 §E.1 の自動化区分を維持）。
 - KC は Cluster（Writer）エンドポイントのみ接続（U6 D-U6-08）。Writer 交代時は JDBC socket/login timeout（ALB/R53 TTL 30s より短く設定）で早期切断 → Agroal プール再接続。**この再接続時間の実測が RDS Proxy 再評価（U6 O-3）の判定材料** → §8.9 で追跡。
-- jdbc-ping 制約: Writer 交代中はディスカバリ書込が一時失敗するため、**クラスタ全 Pod の同時再起動を伴う操作は Writer 安定後に実施**（U6 §6.4.2 → U9 Runbook 禁則）。
+- jdbc-ping 制約: Writer 交代中はディスカバリ書込が一時失敗するため、**クラスタ全 Pod の同時再起動を伴う操作は Writer 安定後に実施**（**禁則 [K-2](09-operations-observability-design.md)**、U6 §6.4.2）。
 
-### 8.1.4 決定 D-U8-04: ゼロダウンデプロイ（RHBK Operator ローリング）
+### 8.1.4 決定 D-U8-04: ゼロダウンデプロイ（RHBK Operator ローリング。OLM 自動更新は禁則 [K-11](09-operations-observability-design.md)）
 
 | 変更種別 | 方式 | ダウンタイム |
 |---|---|---|
@@ -264,7 +264,7 @@ ADR-051 §E.1 の区分を維持しつつ、判断を早めるため**リージ�
 
 | フェーズ | 主なアクション | 目安 | Runbook |
 |---|---|---|---|
-| P0 判定・承認 | RB-DR-00 判定（**リージョン災害か論理破壊かの切り分け** + ITDR 抑制/強化フラグ）→ CTO 承認（SLA 15 分）→ 大阪 DR 宣言 | 〜1h | RB-DR-00 |
+| P0 判定・承認 | RB-DR-00 判定（**リージョン災害か論理破壊かの切り分け** + ITDR 抑制/強化フラグ。**フラグ操作は RB-DR-00 のみ = 禁則 [K-3](09-operations-observability-design.md)**）→ CTO 承認（SLA 15 分）→ 大阪 DR 宣言 | 〜1h | RB-DR-00 |
 | P1 大阪 ROSA 再構築 | IaC で VPC（CIDR 事前確保済）/ ROSA HCP × 2 / Machine Pool / RHBK Operator / KC CR / Custom SPI / SCIM Facade を新規適用 | 数日 | RB-DR-03 |
 | P2 データ復元 | **(A) Aurora Global を大阪で Promote**（維持時、O-U8-10 推奨）/ **(B) 不変スナップショット + PITR から大阪 Aurora を復元** → KC 接続先を大阪へ | 半日〜1 日 | RB-DR-01 |
 | P3 構成整合 | IaC ドリフト検知で Git ⇔ 稼働 KC 突合（realm / Flow / Client / 1000+ IdP）、テナント層オンボーディング再生の差分確認 | 半日〜1 日 | RB-DR-03 |
@@ -420,7 +420,7 @@ flowchart LR
 
 ## 8.7 フェイルバック手順と DR 訓練計画
 
-### 8.7.1 決定 D-U8-12: フェイルバックは計画 Switchover（手動承認・RPO 0）
+### 8.7.1 決定 D-U8-12: フェイルバックは計画 Switchover（手動承認・RPO 0。禁止 3 操作 = 禁則 [K-4](09-operations-observability-design.md)）
 
 keycloak-dr-aurora-sync §5.5 の手順を正式化する（大阪 Primary 継続期間中に大阪で書かれたデータの保全が目的）:
 

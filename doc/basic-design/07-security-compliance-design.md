@@ -467,7 +467,7 @@ flowchart LR
 
 | 段階 | 内容 |
 |---|---|
-| **Phase 1（確定）** | 2-tier（Broker↔IdP-KC）および Confidential Service Client は `client_secret_post` を許容（PrivateLink 閉域が成立しているため、D-U6-06）。ただし次を必須とする: ① secret は Secrets Manager 保管（`*-secrets` CMK）+ **90 日自動ローテーション**（Rotation Lambda → KC Admin API で更新）② **Keycloak Client Secret Rotation ポリシー（2 世代並走）を有効化**し、ローテ時の瞬断をゼロ化 ③ realm.json / IaC への secret 直書き禁止（PCI 8.6.2、CI lint で機械検査 — U9） |
+| **Phase 1（確定）** | 2-tier（Broker↔IdP-KC）および Confidential Service Client は `client_secret_post` を許容（PrivateLink 閉域が成立しているため、D-U6-06）。ただし次を必須とする（**禁則 [K-7](09-operations-observability-design.md) = IaC 直書き禁止**）: ① secret は Secrets Manager 保管（`*-secrets` CMK）+ **90 日自動ローテーション**（Rotation Lambda → KC Admin API で更新）② **Keycloak Client Secret Rotation ポリシー（2 世代並走）を有効化**し、ローテ時の瞬断をゼロ化 ③ realm.json / IaC への secret 直書き禁止（PCI 8.6.2、CI lint で機械検査 — U9） |
 | **Phase 2 開始時（昇格、確定）** | 2-tier ブローカー接続・基盤内部 Confidential Client・`idm:*` CC クライアントを **private_key_jwt（RFC 7523）へ一括昇格**。鍵ペアはクライアント側生成・公開鍵のみ KC 登録（JWKS URL）、90 日ローテは同じ Rotation 基盤を流用（secret 更新 → 鍵ペア更新に置換するだけの設計とし、Phase 1 の自動化投資を無駄にしない） |
 | **mTLS（Phase 3 / 条件付き）** | FAPI 2.0 / 金融顧客要件の発生時のみ（ADR-060 §B.4 Phase 3 と同一トリガー）。CA 運用（ADR-060 §I）の重さから標準昇格パスには含めない |
 

@@ -62,7 +62,7 @@ flowchart TB
 
 | ステップ | 内容 |
 |---|---|
-| ① 列挙 | Organizations `ListAccounts` で対象 App アカウントを列挙（対象 OU で絞込可）|
+| ① 列挙 | 対象 App アカウントを列挙（⚠ `organizations:ListAccounts` は管理アカウント限定のため列挙方式は **M-Q-17-2** で確定。10 §10.1.7 W3）|
 | ② AssumeRole | 各アカウントに **StackSets 配布済みの読み取り専用ロール**（codecommit read のみ、16 章）で入る |
 | ③ リポジトリ列挙 | `ListRepositories`。**monitoring.yaml を持つリポジトリ = 監視対象**（§17.3）|
 | ④ 先端取得 | `GetBranch` で対象ブランチ（既定 `main`）の先端コミット ID を取得 |

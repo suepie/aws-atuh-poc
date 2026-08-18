@@ -92,7 +92,7 @@ Internal ALB / API GW Private endpoint など VPC 内部のみの API も監視�
 | Private 構成 | 到達手段 |
 |---|---|
 | API GW Private endpoint | VPC Interface Endpoint（`execute-api`）|
-| Internal ALB / NLB | **Canary VPC + Transit Gateway 経由** |
+| Internal ALB / NLB | **probe 用 VPC + Transit Gateway 経由**（ADR-059 §E での呼称は Canary VPC）|
 | VPC Lattice Service | VPC Lattice Service Association |
 
 → 認証実装確認処理（Lambda）を **VPC 構成**にし、既存 Transit Gateway にアタッチすれば全 App アカウントの Private endpoint に到達可能。Lambda は VPC 実行に対応（将来 Synthetics を使う場合も VPC 実行を公式サポート）。詳細は [ADR-059 §E](../../adr/059-central-auth-check-canary-architecture.md)。
@@ -129,7 +129,7 @@ Internal ALB / API GW Private endpoint など VPC 内部のみの API も監視�
 | D-M-14-1 | probe lib を分割（registry/openapi/token/probe/classify/emit）| 独立テスト + classify の SSOT 共有 |
 | D-M-14-2 | Multi Checks は将来オプション（≤10 固定 endpoint、Synthetics）| OAuth ネイティブで手軽だが動的発見不可・定期実行前提 |
 | D-M-14-3 | モノリスは authPattern=alb-cookie-monolith で 302 検証 | API GW 非依存アプリを担保 |
-| D-M-14-4 | Private は Canary VPC + TGW（Phase 2）| 既存 TGW を再利用し全 App アカウント 到達 |
+| D-M-14-4 | Private は probe 用 VPC + TGW（Phase 2）| 既存 TGW を再利用し全 App アカウント到達 |
 | D-M-14-5 | 要 PoC 項目をコード内 TODO + 本章 §14.5 に明示 | 「検証済み」と「未検証」を誤認させない |
 
 ---

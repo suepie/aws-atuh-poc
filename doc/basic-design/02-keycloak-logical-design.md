@@ -482,25 +482,25 @@ Broker 内部 username は `<orgAlias>-<userid>`（Username Template Importer �
 
 > 出典: [research/keycloak-1000idp-scalability-research.md](research/keycloak-1000idp-scalability-research.md)（判定: 条件付き成立・要 PoC）。以下は「対策の推奨」ではなく**本設計の制約（違反 = 設計逸脱）**として定める。
 
-### 2.7.1 制約 1: バージョン固定 + 昇格前検証
+### 2.7.1 制約 1: バージョン固定 + 昇格前検証（禁則 [K-11](09-operations-observability-design.md)）
 
 **決め**: Keycloak は **RHBK 26.x 系に固定**（P-01。upstream 混在禁止）。RHBK Operator の OLM は **Explicit Strategy（手動承認）** とし自動更新を禁止。パッチ含む全昇格は **Staging で 1000 IdP 合成データセット（PoC P-1 の投入スクリプトを恒久資産化）に対する回帰測定（ログイン p99 / Admin API p99）を通過してから** Production に適用する（26.5.4 の O(N²) リグレッション #46605 前例のため、パッチも例外にしない）。手順の Runbook 化は U9。
 
-### 2.7.2 制約 2: IdP 一覧を UI に出さない
+### 2.7.2 制約 2: IdP 一覧を UI に出さない（禁則 [K-8](09-operations-observability-design.md) 前半）
 
 **決め**: (a) 全 IdP・全期間で **`hideOnLoginPage=true` を必須**（IaC の default + CI で lint）。(b) ログインテーマは IdP リストを描画しない（HRD 識別子入力 + Organization Identity-First のみ。U4 のテーマ設計に制約として引き渡し）。(c) Account Console の IdP リンク一覧機能は無効化または対象 IdP 限定（keycloak#45293 未解決の間）。**HRD SPI（§2.3.3）はこの制約の実現手段であり、性能成立の必須条件**（ADR-055 の位置付け格上げ、ADR-017 Consequences 2026-07-23 追記と整合）。
 
-### 2.7.3 制約 3: IdP は必ず Organization 紐付け
+### 2.7.3 制約 3: IdP は必ず Organization 紐付け（禁則 [K-8](09-operations-observability-design.md) 後半）
 
 **決め**: **Org 非紐付けのグローバル IdP の新規作成を禁止**。許容される例外は `idpkc-oidc01`（§2.2.2、ただしこれも IdP なし顧客の各 Org に紐付けて登録する）のみ。オンボーディングパイプライン（§2.7.5）は Org 紐付けのない IdP 作成要求を reject する。
 
-### 2.7.4 制約 4: realm 全体 export / realm representation を扱う運用の禁止
+### 2.7.4 制約 4: realm 全体 export / realm representation を扱う運用の禁止（禁則 [K-1](09-operations-observability-design.md)）
 
 **決め**: 日常運用・バックアップ・監査のいずれでも **realm 全体 export（`kc.sh export` / Admin の partial-export 含む）を使用しない**。構成の読取・変更は **IdP 単位 / Org 単位 / Client 単位の Admin API のみ**。
 - 構成バックアップ = IaC リポジトリ（Git）+ Aurora スナップショット/PITR を正とする。
 - **U8 への申し送り**: ADR-051 系で言及される「Realm Export 自動化」は 1000 IdP 環境では成立しない（改修前実害: realm JSON 30MB / Admin Events 併用時の更新失敗 #14851）。DR の構成復元手順は「IaC 再適用 + Aurora Global DB」前提で U8 が再設計すること。
 
-### 2.7.5 制約 5: Terraform state 分割 + テナ層のオンボーディング API 化
+### 2.7.5 制約 5: Terraform state 分割 + テナ層のオンボーディング API 化（禁則 [K-9](09-operations-observability-design.md)）
 
 **決め**: IaC を 2 層に分離する。
 

@@ -73,7 +73,7 @@
 
 | ロール | 使い手 | 権限 |
 |---|---|---|
-| `DiscoveryLambdaRole` | 発見 Lambda | `organizations:ListAccounts` / `sts:AssumeRole`（各 App の DiscoveryReadRole）/ `s3:PutObject・GetObject・ListBucket`（Monitoring Registry の `registry/*` + `openapi/*`）/ `lambda:InvokeFunction`（認証実装チェック Lambda）|
+| `DiscoveryLambdaRole` | 発見 Lambda | アカウント列挙（⚠ `organizations:ListAccounts` は管理アカウント限定のため、方式は M-Q-17-2 で確定: 案 a なら管理アカウントの列挙用ロールへの `sts:AssumeRole` / 案 b なら `ssm:GetParameter`）/ `sts:AssumeRole`（各 App の DiscoveryReadRole）/ `s3:PutObject・GetObject・ListBucket`（Monitoring Registry の `registry/*` + `openapi/*`）/ `lambda:InvokeFunction`（認証実装チェック Lambda）|
 | `CentralProbeRole` | 認証実装チェック Lambda | `s3:GetObject・ListBucket`（Monitoring Registry：台帳 + spec）/ `secretsmanager:GetSecretValue` / `cloudwatch:PutMetricData` / `lambda:InvokeFunction`（Alert Router）|
 | `alert-router-lambda-role` | Alert Router | `s3:GetObject`（`registry/*`、alertRouting 解決）/ `sns:Publish` |
 
