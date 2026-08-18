@@ -193,7 +193,7 @@ flowchart LR
 
 ## 2.3 Authentication Flow 設計（5 系統）
 
-> **全系統共通の設計制約（PoC F-6、[jit-scim §10.4.F.3](../common/jit-scim-coexistence-keycloak.md)）**: Keycloak のフロー評価は「同一レベルに REQUIRED があると同レベルの ALTERNATIVE が無視される」。`requiresUser()=true` の Custom SPI を **top-level に REQUIRED で置いてはならない**。必ず forms サブフロー内（Username Password Form の後）または Broker Flow 末尾に配置する。本制約は IaC レビューのチェック項目（U9）に必ず含める。
+> **全系統共通の設計制約 = 禁則 [K-6](09-operations-observability-design.md)（PoC F-6、[jit-scim §10.4.F.3](../common/jit-scim-coexistence-keycloak.md)）**: Keycloak のフロー評価は「同一レベルに REQUIRED があると同レベルの ALTERNATIVE が無視される」。`requiresUser()=true` の Custom SPI を **top-level に REQUIRED で置いてはならない**。必ず forms サブフロー内（Username Password Form の後）または Broker Flow 末尾に配置する。本制約は IaC レビューのチェック項目（U9）に必ず含める。
 
 ### 2.3.1 系統①: ローカル認証（Browser Flow、基盤運用者 P-1 のみ）
 

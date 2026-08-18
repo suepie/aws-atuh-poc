@@ -271,7 +271,7 @@ flowchart LR
 | K-8 | **`hideOnLoginPage=true` 必須 / Org 非紐付け IdP の新規作成禁止** | U2 §2.7.2/2.7.3（P-16 対策 2/3） | オンボーディングパイプラインの reject 条件 + 日次ドリフト検知の検査項目 |
 | K-9 | **単一 Terraform state に 1000 IdP 級のテナント層リソースを置かない** | U2 §2.7.5（設計として不成立） | §9.5.1 の 2 層分離で構造的に排除 |
 | K-10 | **Admin REST API クライアント（Terraform / 管理画面 Backend / パイプライン）は内部ホスト名 + 内部経路経由に統一**（公開 `/admin` 経路は 3 層防御で遮断済み） | U6 §6.6.1 / D-U6-11 | provider 設定を IaC テンプレート固定 |
-| K-11 | OLM 自動更新禁止（Explicit Strategy。パッチも Staging 1000 IdP 回帰通過が必須） | U2 §2.7.1 / U8 §8.1.4 | Subscription CR を IaC 固定 + ドリフト検知 |
+| K-11 | **OLM 自動更新禁止**（Explicit Strategy。パッチも Staging 1000 IdP 回帰通過が必須） | U2 §2.7.1 / U8 §8.1.4 | Subscription CR を IaC 固定 + ドリフト検知 |
 | K-12 | **クラスタ audit profile の引き上げ禁止**（`Default`〔メタデータのみ〕に固定。`WriteRequestBodies` / `AllRequestBodies` へ変更しない — 変更すると Secret 等のボディが **Red Hat 管理面のコントロールプレーン監査ログへ流入**し APPI 法 28 評価が崩れる） | [ADR-056 ガードレール L6](../adr/056-rosa-adoption-decision.md) / U7 §7.7.4 | APIServer CR を IaC 固定 + 日次ドリフト検知（§9.5.3）の検査項目 |
 | K-13 | **本番ログレベル `DEBUG`/`TRACE` 禁止 + stdout への生 PII 出力禁止**（Keycloak 等が worker ノード `/var/log/pods` に書く stdout はマスク前平文で、**cluster-admin 昇格 Red Hat SRE / break-glass 時に `oc logs` 経由で閲覧されうる**。M-1〜14 は Fluent Bit 下流のため本経路を覆わない ＝ ソース側で PII をノードに書かせないのが根本対策） | [ADR-056 ガードレール L7](../adr/056-rosa-adoption-decision.md) / U7 §7.7.4 / [research 2026-08-14](research/rosa-sre-live-log-visibility-2026-08-14.md) | ログレベル/PII マスク設定を Config lint 固定 + 日次ドリフト検知 + `oc logs` PII 非出力を実機確認（G-SRE-LogVis） |
 
