@@ -12,6 +12,13 @@
 > - Lambda 構成は **3 本**（発見 / 認証実装チェック / Alert Router）。
 > - 本文の「deploymentId 比較」「apigateway:GET」は上記に読み替える。基本設計 12/13/16/17/18 章は改訂反映済み。
 >
+> ⚠ **追記（2026-08-19）: 手動（コンソール）変更の検知方針を確定し、巡回を「git 主 + deploymentId 併読」に更新**（2026-08-07 の「git 単独」を更新。ユーザー決定 ②+③+①）。
+> - 背景: git 単独では**コンソール直変更（穴①）を検知できない**。方針決定により検知網を二重化する。
+> - **① ガイド明記**: 「変更は必ず git 経由。コンソール直変更禁止」を利用ガイド・Runbook に明記（抑止）。
+> - **② Config Rules の実体化**: 設計前提だった L2 補完（API GW 認証必須の drift 検知）の実在を確認し、無ければ実装（設定レベルの検知）。
+> - **③ deploymentId 併読の復活**: 巡回時に CodeCommit のコミット差分に加えて **API GW stage の deploymentId も読む**。REST API はコンソール変更も「デプロイ」しないと実挙動に反映されないため、**反映された手動変更は deploymentId の変化として 1 時間以内に検知され M1 実測検査にかかる**（挙動レベルの検知）。DiscoveryReadRole に `apigateway:GET`（read-only）を復活。
+> - 限界の明示: デプロイ未実施のコンソール編集（実挙動に未反映）と、deploymentId を持たない構成（ALB 直モノリス等）の手動変更は ③ では拾えない → ② Config Rules と M3 が受け持つ。
+
 > ⚠ **追記（2026-08-13）: 台帳ストアを DynamoDB → S3 に統合**。分析の結果、台帳で本当に消せない情報は **lastCheckedCommitId（巡回状態）/ alertRouting / enabled（中央管理項目）の 3 つだけ**で、書き手は発見 Lambda 1 本（1h 毎・直列）・データ量はアプリ数百でも MB 未満のため、DynamoDB の性能・整合性が必要な要素がない。**OpenAPI Registry と同じ S3 バケット（Monitoring Registry）に `registry/{appId}/{env}.json` として同居**させ、ストアを S3 1 つに集約（ユーザー決定 2026-08-13。2026-08-07 の「DDB 維持」を更新）。代償: enabled/alertRouting の運用操作が JSON 編集になる・巡回を並列化する場合は排他制御の作り込みが要る（ETag 条件付き PUT で対応可）。DynamoDB は構成から消滅し、AWS リソースは **S3×1 + Lambda×3 + Scheduler + SNS/CloudWatch/Secrets** に縮小。
 関連: [ADR-059 認証実装確認処理（Central Auth Check Canary）](059-central-auth-check-canary-architecture.md) / [基本設計 17 章](../api-platform/basic-design/17-deployment-integration-and-registration.md) / [18 章](../api-platform/basic-design/18-scan-modes-and-scheduling.md)
 

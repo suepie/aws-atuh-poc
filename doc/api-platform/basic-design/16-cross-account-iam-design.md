@@ -42,7 +42,8 @@
       "codecommit:GetBranch",        // 先端コミット ID
       "codecommit:GetCommit",
       "codecommit:GetDifferences",   // 変更パス（モノレポのアプリ特定）
-      "codecommit:GetFile"           // monitoring.yaml / openapi.yaml 取得
+      "codecommit:GetFile",          // monitoring.yaml / openapi.yaml 取得
+      "apigateway:GET"               // stage deploymentId 併読（手動変更のデプロイ反映検知。ADR-061 追記 2026-08-19）
     ],
     "Resource": "*"
   }]
@@ -81,7 +82,7 @@
 
 | ロール | 使い手 | 権限 |
 |---|---|---|
-| `DiscoveryReadRole` | 中央の発見 Lambda（AssumeRole）| `codecommit:ListRepositories / GetBranch / GetCommit / GetDifferences / GetFile`（read-only、§16.2）|
+| `DiscoveryReadRole` | 中央の発見 Lambda（AssumeRole）| `codecommit:ListRepositories / GetBranch / GetCommit / GetDifferences / GetFile` + `apigateway:GET`（deploymentId 併読）（いずれも read-only、§16.2）|
 
 → App アカウント側に置くのは**読み取りロール 1 つだけ**。旧 push 型で必要だった Invoke ロール / 書き込み AssumeRole / Custom Resource 実行権限はすべて不要になった。
 

@@ -23,13 +23,13 @@
 
 | モード | トリガ | 範囲 | 頻度 | 状態 |
 |---|---|---|---|:---:|
-| **M1 巡回差分** | **中央巡回**（発見 Lambda が 1 時間毎に **CodeCommit のコミット差分**を確認、[17 章 §17.2](17-deployment-integration-and-registration.md) / [ADR-061 改訂](../../adr/061-deploy-detection-pull-model.md)）| **変更のあったアプリの全 endpoint** | 1 時間毎（検知遅延 最大 1h）| ✅ Phase 1 |
+| **M1 巡回差分** | **中央巡回**（発見 Lambda が 1 時間毎に **CodeCommit のコミット差分 + API GW deploymentId を併読**、[17 章 §17.2](17-deployment-integration-and-registration.md) / [ADR-061 追記 2026-08-19](../../adr/061-deploy-detection-pull-model.md)）| **変更のあったアプリの全 endpoint** | 1 時間毎（検知遅延 最大 1h）| ✅ Phase 1 |
 | **M3 フル監査** | **手動** | 全アプリ全 endpoint | オンデマンド | ✅ Phase 1 |
 | ~~M2 常時 heartbeat~~ | スケジュール | 重要 endpoint のサブセット | 5-15 分 | ⏸ **将来**（重要 endpoint の定義はアプリと会話後）|
 
 ```mermaid
 flowchart LR
-    SCH[EventBridge Scheduler<br/>1 時間毎] --> DISC[発見 Lambda<br/>CodeCommit 巡回・コミット差分（17 章）]
+    SCH[EventBridge Scheduler<br/>1 時間毎] --> DISC[発見 Lambda<br/>CodeCommit 巡回・コミット差分<br/>＋deploymentId 併読（17 章）]
     DISC -->|変化あり| M1[M1 巡回差分（自動）<br/>変更アプリの全 endpoint]
     Manual[運用者 手動] -->|invoke| M3[M3 フル監査（手動）<br/>全アプリ全 endpoint]
     M2["M2 heartbeat（将来）"]:::future
@@ -63,7 +63,7 @@ flowchart LR
 
 ### §18.2.2 トリガ：中央巡回（pull、17 章が SSOT）
 
-変更検知は **発見 Lambda の 1 時間毎巡回（CodeCommit のコミット差分 = `lastCheckedCommitId` 比較）**（[17 章 §17.2](17-deployment-integration-and-registration.md)）が行い、変更のあったアプリだけ M1 を起動する。アプリ側イベントには依存しない（[ADR-061 改訂](../../adr/061-deploy-detection-pull-model.md)）。
+変更検知は **発見 Lambda の 1 時間毎巡回**が行う。シグナルは **git 主（CodeCommit のコミット差分 = `lastCheckedCommitId` 比較）＋ deploymentId 併読（API GW stage の deploymentId を前回値と比較、手動変更のデプロイ反映を検知）**（[17 章 §17.2](17-deployment-integration-and-registration.md)）で、いずれかに変化のあったアプリだけ M1 を起動する。アプリ側イベントには依存しない（[ADR-061 追記 2026-08-19](../../adr/061-deploy-detection-pull-model.md)）。
 
 ```mermaid
 flowchart LR
@@ -73,7 +73,7 @@ flowchart LR
     L --> P[そのアプリの全 endpoint probe]
 ```
 
-> ⚠ **git 単独検知の穴と補完**（[17 章 §17.2.2](17-deployment-integration-and-registration.md)）: コンソール直変更は検知できない（→ L2 Config Rules + M3 + SCP）。コミット直後は未デプロイの可能性（→ 次回巡回の再検査 + M3）。
+> ⚠ **検知の穴と補完**（[17 章 §17.2.2](17-deployment-integration-and-registration.md)、2026-08-19 更新）: コンソール直変更は **deploymentId 併読**（デプロイ反映時に検知）+ **Config Rules 実体化** + ガイド明記の三重で補完。コミット直後は未デプロイの可能性（→ 次回巡回の再検査 + M3）。
 
 ### §18.2.3 実行基盤：Lambda（発見 → probe の 2 段）
 

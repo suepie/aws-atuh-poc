@@ -8,7 +8,7 @@
 ## §17.0 前提と背景
 
 **この章で定めること**: 「アプリに変更があったことをどう検知し、App Registry に載せるか」。
-**方式**: **中央巡回（pull 型）× CodeCommit コミット差分**（[ADR-061](../../adr/061-deploy-detection-pull-model.md)）。共通基盤アカウントの**発見 Lambda が 1 時間毎に各 App アカウントの CodeCommit リポジトリを読み取り巡回**し、「**前回確認したコミット ID からの変更**」を検知して、登録・OpenAPI 取得・M1 検査起動をすべて中央側で行う。**アプリ側のイベント・登録処理には依存しない**（トリガーは中央が引く）。
+**方式**: **中央巡回（pull 型）× 「git 主 + deploymentId 併読」**（[ADR-061 追記 2026-08-19](../../adr/061-deploy-detection-pull-model.md)）。共通基盤アカウントの**発見 Lambda が 1 時間毎に各 App アカウントの CodeCommit リポジトリを読み取り巡回**し、「**前回確認したコミット ID からの変更**」を検知する。あわせて **API GW stage の deploymentId も併読**し、**git に現れない手動（コンソール）変更もデプロイ反映時点で検知**する。登録・OpenAPI 取得・M1 検査起動はすべて中央側で行い、**アプリ側のイベント・登録処理には依存しない**（トリガーは中央が引く）。
 
 - 前提: 各アプリのコードリポジトリは **App アカウントの CodeCommit**（AWS は 2025-11-24 に CodeCommit を完全 GA へ復帰させており新規利用可）
 - 旧方式（API GW の deploymentId 比較 / 資源タグからのメタ補完 / さらに前の push 型 3 層）の経緯と比較は [ADR-061](../../adr/061-deploy-detection-pull-model.md)
@@ -67,20 +67,21 @@ flowchart TB
 | ③ リポジトリ列挙 | `ListRepositories`。**monitoring.yaml を持つリポジトリ = 監視対象**（§17.3）|
 | ④ 先端取得 | `GetBranch` で対象ブランチ（既定 `main`）の先端コミット ID を取得 |
 | ⑤ 差分判定 | 台帳の **`lastCheckedCommitId`** と比較。違えば「**前回確認から変更があった**」|
+| ⑤' deploymentId 併読 | monitoring.yaml から特定した API GW の **stage deploymentId** を読み（`apigateway:GET`）、台帳の前回値と比較。**コミットが無くても変化していれば「手動変更がデプロイされた」として M1 対象**にする（[ADR-061 追記 2026-08-19](../../adr/061-deploy-detection-pull-model.md)。ALB 直モノリスは対象外 → Config Rules / M3 が受け持つ）|
 | ⑥ 内容取得 | 変化したリポジトリは `GetDifferences`（変更パス→モノレポ時のアプリ特定）+ `GetFile` で monitoring.yaml / openapi.yaml を取得し、台帳更新・OpenAPI Registry へ Put（13 章）|
-| ⑦ M1 起動 | 変化のあったアプリを対象に認証実装チェック Lambda を invoke（`{mode:'delta', appId, env}`、18 章）。完了後 `lastCheckedCommitId` を更新 |
+| ⑦ M1 起動 | 変化のあったアプリを対象に認証実装チェック Lambda を invoke（`{mode:'delta', appId, env}`、18 章）。完了後 `lastCheckedCommitId` と `deploymentId` を更新 |
 | 新規発見 | 台帳に無い monitoring.yaml 付きリポジトリは**自動登録**。「登録漏れ」という概念自体が消える |
 | 消滅検知 | リポジトリ削除 / monitoring.yaml 削除は台帳を `enabled=false` に（棚卸しアラート）|
 
-### §17.2.2 git 単独検知の特性（受容した穴と補完）
+### §17.2.2 検知の特性（穴と補完）
 
 **検知遅延**: コミット後**最大 1 時間**。一次防衛は deploy 前ガード（04 章静的解析 + 製品テンプレ）であり、外形監視は検知網のため許容（[ADR-061](../../adr/061-deploy-detection-pull-model.md)）。
 
-**git 単独で拾えないもの（意図的に受容、ADR-061 改訂）**:
+**git 主＋deploymentId 併読でも拾えないもの（補完レイヤーで受け持つ、ADR-061 追記 2026-08-19）**:
 
 | 穴 | 内容 | 補完レイヤー |
 |---|---|---|
-| **コンソール直変更** | コンソールで Authorizer を外す等、**git に現れない変更は検知できない** | **L2 Config Rules**（`AuthorizationType=NONE` の drift 検知、[§FR-API-7 §7.2.2](../proposal/fr/07-guardrails.md)）+ **M3 手動フル**（18 章）+ SCP で製品外の直接変更を抑止（§17.5）|
+| **コンソール直変更** | コンソールで Authorizer を外す等、git に現れない変更 | **三重で補完**（2026-08-19 方針確定 ②+③+①）: ② **L2 Config Rules の実体化**（`AuthorizationType=NONE` の drift 検知。実在確認の上、無ければ実装）③ **deploymentId 併読**（§17.2.1 ⑤'。REST API はコンソール変更もデプロイしないと反映されないため、反映された手動変更は 1h 以内に M1 実測検査）① **ガイド・Runbook に「変更は必ず git 経由」を明記**。残る死角（デプロイ未反映の編集・ALB 直モノリスの手動変更）は Config Rules + M3。SCP による防止は Phase 2 判断（§17.5）|
 | **コミット ≠ デプロイ** | コミット直後の検査は本番がまだ旧コードの可能性（偽安心）| **次回巡回（1h 後）の再検査**が事実上のリトライになる + M3。恒常的に未デプロイのままなら probe が 404/WARN で顕在化 |
 
 → 外形監視は検知 5 レイヤーの L5（[§C-6.6](../proposal/common/06-external-api-auth-architecture.md)）であり、**単層で完結させず L2（Config）と組み合わせて穴を塞ぐ**のが前提。
@@ -156,7 +157,7 @@ SCP: apigateway:POST /restapis / apigateway:PATCH 等を Deny
 |---|---|---|
 | D-M-17-1 | デプロイ検知は **pull 型中央巡回に統一**（push 3 層を置換）| 登録漏れが構造的にゼロ、アプリ側フットプリント実質ゼロ、トリガーが中央に統一（[ADR-061](../../adr/061-deploy-detection-pull-model.md)）|
 | D-M-17-2 | 巡回間隔は **1 時間** | 一次防衛は deploy 前ガード。外形監視は検知網であり 1 時間で許容 |
-| D-M-17-3 | 変更検知は **CodeCommit コミット差分（lastCheckedCommitId 比較）単独** | 「以前確認した範囲からの変更」を Git ネイティブに表現。モノリスも自動対象化。穴（コンソール直変更/未デプロイ）は L2 Config Rules + M3 + SCP で補完（§17.2.2、ADR-061 改訂）|
+| D-M-17-3 | 変更検知は **「git 主（コミット差分）+ deploymentId 併読」**（2026-08-19 に git 単独から更新）| git で意図された変更＋メタデータ、deploymentId で**手動変更のデプロイ反映**を捕捉（検知網の二重化）。残る死角は Config Rules 実体化 + M3 + ガイドで補完（§17.2.1 ⑤' / §17.2.2、ADR-061 追記）|
 | D-M-17-4 | メタデータは **monitoring.yaml（config-as-code）** で宣言、通知先と enabled は台帳側 | PR レビューで変更管理可。ARN・監視停止権限は repo に持たせない |
 | D-M-17-5 | probe 範囲はアプリ単位の全 endpoint（diff で endpoint 絞りしない）| 認証 middleware 削除は diff から endpoint に紐づかない（18 章 §18.2.1）|
 | D-M-17-6 | Service Catalog 製品は「守られた API を作る」に専念（登録処理を持たない）| 「見つける」は中央（関心の分離）|

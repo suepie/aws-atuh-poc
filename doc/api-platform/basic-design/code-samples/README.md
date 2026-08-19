@@ -66,6 +66,7 @@
 | `branch` | S | 監視対象ブランチ | `main` |
 | `pathPrefix` | S | モノレポ時のアプリパス | `apps/expense-api/` |
 | `lastCheckedCommitId` | S | 前回確認した先端コミット ID（M1 差分の基準）| `a1b2c3d…` |
+| `deploymentId` | S | 前回観測した API GW stage の deploymentId（手動変更のデプロイ反映検知用。ALB 直は空）| `dep-abc123` |
 | `lastSeenAt` | S | 巡回で最後に観測した日時 | `2026-08-07T00:00:00Z` |
 
 > `baseUrl`/`authPattern`/`testTokenSecret`/repo 系は **monitoring.yaml 由来**（巡回同期）、`alertRouting`/`enabled` は**台帳のみで中央管理**（12/17 章）。

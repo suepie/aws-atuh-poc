@@ -74,7 +74,7 @@ flowchart TB
         APIB[API GW / ALB<br/>認証実装]
     end
 
-    DISC -.->|"読み取り AssumeRole：<br/>コミット差分・monitoring.yaml・spec 取得"| REPOA
+    DISC -.->|"読み取り AssumeRole：<br/>コミット差分＋deploymentId 併読・<br/>monitoring.yaml・spec 取得"| REPOA
     DISC -.->|"同"| REPOB
     DISC -->|自動登録・スナップショット・spec Put| Reg
     DISC -->|変化あり → M1 起動| CC
@@ -95,7 +95,7 @@ flowchart TB
 ```
 
 - **境界（CloudFront + WAF）はネットワーク監査アカウント**にあり、probe はそこを実ユーザーと同じ経路で通る（§冒頭の配置分離のとおり）
-- **巡回の読み取り（発見 Lambda → CodeCommit）は境界を通らない**（AWS API を読み取りロールで直接呼ぶ、16 章）。変更検知は**コミット差分**（[ADR-061 改訂](../../adr/061-deploy-detection-pull-model.md)）で、コンソール直変更等 git に現れない変更は L2 Config Rules + M3 が補完（17 章 §17.2.2）
+- **巡回の読み取り（発見 Lambda → CodeCommit / API GW）は境界を通らない**（AWS API を読み取りロールで直接呼ぶ、16 章）。変更検知は**コミット差分（git 主）＋ deploymentId 併読**（[ADR-061 追記 2026-08-19](../../adr/061-deploy-detection-pull-model.md)）で、コンソール直変更はデプロイ反映時に deploymentId 側で検知。残る死角（未デプロイ編集・ALB 直）は L2 Config Rules + M3 が補完（17 章 §17.2.2）
 
 > **実行モデル（[18 章](18-scan-modes-and-scheduling.md) が SSOT）**: 実行基盤は **Lambda**、モードは **M1 巡回差分（自動・1 時間毎の巡回で変化アプリのみ）+ M3 フル監査（手動・全量）**。CloudWatch Synthetics は不使用（将来 M2 用オプション）。経緯は [ADR-059](../../adr/059-central-auth-check-canary-architecture.md)（Lambda 一本化）/ [ADR-061](../../adr/061-deploy-detection-pull-model.md)（pull 巡回統一）。
 
@@ -162,7 +162,7 @@ flowchart TB
     style DISC fill:#fff9c4
 ```
 
-> §10.1.1 との違い: こちらは **巡回の番号付きステップ（①〜⑥、17 章）と classify・Alarm（11 章）・通知（15 章）を明示**した完全版。登録・OpenAPI 取得は**すべて中央の pull（CodeCommit のコミット差分・[ADR-061 改訂](../../adr/061-deploy-detection-pull-model.md)）**で、アプリ側に登録処理はない。**2 本の経路が別物**であることに注意：巡回の読み取り（①②＝CodeCommit）は AWS API を直接呼び境界を通らない。probe（⑤）は実ユーザーと同じく境界（ネットワーク監査アカウントの CloudFront）を通る。
+> §10.1.1 との違い: こちらは **巡回の番号付きステップ（①〜⑥、17 章）と classify・Alarm（11 章）・通知（15 章）を明示**した完全版。登録・OpenAPI 取得は**すべて中央の pull（CodeCommit のコミット差分＋deploymentId 併読・[ADR-061 追記 2026-08-19](../../adr/061-deploy-detection-pull-model.md)）**で、アプリ側に登録処理はない。**2 本の経路が別物**であることに注意：巡回の読み取り（①②＝CodeCommit / API GW）は AWS API を直接呼び境界を通らない。probe（⑤）は実ユーザーと同じく境界（ネットワーク監査アカウントの CloudFront）を通る。
 
 ### §10.1.4 エンドツーエンド フロー（deploy → 検知 → 通知 → 是正）
 
@@ -170,7 +170,7 @@ flowchart TB
 
 ```mermaid
 flowchart LR
-    D["① コミット & デプロイ<br/>04 静的解析 pass"] --> R["② 巡回発見（コミット差分）<br/>最大 1h 後に検知・登録・spec 取得<br/>（17 章）"]
+    D["① コミット & デプロイ<br/>04 静的解析 pass"] --> R["② 巡回発見（コミット差分<br/>＋deploymentId 併読）<br/>最大 1h 後に検知・登録・spec 取得<br/>（17 章）"]
     R --> T["③ M1 起動（自動）<br/>/ M3 フル（手動）<br/>（18 章）"]
     T --> P["④ probe<br/>Negative + Positive<br/>（11 章）"]
     P --> C{"⑤ classify<br/>4×4 真偽値表<br/>（11 章）"}
@@ -196,7 +196,7 @@ flowchart LR
 | リソース | AWS サービス | 役割（ひとことで） | 詳細章 |
 |---|---|---|:---:|
 | **EventBridge Scheduler** | EventBridge | **巡回の起点**。1 時間毎に発見 Lambda を起動 | 17 / 18 |
-| **発見 Lambda** | Lambda | **変更検知と登録の実行体（pull）**。各 App アカウントの **CodeCommit を読み取り巡回**し、リポジトリ発見・**コミット差分（lastCheckedCommitId 比較）**・台帳登録・spec 取得を行い、変更のあったアプリの検査を起動する | 17 |
+| **発見 Lambda** | Lambda | **変更検知と登録の実行体（pull）**。各 App アカウントの **CodeCommit を読み取り巡回**し、リポジトリ発見・**コミット差分（lastCheckedCommitId 比較）＋ API GW deploymentId 併読（手動変更のデプロイ反映検知）**・台帳登録・spec 取得を行い、変更のあったアプリの検査を起動する | 17 |
 | **Monitoring Registry** | **S3（Versioning）×1 バケット** | **台帳 + spec コピーの一体ストア**（DynamoDB は不使用、ADR-061 追記）。`registry/{appId}/{env}.json` = 監視対象の台帳＋巡回スナップショット（baseUrl / authPattern / 通知先 / **前回確認コミット ID**。設定値は monitoring.yaml 由来、書き手は発見 Lambda）。`openapi/…` = リポジトリ内 openapi.yaml（正本）のコピーで、endpoint 一覧と公開印（MON-1）の情報源 | 12 / 13 |
 | **認証実装チェック Lambda（認証実装確認処理）** | Lambda | **検査の実行体**。台帳と仕様を読み、各 endpoint に未認証/正規の 2 種リクエストを送って認証の効き具合を確かめる | 11 / 14 |
 | **CloudWatch Metrics / アラーム** | CloudWatch | **検査結果の記録と発報**。`AuthCheckCritical > 0` で認証漏れアラーム | 11 / 18 |
@@ -209,7 +209,7 @@ flowchart LR
 | リソース | AWS サービス | 役割（ひとことで） | 詳細章 |
 |---|---|---|:---:|
 | **Service Catalog 製品** | Service Catalog | **正規デプロイの型**。認証必須・Origin Protection・タグ付与を全部込みで提供（アプリはパラメータを選ぶだけ。登録処理は含まない＝中央が発見する）| 17 §17.1 |
-| **CodeCommit リポジトリ** | CodeCommit | **変更検知とメタデータの源**。monitoring.yaml（監視宣言）+ openapi.yaml（spec 正本）を置く。コミット差分が M1 のトリガー | 17 §17.2-3 |
+| **CodeCommit リポジトリ** | CodeCommit | **変更検知とメタデータの源**。monitoring.yaml（監視宣言）+ openapi.yaml（spec 正本）を置く。コミット差分が M1 の主トリガー（API GW deploymentId を併読して手動変更のデプロイ反映も検知）| 17 §17.2-3 |
 | **DiscoveryReadRole** | IAM ロール（StackSets 配布）| **中央からの読み取り窓口**。発見 Lambda だけが AssumeRole でき、codecommit read のみ | 16 §16.2 |
 | **API GW / ALB** | — | **検査の対象**（アプリの認証実装そのもの）。probe が実際に叩く | 11 |
 
@@ -348,6 +348,7 @@ sequenceDiagram
 | W3 | 対象アカウント列挙 | 共通基盤 / 発見 Lambda | 方式未確定（**M-Q-17-2**）| ⚠ `organizations:ListAccounts` は既定では管理アカウント限定 → **案 c（推奨）: Organizations 委任ポリシーで共通基盤に ListAccounts を委任し直接呼ぶ**（`organizations.us-east-1.amazonaws.com`、グローバル）/ 案 a: 管理アカウントの列挙用ロールへ AssumeRole / 案 b: 静的リスト（SSM）| 443、IAM |
 | W4 | AssumeRole | 共通基盤 / 発見 Lambda（DiscoveryLambdaRole）| App / **DiscoveryReadRole** | `sts.ap-northeast-1.amazonaws.com`（リージョナル STS）| 443、sts:AssumeRole + ExternalId（16 §16.2）|
 | W5 | リポジトリ列挙・先端取得 | 共通基盤 / 発見 Lambda（DiscoveryReadRole の一時クレデンシャル）| App / CodeCommit（コントロールプレーン）| `codecommit.ap-northeast-1.amazonaws.com` | 443、`ListRepositories` / `GetBranch` |
+| W5' | deploymentId 併読 | 同上 | App / API GW（コントロールプレーン）| `apigateway.ap-northeast-1.amazonaws.com` | 443、`apigateway:GET`（stage の deploymentId。手動変更のデプロイ反映検知、ADR-061 追記 2026-08-19）|
 | W6 | 台帳読取 | 共通基盤 / 発見 Lambda | 共通基盤 / Monitoring Registry S3 `registry/` | `s3.ap-northeast-1.amazonaws.com` | 443、`GetObject`（同一アカウント IAM）|
 | W7 | 差分・ファイル取得 | 共通基盤 / 発見 Lambda | App / CodeCommit | `codecommit.ap-northeast-1.amazonaws.com` | 443、`GetDifferences` / `GetFile` |
 | W8 | 台帳更新 + spec 配置 | 共通基盤 / 発見 Lambda | 共通基盤 / Monitoring Registry S3（`registry/` + `openapi/`）| `s3.ap-northeast-1.amazonaws.com` | 443、`PutObject` |

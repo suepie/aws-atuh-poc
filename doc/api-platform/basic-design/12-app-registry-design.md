@@ -37,6 +37,7 @@
   "branch": "main",
   "pathPrefix": "",
   "lastCheckedCommitId": "a1b2c3d…",
+  "deploymentId": "dep-abc123",
   "lastSeenAt": "2026-08-13T00:00:00Z"
 }
 ```
@@ -52,6 +53,7 @@
 | `enabled` | **台帳のみ・中央管理** | 監視有効フラグ（monitoring.yaml には置かない）|
 | `repositoryName` / `branch` / `pathPrefix` | 巡回 / monitoring.yaml | 発見元リポジトリ |
 | `lastCheckedCommitId` | **巡回状態** | 前回確認した先端コミット ID（差分判定の基準、17 章 §17.2）|
+| `deploymentId` | **巡回状態** | 前回観測した API GW stage の deploymentId（**手動変更のデプロイ反映検知**用の併読値、17 §17.2.1 ⑤'。ALB 直モノリスは空）|
 | `lastSeenAt` | 巡回状態 | 最後に観測した日時（消滅検知用）|
 
 > 厳密な定義は [README §2.1](code-samples/README.md)。認証実装確認処理は `registry/` を List → Get し `enabled=true` のみ検査する。**読み方**: M1 は該当 1 オブジェクトのみ Get、M3 は全 List。
