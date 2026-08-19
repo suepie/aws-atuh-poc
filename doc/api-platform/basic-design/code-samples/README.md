@@ -65,11 +65,13 @@
 | `repositoryName` | S | CodeCommit リポジトリ名（発見元）| `expense-api` |
 | `branch` | S | 監視対象ブランチ | `main` |
 | `pathPrefix` | S | モノレポ時のアプリパス | `apps/expense-api/` |
+| `apiGatewayId` | S | deploymentId 併読の対象 API GW ID（monitoring.yaml 宣言由来、17 §17.3。未宣言＝併読スキップ）| `a1b2c3d4e5` |
+| `stage` | S | 併読対象の stage 名（省略時は env 名）| `prod` |
 | `lastCheckedCommitId` | S | 前回確認した先端コミット ID（M1 差分の基準）| `a1b2c3d…` |
-| `deploymentId` | S | 前回観測した API GW stage の deploymentId（手動変更のデプロイ反映検知用。ALB 直は空）| `dep-abc123` |
+| `deploymentId` | S | 前回観測した API GW stage の deploymentId（手動変更のデプロイ反映検知用。`apiGatewayId` 未宣言時は空）| `dep-abc123` |
 | `lastSeenAt` | S | 巡回で最後に観測した日時 | `2026-08-07T00:00:00Z` |
 
-> `baseUrl`/`authPattern`/`testTokenSecret`/repo 系は **monitoring.yaml 由来**（巡回同期）、`alertRouting`/`enabled` は**台帳のみで中央管理**（12/17 章）。
+> `baseUrl`/`authPattern`/`apiGatewayId`/`stage`/`testTokenSecret`/repo 系は **monitoring.yaml 由来**（巡回同期）、`alertRouting`/`enabled` は**台帳のみで中央管理**（12/17 章）。
 
 **`authPattern` enum**（認証実装確認処理が assertion 方式を切替）:
 | 値 | 意味 | Negative 期待 | Positive |

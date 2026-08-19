@@ -129,9 +129,9 @@ SigV4 Positive / Cookie Positive・cleanup / M2 heartbeat / Private API VPC 化 
 | C11-d | 機能実装 | 部分失敗分離 設計 | アカウント単位 try-catch 継続・AccountErrors 集計・ログ出力。【補足】部分失敗分離＝一部のアカウントで読み取りに失敗しても巡回全体を止めず、残りのアカウントは処理を続けること（失敗はメトリクスで通知し、次の巡回で自然に再試行される）| C0-d | 0.5 | 0.1 |
 | C11-i | 機能実装 | 同 実装 | 上記の実装（B1-i の emit と連動）| C11-d | 2 | 0.25 |
 | C11-t | テスト | 同 単体テスト | 1 アカウント失敗時に他アカウントが完走・メトリクス値 | C11-i | 1 | 0.15 |
-| C12-d | 機能実装 | deploymentId 併読 設計 | monitoring.yaml から API GW を特定し stage の deploymentId を読む仕様（`apigateway:GET`）・台帳の前回値との比較ロジック・ALB 直（API GW 無し）の場合のスキップ判定。【補足】deploymentId 併読＝コンソール手動変更の検知策。REST API はコンソール変更もデプロイしないと反映されず、デプロイすると deploymentId が変わるため、git のコミットが無くてもこの値の変化で「手動変更がデプロイされた」ことを掴める（17 §17.2.1 ⑤' / ADR-061 追記 2026-08-19）| C3-d | 2 | 0.25 |
+| C12-d | 機能実装 | deploymentId 併読 設計 | 台帳の `apiGatewayId` / `stage`（monitoring.yaml 宣言由来、17 §17.3）で対象を特定し stage の deploymentId を読む仕様（`apigateway:GET`）・台帳の前回値との比較ロジック・未宣言（ALB 直等）のスキップ判定と「api-gw-* なのに未宣言」のメタ不足 WARN。【補足】deploymentId 併読＝コンソール手動変更の検知策。REST API はコンソール変更もデプロイしないと反映されず、デプロイすると deploymentId が変わるため、git のコミットが無くてもこの値の変化で「手動変更がデプロイされた」ことを掴める（17 §17.2.1 ⑤' / ADR-061 追記 2026-08-19）| C3-d | 2 | 0.25 |
 | C12-i | 機能実装 | 同 実装 | 上記の実装（変化検知時は git 変更と同じ M1 起動フローへ合流。台帳 `deploymentId` は M1 起動成功後にのみ更新）| C12-d, C2-i | 5 | 0.6 |
-| C12-t | テスト | 同 単体テスト | 初回（前回値なし）/ 変化なし / 変化あり→M1 起動 / API GW 無し（ALB 直）スキップ / apigateway:GET 権限エラーの 5 分岐 | C12-i | 2 | 0.25 |
+| C12-t | テスト | 同 単体テスト | 初回（前回値なし）/ 変化なし / 変化あり→M1 起動 / apiGatewayId 未宣言スキップ / api-gw-* なのに未宣言→メタ不足 WARN / apigateway:GET 権限エラーの 6 分岐 | C12-i | 2 | 0.25 |
 | **小計（発見）** | | | | | **51** | **6.4** |
 
 ### K 系: 検査 Lambda（13 行）
@@ -245,7 +245,7 @@ SigV4 Positive / Cookie Positive・cleanup / M2 heartbeat / Private API VPC 化 
 
 v2 で追加した 10 件（L2 Config Rules 確認 / S3 Lifecycle / Scheduler リトライ / Secrets 格納 / X-Auth-Probe secret / タグ+Budgets / ログ保持 / アラームテスト発報 / メタ不足・棚卸し通知経路 / JSON Schema 配布）は全行に反映済み。v3 では**成果物としての設計書群を明示化**: インフラ設計書（A 系 -d）/ 監視設計書（B0-d）/ Lambda 処理設計書（C0-d・K0-d）/ ロール・製品設計書（S0-d・P0-d）。
 
-**v4（2026-08-19）**: 手動変更検知の方針確定（②+③+①、17 §17.2.2 / ADR-061 追記）を反映 — **C12-d/i/t 新設**（deploymentId 併読 +9 人時）/ W1-6 を「無ければ実装必須」に格上げ / S0-d 権限 6 アクション化（apigateway:GET）/ W5-1・W4-1 に「変更は必ず git 経由」明記を追加。合計 477 → 486 人時。
+**v4（2026-08-19）**: 手動変更検知の方針確定（②+③+①、17 §17.2.2 / ADR-061 追記）を反映 — **C12-d/i/t 新設**（deploymentId 併読 +9 人時）/ W1-6 を「無ければ実装必須」に格上げ / S0-d 権限 6 アクション化（apigateway:GET）/ W5-1・W4-1 に「変更は必ず git 経由」明記を追加。あわせて **monitoring.yaml に `apiGatewayId` / `stage` を追加宣言**（併読対象の特定手段。C5 の yaml 検証・W5-2 JSON Schema・W5-1 ガイドの「書き方」に含まれる — 独立行は増やさない）。合計 477 → 486 人時。
 
 ## 12. リスク
 

@@ -67,7 +67,7 @@ flowchart TB
 | ③ リポジトリ列挙 | `ListRepositories`。**monitoring.yaml を持つリポジトリ = 監視対象**（§17.3）|
 | ④ 先端取得 | `GetBranch` で対象ブランチ（既定 `main`）の先端コミット ID を取得 |
 | ⑤ 差分判定 | 台帳の **`lastCheckedCommitId`** と比較。違えば「**前回確認から変更があった**」|
-| ⑤' deploymentId 併読 | monitoring.yaml から特定した API GW の **stage deploymentId** を読み（`apigateway:GET`）、台帳の前回値と比較。**コミットが無くても変化していれば「手動変更がデプロイされた」として M1 対象**にする（[ADR-061 追記 2026-08-19](../../adr/061-deploy-detection-pull-model.md)。ALB 直モノリスは対象外 → Config Rules / M3 が受け持つ）|
+| ⑤' deploymentId 併読 | **台帳の `apiGatewayId` / `stage`**（monitoring.yaml の宣言由来、§17.3）で対象を特定し、その stage の **deploymentId** を読んで（`apigateway:GET`）台帳の前回値と比較。**コミットが無くても変化していれば「手動変更がデプロイされた」として M1 対象**にする（[ADR-061 追記 2026-08-19](../../adr/061-deploy-detection-pull-model.md)）。REST API はコンソール変更も明示デプロイで初めて反映されるため変化に必ず現れる。HTTP API は auto-deploy だが deploymentId は同様に変わるため検知は有効。**`apiGatewayId` 未宣言（ALB 直モノリス等）はスキップ** → Config Rules / M3 が受け持つ |
 | ⑥ 内容取得 | 変化したリポジトリは `GetDifferences`（変更パス→モノレポ時のアプリ特定）+ `GetFile` で monitoring.yaml / openapi.yaml を取得し、台帳更新・OpenAPI Registry へ Put（13 章）|
 | ⑦ M1 起動 | 変化のあったアプリを対象に認証実装チェック Lambda を invoke（`{mode:'delta', appId, env}`、18 章）。完了後 `lastCheckedCommitId` と `deploymentId` を更新 |
 | 新規発見 | 台帳に無い monitoring.yaml 付きリポジトリは**自動登録**。「登録漏れ」という概念自体が消える |
@@ -81,7 +81,7 @@ flowchart TB
 
 | 穴 | 内容 | 補完レイヤー |
 |---|---|---|
-| **コンソール直変更** | コンソールで Authorizer を外す等、git に現れない変更 | **三重で補完**（2026-08-19 方針確定 ②+③+①）: ② **L2 Config Rules の実体化**（`AuthorizationType=NONE` の drift 検知。実在確認の上、無ければ実装）③ **deploymentId 併読**（§17.2.1 ⑤'。REST API はコンソール変更もデプロイしないと反映されないため、反映された手動変更は 1h 以内に M1 実測検査）① **ガイド・Runbook に「変更は必ず git 経由」を明記**。残る死角（デプロイ未反映の編集・ALB 直モノリスの手動変更）は Config Rules + M3。SCP による防止は Phase 2 判断（§17.5）|
+| **コンソール直変更** | コンソールで Authorizer を外す等、git に現れない変更 | **三重で補完**（2026-08-19 方針確定 ②+③+①）: ② **L2 Config Rules の実体化**（`AuthorizationType=NONE` の drift 検知。実在確認の上、無ければ実装）③ **deploymentId 併読**（§17.2.1 ⑤'。REST API はコンソール変更もデプロイしないと反映されないため、反映された手動変更は 1h 以内に M1 実測検査。HTTP API は auto-deploy でも deploymentId が変わるため同様に検知可）① **ガイド・Runbook に「変更は必ず git 経由」を明記**。残る死角（デプロイ未反映の編集・ALB 直モノリスの手動変更）は Config Rules + M3。SCP による防止は Phase 2 判断（§17.5）|
 | **コミット ≠ デプロイ** | コミット直後の検査は本番がまだ旧コードの可能性（偽安心）| **次回巡回（1h 後）の再検査**が事実上のリトライになる + M3。恒常的に未デプロイのままなら probe が 404/WARN で顕在化 |
 
 → 外形監視は検知 5 レイヤーの L5（[§C-6.6](../proposal/common/06-external-api-auth-architecture.md)）であり、**単層で完結させず L2（Config）と組み合わせて穴を塞ぐ**のが前提。
@@ -108,9 +108,13 @@ environments:
   prod:
     baseUrl: https://expense.example.com   # probe 先（CloudFront URL）
     authPattern: api-gw-jwt                # 検査方式（11 章 §11.3 の enum）
+    apiGatewayId: a1b2c3d4e5               # API GW の ID（deploymentId 併読用。ALB 直は省略）
+    stage: prod                            # 対象 stage 名（省略時は env 名と同じ）
   stg:
     baseUrl: https://stg.expense.example.com
     authPattern: api-gw-jwt
+    apiGatewayId: f6g7h8i9j0
+    stage: stg
 testTokenSecret: canary-central-readonly   # 省略時は共通（11 章 §11.3.1）
 ```
 
@@ -119,6 +123,7 @@ testTokenSecret: canary-central-readonly   # 省略時は共通（11 章 §11.3.
 | ファイル自体 | **必須**（これが監視対象の宣言）| API リポジトリ命名規約（例 `*-api`）に該当するのに無い場合は**メタ不足アラート**（M-Q-17-3）|
 | `authPattern` | enum（README §2.1）| 既定 `api-gw-jwt` で **Negative のみ検査** + メタ不足アラート |
 | `baseUrl` | CloudFront URL（12 §12.1.1）| 検査不能 → メタ不足アラート |
+| `apiGatewayId` / `stage` | **API GW 構成のみ任意**（deploymentId 併読の対象特定。CloudFront は他組織管理で背後の API GW を辿れないため、**アプリ自身に宣言させるのが唯一の供給源**）| 未宣言なら**併読をスキップ**（コンソール手動変更の検知は Config Rules のみに低下）。`authPattern` が `api-gw-*` 系なのに未宣言の場合は**メタ不足 WARN** |
 | 通知先（alertRouting）| **yaml に書かない**（SNS ARN を repo に置かない）。台帳側で共通基盤チームが管理、未設定は全社デフォルト（15 章）| — |
 | `enabled`（一時停止）| **yaml に書かない**。台帳側で中央管理（アプリ側の勝手な監視停止を防ぐ）| — |
 
@@ -132,8 +137,8 @@ testTokenSecret: canary-central-readonly   # 省略時は共通（11 章 §11.3.
 
 | アプリ種別 | 発見 | 変更検知 | endpoint 一覧 |
 |---|---|---|---|
-| API GW ベース | monitoring.yaml で自動 | コミット差分 | リポジトリ内 openapi.yaml |
-| **Cookie モノリス（ALB 直）** | **同じく monitoring.yaml で自動** | コミット差分（同じ）| リポジトリ内 openapi.yaml（無ければ endpoint リストを monitoring.yaml に列挙）|
+| API GW ベース | monitoring.yaml で自動 | コミット差分 + deploymentId 併読（`apiGatewayId` 宣言、§17.2.1 ⑤'）| リポジトリ内 openapi.yaml |
+| **Cookie モノリス（ALB 直）** | **同じく monitoring.yaml で自動** | コミット差分のみ（deploymentId 無し → 手動変更は Config Rules / M3）| リポジトリ内 openapi.yaml（無ければ endpoint リストを monitoring.yaml に列挙）|
 
 ---
 

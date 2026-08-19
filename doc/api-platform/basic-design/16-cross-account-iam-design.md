@@ -61,7 +61,7 @@
 ```
 
 **設計のポイント**:
-- **read-only（codecommit 読み取り）のみ**。漏洩時の影響は**ソースコードの閲覧**（変更・削除・実行は不可）。ソース閲覧自体が機微なため、信頼先限定・ExternalId・CloudTrail での AssumeRole 監査を必須とする
+- **read-only（codecommit 読み取り + apigateway:GET）のみ**。漏洩時の影響は**ソースコードと API GW 構成（Authorizer 設定等）の閲覧**（変更・削除・実行は不可）。いずれも閲覧自体が機微なため、信頼先限定・ExternalId・CloudTrail での AssumeRole 監査を必須とする
 - 信頼先を**発見 Lambda のロール 1 本に限定** + ExternalId（confused deputy 防止）
 - 全 App アカウントで**同一ロール名**（`DiscoveryReadRole`）にし、発見 Lambda は `arn:aws:iam::{accountId}:role/DiscoveryReadRole` を機械的に組み立てて AssumeRole
 - 対象リポジトリを絞りたい場合は `Resource` を命名規約（例 `arn:aws:codecommit:*:*:*-api`）で限定可能（M-Q-16-3）

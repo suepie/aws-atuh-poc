@@ -28,6 +28,8 @@
   "env": "prod",
   "baseUrl": "https://expense.example.com",
   "authPattern": "api-gw-jwt",
+  "apiGatewayId": "a1b2c3d4e5",
+  "stage": "prod",
   "openApiS3Key": "openapi/111122223333/expense-api/openapi.yaml",
   "testTokenSecret": "canary-central-readonly",
   "alertRouting": { "p1": "arn:aws:sns:...:security" },
@@ -47,6 +49,7 @@
 | `appId` / `env` | キーと同値 | 台帳の識別子 |
 | `baseUrl` | monitoring.yaml | probe 先 CloudFront URL（Origin Protection 経由、§12.1.1）|
 | `authPattern` | monitoring.yaml | 認証方式 enum（11 章 §11.3）|
+| `apiGatewayId` / `stage` | monitoring.yaml | deploymentId 併読の対象 API GW（17 §17.3。ALB 直等の未宣言は無し＝併読スキップ）|
 | `openApiS3Key` | 巡回が導出 | spec コピーのキー（13 章）|
 | `testTokenSecret` | monitoring.yaml | Positive 用 token の Secret 名 |
 | `alertRouting` | **台帳のみ・中央管理** | 通知先 `{p1,p2,p3}` の SNS ARN（未設定は全社デフォルト、15 章）|
