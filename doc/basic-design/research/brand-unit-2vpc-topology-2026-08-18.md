@@ -281,6 +281,76 @@ sequenceDiagram
 
 ---
 
+### 8.1c 【新方式・比較用】登録時に Broker 利用者を事前作成（`sub` を登録時点で確定）
+
+> **位置づけ**: 2026-08-19 追加。§8.1b の派生案。**「アプリ生成 UUID と `sub` は性質が同じで、違いは存在するタイミングだけ」**という気づきから、**登録時点で `sub` を採ってしまう**案。
+
+**着想**: `sub` が登録時に確定していれば、**突合キーそのものが不要**になる（`user_name` の使い回し禁止も要らない）。
+
+```mermaid
+sequenceDiagram
+  autonumber
+  actor A as テナント管理者
+  participant IDM as idm-api(VPC-M)
+  participant EB as EventBridge
+  participant BL as Broker側 Lambda
+  participant BKC as Broker KC(Admin NLB)
+  participant ZA as authz Aurora(VPC-M)
+  actor U as ユーザー
+  participant CIdP as 顧客 IdP
+
+  rect rgb(240,248,255)
+  Note over A,ZA: ① 事前登録（sub をここで確定）
+  A->>IDM: 利用者を事前登録
+  IDM->>EB: 利用者作成要求(brand→Broker)
+  EB->>BL: invoke
+  BL->>BKC: Admin API で利用者作成 → sub 採番
+  BL->>EB: sub 返却(Broker→brand)
+  EB->>IDM: invoke
+  IDM->>ZA: authz 行 生成 (sub をキーに)
+  end
+
+  rect rgb(255,250,240)
+  Note over U,CIdP: ② 初回ログイン（越境ゼロ・突合不要）
+  U->>BKC: ログイン
+  BKC->>CIdP: 認証
+  BKC->>BKC: 既存利用者に顧客 IdP をリンク（新規作成しない）
+  BKC-->>U: トークン発行 (sub は登録時のもの)
+  end
+```
+
+#### ⚠ 案 X の致命的な問題
+
+**往復 2 回の越境が発生する。**`sub` を採るには Broker へ作成要求を出し（brand→Broker）、採番結果を受け取る（Broker→brand）必要がある。**現行 §8.1 の 1 回より増える。**
+
+**同期呼び出し（PrivateLink）にはできない。**[U6 §6.3](../06-infra-network-design.md) が PrivateLink を採用した**根拠 1** は次のとおり:
+
+> IdP-KC 側から Broker VPC へ**構造的に到達できない**単方向経路は、**IdP-KC（PW ハッシュ保有側）侵害時の横展開を経路レベルで遮断**する
+
+**案 X は brand → Broker 方向**であり、**この防御が遮断したい向きそのもの**。よって PrivateLink で経路を開けるのは設計方針に反する。既存の `X-3`（削除伝播）も同じ理由で **EventBridge + Broker 側 Lambda**（ネットワーク経路は開けずイベントだけ渡す）にしてある。
+
+**TGW を使えばよいのでは、という点も否定される**（[U6 §6.3](../06-infra-network-design.md) **根拠 2**）:
+
+> TGW は **NW Acct（他組織想定）依存**となり、弊社 2 Acct 間の内部経路まで**他組織の変更管理に載る**（`P-18` の教訓）
+
+#### 3 案の比較（結論）
+
+| | 現行 §8.1 | 案 Y §8.1b（遅延バインド） | 案 X §8.1c（事前 `sub` 採番） |
+|---|---|---|---|
+| **Broker↔brand の越境（登録〜初回ログイン）** | **1 回**（Broker→brand） | **0 回** | **2 回**（往復） |
+| 突合キー | 不要 | **必要**（`externalId` / `user_name`） | **不要** |
+| `user_name` 使い回し禁止 | 不要 | **必要** | 不要 |
+| JWT クレーム追加 | 不要 | **必要**（`tenant_id` + `user_name`） | 不要 |
+| アプリへの依存 | なし | **`/api/me/context` 必須** | なし |
+| 登録時の失敗の見え方 | — | — | **非同期のため即座に分からない** |
+| 初回ログイン時の権限 | スタブのみ | **付与済み** | **付与済み** |
+
+**案 X は突合の問題を消すが越境が倍増し、しかも同期にできないため「登録したのに Broker に居ない」状態が非同期で残る。** 案 Y の「越境 0 回」と比べて利点が乏しい。
+
+**現時点の評価**: **案 Y（§8.1b）が最も筋が良い**。ただし成立条件（アプリの `/api/me/context` 呼び出し・クレーム追加・使い回し禁止）が満たせない場合は**現行 §8.1 を維持**する。案 X は**採らない**方向。
+
+---
+
 ### 8.2 IdP-KC ローカルユーザー登録（非 IdP テナント・管理者作成）
 
 ```mermaid
