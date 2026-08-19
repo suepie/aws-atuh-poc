@@ -52,7 +52,7 @@ SigV4 Positive / Cookie Positive・cleanup / M2 heartbeat / Private API VPC 化 
 | A3-i | 基盤IaC | S3 Lifecycle 実装 | Lifecycle ルール適用・確認 | A3-d | 1 | 0.15 |
 | A4-d | 基盤IaC | SNS 設計 | P1/P2/P3 のトピック名・サブスクリプション（W1-5 の DL）・アクセスポリシー | W1-5 | 0.5 | 0.1 |
 | A4-i | 基盤IaC | SNS 実装 | 3 トピック + メールサブスクリプション作成・確認メール承認 | A4-d | 2 | 0.25 |
-| A5-d | 基盤IaC | SQS DLQ 設計 | 検査 Lambda 用 / Alert Router 用の 2 本。保持期間・再処理手順の方針 | — | 0.5 | 0.1 |
+| A5-d | 基盤IaC | SQS DLQ 設計 | 検査 Lambda 用 / Alert Router 用の 2 本。保持期間・再処理手順の方針。【補足】DLQ（デッドレターキュー）＝処理に失敗したメッセージの退避先。失敗を握り潰さず、後から中身を見て再処理・原因調査するための受け皿 | — | 0.5 | 0.1 |
 | A5-i | 基盤IaC | SQS DLQ 実装 | 2 キュー作成・Lambda 非同期設定への紐付け | A5-d | 2 | 0.25 |
 | A6-d | 基盤IaC | Scheduler 設計 | rate(1 hour)・リトライポリシー（回数/間隔）・Scheduler 側 DLQ・実行ロール | — | 1 | 0.15 |
 | A6-i | 基盤IaC | Scheduler 実装 | EventBridge Scheduler 作成・発見 Lambda への紐付け・空振り起動確認 | A6-d | 2 | 0.25 |
@@ -96,37 +96,37 @@ SigV4 Positive / Cookie Positive・cleanup / M2 heartbeat / Private API VPC 化 
 | ID | 区分 | タスク | 内容 | 依存 | 人時 | 人日 |
 |---|---|---|---|---|---:|---:|
 | C0-d | 機能実装 | 発見 Lambda 全体設計 | 処理設計書: 全体シーケンス図（W1〜W9 展開）/ 入出力定義（Scheduler イベント・台帳 JSON・M1 payload）/ 環境変数一覧 / エラー・リトライ方針（18 §18.5.2 の実装割付）/ ログ設計（相関 ID・マスク）| — | 6 | 0.75 |
-| C1-d | 機能実装 | アカウント列挙 設計 | 委任ポリシー経由 ListAccounts の呼出仕様・対象 OU フィルタ・ページング | C0-d | 1 | 0.15 |
+| C1-d | 機能実装 | アカウント列挙 設計 | 委任ポリシー経由 ListAccounts の呼出仕様・対象 OU フィルタ・ページング。【補足】アカウント列挙＝巡回の対象となる App アカウントの一覧を AWS Organizations から毎回取得する処理。手作業のリスト管理をなくし、アカウント追加に自動追随する | C0-d | 1 | 0.15 |
 | C1-i | 機能実装 | アカウント列挙 実装 | 上記の実装 | C1-d, W1-3 | 2 | 0.25 |
 | C1-t | テスト | アカウント列挙 単体テスト | OU フィルタ・ページング・権限エラー時の挙動 | C1-i | 1 | 0.15 |
-| C2-d | 機能実装 | AssumeRole/CodeCommit クライアント 設計 | ExternalId・一時クレデンシャルのライフサイクル・SDK リトライ（指数バックオフ）設定 | C0-d | 1 | 0.15 |
+| C2-d | 機能実装 | AssumeRole/CodeCommit クライアント 設計 | ExternalId・一時クレデンシャルのライフサイクル・SDK リトライ（指数バックオフ）設定。【補足】AssumeRole＝他アカウントに置かれた読み取り専用ロールの権限を、期限付きで一時的に借りる AWS の標準的な仕組み。これで恒久的な鍵を配らずに App アカウントのリポジトリを読める | C0-d | 1 | 0.15 |
 | C2-i | 機能実装 | AssumeRole/CodeCommit クライアント 実装 | 上記の実装 | C2-d, A7-i | 3 | 0.4 |
 | C2-t | テスト | 同 単体テスト | AssumeRole 失敗・スロットリング時のリトライ挙動 | C2-i | 1 | 0.15 |
-| C3-d | 機能実装 | リポジトリ列挙・差分判定 設計 | ListRepositories → GetBranch → lastCheckedCommitId 比較のロジックと「変更あり」判定基準 | C0-d | 1 | 0.15 |
+| C3-d | 機能実装 | リポジトリ列挙・差分判定 設計 | ListRepositories → GetBranch → lastCheckedCommitId 比較のロジックと「変更あり」判定基準。【補足】リポジトリ列挙＝App アカウント内の CodeCommit リポジトリを一覧し、monitoring.yaml を持つもの（＝監視対象）を見つけること。差分判定＝前回巡回で確認したコミット ID と現在の先端コミット ID を比べ「前回から変更があったか」を判定すること | C0-d | 1 | 0.15 |
 | C3-i | 機能実装 | 同 実装 | 上記の実装 | C3-d, C2-i | 3 | 0.4 |
 | C3-t | テスト | 同 単体テスト | 初回（台帳なし）/ 変更なし / 変更あり / ブランチ不在の 4 分岐 | C3-i | 1 | 0.15 |
-| C4-d | 機能実装 | モノレポ対応 設計 | GetDifferences の変更パス × pathPrefix 突合仕様（複数アプリ該当時の扱い含む）| C3-d | 1 | 0.15 |
+| C4-d | 機能実装 | モノレポ対応 設計 | GetDifferences の変更パス × pathPrefix 突合仕様（複数アプリ該当時の扱い含む）。【補足】モノレポ＝1 つのリポジトリに複数アプリのコードを同居させる構成。リポジトリ単位の差分だけでは「どのアプリが変わったか」が分からないため、変更されたファイルのパス（例 apps/expense-api/…）を各アプリの pathPrefix と突き合わせて該当アプリを特定する | C3-d | 1 | 0.15 |
 | C4-i | 機能実装 | 同 実装 | 上記の実装 | C4-d | 3 | 0.4 |
 | C4-t | テスト | 同 単体テスト | 単一 repo / モノレポ 2 アプリ同時変更 / 対象外パスのみ変更 | C4-i | 1 | 0.15 |
-| C5-d | 機能実装 | monitoring.yaml 取得・検証 設計 | GetFile（6MB 上限の扱い）・スキーマ検証（W5-2 の JSON Schema 共用）・不備時の分類（メタ不足の種別）| C0-d | 1 | 0.15 |
+| C5-d | 機能実装 | monitoring.yaml 取得・検証 設計 | GetFile（6MB 上限の扱い）・スキーマ検証（W5-2 の JSON Schema 共用）・不備時の分類（メタ不足の種別）。【補足】monitoring.yaml＝アプリが「このリポジトリを監視して」と宣言する設定ファイル（検査先 URL・認証方式などを記載。リポジトリ直下に置く）| C0-d | 1 | 0.15 |
 | C5-i | 機能実装 | 同 実装 | 上記の実装 | C5-d | 4 | 0.5 |
 | C5-t | テスト | 同 単体テスト | 正常 / authPattern 不正 / baseUrl 欠落 / yaml 破損 / 6MB 超 | C5-i | 1 | 0.15 |
-| C6-d | 機能実装 | 台帳同期 設計 | registry/{appId}/{env}.json の生成・更新仕様、**ETag 条件付き PUT**、lastCheckedCommitId は M1 起動成功後にのみ更新（at-least-once）| C0-d | 1 | 0.15 |
+| C6-d | 機能実装 | 台帳同期 設計 | registry/{appId}/{env}.json の生成・更新仕様、**ETag 条件付き PUT**、lastCheckedCommitId は M1 起動成功後にのみ更新（at-least-once）。【補足】台帳＝「どのアプリをどう監視するか」を 1 か所に集めた S3 上の管理簿。ETag 条件付き PUT＝「読み込んだ時から誰も更新していなければ書き込む」仕組みで、同時更新による上書き事故を防ぐ。at-least-once＝取りこぼしゼロを優先し、同じ変更を 2 回検査することは許容する方式（検査は読み取りのみなので重複しても無害）| C0-d | 1 | 0.15 |
 | C6-i | 機能実装 | 同 実装 | 上記の実装 | C6-d, A1-i | 3 | 0.4 |
 | C6-t | テスト | 同 単体テスト | 新規作成 / 更新 / ETag 競合（412）/ 中央管理項目（alertRouting・enabled）を上書きしないこと | C6-i | 1 | 0.15 |
-| C7-d | 機能実装 | spec 配置 設計 | openapi.yaml GetFile → openapi/ Put のキー導出・上書き仕様 | C5-d | 0.5 | 0.1 |
+| C7-d | 機能実装 | spec 配置 設計 | openapi.yaml GetFile → openapi/ Put のキー導出・上書き仕様。【補足】spec＝API 仕様書（openapi.yaml。どんな endpoint があるかの一覧）。検査 Lambda が「どこを叩くか」を知るための情報源で、リポジトリから取得して中央の S3 にコピーしておく | C5-d | 0.5 | 0.1 |
 | C7-i | 機能実装 | 同 実装 | 上記の実装 | C7-d | 2 | 0.25 |
 | C7-t | テスト | 同 単体テスト | 配置キーの正当性・spec 未指定時の挙動 | C7-i | 0.5 | 0.1 |
-| C8-d | 機能実装 | M1 起動 設計 | 非同期 Event invoke（payload 仕様・fan-out・DLQ は A5）| C0-d | 0.5 | 0.1 |
+| C8-d | 機能実装 | M1 起動 設計 | 非同期 Event invoke（payload 仕様・fan-out・DLQ は A5）。【補足】M1＝1 時間毎の巡回で「変更のあったアプリだけ」を自動検査する実行モード（M3＝運用者が手動で全アプリ全量を検査するモードと対をなす）。M1 起動＝発見 Lambda が変更を見つけたアプリを対象に、検査 Lambda を呼び出すこと | C0-d | 0.5 | 0.1 |
 | C8-i | 機能実装 | 同 実装 | 上記の実装 | C8-d | 2 | 0.25 |
 | C8-t | テスト | 同 単体テスト | invoke payload・複数アプリ変更時の多重起動 | C8-i | 0.5 | 0.1 |
-| C9-d | 機能実装 | 消滅検知 設計 | repo / monitoring.yaml 消滅 → enabled=false + 棚卸しアラート（SNS P2）の判定・通知文面 | C3-d | 0.5 | 0.1 |
+| C9-d | 機能実装 | 消滅検知 設計 | repo / monitoring.yaml 消滅 → enabled=false + 棚卸しアラート（SNS P2）の判定・通知文面。【補足】消滅検知＝前回まで存在したリポジトリや monitoring.yaml が無くなった（＝アプリ廃止の可能性）ことを検出し、監視を自動停止したうえで「本当に廃止か」の確認を人に促す仕組み | C3-d | 0.5 | 0.1 |
 | C9-i | 機能実装 | 同 実装 | 上記の実装 | C9-d | 2 | 0.25 |
 | C9-t | テスト | 同 単体テスト | repo 削除 / yaml のみ削除 / 一時的な取得失敗と消滅の区別 | C9-i | 1 | 0.15 |
-| C10-d | 機能実装 | メタ不足アラート 設計 | 不備種別ごとの通知文面・SNS P2 Publish・再通知抑制（毎巡回で重複させない）| C5-d | 0.5 | 0.1 |
+| C10-d | 機能実装 | メタ不足アラート 設計 | 不備種別ごとの通知文面・SNS P2 Publish・再通知抑制（毎巡回で重複させない）。【補足】メタ不足＝監視に必要な設定情報（monitoring.yaml そのもの、あるいは検査先 URL・認証方式などの項目）が欠けていて、正しく検査できない状態。放置すると「監視されないアプリ」が生まれるため、アラートで気づかせて設定を直させる | C5-d | 0.5 | 0.1 |
 | C10-i | 機能実装 | 同 実装 | 上記の実装 | C10-d | 2 | 0.25 |
 | C10-t | テスト | 同 単体テスト | 各不備種別の通知・同一不備の重複抑制 | C10-i | 0.5 | 0.1 |
-| C11-d | 機能実装 | 部分失敗分離 設計 | アカウント単位 try-catch 継続・AccountErrors 集計・ログ出力 | C0-d | 0.5 | 0.1 |
+| C11-d | 機能実装 | 部分失敗分離 設計 | アカウント単位 try-catch 継続・AccountErrors 集計・ログ出力。【補足】部分失敗分離＝一部のアカウントで読み取りに失敗しても巡回全体を止めず、残りのアカウントは処理を続けること（失敗はメトリクスで通知し、次の巡回で自然に再試行される）| C0-d | 0.5 | 0.1 |
 | C11-i | 機能実装 | 同 実装 | 上記の実装（B1-i の emit と連動）| C11-d | 2 | 0.25 |
 | C11-t | テスト | 同 単体テスト | 1 アカウント失敗時に他アカウントが完走・メトリクス値 | C11-i | 1 | 0.15 |
 | **小計（発見）** | | | | | **51** | **6.4** |
@@ -139,7 +139,7 @@ SigV4 Positive / Cookie Positive・cleanup / M2 heartbeat / Private API VPC 化 
 | K1-d | 機能実装 | handler 転用 設計 | index.js → Lambda handler 化・synthetics 抽象を https 実装で注入する構造 | K0-d | 1 | 0.15 |
 | K1-i | 機能実装 | 同 実装 | 上記の実装 | K1-d | 4 | 0.5 |
 | K1-t | テスト | 同 単体テスト | handler 起動・https 注入の動作（既存 probe-integration の手法流用）| K1-i | 1 | 0.15 |
-| K2-d | 機能実装 | mode 分岐・fan-out 設計 | `delta`（1 アプリ）/ `full`（台帳 List → アプリ単位に自己 invoke）の仕様（18 §18.3）| K0-d | 1 | 0.15 |
+| K2-d | 機能実装 | mode 分岐・fan-out 設計 | `delta`（1 アプリ）/ `full`（台帳 List → アプリ単位に自己 invoke）の仕様（18 §18.3）。【補足】fan-out＝1 つの処理が対象ごとに自分自身を並列で呼び出して分担する方式。全アプリを 1 回の実行で回すと Lambda の制限時間（15 分）を超え得るため、アプリ単位に分けて起動する | K0-d | 1 | 0.15 |
 | K2-i | 機能実装 | 同 実装 | 上記の実装 | K2-d | 4 | 0.5 |
 | K2-t | テスト | 同 単体テスト | delta 1 件 / full n 件 fan-out / 空台帳 | K2-i | 1 | 0.15 |
 | K3-d | 機能実装 | probe 識別ヘッダ 設計 | X-Auth-Probe 付与位置・secret 参照（A11）・ローテ時の追従 | K0-d | 0.5 | 0.1 |
@@ -164,7 +164,7 @@ SigV4 Positive / Cookie Positive・cleanup / M2 heartbeat / Private API VPC 化 
 | D0-d | 機能実装 | dedup 設計（W1-5 で採用時のみ）| 抑制キー（app×endpoint×severity）・24h 窓・状態の S3 保持・解除条件 | W1-5 | 2 | 0.25 |
 | D1-i | 機能実装 | dedup 実装 | 上記の実装 | D0-d | 8 | 1.0 |
 | D2-t | テスト | dedup 単体テスト | 抑制・窓超過後の再通知・severity 変化時は抑制しない | D1-i | 2 | 0.25 |
-| S0-d | 配布物 | DiscoveryReadRole 設計 | ロール設計書: 権限 5 アクション・信頼ポリシー（信頼先 1 本 + ExternalId）・全アカウント同一名（16 §16.2 準拠のパラメータシート）| — | 2 | 0.25 |
+| S0-d | 配布物 | DiscoveryReadRole 設計 | ロール設計書: 権限 5 アクション・信頼ポリシー（信頼先 1 本 + ExternalId）・全アカウント同一名（16 §16.2 準拠のパラメータシート）。【補足】DiscoveryReadRole＝各 App アカウントに置く「中央からの読み取り窓口」となる IAM ロール（リポジトリの読み取りのみ可）。StackSets＝CloudFormation を複数アカウントへ一括配布する仕組みで、新規アカウントにも自動で配られる | — | 2 | 0.25 |
 | S1-i | 配布物 | StackSets テンプレ 実装 | ロールの CFN テンプレ化・StackSets（Organizations 自動デプロイ）定義 | S0-d | 4 | 0.5 |
 | S2-t | テスト | StackSets 配布検証 | 3 アカウント配布・AssumeRole 実確認・新規アカウント自動配布の設定確認 | S1-i | 2 | 0.25 |
 | P0-d | 配布物 | Service Catalog 製品 設計 | 製品設計書: パラメータ一覧（AppId/Env/CostCenter/Owner/AuthPattern）・生成リソース構成（API GW 認証必須固定 + Origin Protection + タグ）・起動フロー図 | — | 4 | 0.5 |
