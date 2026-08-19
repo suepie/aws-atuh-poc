@@ -209,6 +209,78 @@ sequenceDiagram
   BKC-->>U: Broker トークン発行(ログイン完了)
 ```
 
+### 8.1b 【新方式・比較用】事前登録 + 遅延バインド（Broker→brand の EventBridge を消す案）
+
+> **位置づけ**: 2026-08-19 のユーザー提案。**現行（§8.1）を置き換えるものではなく比較のための併記**。採否は下表の判断材料と、アプリチームへの確認（QA）の回答で決める。
+
+**着想**: `authz` 行を **`tenant_id` + `user_name`** で**事前に作っておき**、`sub` は**初回アクセス時にブランド側が自分で刻む**。こうすると **Broker が他アカウントの DB を触らなくなる**ため、`Broker → brand` 方向の EventBridge が不要になる。
+
+```mermaid
+sequenceDiagram
+  autonumber
+  actor A as テナント管理者
+  participant AG as API Gateway
+  participant IDM as idm-api(VPC-M)
+  participant ZA as authz Aurora(VPC-M)
+  actor U as ユーザー(ブラウザ)
+  participant BKC as Broker KC
+  participant CIdP as 顧客 IdP
+  participant APP as アプリ
+
+  rect rgb(240,248,255)
+  Note over A,ZA: ① 事前登録（ログインより前・Keycloak を一切触らない）
+  A->>AG: admin. で利用者を事前登録(tenant_id + user_name + 権限)
+  AG->>IDM: invoke(CREATE)
+  IDM->>ZA: authz 行 生成 (tenant_id + user_name, sub は NULL)
+  Note over IDM,ZA: ブランド内で完結・越境ゼロ<br/>フェデ利用者なので Keycloak への作成は不要
+  end
+
+  rect rgb(255,250,240)
+  Note over U,BKC: ② 初回ログイン（越境ゼロ）
+  U->>BKC: ログイン
+  BKC->>CIdP: 認証(back-channel)
+  BKC->>BKC: shadow を JIT 生成 → sub 発番
+  BKC-->>U: トークン発行 (sub + tenant_id + user_name)
+  Note over BKC: EventBridge への publish なし
+  end
+
+  rect rgb(245,255,245)
+  Note over APP,ZA: ③ 遅延バインド（ブランド内のローカル書き込み）
+  U->>APP: アプリ利用開始
+  APP->>IDM: /api/me/context (JWT)
+  IDM->>ZA: sub で検索 → 無ければ tenant_id+user_name で検索し sub を刻む(冪等 upsert)
+  IDM-->>APP: 権限コンテキスト返却
+  Note over IDM,ZA: 以降は sub で引く（user_name 依存は初回の 1 回だけ）
+  end
+```
+
+#### 現行（§8.1）との比較
+
+| 観点 | 現行: Broker→brand 通知 | 新方式: 事前登録 + 遅延バインド |
+|---|---|---|
+| **Broker→brand の EventBridge** | **必要** | **不要**（消える） |
+| brand→Broker の EventBridge（削除伝播） | 必要 | **必要（変わらず）** |
+| `authz` の書き手 | **2 つ**（Broker 由来のスタブ + idm-api） | **1 つ**（idm-api のみ）に純化 |
+| 初回ログイン時の権限 | スタブ行のみ（権限は後付け） | **登録時に付与済み**（`Q86`「ログインできたのに使えない」が起きない） |
+| 事前に利用者を知る必要 | 不要 | **必要**（知れないテナントは現行方式に戻る） |
+| JWT クレーム | `sub` + `tenant_id` | **`user_name` の追加が必要**（`ADR-030` Stage 1 の変更） |
+| アプリへの依存 | なし | **`/api/me/context` の呼び出しが必須**（呼ばれないと紐づかない） |
+
+#### 新方式が要求する前提（未確定）
+
+1. **JWT に `user_name` を載せる** — `ADR-030` Stage 1 は現在 `sub` のみで `tenant_id`・`user_name` を含まない。**`user_name` はメールアドレスにしない**こと（`P-10` PII 非搭載に抵触するため、`<tenant>-<userid>` 形式とする）。
+2. **`user_name` の一意性を「退職者を含めて」義務付ける** — 再割当されると**前任者の権限を継承する事故**が起きる（`ADR-018` が email を Layer A に使うことを禁じた理由と同型）。
+   - **「削除時に全情報を消せば衝突しない」は成立しない**: 監査ログは 7 年保持（`NFR-COMP-007`）、Phase 1 は物理削除禁止（`jit-scim §10.4.K`）、`Q56` でも「記録内の本人を指す番号は残す」を推奨としている。
+   - 契約文言だけでは顧客の人事都合で破られるため、**使用済み `user_name` の墓標を持ち再登録を拒否**する機構とセットにする。
+3. **アプリが `/api/me/context` を必ず呼ぶ** — 呼ばれないと紐づかない。冪等 upsert・同時呼び出しの競合対策が要る。
+4. **事前登録されていない利用者がログインしてきた場合の扱い** — 拒否するか空で作るか（`Q86` と同じ判断）。
+
+#### 適用範囲
+
+**全テナントに適用できるわけではない。** 事前に利用者を知れないテナント（SCIM も名簿提供も無い）は**現行方式（§8.1）が必要**。したがって**両方式の併存**になり、**EventBridge の作り込み自体は残る**（ただし通る量は減る）。
+
+---
+
 ### 8.2 IdP-KC ローカルユーザー登録（非 IdP テナント・管理者作成）
 
 ```mermaid
