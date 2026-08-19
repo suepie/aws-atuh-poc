@@ -21,7 +21,7 @@
 | バケット | `<common-platform-acct>-monitoring-registry` |
 | spec コピー | `openapi/{accountId}/{appId}/openapi.yaml`（本章）|
 | 台帳 | `registry/{appId}/{env}.json`（12 章）|
-| Versioning | 有効（履歴を保持）|
+| Versioning | 有効（履歴を保持）。**旧版（noncurrent）は Lifecycle ルールで一定期間後に失効**させる（例 90 日。コスト管理。台帳 `registry/` も同様）|
 
 認証実装確認処理は台帳の `openApiS3Key` でこのキーを引き、`lib/openapi.js` の `fetchSpec` で取得・parse する。
 
