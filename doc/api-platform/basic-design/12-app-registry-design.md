@@ -171,4 +171,4 @@ pull 型（ADR-061）により、**App Registry への書き込みは共通基�
 |---|---|
 | M-Q-12-1 | alertRouting を全アプリ個別指定か、env 既定 + 上書きか |
 | M-Q-12-2 | バケットのバックアップ方針（Versioning は有効。加えてレプリケーション要否）|
-| M-Q-12-3 | **probe lib `lib/registry.js` の S3 対応改修**（DynamoDB Scan → S3 List/Get。M-Q-17-4 発見 Lambda 実装と同時に）+ 手動更新との競合対策（ETag 条件付き PUT）|
+| M-Q-12-3 | **probe lib `lib/registry.js` と alert-router の通知先解決の S3 対応改修**（DynamoDB Scan / GetItem → S3 List/Get。M-Q-17-4 発見 Lambda 実装と同時に）+ 手動更新との競合対策（ETag 条件付き PUT）|
