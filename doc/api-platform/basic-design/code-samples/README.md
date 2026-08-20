@@ -19,8 +19,8 @@
     └─ 前回確認コミットから変更のあったアプリ → 自動差分検査（モード1、旧称 M1）の probe 起動
   Monitoring Registry (S3×1) … registry/ 台帳+巡回スナップショット / openapi/ spec コピー
   認証実装確認処理 (Lambda, 共通 probe lib)
-    │ 自動差分検査（モード1）/ 手動全量検査（モード3、旧称 M3）※18 章
-    ├─ App Registry を Scan（自動差分検査（モード1）は対象アプリ / 手動全量検査（モード3）は全アプリ取得）
+    │ 自動差分検査（モード1）/ 全量検査（モード2、旧称 M3「手動全量検査」）※18 章
+    ├─ App Registry を Scan（自動差分検査（モード1）は対象アプリ / 全量検査（モード2）は全アプリ取得）
     ├─ OpenAPI Registry から各アプリの openapi.yaml 取得
     ├─ 各 endpoint を Negative + Positive で probe（CloudFront 経由）──► 各アプリ CloudFront
     ├─ 4×4 真偽値表で分類 → CloudWatch Metrics (per-app)
@@ -154,7 +154,7 @@
 
 ## 3. Runtime / SDK バージョン（AWS 公式確認 2026-07）
 
-現行の実行基盤は **Lambda（Node.js 22 / SDK v3）**。以下 Synthetics 系は **将来オプション**（常時定期検査（モード2、旧称 M2）/ ダッシュボード要件時、[18 章 §18.4.1](../18-scan-modes-and-scheduling.md)）で使う場合の確認値。
+現行の実行基盤は **Lambda（Node.js 22 / SDK v3）**。以下 Synthetics 系は **将来オプション**（heartbeat 型検査（旧 M2、廃止 2026-08-20）の復活 / ダッシュボード要件時、[18 章 §18.4.1](../18-scan-modes-and-scheduling.md)）で使う場合の確認値。
 
 | 対象 | バージョン | 備考 |
 |---|---|---|
@@ -168,7 +168,7 @@
 ## 4. デプロイ順序
 
 1. `alert-router-lambda` + SNS トピック（P1/P2/P3）を共通基盤アカウントにデプロイ
-2. `central-probe-lib` の probe lib を **認証実装チェック Lambda** としてデプロイ（手動全量検査（モード3）＝手動 invoke、18 章）
+2. `central-probe-lib` の probe lib を **認証実装チェック Lambda** としてデプロイ（全量検査（モード2）＝日次定期 EventBridge Scheduler + 手動 invoke、18 章）
 3. **発見 Lambda**（M-Q-17-4。app-registry / openapi-export の参考実装からロジック流用）+ EventBridge Scheduler（1h）をデプロイ
 4. 各 App アカウントへ **`DiscoveryReadRole`（読み取り専用）を StackSets 配布**（16 章 §16.2）
 5. Phase 4 PoC: 1 App アカウント相当で end-to-end 検証（巡回発見 → 自動登録 → 自動差分検査（モード1）の probe）
