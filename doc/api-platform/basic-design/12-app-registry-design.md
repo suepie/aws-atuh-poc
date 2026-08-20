@@ -59,7 +59,7 @@
 | `deploymentId` | **巡回状態** | 前回観測した API GW stage の deploymentId（**手動変更のデプロイ反映検知**用の併読値、17 §17.2.1 ⑤'。ALB 直モノリスは空）|
 | `lastSeenAt` | 巡回状態 | 最後に観測した日時（消滅検知用）|
 
-> 厳密な定義は [README §2.1](code-samples/README.md)。認証実装確認処理は `registry/` を List → Get し `enabled=true` のみ検査する。**読み方**: M1 は該当 1 オブジェクトのみ Get、M3 は全 List。
+> 厳密な定義は [README §2.1](code-samples/README.md)。認証実装確認処理は `registry/` を List → Get し `enabled=true` のみ検査する。**読み方**: 自動差分検査（モード1、旧称 M1）は該当 1 オブジェクトのみ Get、手動全量検査（モード3、旧称 M3）は全 List。
 
 ### §12.1.1 検査先が CloudFront URL である理由
 
@@ -92,7 +92,7 @@ sequenceDiagram
         DISC->>S3: PutObject（registry/… 自動登録 + openapi/… spec コピー）
     else コミット ID 変化
         DISC->>CC: GetDifferences（変更パス）+ GetFile（最新 yaml）
-        DISC->>S3: registry/… 更新（メタ同期 + lastCheckedCommitId）→ M1 probe 起動（18 章）
+        DISC->>S3: registry/… 更新（メタ同期 + lastCheckedCommitId）→ 自動差分検査（モード1）の probe 起動（18 章）
     else 消滅（repo / monitoring.yaml 削除）
         DISC->>S3: enabled=false に更新（棚卸しアラート）
     end

@@ -12,6 +12,8 @@
 
 ---
 
+> ℹ **呼称改定（2026-08-20）**: 実行モードの呼称を **M1 → 自動差分検査（モード1）/ M2 → 常時定期検査（モード2・将来）/ M3 → 手動全量検査（モード3）** に改定（設計書側で統一済み）。本 ADR 中の M1/M2/M3 は経緯記録としてそのまま維持し、上記に読み替える。
+
 > **⚠ 2026-07-24 配置変更（[U9 D-U9-16](../basic-design/09-operations-observability-design.md)）**: **P-18 により NW 監査 Acct は他組織管理**となり、Pattern β の配置根拠（NW 監査チームの業務延長）が消滅。**Canary 実行環境は弊社監査 Acct へ配置変更、運用主体は弊社 SRE**（U9 D-U9-16）。方式（App Registry / OpenAPI Registry / Hybrid 検証 / Multi Checks Blueprint）は不変。本文の「ネットワーク監査 Acct」「Network 監査チーム」表記は **弊社監査 Acct / 弊社 SRE** に読み替え（§M.4 の 2026-07-24 逆転注記参照）。
 
 ---

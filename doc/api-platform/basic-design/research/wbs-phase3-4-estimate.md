@@ -22,7 +22,7 @@
 
 ## 2. スコープ外
 
-SigV4 Positive / Cookie Positive・cleanup / M2 heartbeat / Private API VPC 化 / スコープ B（依頼のみ）/ SCP 強制（Phase 2 判断）/ Multilocation / ガイドライン章（01〜06）側の残未決
+SigV4 Positive / Cookie Positive・cleanup / 常時定期検査（モード2、旧称 M2）の heartbeat / Private API VPC 化 / スコープ B（依頼のみ）/ SCP 強制（Phase 2 判断）/ Multilocation / ガイドライン章（01〜06）側の残未決
 
 ---
 
@@ -95,7 +95,7 @@ SigV4 Positive / Cookie Positive・cleanup / M2 heartbeat / Private API VPC 化 
 
 | ID | 区分 | タスク | 内容 | 依存 | 人時 | 人日 |
 |---|---|---|---|---|---:|---:|
-| C0-d | 機能実装 | 発見 Lambda 全体設計 | 処理設計書: 全体シーケンス図（W1〜W9 展開）/ 入出力定義（Scheduler イベント・台帳 JSON・M1 payload）/ 環境変数一覧 / エラー・リトライ方針（18 §18.5.2 の実装割付）/ ログ設計（相関 ID・マスク）| — | 6 | 0.75 |
+| C0-d | 機能実装 | 発見 Lambda 全体設計 | 処理設計書: 全体シーケンス図（W1〜W9 展開）/ 入出力定義（Scheduler イベント・台帳 JSON・自動差分検査（モード1、旧称 M1）の payload）/ 環境変数一覧 / エラー・リトライ方針（18 §18.5.2 の実装割付）/ ログ設計（相関 ID・マスク）| — | 6 | 0.75 |
 | C1-d | 機能実装 | アカウント列挙 設計 | 委任ポリシー経由 ListAccounts の呼出仕様・対象 OU フィルタ・ページング。【補足】アカウント列挙＝巡回の対象となる App アカウントの一覧を AWS Organizations から毎回取得する処理。手作業のリスト管理をなくし、アカウント追加に自動追随する | C0-d | 1 | 0.15 |
 | C1-i | 機能実装 | アカウント列挙 実装 | 上記の実装 | C1-d, W1-3 | 2 | 0.25 |
 | C1-t | テスト | アカウント列挙 単体テスト | OU フィルタ・ページング・権限エラー時の挙動 | C1-i | 1 | 0.15 |
@@ -111,13 +111,13 @@ SigV4 Positive / Cookie Positive・cleanup / M2 heartbeat / Private API VPC 化 
 | C5-d | 機能実装 | monitoring.yaml 取得・検証 設計 | GetFile（6MB 上限の扱い）・スキーマ検証（W5-2 の JSON Schema 共用）・不備時の分類（メタ不足の種別）。【補足】monitoring.yaml＝アプリが「このリポジトリを監視して」と宣言する設定ファイル（検査先 URL・認証方式などを記載。リポジトリ直下に置く）| C0-d | 1 | 0.15 |
 | C5-i | 機能実装 | 同 実装 | 上記の実装 | C5-d | 4 | 0.5 |
 | C5-t | テスト | 同 単体テスト | 正常 / authPattern 不正 / baseUrl 欠落 / yaml 破損 / 6MB 超 | C5-i | 1 | 0.15 |
-| C6-d | 機能実装 | 台帳同期 設計 | registry/{appId}/{env}.json の生成・更新仕様、**ETag 条件付き PUT**、lastCheckedCommitId は M1 起動成功後にのみ更新（at-least-once）。【補足】台帳＝「どのアプリをどう監視するか」を 1 か所に集めた S3 上の管理簿。ETag 条件付き PUT＝「読み込んだ時から誰も更新していなければ書き込む」仕組みで、同時更新による上書き事故を防ぐ。at-least-once＝取りこぼしゼロを優先し、同じ変更を 2 回検査することは許容する方式（検査は読み取りのみなので重複しても無害）| C0-d | 1 | 0.15 |
+| C6-d | 機能実装 | 台帳同期 設計 | registry/{appId}/{env}.json の生成・更新仕様、**ETag 条件付き PUT**、lastCheckedCommitId は自動差分検査（モード1）の起動成功後にのみ更新（at-least-once）。【補足】台帳＝「どのアプリをどう監視するか」を 1 か所に集めた S3 上の管理簿。ETag 条件付き PUT＝「読み込んだ時から誰も更新していなければ書き込む」仕組みで、同時更新による上書き事故を防ぐ。at-least-once＝取りこぼしゼロを優先し、同じ変更を 2 回検査することは許容する方式（検査は読み取りのみなので重複しても無害）| C0-d | 1 | 0.15 |
 | C6-i | 機能実装 | 同 実装 | 上記の実装 | C6-d, A1-i | 3 | 0.4 |
 | C6-t | テスト | 同 単体テスト | 新規作成 / 更新 / ETag 競合（412）/ 中央管理項目（alertRouting・enabled）を上書きしないこと | C6-i | 1 | 0.15 |
 | C7-d | 機能実装 | spec 配置 設計 | openapi.yaml GetFile → openapi/ Put のキー導出・上書き仕様。【補足】spec＝API 仕様書（openapi.yaml。どんな endpoint があるかの一覧）。検査 Lambda が「どこを叩くか」を知るための情報源で、リポジトリから取得して中央の S3 にコピーしておく | C5-d | 0.5 | 0.1 |
 | C7-i | 機能実装 | 同 実装 | 上記の実装 | C7-d | 2 | 0.25 |
 | C7-t | テスト | 同 単体テスト | 配置キーの正当性・spec 未指定時の挙動 | C7-i | 0.5 | 0.1 |
-| C8-d | 機能実装 | M1 起動 設計 | 非同期 Event invoke（payload 仕様・fan-out・DLQ は A5）。【補足】M1＝1 時間毎の巡回で「変更のあったアプリだけ」を自動検査する実行モード（M3＝運用者が手動で全アプリ全量を検査するモードと対をなす）。M1 起動＝発見 Lambda が変更を見つけたアプリを対象に、検査 Lambda を呼び出すこと | C0-d | 0.5 | 0.1 |
+| C8-d | 機能実装 | 自動差分検査(モード1) 起動 設計 | 非同期 Event invoke（payload 仕様・fan-out・DLQ は A5）。【補足】自動差分検査（モード1）＝1 時間毎の巡回で「変更のあったアプリだけ」を自動検査する実行モード（手動全量検査（モード3、旧称 M3）＝運用者が手動で全アプリ全量を検査するモードと対をなす）。自動差分検査（モード1）の起動＝発見 Lambda が変更を見つけたアプリを対象に、検査 Lambda を呼び出すこと | C0-d | 0.5 | 0.1 |
 | C8-i | 機能実装 | 同 実装 | 上記の実装 | C8-d | 2 | 0.25 |
 | C8-t | テスト | 同 単体テスト | invoke payload・複数アプリ変更時の多重起動 | C8-i | 0.5 | 0.1 |
 | C9-d | 機能実装 | 消滅検知 設計 | repo / monitoring.yaml 消滅 → enabled=false + 棚卸しアラート（SNS P2）の判定・通知文面。【補足】消滅検知＝前回まで存在したリポジトリや monitoring.yaml が無くなった（＝アプリ廃止の可能性）ことを検出し、監視を自動停止したうえで「本当に廃止か」の確認を人に促す仕組み | C3-d | 0.5 | 0.1 |
@@ -130,8 +130,8 @@ SigV4 Positive / Cookie Positive・cleanup / M2 heartbeat / Private API VPC 化 
 | C11-i | 機能実装 | 同 実装 | 上記の実装（B1-i の emit と連動）| C11-d | 2 | 0.25 |
 | C11-t | テスト | 同 単体テスト | 1 アカウント失敗時に他アカウントが完走・メトリクス値 | C11-i | 1 | 0.15 |
 | C12-d | 機能実装 | deploymentId 併読 設計 | 台帳の `apiGatewayId` / `stage`（monitoring.yaml 宣言由来、17 §17.3）で対象を特定し stage の deploymentId を読む仕様（`apigateway:GET`）・台帳の前回値との比較ロジック・未宣言（ALB 直等）のスキップ判定と「api-gw-* なのに未宣言」のメタ不足 WARN。【補足】deploymentId 併読＝コンソール手動変更の検知策。REST API はコンソール変更もデプロイしないと反映されず、デプロイすると deploymentId が変わるため、git のコミットが無くてもこの値の変化で「手動変更がデプロイされた」ことを掴める（17 §17.2.1 ⑤' / ADR-061 追記 2026-08-19）| C3-d | 2 | 0.25 |
-| C12-i | 機能実装 | 同 実装 | 上記の実装（変化検知時は git 変更と同じ M1 起動フローへ合流。台帳 `deploymentId` は M1 起動成功後にのみ更新）| C12-d, C2-i | 5 | 0.6 |
-| C12-t | テスト | 同 単体テスト | 初回（前回値なし）/ 変化なし / 変化あり→M1 起動 / apiGatewayId 未宣言スキップ / api-gw-* なのに未宣言→メタ不足 WARN / apigateway:GET 権限エラーの 6 分岐 | C12-i | 2 | 0.25 |
+| C12-i | 機能実装 | 同 実装 | 上記の実装（変化検知時は git 変更と同じ自動差分検査（モード1）の起動フローへ合流。台帳 `deploymentId` は自動差分検査（モード1）の起動成功後にのみ更新）| C12-d, C2-i | 5 | 0.6 |
+| C12-t | テスト | 同 単体テスト | 初回（前回値なし）/ 変化なし / 変化あり→自動差分検査(モード1) 起動 / apiGatewayId 未宣言スキップ / api-gw-* なのに未宣言→メタ不足 WARN / apigateway:GET 権限エラーの 6 分岐 | C12-i | 2 | 0.25 |
 | **小計（発見）** | | | | | **51** | **6.4** |
 
 ### K 系: 検査 Lambda（13 行）
@@ -183,12 +183,12 @@ SigV4 Positive / Cookie Positive・cleanup / M2 heartbeat / Private API VPC 化 
 
 | ID | 区分 | タスク | 内容 | 依存 | 人時 | 人日 |
 |---|---|---|---|---|---:|---:|
-| W3-1 | テスト | ローカル統合 | LocalStack（3.8.1 ピン）/SAM で 巡回→台帳登録→M1 invoke→分類→SNS(モック) の通し。確認観点: 台帳 JSON の内容 / spec 配置キー / invoke payload / 4×4 分類結果 | W2 各 | 16 | 2.0 |
+| W3-1 | テスト | ローカル統合 | LocalStack（3.8.1 ピン）/SAM で 巡回→台帳登録→自動差分検査(モード1) invoke→分類→SNS(モック) の通し。確認観点: 台帳 JSON の内容 / spec 配置キー / invoke payload / 4×4 分類結果 | W2 各 | 16 | 2.0 |
 | W3-2 ◆ | テスト | 実 AWS PoC 環境構築 | 共通基盤 IaC 一式適用 + App アカウント側: CodeCommit seed repo（monitoring.yaml + openapi.yaml）×2 種（単一 repo / モノレポ）・サンプル API（API GW + JWT Authorizer、故意の NONE endpoint 付き）・CloudFront + WAF 簡易構成（Origin Protection + probe 許可ルール）・Keycloak 接続（W1-4）| W2, W1-3/4 | 24 | 3.0 |
-| T-A ◆ | テスト | 結合テスト A: 発見・登録系（7 ケース）| A-1 新規 repo（yaml あり）→台帳生成+spec 配置+M1 起動 / A-2 yaml 無し repo→対象外 / A-3 命名規約該当+yaml 無し→メタ不足アラート / A-4 authPattern 不正→既定 api-gw-jwt + メタ不足 / A-5 モノレポ: 片方のアプリのみ変更→そのアプリだけ M1 / A-6 feature ブランチ commit→検知しない / A-7 repo 削除→enabled=false+棚卸しアラート | W3-2 | 8 | 1.0 |
+| T-A ◆ | テスト | 結合テスト A: 発見・登録系（7 ケース）| A-1 新規 repo（yaml あり）→台帳生成+spec 配置+自動差分検査(モード1) 起動 / A-2 yaml 無し repo→対象外 / A-3 命名規約該当+yaml 無し→メタ不足アラート / A-4 authPattern 不正→既定 api-gw-jwt + メタ不足 / A-5 モノレポ: 片方のアプリのみ変更→そのアプリだけ自動差分検査(モード1) を起動 / A-6 feature ブランチ commit→検知しない / A-7 repo 削除→enabled=false+棚卸しアラート | W3-2 | 8 | 1.0 |
 | T-B ◆ | テスト | 結合テスト B: 検査・分類系（9 ケース）| B-1 正常 JWT（Neg401+Pos200→OK・通知なし）/ B-2 NONE endpoint（Neg200→CRITICAL・P1 メール到達・AuthCheckCritical アラーム発火）/ B-3 公開印 skip→probe 対象外 / B-4 公開印なし public→P1 / B-5 Cookie モノリス（302→OK、200→CRITICAL）/ B-6 token 失効（Neg401+Pos401→WARN P2）/ B-7 spec にあるが実体なし（Pos404→WARN）/ B-8 WAF ブロック（→WARN「境界でブロック」。誤 CRITICAL にならない）/ B-9 本番 POST skip | W3-2 | 10 | 1.25 |
 | T-C | テスト | 結合テスト C: 発報系（5 ケース）| C-1 alertRouting 個別設定→その宛先へ / C-2 未設定→デフォルト ARN へ / C-3 ARN 未解決→throw→DLQ / C-4 保険系: アラーム→SNS P1（即時系を止めた状態で）/ C-5 dedup（採用時: 2 巡目は抑制・24h 後再通知）| W3-2 | 4 | 0.5 |
-| T-D | テスト | 結合テスト D: 障害・運用系（6 ケース）| D-1 1 アカウントの AssumeRole 拒否→他アカウント完走+AccountErrors→MM-3 / D-2 検査 invoke 失敗→リトライ→DLQ→MM-4 / D-3 Scheduler 停止→2h 後 MM-1 発火 / D-4 M1 途中失敗→lastCheckedCommitId 据え置き→次巡回で再検知（at-least-once）/ D-5 M3 full→fan-out で全アプリ検査 / D-6 台帳の手動更新と巡回の競合（ETag 412→リトライ）| W3-2 | 8 | 1.0 |
+| T-D | テスト | 結合テスト D: 障害・運用系（6 ケース）| D-1 1 アカウントの AssumeRole 拒否→他アカウント完走+AccountErrors→MM-3 / D-2 検査 invoke 失敗→リトライ→DLQ→MM-4 / D-3 Scheduler 停止→2h 後 MM-1 発火 / D-4 自動差分検査(モード1) 途中失敗→lastCheckedCommitId 据え置き→次巡回で再検知（at-least-once）/ D-5 手動全量検査(モード3) 実行→fan-out で全アプリ検査 / D-6 台帳の手動更新と巡回の競合（ETag 412→リトライ）| W3-2 | 8 | 1.0 |
 | W3-5 | 監視(定型) | 性能実測・閾値本決め | 巡回 1 実行・1 アプリ probe の所要時間実測（3 アカウント）→ Duration ほか B 系アラーム閾値の確定値を監視設計書（B0-d）に反映 | T-A〜D | 4 | 0.5 |
 | W3-6 | テスト | セキュリティ確認 | IAM 最小権限の実査（Access Analyzer / 手動）・ExternalId なし AssumeRole の拒否確認・全 Lambda ログに secret/トークンが出ないこと（OBS-3）| W3-2 | 8 | 1.0 |
 | W3-7 | ドキュメント | テスト報告書 | ケース別結果一覧・検出不具合と対処・設計書（md）への検証済み事実反映 | T-A〜D | 8 | 1.0 |
@@ -198,7 +198,7 @@ SigV4 Positive / Cookie Positive・cleanup / M2 heartbeat / Private API VPC 化 
 
 | ID | 区分 | タスク | 内容 | 依存 | 人時 | 人日 |
 |---|---|---|---|---|---:|---:|
-| W4-1 | 運用 | Runbook 5 本 | ① P1（認証漏れ）対応: 一次切り分け（真の漏れ / drift / 誤検知）→アプリチーム連絡→暫定遮断の判断基準 ② M3 実行手順（CLI・実行権限） ③ メタ監視発報対応（MM-1〜5 別の初動） ④ 台帳手動更新（enabled 切替・alertRouting 設定・ETag 手順） ⑤ 棚卸し（消滅レコード削除・公開印 skip 濫用の月次レビュー）。各 Runbook に**「変更は必ず git 経由」原則（2026-08-19 方針①）**を明記 | W3 | 24 | 3.0 |
+| W4-1 | 運用 | Runbook 5 本 | ① P1（認証漏れ）対応: 一次切り分け（真の漏れ / drift / 誤検知）→アプリチーム連絡→暫定遮断の判断基準 ② 手動全量検査(モード3) 実行手順（CLI・実行権限） ③ メタ監視発報対応（MM-1〜5 別の初動） ④ 台帳手動更新（enabled 切替・alertRouting 設定・ETag 手順） ⑤ 棚卸し（消滅レコード削除・公開印 skip 濫用の月次レビュー）。各 Runbook に**「変更は必ず git 経由」原則（2026-08-19 方針①）**を明記 | W3 | 24 | 3.0 |
 | W4-2 | 運用 | 引き継ぎ・訓練 | 運用チームへの説明会 + P1 模擬発報 1 回（B-2 ケースを本番相当で再現し Runbook ①を通しで実施）| W4-1 | 8 | 1.0 |
 | W4-3 | 監視(定型) | 運用ダッシュボード | CloudWatch ダッシュボード 1 画面: AuthCheck 系 5 メトリクス（per-app）+ メタ監視（LastSuccess・AccountErrors・DLQ 深さ・Duration）| B 系 | 8 | 1.0 |
 | W5-1 | ガイド | アプリチーム向け利用ガイド | 章立て: 概要 / やること 3 点 / monitoring.yaml の書き方（全項目解説）/ MON-1 公開印 / **「変更は必ず git 経由」の明記（コンソール直変更の禁止、2026-08-19 方針①）** / アラートが来たら（P3 の見方）/ FAQ（Excel 09 シートを配布形に再構成）| — | 16 | 2.0 |

@@ -64,7 +64,7 @@ proposal（§FR-API-* / §NFR-API-* / §C-API-*）は参照物として維持。
 | 15 | [15-alert-routing-design.md](15-alert-routing-design.md) | 4×4 → SNS 振り分け（P1/P2/P3 / ARN 2 段解決）| ✅ Phase 2 |
 | 16 | [16-cross-account-iam-design.md](16-cross-account-iam-design.md) | クロスアカウント IAM（読み取りロール DiscoveryReadRole / StackSets 配布 / BD-Q-01）| ✅ Phase 2 |
 | 17 | [17-deployment-integration-and-registration.md](17-deployment-integration-and-registration.md) | デプロイ検知と登録（**中央巡回 pull 型・1h**、[ADR-061](../../adr/061-deploy-detection-pull-model.md)。CodeCommit コミット差分・モノリスも自動発見）| ✅ Phase 2 |
-| 18 | [18-scan-modes-and-scheduling.md](18-scan-modes-and-scheduling.md) ⭐ | **スキャン実行モード（M1 巡回差分/自動 1h + M3 フル/手動、M2 将来、Lambda 基盤一本化）— 実行モデル SSOT** | ✅ Phase 2 |
+| 18 | [18-scan-modes-and-scheduling.md](18-scan-modes-and-scheduling.md) ⭐ | **スキャン実行モード（自動差分検査（モード1、旧称 M1）/自動 1h + 手動全量検査（モード3、旧称 M3）/手動、常時定期検査（モード2、旧称 M2）は将来、Lambda 基盤一本化）— 実行モデル SSOT** | ✅ Phase 2 |
 
 ## 実装物（code-samples/、認証基盤と分離）
 

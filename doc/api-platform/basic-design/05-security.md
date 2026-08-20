@@ -161,7 +161,7 @@ flowchart LR
         Hook[CloudFormation Hooks]
     end
     subgraph Runtime["③ Runtime"]
-        Probe[外形監視 M1/M3<br/>章 10-18]
+        Probe["外形監視 自動差分検査（モード1、旧称 M1）/手動全量検査（モード3、旧称 M3）<br/>章 10-18"]
         Config[Config Rules]
         GD[GuardDuty/Inspector]
     end
@@ -191,11 +191,11 @@ CI で **Unit test + IaC lint + 静的解析**（[04 章](04-static-analysis-gui
 
 | 機構 | 役割 | 参照 |
 |---|---|---|
-| **外形監視（認証実装確認処理）** | M1 デプロイ差分（自動）+ M3 フル監査（手動）で認証を Negative+Positive の 2 種リクエストで検査 | 章 10-18、[ADR-059](../../adr/059-central-auth-check-canary-architecture.md)|
+| **外形監視（認証実装確認処理）** | 自動差分検査（モード1）+ 手動全量検査（モード3）で認証を Negative+Positive の 2 種リクエストで検査 | 章 10-18、[ADR-059](../../adr/059-central-auth-check-canary-architecture.md)|
 | Config Rules | 認証 / Origin Protection の drift 検知 | [§FR-API-7 §7.2.2](../proposal/fr/07-guardrails.md)|
 | GuardDuty / Inspector / Security Hub | 脅威検知 / 脆弱性 / 集約 | §NFR-API-4 |
 
-> 外形監視の実行モデルは [18 章](18-scan-modes-and-scheduling.md)（M1 差分/自動 + M3 フル/手動、Lambda 基盤）。
+> 外形監視の実行モデルは [18 章](18-scan-modes-and-scheduling.md)（自動差分検査（モード1）+ 手動全量検査（モード3）、Lambda 基盤）。
 
 ### §5.3.5 定期セキュリティテスト
 
@@ -260,7 +260,7 @@ CI で **Unit test + IaC lint + 静的解析**（[04 章](04-static-analysis-gui
 |---|---|---|
 | BD-Q-05 | 外部 pen test のベンダー選定・予算（$20-50k/年 目安）| 契約 / 予算フェーズ |
 | BD-Q-01 | ROSA 側 P-18（ネットワーク監査アカウント 他組織管理）確定時の NW セキュリティ責任分界 | 16 章 |
-| G-HANDOFF-05-1 | 外形監視（M1/M3）の実装 | 章 10-18、`code-samples/` |
+| G-HANDOFF-05-1 | 外形監視（自動差分検査（モード1）/手動全量検査（モード3））の実装 | 章 10-18、`code-samples/` |
 
 ---
 

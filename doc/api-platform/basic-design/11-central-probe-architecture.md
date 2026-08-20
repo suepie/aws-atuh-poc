@@ -14,9 +14,9 @@
 
 ## §11.1 処理フロー（1 回の実行）
 
-> 本節は認証実装チェックの **1 回の実行内容（処理フロー）** を示す。**実行基盤（Lambda）と頻度（M1 デプロイ差分/自動・M3 フル/手動）は [18 章](18-scan-modes-and-scheduling.md) が SSOT**。
+> 本節は認証実装チェックの **1 回の実行内容（処理フロー）** を示す。**実行基盤（Lambda）と頻度（自動差分検査（モード1、旧称 M1・自動）・手動全量検査（モード3、旧称 M3・手動））は [18 章](18-scan-modes-and-scheduling.md) が SSOT**。
 
-1 回の実行で（M1 は対象アプリ、M3 は全アプリを）以下のように横断 probe する。
+1 回の実行で（自動差分検査（モード1）は対象アプリ、手動全量検査（モード3）は全アプリを）以下のように横断 probe する。
 
 ```mermaid
 sequenceDiagram
@@ -169,7 +169,7 @@ Positive probe（valid token → 200 期待）に使う認証情報は、**静�
 | OAuth / Secrets | `lib/token.js`（短命トークン、§11.3.1）|
 | Cookie モノリス Positive | ✅（Puppeteer 相当ロジック）|
 
-> **将来オプション（Synthetics）**: 定期 heartbeat（M2）や HAR・スクショ・Multilocation・実行履歴 UI が要る場合のみ、CloudWatch Synthetics（Puppeteer runtime）や Multi Checks Blueprint（≤10 endpoint を JSON で記述、OAuth ネイティブ）を実行環境として追加できる。**その場合も probe lib は共通**（14 章 §14.2 / [18 章 §18.4.1](18-scan-modes-and-scheduling.md)）。
+> **将来オプション（Synthetics）**: 常時定期検査（モード2、旧称 M2）の定期 heartbeat や HAR・スクショ・Multilocation・実行履歴 UI が要る場合のみ、CloudWatch Synthetics（Puppeteer runtime）や Multi Checks Blueprint（≤10 endpoint を JSON で記述、OAuth ネイティブ）を実行環境として追加できる。**その場合も probe lib は共通**（14 章 §14.2 / [18 章 §18.4.1](18-scan-modes-and-scheduling.md)）。
 
 ---
 
@@ -180,7 +180,7 @@ Positive probe（valid token → 200 期待）に使う認証情報は、**静�
 | Production | 対象 endpoint | 対象 GET | ❌ skip（副作用回避）| ✅ |
 | Staging / Dev | 対象 endpoint | 対象 GET | ✅（cleanup 付き）| ✅ |
 
-「対象 endpoint」= M1 なら変更アプリの全 endpoint、M3 なら全 endpoint（[18 章](18-scan-modes-and-scheduling.md)）。制御は OpenAPI アノテーション `x-canary-positive-test: pre-prod-only`（13 章 §13.3）。POST の副作用回避は本番の鉄則。
+「対象 endpoint」= 自動差分検査（モード1）なら変更アプリの全 endpoint、手動全量検査（モード3）なら全 endpoint（[18 章](18-scan-modes-and-scheduling.md)）。制御は OpenAPI アノテーション `x-canary-positive-test: pre-prod-only`（13 章 §13.3）。POST の副作用回避は本番の鉄則。
 
 ---
 
@@ -298,7 +298,7 @@ paths:
 
 | ID | 内容 |
 |---|---|
-| ~~M-Q-11-1~~ | ~~probe 頻度（5min / 15min）~~ → **解決**: M1=巡回差分（1h）/ M3=手動の 2 モードに再設計済みで定期 probe 自体が無い（18 章 / ADR-061）|
+| ~~M-Q-11-1~~ | ~~probe 頻度（5min / 15min）~~ → **解決**: 自動差分検査（モード1、1h）/ 手動全量検査（モード3、手動）の 2 モードに再設計済みで定期 probe 自体が無い（18 章 / ADR-061）|
 | M-Q-11-2 | SigV4 Positive（api-gw-iam）の実装（`@aws-sdk/signature-v4` 手動署名、Phase 2）|
 | M-Q-11-3 | Cookie モノリス Positive（Puppeteer ログイン）の実装 |
 | M-Q-11-4 | **Positive トークン スコープ B（canary 専用テナント/合成データ）の設計**（認証基盤 Keycloak へ引き渡し、§11.3.1）。Phase 1 は A、機微データ API から B へ移行 |

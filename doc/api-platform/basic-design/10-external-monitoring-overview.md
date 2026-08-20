@@ -36,7 +36,7 @@
 | **Positive probe（正規検査）** | **有効なトークン付き**でリクエスト → 200 が返れば API 稼働とテスト健全性を確認。Negative との組合せで誤検知を防ぐ（11 章 §11.2）|
 | **probe lib（検査ロジック）** | 上記の検査を実装した共通ライブラリ（[central-probe-lib/](code-samples/central-probe-lib/)）。認証実装チェック Lambda が実行する |
 | **Pattern β** | 検査を各アプリに配らず**中央 1 箇所**から横断実行する方式（§10.1）|
-| **M1 / M3** | 実行モード。M1=巡回差分（自動・1 時間毎の巡回で変化アプリのみ検査）/ M3=フル監査（手動）（17/18 章）|
+| **自動差分検査（モード1）/ 手動全量検査（モード3）** | 実行モード。自動差分検査（モード1、旧称 M1）=自動・1 時間毎の巡回で変化アプリのみ検査 / 手動全量検査（モード3、旧称 M3）=手動・全アプリ全 endpoint（17/18 章）|
 | **STS / AssumeRole** | AWS Security Token Service =「**一時的な認証情報の発行所**」。AssumeRole で他アカウントのロール（例: DiscoveryReadRole）を引き受け、**期限付き・最小権限の一時キー**を得る。恒久キーを配らずにクロスアカウント読み取りを実現する標準手段（16 §16.2、§10.1.7 W4）|
 
 ---
@@ -54,7 +54,7 @@ flowchart TB
     subgraph Central["共通基盤アカウント（中央運用・自社管理）"]
         DISC[発見 Lambda<br/>1 時間毎巡回 ※17 章]
         Reg[Monitoring Registry S3<br/>台帳 registry/ + spec openapi/]
-        CC[認証実装確認処理<br/>Lambda（probe lib 共通）<br/>M1 巡回差分/M3 フル ※18 章]
+        CC["認証実装確認処理<br/>Lambda（probe lib 共通）<br/>自動差分検査（モード1）/手動全量検査（モード3） ※18 章"]
         AR[Alert Router<br/>Lambda]
         SNS[SNS<br/>P1 Security / P2 Platform / P3 App]
     end
@@ -77,9 +77,9 @@ flowchart TB
     DISC -.->|"読み取り AssumeRole：<br/>コミット差分＋deploymentId 併読・<br/>monitoring.yaml・spec 取得"| REPOA
     DISC -.->|"同"| REPOB
     DISC -->|自動登録・スナップショット・spec Put| Reg
-    DISC -->|変化あり → M1 起動| CC
+    DISC -->|変化あり → 自動差分検査（モード1）起動| CC
 
-    CC -->|台帳 List/Get + spec Get<br/>（M1 対象/M3 全量）| Reg
+    CC -->|台帳 List/Get + spec Get<br/>（自動差分検査(モード1)は対象のみ/手動全量検査(モード3)は全量）| Reg
     CC -->|probe は実 UX と同じ境界経由| CFA
     CFA --> APIA
     CC --> CFB
@@ -95,9 +95,9 @@ flowchart TB
 ```
 
 - **境界（CloudFront + WAF）はネットワーク監査アカウント**にあり、probe はそこを実ユーザーと同じ経路で通る（§冒頭の配置分離のとおり）
-- **巡回の読み取り（発見 Lambda → CodeCommit / API GW）は境界を通らない**（AWS API を読み取りロールで直接呼ぶ、16 章）。変更検知は**コミット差分（git 主）＋ deploymentId 併読**（[ADR-061 追記 2026-08-19](../../adr/061-deploy-detection-pull-model.md)）で、コンソール直変更はデプロイ反映時に deploymentId 側で検知。残る死角（未デプロイ編集・ALB 直）は L2 Config Rules + M3 が補完（17 章 §17.2.2）
+- **巡回の読み取り（発見 Lambda → CodeCommit / API GW）は境界を通らない**（AWS API を読み取りロールで直接呼ぶ、16 章）。変更検知は**コミット差分（git 主）＋ deploymentId 併読**（[ADR-061 追記 2026-08-19](../../adr/061-deploy-detection-pull-model.md)）で、コンソール直変更はデプロイ反映時に deploymentId 側で検知。残る死角（未デプロイ編集・ALB 直）は L2 Config Rules + 手動全量検査（モード3）が補完（17 章 §17.2.2）
 
-> **実行モデル（[18 章](18-scan-modes-and-scheduling.md) が SSOT）**: 実行基盤は **Lambda**、モードは **M1 巡回差分（自動・1 時間毎の巡回で変化アプリのみ）+ M3 フル監査（手動・全量）**。CloudWatch Synthetics は不使用（将来 M2 用オプション）。経緯は [ADR-059](../../adr/059-central-auth-check-canary-architecture.md)（Lambda 一本化）/ [ADR-061](../../adr/061-deploy-detection-pull-model.md)（pull 巡回統一）。
+> **実行モデル（[18 章](18-scan-modes-and-scheduling.md) が SSOT）**: 実行基盤は **Lambda**、モードは **自動差分検査（モード1、1 時間毎の巡回で変化アプリのみ）+ 手動全量検査（モード3、全量）**。CloudWatch Synthetics は不使用（将来の常時定期検査（モード2、旧称 M2）用オプション）。経緯は [ADR-059](../../adr/059-central-auth-check-canary-architecture.md)（Lambda 一本化）/ [ADR-061](../../adr/061-deploy-detection-pull-model.md)（pull 巡回統一）。
 
 ### §10.1.2 なぜ β（中央）か — α（分散）との比較
 
@@ -118,7 +118,7 @@ flowchart TB
 
 ```mermaid
 flowchart TB
-    MAN["運用者（M3 手動）"]
+    MAN["運用者（手動全量検査（モード3）を手動起動）"]
 
     subgraph Central["共通基盤アカウント（中央運用・自社管理）"]
         SCH["EventBridge Scheduler<br/>1 時間毎"]
@@ -146,8 +146,8 @@ flowchart TB
     DISC -->|"① AssumeRole（読み取り）"| ROLE
     ROLE -->|"② ListRepositories / GetBranch<br/>コミット ID 比較 / GetFile"| REPO
     DISC -->|"③ 自動登録・lastCheckedCommitId 更新<br/>+ spec Put（repo の openapi.yaml）"| REG
-    DISC -->|"④ M1 起動（変更アプリのみ）"| PROBE
-    MAN -->|"M3 フル監査"| PROBE
+    DISC -->|"④ 自動差分検査（モード1）起動（変更アプリのみ）"| PROBE
+    MAN -->|"手動全量検査（モード3）"| PROBE
     PROBE -->|"台帳 + spec 取得"| REG
     PROBE -->|"⑤ Neg/Pos probe（実 UX と同じ境界経由）"| CF
     CF --> APIGW
@@ -171,7 +171,7 @@ flowchart TB
 ```mermaid
 flowchart LR
     D["① コミット & デプロイ<br/>04 静的解析 pass"] --> R["② 巡回発見（コミット差分<br/>＋deploymentId 併読）<br/>最大 1h 後に検知・登録・spec 取得<br/>（17 章）"]
-    R --> T["③ M1 起動（自動）<br/>/ M3 フル（手動）<br/>（18 章）"]
+    R --> T["③ 自動差分検査（モード1）起動<br/>/ 手動全量検査（モード3）<br/>（18 章）"]
     T --> P["④ probe<br/>Negative + Positive<br/>（11 章）"]
     P --> C{"⑤ classify<br/>4×4 真偽値表<br/>（11 章）"}
     C -->|OK| OK["✅ Metrics 記録のみ"]
@@ -209,7 +209,7 @@ flowchart LR
 | リソース | AWS サービス | 役割（ひとことで） | 詳細章 |
 |---|---|---|:---:|
 | **Service Catalog 製品** | Service Catalog | **正規デプロイの型**。認証必須・Origin Protection・タグ付与を全部込みで提供（アプリはパラメータを選ぶだけ。登録処理は含まない＝中央が発見する）| 17 §17.1 |
-| **CodeCommit リポジトリ** | CodeCommit | **変更検知とメタデータの源**。monitoring.yaml（監視宣言）+ openapi.yaml（spec 正本）を置く。コミット差分が M1 の主トリガー（API GW deploymentId を併読して手動変更のデプロイ反映も検知）| 17 §17.2-3 |
+| **CodeCommit リポジトリ** | CodeCommit | **変更検知とメタデータの源**。monitoring.yaml（監視宣言）+ openapi.yaml（spec 正本）を置く。コミット差分が自動差分検査（モード1）の主トリガー（API GW deploymentId を併読して手動変更のデプロイ反映も検知）| 17 §17.2-3 |
 | **DiscoveryReadRole** | IAM ロール（StackSets 配布）| **中央からの読み取り窓口**。発見 Lambda だけが AssumeRole でき、codecommit read のみ | 16 §16.2 |
 | **API GW / ALB** | — | **検査の対象**（アプリの認証実装そのもの）。probe が実際に叩く | 11 |
 
@@ -219,7 +219,7 @@ flowchart LR
 |---|---|---|:---:|
 | **アプリごとの CloudFront + WAF** | CloudFront / WAF | **インターネット境界（Origin Protection）**。probe は実ユーザーと同じくここを経由して検査する（境界を破らない）| [ADR-039](../../adr/039-centralized-network-account-edge-layer.md) / 12 §12.1.1 |
 
-> **1 行まとめ**: アプリがリポジトリに **monitoring.yaml を置いてコミット**すると、**中央の発見 Lambda が 1 時間毎の巡回（コミット差分）で見つけて台帳・仕様を自動登録**し、変更のあったアプリ（M1）と手動監査時（M3）に**認証実装チェック Lambda が実際にリクエストを投げて認証漏れを検査**、問題があれば **4×4 分類で適切なチームに通知**される。アプリ側に登録処理はない（モノリスも同じ）。
+> **1 行まとめ**: アプリがリポジトリに **monitoring.yaml を置いてコミット**すると、**中央の発見 Lambda が 1 時間毎の巡回（コミット差分）で見つけて台帳・仕様を自動登録**し、変更のあったアプリ（自動差分検査（モード1））と手動監査時（手動全量検査（モード3））に**認証実装チェック Lambda が実際にリクエストを投げて認証漏れを検査**、問題があれば **4×4 分類で適切なチームに通知**される。アプリ側に登録処理はない（モノリスも同じ）。
 
 ---
 
@@ -315,7 +315,7 @@ flowchart TB
 
 §10.1.6 の経路 A〜D を、**構成図に矢印を引ける粒度**（ステップごとの発信元 / 宛先 / 経由エンドポイント / 認証）まで分解する。リージョンは例として `ap-northeast-1`。VPC 外 Lambda の通信は **AWS API 宛 = AWS 網内**、**インターネット宛（probe / token）= Lambda マネージド egress から直接**（Out 境界非経由、§10.1.6 の例外）。
 
-#### F1. git 連携フロー（開発者 push → 巡回検知 → M1 起動）
+#### F1. git 連携フロー（開発者 push → 巡回検知 → 自動差分検査（モード1）起動）
 
 ```mermaid
 sequenceDiagram
@@ -338,7 +338,7 @@ sequenceDiagram
     DISC->>S3: W6 registry/{appId}/{env}.json 取得（lastCheckedCommitId 比較）
     DISC->>REPO: W7 変更あり → GetDifferences / GetFile（monitoring.yaml・openapi.yaml）
     DISC->>S3: W8 台帳更新 + spec Put
-    DISC->>PROBE: W9 M1 起動（mode=delta, appId, env）
+    DISC->>PROBE: W9 自動差分検査（モード1）起動（mode=delta, appId, env）
 ```
 
 | # | 通信 | 発信元（アカウント / リソース）| 宛先（アカウント / リソース）| 経由・エンドポイント | プロトコル・認証 |
@@ -352,15 +352,15 @@ sequenceDiagram
 | W6 | 台帳読取 | 共通基盤 / 発見 Lambda | 共通基盤 / Monitoring Registry S3 `registry/` | `s3.ap-northeast-1.amazonaws.com` | 443、`GetObject`（同一アカウント IAM）|
 | W7 | 差分・ファイル取得 | 共通基盤 / 発見 Lambda | App / CodeCommit | `codecommit.ap-northeast-1.amazonaws.com` | 443、`GetDifferences` / `GetFile` |
 | W8 | 台帳更新 + spec 配置 | 共通基盤 / 発見 Lambda | 共通基盤 / Monitoring Registry S3（`registry/` + `openapi/`）| `s3.ap-northeast-1.amazonaws.com` | 443、`PutObject` |
-| W9 | M1 起動 | 共通基盤 / 発見 Lambda | 共通基盤 / 認証実装チェック Lambda | `lambda.ap-northeast-1.amazonaws.com` | 443、`lambda:InvokeFunction` |
+| W9 | 自動差分検査（モード1）起動 | 共通基盤 / 発見 Lambda | 共通基盤 / 認証実装チェック Lambda | `lambda.ap-northeast-1.amazonaws.com` | 443、`lambda:InvokeFunction` |
 
 > **構成図のポイント**: W1 は App アカウント内で完結（開発者 → repo）。W4/W5/W7 だけが**アカウント跨ぎ（共通基盤 → App）**で、すべて AWS API（境界 In/Out とも非経由）。
 
-#### F2. 検査（probe）フロー — M1/M3 の 1 実行
+#### F2. 検査（probe）フロー — 自動差分検査（モード1）/手動全量検査（モード3）の 1 実行
 
 | # | 通信 | 発信元 | 宛先 | 経由・エンドポイント | プロトコル・認証 |
 |---|---|---|---|---|---|
-| P1 | 台帳・spec 取得 | 共通基盤 / 認証実装チェック Lambda | 共通基盤 / Monitoring Registry S3 | `s3.ap-northeast-1.amazonaws.com`（M1=対象 1 件 Get / M3=`registry/` List→Get）| 443、IAM |
+| P1 | 台帳・spec 取得 | 共通基盤 / 認証実装チェック Lambda | 共通基盤 / Monitoring Registry S3 | `s3.ap-northeast-1.amazonaws.com`（自動差分検査(モード1)=対象 1 件 Get / 手動全量検査(モード3)=`registry/` List→Get）| 443、IAM |
 | P2 | クライアント資格情報取得 | 同上 | 共通基盤 / Secrets Manager（canary-central-readonly）| `secretsmanager.ap-northeast-1.amazonaws.com` | 443、IAM（+KMS）|
 | P3 | 短命トークン取得（Positive 用）| 同上 | **Broker（認証基盤）/ Keycloak 公開 `/token`** | Lambda マネージド egress → **インターネット** → 認証基盤の公開エンドポイント（認証基盤側の境界・経路はそちらの設計に従う）| 443、OAuth client_credentials（11 §11.3.1）|
 | P4 | **Negative / Positive probe** | 同上 | **App / API GW・ALB**（ただし直接ではない）| Lambda マネージド egress → **インターネット** → **ネットワーク監査 / アプリごとの CloudFront + WAF** → Origin Protection（`X-Origin-Verify` + prefix list）→ App / API GW（`execute-api` リージョナル）or ALB | 443。Negative=認証ヘッダなし / Positive=Bearer（P3 のトークン）|
@@ -404,7 +404,7 @@ flowchart LR
 | 14 | 実装ガイド（probe lib / モノリス・Private 対応）| [central-probe-lib/](code-samples/central-probe-lib/) |
 | 15 | Alert Router | [alert-router-lambda/](code-samples/alert-router-lambda/) |
 | 17 | 巡回発見（発見 Lambda）| **未実装（M-Q-17-4）**。[app-registry-lambda/](code-samples/app-registry-lambda/) / [openapi-export-lambda/](code-samples/openapi-export-lambda/)（旧 push 型参考実装）のロジックを流用予定 |
-| 18 | 実行モード（M1/M3）| probe Lambda（central-probe-lib を Lambda handler に転用、README §4）|
+| 18 | 実行モード（自動差分検査（モード1）/手動全量検査（モード3））| probe Lambda（central-probe-lib を Lambda handler に転用、README §4）|
 | 全 | データ契約 SSOT | [code-samples/README.md](code-samples/README.md) |
 
 > **データ契約の SSOT は [code-samples/README.md](code-samples/README.md)**（App Registry スキーマ / OpenAPI アノテーション / CloudWatch Metrics / 4×4 真偽値表 / authPattern enum / Alert 形式）。本設計書群はその設計意図・判断根拠を説明し、厳密な定義は README を参照する。
@@ -432,7 +432,7 @@ flowchart LR
 flowchart LR
     O[10 総論<br/>本章] --> A[11 アーキ<br/>1 回の検査の中身]
     O --> DEP[17 デプロイ検知<br/>巡回発見・登録]
-    DEP --> MODE[18 実行モード<br/>M1/M3 ※SSOT]
+    DEP --> MODE["18 実行モード<br/>自動差分検査（モード1）/手動全量検査（モード3） ※SSOT"]
     A --> R[12 App Registry<br/>13 OpenAPI Registry<br/>データ源]
     A --> I[14 実装ガイド<br/>probe の作り]
     I --> AL[15 Alert Router<br/>通知]

@@ -103,13 +103,13 @@ paths:
 
 1. アプリチームが endpoint を追加（リポジトリの openapi.yaml 更新）→ コミット
 2. **次回巡回（最大 1h）で発見 Lambda がコミット変化を検知し、新版を GetFile → S3 に上書き**（§13.2）
-3. 同じ巡回で M1 probe が起動し、新 endpoint も対象化
+3. 同じ巡回で自動差分検査（モード1、旧称 M1）の probe が起動し、新 endpoint も対象化
 
 → **probe のコード変更は不要**。リポジトリの OpenAPI を正本にすることで「監視対象の維持」が自動化される。
 
-## §13.5 M1 との関係と S3 Versioning
+## §13.5 自動差分検査（モード1）との関係と S3 Versioning
 
-**M1 のトリガは発見 Lambda の巡回差分（コミット ID 比較、[17 章 §17.2](17-deployment-integration-and-registration.md)）であり、S3 イベントではない**（[ADR-061](../../adr/061-deploy-detection-pull-model.md)）。OpenAPI Registry は「probe が読む正本のコピー」+「Versioning による履歴」を担う。
+**自動差分検査（モード1）のトリガは発見 Lambda の巡回差分（コミット ID 比較、[17 章 §17.2](17-deployment-integration-and-registration.md)）であり、S3 イベントではない**（[ADR-061](../../adr/061-deploy-detection-pull-model.md)）。OpenAPI Registry は「probe が読む正本のコピー」+「Versioning による履歴」を担う。
 
 - ⚠ **差分粒度はアプリ単位**（18 章 §18.2.1）: 巡回はコミット変化で「変更があった」ことだけ判定し、**endpoint 単位に絞らず「そのアプリの全 endpoint」を probe** する。理由は、認証コードだけ変えて OpenAPI が不変なケース（middleware 削除等）を見逃さないため（コミット diff からも endpoint への影響は判定できない）。
 - Git のコミット diff は「何が変わったか」の**参考情報**（アラート本文への付記）に使い、probe 範囲の絞り込みには使わない。
