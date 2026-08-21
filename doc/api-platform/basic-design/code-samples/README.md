@@ -11,12 +11,12 @@
 
 ```
 [共通基盤アカウント]                              [各 App アカウント]
-  発見 Lambda（1 時間毎巡回 ※17 章 / ADR-061 改訂）
-    │ 読み取り AssumeRole（DiscoveryReadRole）────► CodeCommit: ListRepositories /
-    │                                              GetBranch（コミット ID 比較）/ GetFile
-    ├─ monitoring.yaml 付きリポジトリを App Registry へ自動登録
-    ├─ openapi.yaml（repo 正本）を OpenAPI Registry (S3) へ Put
-    └─ 前回確認コミットから変更のあったアプリ → 自動差分検査（モード1、旧称 M1）の probe 起動
+  発見 Lambda（1 時間毎巡回 ※17 章 / ADR-061 追記 2026-08-21）
+    │ 読み取り AssumeRole（DiscoveryReadRole）────► 資材バケット S3: List（{appId}/）/
+    │                                              VersionId 比較 / GetObject
+    ├─ monitoring.yaml 付き資材プレフィックスを App Registry へ自動登録
+    ├─ openapi.yaml（デプロイ版の写し）を OpenAPI Registry (S3) へ Put
+    └─ 前回確認 VersionId から変更のあったアプリ → 自動差分検査（モード1、旧称 M1）の probe 起動
   Monitoring Registry (S3×1) … registry/ 台帳+巡回スナップショット / openapi/ spec コピー
   認証実装確認処理 (Lambda, 共通 probe lib)
     │ 自動差分検査（モード1）/ 全量検査（モード2、旧称 M3「手動全量検査」）※18 章
@@ -47,7 +47,7 @@
 
 ### 2.1 App Registry（S3 台帳）スキーマ
 
-**発見 Lambda が巡回（CodeCommit の monitoring.yaml）から自動登録・同期**する。認証実装確認処理が `registry/` を List → Get する。
+**発見 Lambda が巡回（資材バケットの `{appId}/monitoring.yaml`）から自動登録・同期**する。認証実装確認処理が `registry/` を List → Get する。
 
 - 置き場: Monitoring Registry バケットの **`registry/{appId}/{env}.json`**（1 アプリ×環境 = 1 JSON オブジェクト。DynamoDB は不使用、[ADR-061 追記](../../../adr/061-deploy-detection-pull-model.md) / 12 章）
 
@@ -62,16 +62,13 @@
 | `alertRouting` | M | 通知先設定（下記）| `{ p1: "arn:...:security", p2: "arn:...:platform", p3: "arn:...:app-team-x" }` |
 | `enabled` | BOOL | 監視有効フラグ（**中央管理**）| `true` |
 | `registeredAt` | S | ISO8601 登録日時 | `2026-07-06T00:00:00Z` |
-| `repositoryName` | S | CodeCommit リポジトリ名（発見元）| `expense-api` |
-| `branch` | S | 監視対象ブランチ | `main` |
-| `pathPrefix` | S | モノレポ時のアプリパス | `apps/expense-api/` |
-| `apiGatewayId` | S | deploymentId 併読の対象 API GW ID（monitoring.yaml 宣言由来、17 §17.3。未宣言＝併読スキップ）| `a1b2c3d4e5` |
-| `stage` | S | 併読対象の stage 名（省略時は env 名）| `prod` |
-| `lastCheckedCommitId` | S | 前回確認した先端コミット ID（自動差分検査（モード1）の差分基準）| `a1b2c3d…` |
-| `deploymentId` | S | 前回観測した API GW stage の deploymentId（手動変更のデプロイ反映検知用。`apiGatewayId` 未宣言時は空）| `dep-abc123` |
-| `lastSeenAt` | S | 巡回で最後に観測した日時 | `2026-08-07T00:00:00Z` |
+| `artifactBucket` | S | 発見元の資材バケット（17 §17.3）| `auth-monitoring-artifacts-111122223333` |
+| `artifactPrefix` | S | 資材の `{appId}/` プレフィックス | `expense-api/` |
+| `lastArtifactVersions` | M | 前回確認した資材の S3 VersionId（**自動差分検査（モード1）の差分判定基準**）| `{"monitoring.yaml":"3z9K…","openapi.yaml":"8aQ2…"}` |
+| `deployInfo` | M | deploy-info.json（任意）由来の追跡用参考値（検知には使わない。staleness 補助）| `{"commitId":"a1b2c3d…","deployedAt":"…"}` |
+| `lastSeenAt` | S | 巡回で最後に観測した日時 | `2026-08-21T00:00:00Z` |
 
-> `baseUrl`/`authPattern`/`apiGatewayId`/`stage`/`testTokenSecret`/repo 系は **monitoring.yaml 由来**（巡回同期）、`alertRouting`/`enabled` は**台帳のみで中央管理**（12/17 章）。
+> `baseUrl`/`authPattern`/`testTokenSecret` は **monitoring.yaml 由来**（巡回同期）、`alertRouting`/`enabled` は**台帳のみで中央管理**（12/17 章）。旧 repo 系属性（`repositoryName`/`branch`/`pathPrefix`/`lastCheckedCommitId`/`apiGatewayId`/`stage`/`deploymentId`）は **2026-08-21 の S3 監視資材化で廃止**（ADR-061 追記）。
 
 **`authPattern` enum**（認証実装確認処理が assertion 方式を切替）:
 | 値 | 意味 | Negative 期待 | Positive |

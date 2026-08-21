@@ -1,14 +1,15 @@
 # 13. OpenAPI Registry 設計（S3）
 
 前提: [00-basic-design-plan.md](00-basic-design-plan.md) / [10-external-monitoring-overview.md](10-external-monitoring-overview.md)
-実装: 発見 Lambda がリポジトリから pull 取得（M-Q-17-4）/ データ契約: [code-samples/README.md §2.2/§2.3](code-samples/README.md)
+実装: 発見 Lambda が App アカウントの資材バケットから pull 取得（M-Q-17-4）/ データ契約: [code-samples/README.md §2.2/§2.3](code-samples/README.md)
 
 ---
 
 ## §13.0 前提と背景
 
-**この章で定めること**: 認証実装確認処理が「各アプリの endpoint 一覧と probe 制御情報」を得るための OpenAPI 置き場（S3）と、**リポジトリ内の spec（正本）を巡回で自動取得する仕組み**、アプリチームが付けるアノテーション。
-**なぜ要るか**: 認証実装確認処理は endpoint を**動的に**知る必要がある（アプリごとに違い、増減する）。リポジトリの OpenAPI を正本にすれば新規 endpoint も次回コミット→巡回で自動追随する。
+**この章で定めること**: 認証実装確認処理が「各アプリの endpoint 一覧と probe 制御情報」を得るための OpenAPI 置き場（S3）と、**デプロイ版 spec（監視資材）を巡回で自動取得する仕組み**、アプリチームが付けるアノテーション。
+**spec の 3 層整理（2026-08-21）**: ① **正本はベンダー git の openapi.yaml**（外部にあり中央から読めない）→ ② **デプロイパイプラインがデプロイ版の写しを App アカウントの資材バケットへアップロード**（17 §17.3）→ ③ **中央の `openapi/` はさらにそのコピー**（probe が読む）。
+**なぜ要るか**: 認証実装確認処理は endpoint を**動的に**知る必要がある（アプリごとに違い、増減する）。デプロイ時に資材として写しが上がるため、新規 endpoint も次回デプロイ→巡回で自動追随する。
 
 ---
 
@@ -29,24 +30,23 @@
 
 ---
 
-## §13.2 取得フロー（中央がリポジトリから pull）
+## §13.2 取得フロー（中央が資材バケットから pull）
 
-**リポジトリ内の openapi.yaml（monitoring.yaml の `openapi:` で指定、[17 章 §17.3](17-deployment-integration-and-registration.md)）を正本**とし、発見 Lambda の巡回（[ADR-061 2026-08-07 改訂](../../adr/061-deploy-detection-pull-model.md)）がコミット変化を検知した際に `GetFile` で取得して S3 へ置く。アプリ側の Export 処理は存在しない。
+**App アカウント資材バケットの `{appId}/openapi.yaml`（デプロイ版の写し。正本はベンダー git、[17 章 §17.3](17-deployment-integration-and-registration.md)）** を、発見 Lambda の巡回（[ADR-061 追記 2026-08-21](../../adr/061-deploy-detection-pull-model.md)）が資材 VersionId の変化を検知した際に `GetObject` で取得して中央 S3 へ置く。アプリ側の Export 処理・登録処理は存在しない。
 
 ```mermaid
 sequenceDiagram
     participant DISC as 発見 Lambda / 共通基盤アカウント
-    participant CC as CodeCommit / App アカウント（読み取り AssumeRole）
+    participant ART as 資材バケット S3 / App アカウント（読み取り AssumeRole）
     participant S3 as OpenAPI Registry / 共通基盤アカウント
 
-    Note over DISC: 巡回でコミット ID の変化を検知（17 章）
-    DISC->>CC: GetFile（monitoring.yaml の openapi: パス、対象コミット）
-    CC-->>DISC: openapi.yaml（fileContent）
+    Note over DISC: 巡回で資材 VersionId の変化を検知（17 章）
+    DISC->>ART: GetObject（{appId}/openapi.yaml）
+    ART-->>DISC: openapi.yaml（デプロイ版の写し）
     DISC->>S3: PutObject（同一アカウント、openapi/{accountId}/{appId}/openapi.yaml）
 ```
 
-> **⚠ 正本の性質（drift 注意）**: リポジトリの spec は「**コードが宣言する形**」であり、本番デプロイと乖離（drift）し得る。乖離は probe の実測で顕在化する（spec にあるが本番に無い → 404/WARN、公開印漏れ → P1）が、能動検出の要否は M-Q-17-6。旧方式（deploy 後の API GW から GetExport した「本番の実態」正本）との比較・変更経緯は ADR-061。
-> **⚠ サイズ上限（AWS 公式）**: CodeCommit の `GetFile` は**個別ファイル 6 MB 上限**（超過は FileTooLargeException）。openapi.yaml が 6 MB を超える巨大 spec は分割等の個別対応が要る（通常は到達しない）。
+> **⚠ 資材の性質（drift 注意）**: 資材の spec は「**デプロイパイプラインがアップロードしたデプロイ版の写し**」であり、アップロード忘れ・誤りがあれば本番と乖離（drift）し得る（**原則アプリ責任**、17 §17.2.2 / M-Q-17-7）。乖離は probe の実測で顕在化する（spec にあるが本番に無い → 404/WARN、公開印漏れ → P1）が、能動検出の要否は M-Q-17-6。旧方式（〜2026-08-21: CodeCommit `GetFile` によるリポジトリ内 spec 正本 / さらに旧の API GW GetExport）との比較・変更経緯は ADR-061。
 > 旧 GetExport 実装（[`openapi-export-lambda/`](code-samples/openapi-export-lambda/)、body=Uint8Array 等の公式確認済み）は参考保管。
 
 ---
@@ -101,18 +101,18 @@ paths:
 
 ## §13.4 新規 endpoint の自動追随
 
-1. アプリチームが endpoint を追加（リポジトリの openapi.yaml 更新）→ コミット
-2. **次回巡回（最大 1h）で発見 Lambda がコミット変化を検知し、新版を GetFile → S3 に上書き**（§13.2）
+1. アプリチームが endpoint を追加（openapi.yaml 更新）→ デプロイ（パイプライン最終段で資材バケットへ新版をアップロード）
+2. **次回巡回（最大 1h）で発見 Lambda が資材 VersionId の変化を検知し、新版を GetObject → 中央 S3 に上書き**（§13.2）
 3. 同じ巡回で自動差分検査（モード1、旧称 M1）の probe が起動し、新 endpoint も対象化
 
-→ **probe のコード変更は不要**。リポジトリの OpenAPI を正本にすることで「監視対象の維持」が自動化される。
+→ **probe のコード変更は不要**。デプロイ資材の OpenAPI を取り込むことで「監視対象の維持」が自動化される。
 
 ## §13.5 自動差分検査（モード1）との関係と S3 Versioning
 
-**自動差分検査（モード1）のトリガは発見 Lambda の巡回差分（コミット ID 比較、[17 章 §17.2](17-deployment-integration-and-registration.md)）であり、S3 イベントではない**（[ADR-061](../../adr/061-deploy-detection-pull-model.md)）。OpenAPI Registry は「probe が読む正本のコピー」+「Versioning による履歴」を担う。
+**自動差分検査（モード1）のトリガは発見 Lambda の巡回差分（資材 VersionId 比較、[17 章 §17.2](17-deployment-integration-and-registration.md)）であり、S3 イベントではない**（[ADR-061](../../adr/061-deploy-detection-pull-model.md)）。OpenAPI Registry は「probe が読むデプロイ版のコピー」+「Versioning による履歴」を担う。
 
-- ⚠ **差分粒度はアプリ単位**（18 章 §18.2.1）: 巡回はコミット変化で「変更があった」ことだけ判定し、**endpoint 単位に絞らず「そのアプリの全 endpoint」を probe** する。理由は、認証コードだけ変えて OpenAPI が不変なケース（middleware 削除等）を見逃さないため（コミット diff からも endpoint への影響は判定できない）。
-- Git のコミット diff は「何が変わったか」の**参考情報**（アラート本文への付記）に使い、probe 範囲の絞り込みには使わない。
+- ⚠ **差分粒度はアプリ単位**（18 章 §18.2.1）: 巡回は資材の VersionId 変化で「変更があった」ことだけ判定し、**endpoint 単位に絞らず「そのアプリの全 endpoint」を probe** する。理由は、認証コードだけ変えて OpenAPI が不変なケース（middleware 削除等）を見逃さないため（資材の差分からも endpoint への影響は判定できない）。
+- 任意の `deploy-info.json`（commitId 等、17 §17.3）は「何が変わったか」の**参考情報**（アラート本文への付記）に使えるが、probe 範囲の絞り込みには使わない。
 
 > **なぜ endpoint 単位に絞らないか**は 18 章 §18.2.1 の設計判断 D-M-18-2 参照。
 
@@ -122,7 +122,7 @@ paths:
 
 | ID | 判断 | 根拠 |
 |---|---|---|
-| D-M-13-1 | **正本はリポジトリ内の openapi.yaml**（git 単独検知への統一に伴い、旧「deploy 後の API GW から export」から変更）| コミット差分と同じ読み取り経路で完結（[ADR-061 改訂](../../adr/061-deploy-detection-pull-model.md)）。deploy との drift は probe 実測で顕在化（§13.2 注意）|
+| D-M-13-1 | **正本はベンダー git、中央が読むのは資材バケットのデプロイ版写し**（2026-08-21。旧「リポジトリ内 spec 正本〔〜2026-08-21〕」「deploy 後の API GW から export」から変更）| 資材 VersionId 比較と同じ読み取り経路（s3 read 1 本）で完結（[ADR-061 追記 2026-08-21](../../adr/061-deploy-detection-pull-model.md)）。deploy との drift は probe 実測で顕在化（§13.2 注意）|
 | D-M-13-2 | probe 制御は OpenAPI アノテーションで表現 | アプリチームの追加作業を最小化、endpoint と同じ場所で管理 |
 | D-M-13-3 | Versioning 有効 | 正本の時点管理（監査・巻き戻し）|
 | D-M-13-4 | 新規 endpoint は OpenAPI 更新で自動追随（probe 無改修）| 監視維持の自動化 |

@@ -9,9 +9,9 @@
 ## §12.0 前提と背景
 
 **この章で定めること**: 「どのアプリを監視するか」の台帳（App Registry）のデータ構造と、そこへ載る仕組み。
-**なぜ要るか**: Pattern β で「Deploy 漏れ = ゼロ」を成立させる中核。**書き手は中央の発見 Lambda**（[17 章 §17.2](17-deployment-integration-and-registration.md) / [ADR-061](../../adr/061-deploy-detection-pull-model.md)）で、1 時間毎の巡回が **CodeCommit リポジトリ（monitoring.yaml）** からアプリを発見・登録し、認証実装確認処理が自動的に監視する。アプリ側に登録処理はない。台帳の設定値の多くは monitoring.yaml 由来（**リポジトリが宣言の正、台帳は巡回が写した実行用ビュー + 中央管理項目**）。
+**なぜ要るか**: Pattern β で「Deploy 漏れ = ゼロ」を成立させる中核。**書き手は中央の発見 Lambda**（[17 章 §17.2](17-deployment-integration-and-registration.md) / [ADR-061 追記 2026-08-21](../../adr/061-deploy-detection-pull-model.md)）で、1 時間毎の巡回が **各 App アカウントの資材バケット（`{appId}/monitoring.yaml`）** からアプリを発見・登録し、認証実装確認処理が自動的に監視する。アプリ側に登録処理はない（デプロイ時の資材アップロードのみ、17 §17.3）。台帳の設定値の多くは monitoring.yaml 由来（**資材が宣言の正、台帳は巡回が写した実行用ビュー + 中央管理項目**）。
 
-**ストアは S3**（DynamoDB は不使用）。台帳で本当に消せない情報は **① lastCheckedCommitId（巡回状態）② alertRouting ③ enabled（中央管理項目）の 3 つだけ**で、書き手は発見 Lambda 1 本（1h 毎・直列）・データ量は MB 未満のため、DB の性能・整合性を要する要素がない。[Monitoring Registry バケット（13 章と同居）](13-openapi-registry-design.md)に JSON で置く（ADR-061 追記）。
+**ストアは S3**（DynamoDB は不使用）。台帳で本当に消せない情報は **① lastArtifactVersions（巡回状態）② alertRouting ③ enabled（中央管理項目）の 3 つだけ**で、書き手は発見 Lambda 1 本（1h 毎・直列）・データ量は MB 未満のため、DB の性能・整合性を要する要素がない。[Monitoring Registry バケット（13 章と同居）](13-openapi-registry-design.md)に JSON で置く（ADR-061 追記）。
 
 ---
 
@@ -28,19 +28,16 @@
   "env": "prod",
   "baseUrl": "https://expense.example.com",
   "authPattern": "api-gw-jwt",
-  "apiGatewayId": "a1b2c3d4e5",
-  "stage": "prod",
   "openApiS3Key": "openapi/111122223333/expense-api/openapi.yaml",
   "testTokenSecret": "canary-central-readonly",
   "alertRouting": { "p1": "arn:aws:sns:...:security" },
   "enabled": true,
   "registeredAt": "2026-07-06T00:00:00Z",
-  "repositoryName": "expense-api",
-  "branch": "main",
-  "pathPrefix": "",
-  "lastCheckedCommitId": "a1b2c3d…",
-  "deploymentId": "dep-abc123",
-  "lastSeenAt": "2026-08-13T00:00:00Z"
+  "artifactBucket": "auth-monitoring-artifacts-111122223333",
+  "artifactPrefix": "expense-api/",
+  "lastArtifactVersions": { "monitoring.yaml": "3z9K…", "openapi.yaml": "8aQ2…" },
+  "deployInfo": { "commitId": "a1b2c3d…", "deployedAt": "2026-08-20T12:00:00Z" },
+  "lastSeenAt": "2026-08-21T00:00:00Z"
 }
 ```
 
@@ -49,15 +46,16 @@
 | `appId` / `env` | キーと同値 | 台帳の識別子 |
 | `baseUrl` | monitoring.yaml | probe 先 CloudFront URL（Origin Protection 経由、§12.1.1）|
 | `authPattern` | monitoring.yaml | 認証方式 enum（11 章 §11.3）|
-| `apiGatewayId` / `stage` | monitoring.yaml | deploymentId 併読の対象 API GW（17 §17.3。ALB 直等の未宣言は無し＝併読スキップ）|
 | `openApiS3Key` | 巡回が導出 | spec コピーのキー（13 章）|
 | `testTokenSecret` | monitoring.yaml | Positive 用 token の Secret 名 |
 | `alertRouting` | **台帳のみ・中央管理** | 通知先 `{p1,p2,p3}` の SNS ARN（未設定は全社デフォルト、15 章）|
 | `enabled` | **台帳のみ・中央管理** | 監視有効フラグ（monitoring.yaml には置かない）|
-| `repositoryName` / `branch` / `pathPrefix` | 巡回 / monitoring.yaml | 発見元リポジトリ |
-| `lastCheckedCommitId` | **巡回状態** | 前回確認した先端コミット ID（差分判定の基準、17 章 §17.2）|
-| `deploymentId` | **巡回状態** | 前回観測した API GW stage の deploymentId（**手動変更のデプロイ反映検知**用の併読値、17 §17.2.1 ⑤'。ALB 直モノリスは空）|
+| `artifactBucket` / `artifactPrefix` | 巡回が記録 | 発見元の資材バケットと `{appId}/` プレフィックス（17 §17.3）|
+| `lastArtifactVersions` | **巡回状態** | 前回確認した資材（monitoring.yaml / openapi.yaml）の S3 VersionId（**差分判定の基準**、17 §17.2）|
+| `deployInfo` | deploy-info.json（任意）| ベンダー CI が申告した commitId / deployedAt 等の**追跡用参考値**（検知には使わない。staleness 検知の補助）|
 | `lastSeenAt` | 巡回状態 | 最後に観測した日時（消滅検知用）|
+
+> 旧スキーマ（`repositoryName` / `branch` / `pathPrefix` / `lastCheckedCommitId` / `apiGatewayId` / `stage` / `deploymentId`）は CodeCommit 前提のもので **2026-08-21 廃止**（[ADR-061 追記](../../adr/061-deploy-detection-pull-model.md)）。
 
 > 厳密な定義は [README §2.1](code-samples/README.md)。認証実装確認処理は `registry/` を List → Get し `enabled=true` のみ検査する。**読み方**: 自動差分検査（モード1、旧称 M1）は該当 1 オブジェクトのみ Get、全量検査（モード2、旧称 M3「手動全量検査」）は全 List。
 
@@ -81,24 +79,24 @@
 sequenceDiagram
     participant SCH as Scheduler（1h）
     participant DISC as 発見 Lambda / 共通基盤アカウント
-    participant CC as CodeCommit / App アカウント（読み取り）
+    participant ART as 資材バケット S3 / App アカウント（読み取り）
     participant S3 as Monitoring Registry S3 / 共通基盤アカウント
 
     SCH->>DISC: 定期起動
-    DISC->>CC: AssumeRole → ListRepositories + GetBranch（先端コミット ID）
-    DISC->>S3: registry/{appId}/{env}.json の lastCheckedCommitId と比較
-    alt 新規リポジトリ（monitoring.yaml あり）
-        DISC->>CC: GetFile（monitoring.yaml / openapi.yaml）
+    DISC->>ART: AssumeRole → List（{appId}/ プレフィックス + VersionId）
+    DISC->>S3: registry/{appId}/{env}.json の lastArtifactVersions と比較
+    alt 新規資材（monitoring.yaml あり）
+        DISC->>ART: GetObject（monitoring.yaml / openapi.yaml）
         DISC->>S3: PutObject（registry/… 自動登録 + openapi/… spec コピー）
-    else コミット ID 変化
-        DISC->>CC: GetDifferences（変更パス）+ GetFile（最新 yaml）
-        DISC->>S3: registry/… 更新（メタ同期 + lastCheckedCommitId）→ 自動差分検査（モード1）の probe 起動（18 章）
-    else 消滅（repo / monitoring.yaml 削除）
+    else VersionId 変化
+        DISC->>ART: GetObject（最新資材）
+        DISC->>S3: registry/… 更新（メタ同期 + lastArtifactVersions）→ 自動差分検査（モード1）の probe 起動（18 章）
+    else 消滅（monitoring.yaml 削除）
         DISC->>S3: enabled=false に更新（棚卸しアラート）
     end
 ```
 
-- 台帳は**同一アカウント内**の書き込みのみ（クロスアカウント書き込みは発生しない。App アカウントへは codecommit 読み取り AssumeRole だけ、16 章）。
+- 台帳は**同一アカウント内**の書き込みのみ（クロスアカウント書き込みは発生しない。App アカウントへは資材バケットの s3 読み取り AssumeRole だけ、16 章）。
 - monitoring.yaml の規約は [17 章 §17.3](17-deployment-integration-and-registration.md)。**モノリスもリポジトリがあるため同じ仕組みで自動発見**される（17 章 §17.4）。
 
 > **旧実装の扱い**: 旧 push 型 Custom Resource（[`app-registry-lambda/`](code-samples/app-registry-lambda/)、DynamoDB PutItem）は参考保管。正規化ロジックは流用できるが、**ストアが S3 になったため書き込み部は S3 PutObject に差し替え**（M-Q-17-4 の実装スコープ）。probe lib の `lib/registry.js`（DynamoDB Scan 実装）も **S3 List/Get への改修が必要**（M-Q-12-3）。
@@ -139,7 +137,7 @@ pull 型（ADR-061）により、**App Registry への書き込みは共通基�
 | D-M-12-1 | **台帳ストアは S3**（`registry/{appId}/{env}.json`、Monitoring Registry バケットに 13 章と同居）。DynamoDB は不使用 | 消せない情報は 3 つ・書き手 1 本・MB 未満で DB が過剰。ストアを S3 1 つに集約（[ADR-061 追記 2026-08-13](../../adr/061-deploy-detection-pull-model.md)、2026-08-07 の DDB 維持決定を更新）|
 | D-M-12-2 | probe 先は CloudFront URL（API GW 直でない）| Origin Protection を破らず実 UX 同一条件で検証（§12.1.1）|
 | D-M-12-3 | 登録は**中央巡回の自動発見**（書き手は発見 Lambda のみ、旧 Custom Resource 廃止）| 登録漏れ構造ゼロ + 書き込みクロスアカウント権限の排除（ADR-061）|
-| D-M-12-4 | 台帳に巡回スナップショット（lastCheckedCommitId / lastSeenAt / repo 系属性）を同居 | 差分判定・消滅検知・発見元の監査を 1 箇所で完結 |
+| D-M-12-4 | 台帳に巡回スナップショット（lastArtifactVersions / lastSeenAt / 資材系属性）を同居 | 差分判定・消滅検知・発見元の監査を 1 箇所で完結 |
 | D-M-12-5 | enabled で監視の有効/無効を切替（中央管理）| メンテ時などに削除せず一時停止できる。アプリが自分で監視を止められない |
 
 ---
@@ -155,7 +153,7 @@ pull 型（ADR-061）により、**App Registry への書き込みは共通基�
 | どの test token か | `testTokenSecret` | ✗ 秘密情報の参照 |
 | 誰に通知するか | `alertRouting` | ✗ 運用情報であって API 仕様でない |
 | 監視 ON/OFF | `enabled` | ✗ |
-| 前回どこまで確認したか | `lastCheckedCommitId` | ✗ 巡回自身の状態（repo に書き戻せない）|
+| 前回どこまで確認したか | `lastArtifactVersions` | ✗ 巡回自身の状態（資材側に書き戻せない）|
 
 ### §12.6.1 代替案の比較
 
@@ -163,7 +161,7 @@ pull 型（ADR-061）により、**App Registry への書き込みは共通基�
 |---|---|---|
 | **S3 台帳（採用）** | Monitoring Registry バケットに JSON | ストア 1 種で完結。規模・書き込みパターンに対して十分（§12.1.2）|
 | DynamoDB 台帳（旧採用）| 1 テーブル PK/SK | 必須ではない（項目単位更新・運用 UI は楽だが、リソース種が 1 つ増える割に性能要件がない）→ **S3 統合で置換**（ADR-061 追記）|
-| 動的発見**だけ**（台帳レス）| 巡回列挙の結果を毎回そのまま使う | **不可**: alertRouting / enabled / lastCheckedCommitId は repo に置けず保持場所が要る |
+| 動的発見**だけ**（台帳レス）| 巡回列挙の結果を毎回そのまま使う | **不可**: alertRouting / enabled / lastArtifactVersions は資材側に置けず保持場所が要る |
 | リポジトリ設定だけ（monitoring.yaml のみ）| 全メタを repo に置き毎回読む | メタの大半は monitoring.yaml に**移した**（§17.3）。ただし中央管理 3 項目の置き場として台帳は残る |
 
 → 台帳は「**中央管理 3 項目 + 巡回スナップショット + 実行用ビュー**」の置き場。**発見（pull 巡回）と台帳は代替関係ではなく組合せ**（発見が書き、probe が読む）。

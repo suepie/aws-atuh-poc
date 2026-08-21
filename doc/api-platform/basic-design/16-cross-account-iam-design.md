@@ -8,7 +8,7 @@
 ## §16.0 前提と背景
 
 **この章で定めること**: 共通基盤アカウント（中央）と App アカウント（各アプリ）の間で必要な IAM 権限と、その配布方法。
-**方式の前提**: デプロイ検知は pull 型中央巡回（[ADR-061](../../adr/061-deploy-detection-pull-model.md)）。これにより、クロスアカウント権限は **「中央 → App アカウントの読み取り」1 種類だけ**になった（旧 push 型の「App → 中央の書き込み」経路は廃止）。権限を**最小限**に閉じ込める。
+**方式の前提**: デプロイ検知は pull 型中央巡回 × **S3 監視資材**（[ADR-061 追記 2026-08-21](../../adr/061-deploy-detection-pull-model.md)、17 章）。クロスアカウント権限は **「中央 → App アカウントの資材読み取り」1 種類だけ**（旧 push 型の「App → 中央の書き込み」経路は廃止のまま。**資材オンリー原則**により codecommit / apigateway の読み取りも廃止）。外部ベンダー CI からのアップロードは **App アカウント内の専用ロール**（§16.2.2）に閉じる。権限を**最小限**に閉じ込める。
 
 ---
 
@@ -16,7 +16,8 @@
 
 | # | 経路 | 方向 | 手段 | 権限 |
 |---|---|---|---|---|
-| 1 | **巡回発見（リポジトリ読み取り）** | **中央 → App アカウント（読み取り）** | 発見 Lambda が `DiscoveryReadRole` に AssumeRole → **CodeCommit** を読む（17 章 §17.2）| 下記 §16.2（codecommit read-only）|
+| 1 | **巡回発見（監視資材の読み取り）** | **中央 → App アカウント（読み取り）** | 発見 Lambda が `DiscoveryReadRole` に AssumeRole → **資材バケット**を読む（17 章 §17.2）| 下記 §16.2（s3 read-only）|
+| 2 | **資材アップロード** | **外部ベンダー CI → App アカウント（書き込み）** | パイプライン最終段で `ArtifactUploadRole-{appId}` を Assume → 資材バケットの自アプリ prefix に Put（17 §17.3。CI からの接続方式はアプリごとの既存方式で可）| 下記 §16.2.2（`{appId}/` 限定 PutObject。**デプロイロールと分離**）|
 | — | probe → アプリ | 中央 → App アカウント | **Public CloudFront URL（権限不要）** | — |
 | — | probe → OAuth /token | 中央 → 認証基盤 | **Public URL（権限不要）** | — |
 | — | ~~App Registry 登録 / OpenAPI Export~~ | ~~App → 中央（書き込み）~~ | **廃止**（[ADR-061](../../adr/061-deploy-detection-pull-model.md)。台帳への書き込みは中央アカウント内のみ、12 章 §12.3）| — |
@@ -32,23 +33,25 @@
 各 App アカウントに **読み取り専用ロールを 1 つ**配布し、中央の発見 Lambda だけが引き受けられるようにする。
 
 ```json
-// 権限（App アカウント側、read-only 最小）
+// 権限（App アカウント側、read-only 最小。資材バケット限定）
 {
   "Version": "2012-10-17",
-  "Statement": [{
-    "Effect": "Allow",
-    "Action": [
-      "codecommit:ListRepositories",
-      "codecommit:GetBranch",        // 先端コミット ID
-      "codecommit:GetCommit",
-      "codecommit:GetDifferences",   // 変更パス（モノレポのアプリ特定）
-      "codecommit:GetFile",          // monitoring.yaml / openapi.yaml 取得
-      "apigateway:GET"               // stage deploymentId 併読（手動変更のデプロイ反映検知。ADR-061 追記 2026-08-19）
-    ],
-    "Resource": "*"
-  }]
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": ["s3:ListBucket", "s3:ListBucketVersions"],
+      "Resource": "arn:aws:s3:::auth-monitoring-artifacts-<accountId>"
+    },
+    {
+      "Effect": "Allow",
+      "Action": ["s3:GetObject", "s3:GetObjectVersion"],
+      "Resource": "arn:aws:s3:::auth-monitoring-artifacts-<accountId>/*"
+    }
+  ]
 }
 ```
+
+> 2026-08-21 更新: 旧権限（codecommit 5 アクション + apigateway:GET）は外部 git 化と**資材オンリー原則**により全廃（[ADR-061 追記](../../adr/061-deploy-detection-pull-model.md)）。読み取り対象は資材バケットのみで、git・API GW 構成には触れない。
 
 ```json
 // 信頼ポリシー（引受け元を発見 Lambda ロールに限定 + ExternalId）
@@ -61,10 +64,29 @@
 ```
 
 **設計のポイント**:
-- **read-only（codecommit 読み取り + apigateway:GET）のみ**。漏洩時の影響は**ソースコードと API GW 構成（Authorizer 設定等）の閲覧**（変更・削除・実行は不可）。いずれも閲覧自体が機微なため、信頼先限定・ExternalId・CloudTrail での AssumeRole 監査を必須とする
+- **read-only（資材バケットの s3 読み取り）のみ**。漏洩時の影響は**監視資材（monitoring.yaml / openapi.yaml）の閲覧**（変更・削除・実行は不可。ソースコード・AWS 構成は見えない — 旧 codecommit 権限より機微性が大幅に低下）
 - 信頼先を**発見 Lambda のロール 1 本に限定** + ExternalId（confused deputy 防止）
-- 全 App アカウントで**同一ロール名**（`DiscoveryReadRole`）にし、発見 Lambda は `arn:aws:iam::{accountId}:role/DiscoveryReadRole` を機械的に組み立てて AssumeRole
-- 対象リポジトリを絞りたい場合は `Resource` を命名規約（例 `arn:aws:codecommit:*:*:*-api`）で限定可能（M-Q-16-3）
+- 全 App アカウントで**同一ロール名**（`DiscoveryReadRole`）・**同一バケット命名規約**（`auth-monitoring-artifacts-{accountId}`、M-Q-17-8）にし、発見 Lambda は ARN を機械的に組み立てて AssumeRole
+
+### §16.2.2 アップロードロール（`ArtifactUploadRole-{appId}`）の設計
+
+外部ベンダーの CI が資材を Put するための**アプリ単位の専用ロール**。**デプロイロールとは分離**する（2026-08-21 ユーザー確定、D-M-17-7）。
+
+```json
+// 権限（App アカウント側、自アプリ prefix 限定の書き込みのみ）
+{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Effect": "Allow",
+    "Action": "s3:PutObject",
+    "Resource": "arn:aws:s3:::auth-monitoring-artifacts-<accountId>/<appId>/*"
+  }]
+}
+```
+
+- **削除・読み取り権限なし**（Put のみ。旧版は Versioning が保全し、取り消しは中央/アカウント管理者の操作）
+- 信頼ポリシーはベンダー CI の接続方式（IAM ロール / OIDC federation 等）に合わせてアプリごとに設定（**接続方式はアプリごとの既存方式で可** — 2026-08-21 確定）。ExternalId または OIDC の sub/aud 条件で引受け元を限定
+- **1 ベンダー複数アプリでもロールはアプリ単位**（他アプリの prefix には書けない）。バケットポリシー側でも `{appId}/` 外への Put を Deny し二重化
 
 ---
 
@@ -82,9 +104,11 @@
 
 | ロール | 使い手 | 権限 |
 |---|---|---|
-| `DiscoveryReadRole` | 中央の発見 Lambda（AssumeRole）| `codecommit:ListRepositories / GetBranch / GetCommit / GetDifferences / GetFile` + `apigateway:GET`（deploymentId 併読）（いずれも read-only、§16.2）|
+| `DiscoveryReadRole` | 中央の発見 Lambda（AssumeRole）| 資材バケットの `s3:ListBucket / ListBucketVersions / GetObject / GetObjectVersion`（read-only、§16.2）|
+| `ArtifactUploadRole-{appId}` | 各アプリのベンダー CI（アプリごとの接続方式で Assume）| 資材バケットの `{appId}/*` への `s3:PutObject` のみ（§16.2.2）|
+| 資材バケット | —（S3。Versioning 有効 + バケットポリシーで prefix 外 Put を Deny）| — |
 
-→ App アカウント側に置くのは**読み取りロール 1 つだけ**。旧 push 型で必要だった Invoke ロール / 書き込み AssumeRole / Custom Resource 実行権限はすべて不要になった。
+→ App アカウント側に置くのは**資材バケット + 読み取りロール 1 本 + アプリ単位のアップロードロール**。旧 push 型で必要だった中央への Invoke / 書き込み AssumeRole / Custom Resource 実行権限は不要のまま（中央への書き込み開放はしない）。
 
 ---
 
@@ -92,7 +116,8 @@
 
 | 配布物 | 手段 | 内容 |
 |---|---|---|
-| `DiscoveryReadRole` | **CloudFormation StackSets**（Organizations 連携・自動デプロイ）| 新規アカウント作成時も自動で配布 → 巡回が即座に読める |
+| `DiscoveryReadRole` + **資材バケット** | **CloudFormation StackSets**（Organizations 連携・自動デプロイ）| 新規アカウント作成時も自動で配布 → 巡回が即座に読める。バケットは Versioning・暗号化・ライフサイクル込みのテンプレ（M-Q-17-8）|
+| `ArtifactUploadRole-{appId}` | StackSets のテンプレ + アプリ登録時のパラメータ（appId・CI 信頼先）| アプリ追加時に払い出し。信頼先はアプリごとの CI 接続方式に合わせる（§16.2.2）|
 | Service Catalog 製品 | Portfolio 共有（Organizations / RAM）| 認証必須 / Origin Protection / タグの「守られた API の型」（17 章 §17.1。登録系 Custom Resource は含まない）|
 
 ---
@@ -117,6 +142,8 @@
 | D-M-16-1 | クロスアカウントは**中央 → App の読み取り AssumeRole 1 種のみ**（書き込み経路は廃止）| pull 型統一（[ADR-061](../../adr/061-deploy-detection-pull-model.md)）。攻撃面・設定ミス面の最小化 |
 | D-M-16-2 | probe は Public URL 経由でクロスアカウント権限不要 | 実 UX 同一 + 権限を巡回読み取りだけに限定 |
 | D-M-16-3 | `DiscoveryReadRole` は read-only + 信頼先 1 本 + ExternalId + 全アカウント同一名 | 漏洩時影響の最小化・confused deputy 防止・機械的な AssumeRole |
+| D-M-16-6 | 読み取り対象は**資材バケットのみ**（codecommit / apigateway 権限は 2026-08-21 全廃）| 資材オンリー原則（[ADR-061 追記](../../adr/061-deploy-detection-pull-model.md)）。ベンダーへの権限説明が単純・漏洩時影響も資材閲覧のみに縮小 |
+| D-M-16-7 | アップロードは `ArtifactUploadRole-{appId}`（Put のみ・prefix 限定・デプロイロール分離）+ バケットポリシーで二重 Deny | 最小権限・アプリ間分離・書込経路の監査容易性（§16.2.2）|
 | D-M-16-4 | 配布は StackSets（Organizations 自動デプロイ）| 新規アカウントにも自動追随 → 巡回の空白を作らない |
 | D-M-16-5 | ROSA 側 P-18 確定まで自管理前提で記述、差分改訂 | 前提変更に追随（BD-Q-01）|
 

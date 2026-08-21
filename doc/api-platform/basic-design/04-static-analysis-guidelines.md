@@ -326,6 +326,24 @@ flowchart LR
 | 3. 記録 | 承認済み例外を台帳化（cdk-nag suppress / cfn-guard 注釈 / semgrep `nosemgrep` にチケット ID）|
 | 4. 監査 | §C-6.6.5 Config Rule + 定期棚卸しで妥当性を継続確認 |
 
+### §4.4.6 監視資材アップロード（デプロイ成功後の標準ステップ）
+
+全静的解析 pass → デプロイ成功の**後**に、パイプライン最終段で**監視資材**（`monitoring.yaml` / `openapi.yaml`（デプロイ版の写し）+ 任意 `deploy-info.json`）を App アカウントの資材バケットへアップロードする（規約は [17 章 §17.3](17-deployment-integration-and-registration.md)、権限は [16 章 §16.2.2](16-cross-account-iam-design.md)）。中央の外形監視はこの資材の VersionId 変化で変更を検知するため、**アップロードしないと新しい版が監視対象に反映されない**（アップロード漏れ・誤りは原則アプリ責任、17 §17.2.2）。
+
+```yaml
+# デプロイ成功後の標準ステップ（例）
+- name: upload monitoring artifacts
+  run: |
+    # アプリ単位の専用ロール（デプロイロールとは別）を Assume
+    #   ArtifactUploadRole-{appId}: {appId}/* 限定の s3:PutObject のみ
+    aws s3 cp monitoring.yaml "s3://auth-monitoring-artifacts-${ACCOUNT_ID}/${APP_ID}/monitoring.yaml"
+    aws s3 cp openapi.yaml    "s3://auth-monitoring-artifacts-${ACCOUNT_ID}/${APP_ID}/openapi.yaml"
+    aws s3 cp deploy-info.json "s3://auth-monitoring-artifacts-${ACCOUNT_ID}/${APP_ID}/deploy-info.json"  # 任意
+```
+
+- **順序を固定**: 「デプロイ成功 → 資材アップロード」。逆順・デプロイ失敗時のアップロードは禁止（「資材あり = その版がデプロイ済み」を成立させるため）
+- Assume するのは `ArtifactUploadRole-{appId}`（CI からの AWS 接続方式はアプリごとの既存方式で可）
+
 ---
 
 ## §4.5 アプリチーム自己確認チェックリスト（3 本柱）

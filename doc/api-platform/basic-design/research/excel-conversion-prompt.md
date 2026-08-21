@@ -18,13 +18,13 @@
 |---|---|---|
 | 1 | `10-external-monitoring-overview.md` | **入口・構成の SSOT**。図 5 枚（§10.1.1 骨格 / §10.1.3 統合① 〜⑥ / §10.1.4 E2E / §10.1.6 AWS 構成図・通信経路 A〜D）、§10.1.5 リソース一覧、§10.0.4 用語表 |
 | 2 | `18-scan-modes-and-scheduling.md` | **実行モデルの SSOT**（自動差分検査（モード1、旧称 M1）＝1h 巡回差分 / 全量検査（モード2、旧称 M3「手動全量検査」）＝日次定期+手動 / heartbeat 型検査（旧 M2）＝廃止（2026-08-20、将来必要なら Synthetics で復活、18 §18.4.1）。頻度・基盤の記述が他章と食い違ったら 18 章が勝つ）|
-| 3 | `17-deployment-integration-and-registration.md` | 変更検知・登録（巡回①〜⑦ / **monitoring.yaml 規約 §17.3** / 受容した穴 2 つと補完 §17.2.2 / モノリス §17.4 / SCP §17.5）|
+| 3 | `17-deployment-integration-and-registration.md` | 変更検知・登録（巡回①〜⑦ / **監視資材の規約 §17.3〔資材バケット + monitoring.yaml〕** / 検知の穴と補完・責任分界 §17.2.2 / モノリス §17.4 / SCP §17.5）|
 | 4 | `11-central-probe-architecture.md` | 1 回の検査の中身（実行シーケンス §11.1 / Hybrid 検証と 4×4 §11.2 / authPattern 別検査 §11.3 / **Positive トークン管理 §11.3.1**〔スコープ A 採用・B 目標〕/ ユースケース 4 例 §11.8）|
 | 5 | `12-app-registry-design.md` | 台帳（**S3** `registry/{appId}/{env}.json`。JSON 例・中央管理項目・整合性）|
-| 6 | `13-openapi-registry-design.md` | OpenAPI（**repo の openapi.yaml が正本**・S3 はコピー / **MON-1 公開明示必須** §13.3.0 / アノテーション表）|
+| 6 | `13-openapi-registry-design.md` | OpenAPI（**正本はベンダー git・デプロイ版の写しが App アカウントの資材バケット・中央 S3 はさらにコピー** §13.0 / **MON-1 公開明示必須** §13.3.0 / アノテーション表）|
 | 7 | `14-probe-implementation-guide.md` | probe lib 構成・モノリス/BFF/Private 対応・要 PoC 項目 |
 | 8 | `15-alert-routing-design.md` | 通知振り分け（P1/P2/P3・ARN 2 段解決）|
-| 9 | `16-cross-account-iam-design.md` | アカウント分離（§16.5）と IAM（DiscoveryReadRole=codecommit read-only、StackSets 配布）|
+| 9 | `16-cross-account-iam-design.md` | アカウント分離（§16.5）と IAM（DiscoveryReadRole=資材 s3 read-only / ArtifactUploadRole-{appId}=`{appId}/*` 限定 PutObject、資材バケットと共に StackSets 配布）|
 | 10 | `code-samples/README.md` **§2 データ契約** | **データ定義の SSOT**（台帳スキーマ / authPattern enum / アノテーション / CloudWatch Metrics / 4×4 真偽値表 / Alert イベント形式）。数値・enum はここから転記 |
 | 参照のみ | `../../adr/061-…` / `../../adr/059-…` | **経緯（なぜこの設計か）**。Excel には「参照」として ADR 番号を書くだけで本文転記しない |
 | 参照のみ | `00-index.md` | 目録・構成図早見表（迷子になったらここ）|
@@ -33,21 +33,21 @@
 
 ## 3. 現行仕様の要点（転記の前提。数値はこれに合わせる）
 
-- 方式: **pull 型中央巡回 × CodeCommit コミット差分単独**（1 時間毎）。アプリ側に登録処理なし、モノリスも自動発見
+- 方式: **pull 型中央巡回 × S3 監視資材の VersionId 比較**（1 時間毎。各 App アカウントの資材バケット `auth-monitoring-artifacts-{accountId}` をデプロイパイプラインが更新し、中央はそれだけを読む「資材オンリー原則」）。アプリ側に登録処理なし、モノリスも自動発見
 - **Lambda は 3 本**（発見 / 認証実装チェック / Alert Router）、**全部 VPC 外**（NW-2 の明示的例外、承認は M-Q-10-3）
 - ストアは **S3 ×1 バケット**（Monitoring Registry: `registry/` 台帳 + `openapi/` spec コピー）。**DynamoDB は不使用**
 - アカウント: 共通基盤（中央・自社管理）/ ネットワーク監査（境界 CloudFront+WAF・他組織可能性）/ 各 App / 認証基盤 Broker。**probe は In 境界を実 UX と同じ向きで通過、Out 境界は非経由（例外）**
-- アプリの作業 3 点のみ: 製品 launch（タグ）/ **monitoring.yaml を repo に置く** / OpenAPI に公開印（MON-1）
-- **受容した穴 2 つ**（コンソール直変更の見逃し→L2 Config Rules+全量検査（モード2）+SCP / コミット≠デプロイ→次回巡回+全量検査（モード2））は必ず載せる（17 §17.2.2）
+- アプリの作業 3 点のみ: 製品 launch（タグ）/ **デプロイ成功後に監視資材（monitoring.yaml + openapi.yaml）を資材バケットへアップロード**（ArtifactUploadRole-{appId}）/ OpenAPI に公開印（MON-1）
+- **検知の穴と補完**（コンソール直変更→Config Rules 実体化+ガイド明記+全量検査（モード2、日次・最大 24h）+SCP は M-Q-17-1 / **資材アップロード忘れ・誤り→原則アプリ責任（顧客合意 M-Q-17-7）**、中央は staleness 検知+棚卸しで補助）は必ず載せる（17 §17.2.2）
 - probe 範囲は**アプリ単位の全 endpoint**（endpoint 絞りはしない）
 
 ## 4. 気をつけること（落とし穴）
 
 1. **旧設計の語が出てきたら現行仕様ではない**。以下は転記禁止（見つけたら旧記述の残骸か「旧」「参考」注記付き）:
-   `Central Canary` / `Synthetics`（将来オプション扱いのみ可）/ `DynamoDB`・`DDB`（台帳として）/ `deploymentId 比較` / `apigateway:GET`（巡回用途）/ `Custom Resource 登録`・`push 型` / `ネットワーク監査アカウントに中央リソース配置`
+   `Central Canary` / `Synthetics`（将来オプション扱いのみ可）/ `CodeCommit`（現行構成として）/ `コミット差分` / `lastCheckedCommitId` / `deploymentId 比較` / `deploymentId 併読` / `apiGatewayId` / `apigateway:GET`（巡回用途）/ `モノレポ`・`pathPrefix`（資材はアプリ単位のため不要）/ `Custom Resource 登録`・`push 型` / `ネットワーク監査アカウントに中央リソース配置`
 2. **用語は 10 §10.0.4 と本プロンプト §3 に統一**: 認証実装確認処理（機構）/ 認証実装チェック Lambda / 発見 Lambda / probe＝「実際に HTTP リクエストを送り認証の効き具合を確かめる検査」（Negative=未認証検査 / Positive=正規検査）
 3. **実装状態を混同しない**: probe lib（27 テスト PASS）と Alert Router（19 PASS）は実装済み。**発見 Lambda は未実装**（M-Q-17-4）。`lib/registry.js` は旧 DynamoDB 実装のままで S3 改修待ち（M-Q-12-3）。`app-registry-lambda` / `openapi-export-lambda` は**旧 push 型の参考実装**（構成要素に入れない）
-4. **決定と未決を混ぜない**: D-M-* / D-G-*（設計判断）と M-Q-* / BD-Q-*（未決）は別シート。特に M-Q-10-3（NW-2 例外承認）/ M-Q-17-4（発見 Lambda 実装）/ M-Q-11-4（Positive スコープ B）/ M-Q-17-3（repo 命名規約）は未決として明記
+4. **決定と未決を混ぜない**: D-M-* / D-G-*（設計判断）と M-Q-* / BD-Q-*（未決）は別シート。特に M-Q-10-3（NW-2 例外承認）/ M-Q-17-4（発見 Lambda 実装）/ M-Q-11-4（Positive スコープ B）/ M-Q-17-7（責任分界の顧客・ベンダー合意）/ M-Q-17-8（資材バケット命名・暗号化・ライフサイクル）は未決として明記
 5. **経緯を書かない**: 「なぜ push をやめたか」等は ADR-061 参照とだけ書く。Excel は現行の断定形のみ
 6. **数値・enum を目視転記しない**: authPattern enum（6 値）/ 4×4 真偽値表 / Metrics 名 / monitoring.yaml 項目は `code-samples/README.md §2` と 17 §17.3 からコピーする
 7. **各行に出典（章・節番号）列を付ける**（例: `10 §10.1.5`）。md 更新時の突合を可能にするため
@@ -76,9 +76,9 @@
 
 - [ ] 禁止語（§4-1）が本文に現れない（「旧」「参考」「将来オプション」文脈を除く）
 - [ ] Lambda = 3 本 / VPC 外、S3 = 1 バケット（registry/ + openapi/）、DynamoDB 不使用
-- [ ] 自動差分検査（モード1）= 中央巡回・コミット差分・1 時間毎 / 全量検査（モード2）= 日次定期+手動、probe 範囲 = アプリ単位全 endpoint
+- [ ] 自動差分検査（モード1）= 中央巡回・S3 監視資材の VersionId 比較・1 時間毎 / 全量検査（モード2）= 日次定期+手動、probe 範囲 = アプリ単位全 endpoint
 - [ ] 「モード2 = heartbeat（常時定期検査）」と読める記述が無い（heartbeat 型は「旧 M2、廃止 2026-08-20」注記付きのみ）
-- [ ] 穴 2 つ + 補完レイヤーが実行トリガー（旧称: 実行モード）またはセキュリティのシートに記載されている
+- [ ] 検知の穴（コンソール直変更 / 資材アップロード忘れ・誤り = 原則アプリ責任 M-Q-17-7）+ 補完レイヤーが実行トリガー（旧称: 実行モード）またはセキュリティのシートに記載されている
 - [ ] MON-1（公開明示必須・default-deny）が明記されている
 - [ ] アカウント分離（境界=ネットワーク監査 / 中央=共通基盤）と 2 経路（巡回=境界非経由 / probe=In 経由）が図と表で一致
 - [ ] 未決（M-Q/BD-Q）が決定事項と分離され、全行に出典列がある
