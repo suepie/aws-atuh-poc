@@ -117,6 +117,7 @@
   - Public Cloud データ主権が弱い、Japan 対応は Enterprise SKU
   - Rules/Hooks は 2026-11-18 廃止
 - **不採用理由**: コスト過剰 + SPI 深度不足 + PCI DSS/APPI データ主権弱化
+- **2026-08 再確認（[research](../basic-design/research/okta-cic-auth0-keycloak-replacement-2026-08-24.md)）**: 顧客問い合わせ「Okta CIC で Broker/IdP を代替できるか」に対し最新情報で再評価 → **不採用維持**。決定的理由 = **CIC は SaaS/Okta 運用のみで self-host 不在**（Private Cloud も Okta 管理）→ 自社統制のデータ主権モデルが原理的に取れない。追加判明: **Enterprise 認証 API 100 RPS/tenant**・**Org あたり接続 10 ハード上限**・**メール非依存 HRD が標準に無く Actions 自作前提**・**Private Cloud 東京可用性未確定**。**代替可否 = IdP 単体○（Flexible Identifiers で email-less 可・Inbound SCIM GA）/ Broker △（接続数課金・per-org 10・メール依存 HRD で摩擦大）/ 両方✕（self-host 不在）**。再採用トリガー（10M MAU で $500K/年以下）は 2026 も未達。
 
 ### Alt 2: Microsoft Entra External ID（2024 統合版）
 
