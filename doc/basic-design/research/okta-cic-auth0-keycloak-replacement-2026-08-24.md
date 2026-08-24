@@ -44,6 +44,66 @@
 - ⚠ 数値はベンダー系ブログ/二次情報の**推定**（5M/10M は公開情報なし＝**完全要見積**）。方向性（SaaS が大規模で桁違い高コスト）は信頼できるが絶対額は参考値。
 - 出典: [SSOJet growth-penalty](https://ssojet.com/blog/auth0-pricing-growth-penalty) / [SSOJet $34k SAML](https://ssojet.com/blog/why-does-auth0-charge-34k-yr-for-2-500-maus-to-enable-saml) / [Security Boulevard](https://securityboulevard.com/2025/09/auth0-pricing-explained-and-why-startups-call-it-a-growth-penalty/) / [KeycloakPro TCO](https://keycloakpro.com/blog/keycloak-vs-auth0-vs-okta-cost-comparison) / [Auth0 pricing](https://auth0.com/pricing)
 
+## 4A. 課金軸の全体像（何の単位で課金されるか・全軸）
+
+**課金モデルの構造 = 「プラン基本料（MAU 階段式）＋ アドオン（同梱数超過・上位機能ゲート）」の二層**。2026-07-17 に公式 pricing が **B2C / B2B 別**に分離。**高度機能の多くは従量課金でなく「Enterprise プランゲート＋個別アドオン契約（＝単価非公開・要見積）」**。年額は月額×11（実質 1 ヶ月無料）。出典: [pricing.md](https://auth0.com/pricing.md)
+
+### (1) 基本プランの課金軸（B2C / B2B）
+
+| 課金軸 | 単位 | 無料枠 | 追加/超過単価 | 適用 |
+|---|---|---|---|---|
+| **MAU** | 月内に 1 回以上トークン発行した非内部ユーザーのユニーク user_id 数 | Free 25,000 MAU | B2C: Essentials $35(500)→$3,500(5万) / Pro $240→$3,200(2万)、以降 contact / **B2B は同 MAU で 3〜4 倍**（Essentials $150(500)→$3,800(2万)、$30,000+ で contact）| 両方 |
+| **M2M トークン** | **月間発行トークン数**（クライアント数ではない）| Free/Essentials 1,000 / Pro 5,000 | B2C アドオン 7,500 tok $30/月 → 30 万 tok $1,200/月。B2B は 2,500 tok $10/月〜 | 両方 |
+| **Enterprise Connections** | **外部 IdP 接続数/月**（SAML/OIDC/AD/LDAP）| Free 1 / Essentials 3 / Pro 5 同梱 | **$100/月/接続、公開上限 30**（超過は Enterprise 要見積） | **B2B のみ** |
+| **Enterprise MFA** | 定額アドオン | — | Essentials $100/月 / Pro 同梱 | B2B |
+| **Organizations（B2B テナント数）** | 組織数 | Free 5 | **数量課金なし**（実質 MAU と接続で課金。組織を増やす=課金ではない）| B2B |
+| **AI Agents アドオン** | 定率上乗せ | — | **基本料 +50%** | 両方 |
+
+### (2) Auth0 FGA（Fine-Grained Authorization）＝ 別製品・別契約（本体 MAU と独立）
+
+本番は Enterprise 契約必須、**単価は全て非公開・要見積**。メータリングは複合軸: [出典](https://docs.fga.dev/subscription-plans)
+- **保存 tuples 数**（relationship tuples、Free 5 万 / Enterprise 1,000 万〜追加購入）
+- **FGA 側 MAU**（本体 MAU とは別カウント）
+- **Stores 数**（Free 10 / Ent 20）
+- **API レート**（Check/BatchCheck: Free 20→Ent 500 req/s、Write: 20→150 req/s）
+- 「1 tuple/1 query いくら」の公開価格は**存在しない**。
+
+### (3) アドオン／上位プランゲート（多くは非公開・要見積）
+
+| 機能 | 課金形態 | 出典 |
+|---|---|---|
+| **Adaptive MFA** | Enterprise + アドオン必須（非公開） | [docs](https://auth0.com/docs/secure/multi-factor-authentication/adaptive-mfa) |
+| **Highly Regulated Identity（FAPI/CIBA/顧客管理鍵）** | Enterprise + HRI アドオン必須（非公開） | [docs](https://auth0.com/docs/secure/highly-regulated-identity) |
+| **Attack Protection（breached PW/brute force/bot）** | 標準だが bot 検知等は上位ゲート、単体従量なし | Auth0 資料 |
+| **Custom Domains** | Free 1、拡張は上位プラン | [pricing.md](https://auth0.com/pricing.md) |
+| **ログ保持** | プラン依存（Starter 1 日 / Essentials 5 日 / Pro 10 日 / **Enterprise 30 日**）。超過は Log Streaming で外部保管（**外部 SIEM 費は顧客別負担**） | [docs](https://auth0.com/docs/deploy-monitor/logs/log-data-retention) |
+| **Private Cloud（専用デプロイ）** | Enterprise 限定・定額 dedicated（Basic/Performance 500RPS/Perf+ 1,500RPS）、**単価非公開**（第三者集計 年 $30,000〜は推測） | [G2](https://www.g2.com/products/auth0/pricing) |
+| **Actions（拡張実行）** | 実行回数課金の明示記載なし（現状「従量なし」と推定） | 要確認 |
+
+### (4) サポート/SLA・通信費（Auth0 請求外）
+
+- **サポート**: Self Service は同梱 / **Premier Success（Basic 24x5・Silver/Gold 24/7）は有償・非公開**。99.99% SLA は Enterprise 付随。[出典](https://auth0.com/docs/troubleshoot/customer-support/support-plans)
+- **⚠ SMS/音声（MFA・Passwordless）は Auth0 課金外＝ Twilio 等別契約・顧客負担**（目安 $0.0083/SMS+キャリア費。10 万ユーザー×月1通で $830+/月 の想定外コスト）。[出典](https://auth0.com/docs/secure/multi-factor-authentication/multi-factor-authentication-factors/configure-sms-voice-notifications-mfa)
+
+### (5) MAU の数え方（確定事実）
+
+- **定義 = 月内にトークン発行した非内部ユーザーのユニーク数**。**リフレッシュトークンは非カウント**。**同一 user_id が複数アプリ/複数トークンでも月内 1 MAU**。B2C/B2B で数え方は同じ（料金と同梱物が違う）。[出典](https://auth0.com/blog/auth0-monthly-active-user-mau-explained/)
+
+### (6) 見落としやすい「隠れ課金軸」
+
+1. **M2M は"発行トークン数"課金**（クライアント数でない）→ マイクロサービス/サーバーレスで急増、同梱 1,000 を即枯渇。
+2. **同 MAU でも B2B は B2C の 3〜4 倍**。ユースケース判定で跳ねる。
+3. **Enterprise Connections 公開上限 30 → 超過は強制 Enterprise 要見積**。**本件 1000+ IdP は $100/月×多数で破綻的**、かつ接続は MAU と別軸。
+4. **SMS/音声は Twilio 別請求**（Auth0 請求に出ない想定外コストの筆頭）。
+5. **ログ保持 最短 1 日〜最長 30 日**、長期は外部 SIEM 別課金。
+6. **Adaptive MFA / HRI(FAPI) / Private Cloud は全て Enterprise+個別アドオンで非公開見積**（予算化困難）。
+7. **AI Agents アドオンは基本料 +50%** の定率上乗せ。
+8. **FGA は完全別製品・別契約**（tuples/MAU/stores/レートの複合、全て非公開）。
+9. **無料 MAU 枠の表記揺れ**（現行 pricing.md は 25,000、旧資料は 7,500）→ 契約時点で要確認。
+10. **年額＝月額×11 の一括前払い**。
+
+> **本基盤への含意**: 課金軸が **MAU・M2M トークン・接続数・FGA・各アドオン・外部通信費** と多層で、**どれも大規模で効いてくる**。特に **① 接続数課金（1000+ IdP の Broker 用途と致命的不整合）② B2B 割増 ③ 高度機能が全て Enterprise 非公開見積** の 3 点で、**MAU 単価だけ見た試算より実 TCO は大きく膨らむ**。確定額は Auth0 営業の実見積が必須。
+
 ## 5. 本基盤特有の追加の引っかかり（2026 新発見）
 
 1. **⚠ Enterprise 認証 API 上限 = 100 RPS/tenant** — 10M MAU ピークログインで要交渉・要確認（[Rate Limit Policy](https://auth0.com/docs/policies/rate-limit-policy/database-connections-rate-limits)）。
