@@ -112,6 +112,7 @@ P-01（ROSA HCP + RHBK）/ P-02（10M MAU）/ P-06（L2 単一 Realm + Organizat
 | syncMode | `IMPORT`（既定）+ Mapper 単位 override（§2.5.4） | PoC V2 確定 |
 | First/Post Broker Login Flow | `first-broker-std` / `post-broker-std`（§2.3.2） | SPI 3 系統配置 |
 | storeToken | `false` | broker-data-model §2 ①（IdP トークン非保存） |
+| **Allowed clock skew** | **`30`（秒）** | **2026-08-24 追加**。ID Token の `exp` / `iat` 検証時に許容する時刻差。**既定 0 のままだと、わずかな時刻ずれでフェデ全体が落ちる**。値は [U5 §5.2.1](05-token-session-authz-design.md) の「RP 検証側 ≤ 60 秒」より狭く取る（基盤内は [U6 D-U6-17](06-infra-network-design.md) の同期精度により実測ミリ秒オーダー、30 秒でも 3 桁の余裕）。**顧客 IdP 側のエントリにも同値を既定適用**（オンボーディングパイプラインのテンプレート、§9.7 ステップ 4） |
 
 - **根拠**: 顧客ごとに IdP-KC 向けエントリを分けると IdP なし顧客数だけ Broker の IdP 総数が増え、P-16 の IdP 数バジェットを浪費する。テナント判別は IdP-KC が発行する `tenant_id` クレーム（§2.2.4）+ Org membership で成立するため共有エントリで足りる。
 - **代替案**: 顧客別 IdP エントリ（顧客別 client_id / 独立監査）— 規制顧客で IdP-KC インスタンス自体を分ける場合（ADR-033 Phase 4）のみ、その専用 IdP-KC 向けに別エントリを追加する。
@@ -253,7 +254,9 @@ post-broker-std（Post Broker Login Flow）
 |---|---|---|
 | `acme-001234`（ハイフンあり・@なし） | HRD SPI: `getByAlias("acme")` → Org リンク IdP 解決 | `kc_idp_hint` AuthNote 設定 → Identity Provider Redirector が IdP へ 302。`login_hint=<userid>` 転送 |
 | `alice@acme.com`（@あり） | HRD SPI は attempted() で降格 → Organization Identity-First Login（v26 標準）が domain → Org → IdP 解決 | IdP 複数リンク時はテナント限定セレクター（hrd-implementation §4 パターン B、v26 自動動作） |
-| 解決不能（Org なし / IdP リンクなし） | フォールバック | Username Password Form へ降格（= 運用者ローカル P-1 のみ通過し得る。顧客ユーザ〔P-2/P-3〕は認証失敗で終端） |
+| 解決不能（Org なし / IdP リンクなし） | フォールバック | Username Password Form へ降格。**このフォールバックの目的は「誰かを通すこと」ではなく[ユーザ列挙の防止（応答同一化）](04-auth-ux-design.md)** — 下記注記を参照 |
+
+> **フォールバックの目的（2026-08-24 明確化、D-17 との整合是正）**: 従来「= 運用者ローカル P-1 のみ通過し得る」と記載していたが、**2026-07-30 の D-17 改訂により基盤運用者 P-1 のアクセスも踏み台/SSM のクローズド接続に限定**された（§2.3.1）。よって**公開経路（`auth.` ドメイン）でこのフォールバックを通過できる主体は存在しない**。それでも降格を残すのは、**Org 不在時に「組織が見つかりません」を返すと会社コードの総当たりで顧客企業名を列挙できてしまう**ため（[ADR-020 §F](../adr/020-hrd-hint-keys-mixed-login.md)、[U4 §4.1.3 D-U4-02](04-auth-ux-design.md)）。**実質的にはダミー終端であり、「通過者がいないから不要」という判断で削除してはならない**（削除すると列挙対策が失われる）。
 
 上表の判定を時系列のフローチャートとして図示する（2026-07-26 図示追加）:
 
@@ -596,11 +599,13 @@ Broker 内部 username は `<orgAlias>-<userid>`（Username Template Importer �
 | 10 | Adaptive Phase 2 の Flow 挿入設計 | U7 + 本書改訂 |
 | 11 | SPI 書込属性の unmanagedAttributePolicy（`ENABLED` 既定で `ADMIN_EDIT` に絞れるか、§2.6 設計制約 3） | G-SPI-Compat |
 | 12 | User Profile で `email` 任意化時の依存属性・`UPDATE_EMAIL` 不具合回避（FC-5、§2.6 設計制約 4） | G-UProfile-Email |
+| **13** | **`kc_idp_hint` のテナント存在オラクル**（Identity Provider Redirector が HRD SPI より前に評価されるため、素の別名を素通しする。成立すれば公開経路で無効化 = SPI で AuthNote 除去） | **[U7 §7.8.1a D-U7-19](07-security-compliance-design.md) / O-U7-10 / 00a A-11** |
 
 ---
 
 ## 改訂履歴
 
+- 2026-08-24: **§2.3.3 フォールバックの目的を明確化**（D-17 との整合是正 — 「運用者 P-1 のみ通過し得る」は古く、公開経路では**通過者が存在しない**。残す理由は**列挙防止のダミー終端**であり削除禁止）。**§2.2.2 に Allowed clock skew = 30 秒を追加**（既定 0 だとわずかな時刻ずれでフェデ全断、[U6 D-U6-17](06-infra-network-design.md) 連動）。**§2.8.4 未決 #13 新設**（`kc_idp_hint` のテナント存在オラクル → [U7 D-U7-19](07-security-compliance-design.md) / O-U7-10 / 00a A-11）。
 - 2026-08-03 (v1.5): **§2.6 に設計制約 4（`email(optional)` 実機成立性、FC-5）を追加** — Declarative User Profile で email 任意化時の Keycloak 既知不具合（依存属性検証失敗 [kc#21265] / `UPDATE_EMAIL`・Verify Profile の optional 無視 [kc#33497]）を回避することを **新規 PoC ゲート G-UProfile-Email**（§2.8.1）で確認。email 非保有=工場系顧客収容の前提条件。§2.8.4 に未決 12 を追加、Baseline §1.5 にゲート登録。
 - 2026-07-26 (v1.4): 可読性向上のため mermaid 図 3 点を追加（§2.2.4 Realm/Org/IdP/Client 構成対応図 / §2.3.3 HRD 解決フローチャート / §2.4 SPI 3 JAR・4 機能配置図）。決定内容の変更なし（図示のみ）。
 - 2026-07-24 (v1.3): **§2.2.5 新設 — 2-tier セッション・ログアウト・再認証の整合（02a GAP-1〜5 解消）**: idpkc-oidc01 の logout 連鎖既定 ON（backchannelSupported）/ IdP-KC Realm TTL を Broker 同値に固定（IaC 共通変数化）/ AAL3 の acr_values+prompt=login 転送仕様 / prompt・max_age は IdP-KC のみ転送（外部 IdP は Broker 側 max_age 評価で代替）/ login_hint 書式契約（<userid> 正 + 完全形寛容受理）。G-SPI-Compat に storeToken=false × logout id_token_hint 検証を追加。

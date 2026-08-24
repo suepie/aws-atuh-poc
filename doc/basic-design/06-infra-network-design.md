@@ -197,6 +197,37 @@ Tier ごとに CPU プロファイルが 10-30 倍異なる（Broker = JWT/SAML 
 - **Machine Pool 名の実体（2026-07-24 注記）**: HCP はクラスタ作成時にサブネットごとの pool（`workers` / `workers-2`…）を自動作成する。本書の `default-az1/2/3` / `kc-az1/2/3` は論理名であり、IaC 上は「自動作成 pool（infra 役）+ 追加作成 pool（KC 役）」に対応付ける。
 - **アップグレード順序制約（U9 引き渡し）**: CP と Machine Pool は独立アップグレードで **CP を先行**、pool は CP から 2 マイナー版以内に維持（U9 §9.6 の KC 昇格ゲートと合わせて Runbook 化）。将来オプション: **AutoNode（Karpenter v1.9 ベース、2026Q2 に HCP 対応）**は Pool 事前定義不要の動的プロビジョニング — 本設計の準静的 infra + 動的 KC には従来型 Autoscaler が適合するため Phase 1 不採用、Phase 2 で再評価。
 
+#### 6.2.2b 決定 D-U6-17: ノードの時刻同期（2026-08-24 新設）
+
+**背景**: 本設計 10 冊に**時刻同期の要件が一箇所も無かった**（[U5 §5.2.1](05-token-session-authz-design.md) の「RP 検証側 clock skew ≤ 60 秒」はアプリへの要求であって基盤の同期要件ではない）。暗黙の前提のまま置くと、**時刻ずれが「全ログイン失敗」として突然顕在化する**にもかかわらず、誰の責任範囲かも許容値も定義されていない状態になる。
+
+**採用**: 両クラスタ（Broker / IdP-KC）の全ノード・Aurora・Lambda・監査基盤の時刻同期を **Amazon Time Sync Service**（リンクローカル `169.254.169.123` / PTP 対応インスタンスでは `169.254.169.253`）に統一し、**許容ずれを ±1 秒以内**とする。
+
+| 対象 | 同期方式 | 責任 |
+|---|---|---|
+| ROSA worker ノード（EC2 / RHCOS） | chrony → Amazon Time Sync Service | **Red Hat SRE 管理領域**（ノード OS 設定）。**既定でこの構成であることの確認が必要**（→ 未決） |
+| ROSA Control Plane | 同上（HCP = Red Hat 管理） | Red Hat |
+| Aurora / Lambda / API GW | AWS マネージド（利用者設定不可） | AWS |
+| Break-Glass 用踏み台 | chrony → Amazon Time Sync Service | 弊社（IaC で明示） |
+
+**時刻ずれが効く範囲と効かない範囲（誤解の多い点）**:
+
+| 影響 | 効くか | 理由 |
+|---|---|---|
+| **SSO セッション TTL**（Idle 1h / Max 24h、P-09） | ❌ **効かない** | 各サーバが**自分の時計だけで完結して**計算し、相手の時刻を参照しないため。Broker と IdP-KC がずれていても各々の中では正しい |
+| ID Token の `exp` / `iat` 検証（2-tier 間・顧客 IdP 間） | ✅ 効く | 許容は IdP 設定の Allowed clock skew（[U2 §2.2.2](02-keycloak-logical-design.md) = 30 秒） |
+| アプリの JWT 検証 | ✅ 効く | RP 側 ≤ 60 秒（U5 §5.2.1） |
+| **`auth_time` / `max_age`** | ✅ **強く効く** | AAL3 の `max_age=300` は**5 分幅しかない**。1 分ずれれば余裕の 20% を失う |
+| **TOTP** | ✅ **最も敏感** | **30 秒刻み**。IdP-KC 収容ユーザの MFA に直結 |
+| 監査ログの相関 | ✅ 効く | Broker / IdP-KC / SSM のイベントを時系列突合できなくなる。**インシデント調査で効く** |
+| Kerberos（LDAP 連携時） | ✅ 効く（5 分以内必須） | Phase 1 スコープ外（[keycloak-ldap-configuration-notes §Clock Skew](../common/keycloak-ldap-configuration-notes.md)） |
+
+- **DR 整合**: 東京・大阪とも同一の Amazon Time Sync Service に同期するため、**リージョン切替で時刻基準が変わらない**（U8 §8.5 の再認証設計に影響しない）。
+- **監視**: 時刻ずれは**「沈黙」型**（ずれ始めても全て正常に動き続け、閾値を超えた瞬間に全ログインが失敗し、症状は「原因不明のトークン検証エラー」としか出ない）。よって存在確認型の監視を [U9 §9.1.2 #15](09-operations-observability-design.md) に設置する。
+- **未決（O-12）**: **ROSA worker の chrony 設定が Amazon Time Sync Service を向いていることの確認**、および**ずれた場合の是正が Red Hat SRE / 弊社どちらの作業か**の責任分界。ノード OS は Red Hat 管理領域のため**弊社が直接設定できない可能性がある** → [Red Hat 照会 RH-C 群](../requirements/redhat-inquiry/00-plan.md)に追加。
+
+---
+
 ### 6.2.3 決定 D-U6-05: コスト表（HCP cluster fee 前提、東京 2 + **大阪は平時 ROSA なし = コールド DR**）
 
 > **2026-07-30 D-18 転換**: DR をコールド化（U8 D-U8-14）。**大阪の常時 ROSA クラスタ（旧パイロットライト 2 × $301 = $602/月）を廃止**し、大阪の平時コストは Aurora Global Secondary ストレージ + バックアップ/クロスリージョンスナップショット + ECR ミラーのみ（データ層のみ常時、コンピュートは被災時にオンデマンド再構築）。下表の大阪パイロットライト 2 行は旧・参考。
@@ -542,6 +573,7 @@ Broker KC は顧客 IdP の authorization/token/JWKS/userinfo エンドポイン
 | O-9 | **管理コントロールプレーン実行形態（idm-api〔ブランド主役〕+ shadow 制御 + SCIM Facade + 非同期の糊）** | ✅ **Lambda で確定（[ADR-062](../adr/062-idm-api-execution-form-lambda.md)、2026-08-06）**。トポロジは [ADR-063](../adr/063-brand-unit-architecture.md) で brand 主役（idm-api が CRUD+authz、中央は shadow 制御のみ）。残る実装論点は cold start 緩和・内部 NLB 堅牢化・**越境イベント経路の S2S 認可（旧 O-12 再定義）**、レイテンシ/読取 p99 は G-SCIM 実測 | 確定（ADR-062/063）。実装論点は越境イベント S2S / G-SCIM |
 | O-10 | **Egress 形態: 案 A（NAT GW）vs 案 B（egress zero + TGW）** | 案 B は NAT 不要 + P-18/PCI DSS 志向と整合し**積極検討**（§6.2.1/§6.7.3、U7 D-U7-16 でセキュリティ推奨済み）。**（2026-07-24 公式検証）機能名 = "egress zero"、2025Q1 GA、`--properties zero_egress:true`。ミラーは Red Hat が用意する in-region ECR（顧客自前構築ではない、VPC Endpoint 経由）。制約: ① Lightspeed/Telemetry 系機能不可 ② OperatorHub は Red Hat 製 Operator の default チャネルのみミラー → **RHBK Operator の利用チャネルが default であることの確認が採用条件** ③ ROSA CLI v1.2.45+ ④ zero_egress はプラットフォーム egress の排除であり、アプリの外向き（フェデ/HIBP/Webhook）は別管理（REQ-OUT 系）**。先方 TGW 接続可否と併せて決定 | 要求仕様書 v1 回答時（先方経路確認と同時） |
 | O-11 | **infra Pool サイジング実測** | c7g.large × 2〜3 暫定（§6.2.2）。1000+ IdP 時の Prometheus 時系列カーディナリティ + **Fluent Bit Aggregator のマスキング処理量**の実測（G-IdP-Scale P-4 と併せて）で確定。**⚠ c7g.large(4GB) は 1000+ IdP・10M MAU の Prometheus には不足懸念 — 比較対象に c7g.xlarge(8GB) とメモリ最適化系(r7g.large 16GB / m7g.large 8GB)を併記して実測**（台数でなくサイズで吸収する方針、2026-07-24 追記） | G-IdP-Scale 実施時 |
+| **O-12** | **ノード時刻同期の実装確認と責任分界（D-U6-17）** | ROSA worker の chrony が Amazon Time Sync Service を向いているか / ずれた場合の是正は Red Hat SRE と弊社のどちらの作業か。**ノード OS は Red Hat 管理領域のため弊社が直接設定できない可能性**（§6.2.2b）。**時刻ずれは `auth_time`/`max_age`・TOTP・ID Token 検証を同時に壊す**が、責任範囲が未定義 | **Red Hat 照会（RH-C 群）+ Phase 1 実装前** |
 | O-APP-1 | **アプリ inbound を NFW に通す経路設計（サーバーレス App 用）** | 2026-07-28、[06a §A.1.1](06a-network-flow-diagrams.md)。①静的 SPA(S3) = CloudFront+WAF+**OAC 直結で NFW 経路外**（LB 経由不要が公式推奨。**2026-08-06: 静的 SPA と API GW は NFW 通過必須の例外〔組織確定、REQ-IN-12〕ゆえ OAC 直結で準拠**。launchpad./admin. の SPA も同様）②API = CloudFront **VPC origins → 監査 ALB → NFW → Private API GW(Interface Endpoint)**。要検証: VPC origins の CloudFront→オリジン通信をどの**ルートテーブルで firewall endpoint に通すか**（VPC origins は NACL 非評価・TLS リスナー付き NLB 不可）+ Private API GW の execute-api ENI IP の**動的追従**（Lambda カスタムリソース）+ 監査 Acct LB→案件 Acct への **VPC ピアリング/TGW 要求（REQ-IN 追加）** | サーバーレス App 採用時（他組織エッジ設計と合同） |
 
 ### 6.8.2 U8（可用性・DR）への引き渡し
@@ -573,11 +605,13 @@ Broker KC は顧客 IdP の authorization/token/JWKS/userinfo エンドポイン
 | D-U6-11 | /admin 3 層防御 + `hostname-admin` 分離採用（L2 Listener 403 が生命線） | §6.6.1 |
 | D-U6-12 | Internal 経路 = SSM 標準 + VPN 併用の二重化 | §6.6.2 |
 | D-U6-13 | Egress 要求 = 専用ルールグループ + 更新委任（②+③）、フォールバック SLA ≤ 4 営業時間 | §6.7.3 |
+| **D-U6-17** | **ノード時刻同期 = Amazon Time Sync Service に統一、許容ずれ ±1 秒。セッション TTL には影響せず、`auth_time`/`max_age`・TOTP・ID Token 検証・監査相関に効く** | **§6.2.2b** |
 
 ---
 
 ## 改訂履歴
 
+- 2026-08-24: **§6.2.2b 決定 D-U6-17 新設（ノードの時刻同期）** — 設計 10 冊に時刻同期の要件が一箇所も無かったため新設。Amazon Time Sync Service 統一・許容 ±1 秒。**セッション TTL には影響しない**（各サーバ自己完結）が、`auth_time`/`max_age`・TOTP・ID Token 検証・監査相関に効くことを表で明示。**未決 O-12**（ROSA worker の chrony 設定確認と是正の責任分界 → [RH-C-07](../requirements/redhat-inquiry/00-plan.md)）。
 - 2026-08-12: **D-U6-14 新設（§6.6.3）** — テナント隔離契約 + 認証フローのテナント別公平性（noisy-neighbor 対策 + `tenant_id` 一貫強制 + realm 分離脱出条件、B-TENANT-ISO-1）。
 
 - 2026-07-23: 初版（Wave 1 起草）。Baseline v1（P-01〜P-18）準拠。A 部（自管理設計）/ B 部（他組織要求仕様）の 2 部構成で確定。B-BROK-1 / G-OSAKA / G-EGRESS / In-A/In-B 先方確認は未決事項として §6.8 で追跡。
