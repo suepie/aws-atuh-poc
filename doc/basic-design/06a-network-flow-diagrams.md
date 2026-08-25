@@ -291,6 +291,102 @@ flowchart LR
 - **E が今回の確定事項**：VPC 内 BFF でも **TGW 私設直通（split-horizon DNS）**で Broker に到達。**Egress→公開→インバウンドの往復（ヘアピン）はしない**。
 - **認証を理由に VPC 内固定しない**（ADR-012 R.3）。Zero-egress アプリのみ E/F を私設化。
 
+## A.1.3 Broker ⇄ IdP まわりの通信 経路まとめ（2026-08-25 新設）
+
+**位置づけ**: 「Broker と IdP のやり取りが、どのノードから、どの経路で流れるか」の情報が §A.1 の図 / §A.2.2 の差分表 / [U6 §6.3](06-infra-network-design.md) / [02a §2.3](02a-broker-idpkc-federation.md) に分散していたため、**1 箇所で通して読める形に集約**する。**各項の決定そのものは各出典が SSOT**であり、本節は経路の見取り図。
+
+### A.1.3.1 前提: Pod の通信は「ノードの IP」で出る
+
+KC Pod は **`dedicated=keycloak:NoSchedule` でテイントされた KC 専用 Machine Pool** に載る（§A.2）。Pod 自身の IP は **OVN のオーバーレイ `10.128.0.0/14`** で、**VPC の外には出ない**（§A.2.1）。よって**クラスタ外へ出る通信は、載っているノードの VPC IP（Worker サブネット `10.64.0.0/24` 他 ×3AZ）に変換される**。
+
+帰結は 2 つ:
+
+1. Worker サブネットの採番は **Pod 数ではなくノード数**で足りる（§A.5.3 はこの前提）
+2. **ネットワーク層では Pod / Machine Pool を区別できない** — Firewall・SG から見えるのは「どのノードが載るサブネットか」だけ（→ [U6 §6.7.3 送信元の粒度についての注記](06-infra-network-design.md)）
+
+### A.1.3.2 経路 5 系統（一覧）
+
+| # | 通信 | 発信主体 | 宛先 | 経路 | 他組織依存 | 頻度 |
+|---|---|---|---|---|---|---|
+| **B-O1** | **顧客 IdP 1000+ とのやり取り** | Broker KC Pod | インターネット | TGW → **NAT + NFW（ドメインフィルタ）** → 顧客 IdP | 🔴 **あり**（REQ-OUT-01） | 中（初回・再認証） |
+| **B-O2** | **IdP-KC とのやり取り** | Broker KC Pod | IdP-KC | **PrivateLink 単方向** | ✅ なし | 中（同上） |
+| **I-I1** | IdP-KC のログイン画面 | **利用者ブラウザ**（KC 発ではない） | IdP-KC | 公開 CF+WAF → Edge → TGW → Internal ALB | 🔴 あり（REQ-IN） | 中 |
+| **I-O2 / 越境イベント** | IdP-KC（ブランド）→ Broker | ブランド側 | Broker | **EventBridge のみ。HTTP 経路は存在しない** | ✅ なし（VPCE 経由） | 低 |
+| **B-M / I-M** | ノード ⇄ Control Plane | 全ノード | Red Hat CP | PrivateLink（HCP 組込） | ✅ なし | 常時 |
+
+### A.1.3.3 B-O1: 顧客 IdP（インターネットへ出る唯一の重い経路）
+
+```
+Broker KC Pod
+  └→【ノードの VPC IP へ変換】Worker Subnet ①
+      └→ TGW Attachment Subnet ⑥（/28 ×3AZ、TGW ENI 専用）
+          └→ Transit Gateway                        【他組織】
+              └→ Egress VPC: NAT + Network Firewall 【他組織】
+                  └ TLS SNI ベース FQDN 許可（REQ-OUT-01）
+                      └→ インターネット → 顧客 IdP
+```
+
+| 流れる中身 | タイミング |
+|---|---|
+| `POST /token`（認可コード交換） | **初回ログイン + Broker セッション切れ後の再認証** |
+| JWKS 取得 | 顧客 IdP の署名鍵ローテ追随 |
+| `GET /userinfo` | Mapper が参照する設定の場合のみ（**既定は不使用**、[U2 §2.2.4](02-keycloak-logical-design.md) と同型） |
+| SAML メタデータ取得 | 証明書ローテ追随。**自動更新の可否は未確認**（RH-B-06 / 00a A-9） |
+
+- **IdP 追加の律速はここ**。顧客 1 社ごとに FQDN を他組織 NFW の許可リストへ反映する必要がある（[U9 §9.7 ステップ 3](09-operations-observability-design.md)。②③ 形態なら自動 10 分 / ① 都度申請なら ≤ 4 営業時間）。
+- **VPC Endpoint では代替不可**（顧客 IdP は AWS 外）。zero-egress を採っても本経路は残る（[U6 §6.7.3](06-infra-network-design.md) zero-egress との関係）。
+
+### A.1.3.4 B-O2: IdP-KC（PrivateLink 単方向）
+
+```
+Broker KC Pod
+  └→ Interface Endpoint（Broker VPC の VPC Endpoint Subnet ⑤）
+      └→ PrivateLink
+          └→ Endpoint Service【IdP-KC Acct・許可 Principal = Broker Acct のみ】
+              └→ Ingress NLB（TLS 終端）→ router pod → IdP-KC KC Pod
+```
+
+**TGW も NAT も通らず、弊社 2 アカウント間で完結する**（他組織の変更管理に載らない = D-U6-06 根拠 2）。内訳と頻度は [02a §2.3](02a-broker-idpkc-federation.md) が SSOT（Discovery / JWKS = 低、`POST /token` = 中、userinfo ≈ ゼロ）。
+
+- **2 回目以降のログインでは本経路に通信が流れない** — Broker SSO セッションが有効な間は Broker 完結（[02a §2.2](02a-broker-idpkc-federation.md)）。
+- **単方向であることが設計の肝**: IdP-KC 側から Broker VPC へ構造的に到達できない（PW ハッシュ保有側が侵害されても横展開経路が無い）。
+
+### A.1.3.5 同じ FQDN が経路によって別の IP に解決される（split-horizon）
+
+**2-tier のログイン 1 回で、IdP-KC には 2 つの別経路から到達する。**混同しやすいため明示する。
+
+| 引く主体 | `idp.basis.example.com` の解決先 | 経路 |
+|---|---|---|
+| **利用者ブラウザ** | 他組織の **CloudFront** | 公開（フロントチャネル）= I-I1 |
+| **Broker KC Pod** | Broker VPC 内の **Interface Endpoint**（PHZ の Alias） | PrivateLink（バックチャネル）= B-O2 |
+
+> **ブラウザがログイン画面を取りに行くのは公開経路、Broker がコードを交換するのは PrivateLink。**これが「フロントチャネルとバックチャネルの分離」（[U6 §6.3.1](06-infra-network-design.md)）の実体。同型の split-horizon はアプリ → Broker（B-I2、§A.1.2 の要点 E）でも使う。
+
+### A.1.3.6 IdP-KC → Broker に HTTP 経路は無い
+
+越境するのは **EventBridge の 2 本のみ**（[U6 §6.3.2](06-infra-network-design.md)、[ADR-063](../adr/063-brand-unit-architecture.md)）。EventBridge へも **VPC Endpoint 経由**でインターネットに出ない。
+
+| 方向 | イベント | 用途 |
+|---|---|---|
+| ブランド → Broker | `user.deprovisioned {sub, brand_id}` | Broker 側 shadow を `enabled=false` + `not_before` + セッション失効 |
+| Broker → ブランド | 初回ログイン時の `sub` 通知 | ブランド authz のスタブ行生成 |
+
+アプリのホットパス（`/api/me/context`）は**ブランドローカル read で越境ゼロ**。
+
+### A.1.3.7 その他、各ノードから出る通信
+
+| 通信 | 経路 | 備考 |
+|---|---|---|
+| KC Pod → Aurora（SQL + **jdbc-ping**） | 同 VPC 内・SG 直結、Aurora Subnet ④ | ノード発見も同経路（KC 26.1+ 既定） |
+| KC Pod → S3 / ECR / STS / KMS / Logs / Secrets / SES | **VPC Endpoint 群**（Subnet ⑤、zero-egress） | IRSA の一時クレデンシャル経由 |
+| 監査ログ → 監査 Acct S3 | Fluent Bit DaemonSet → **Aggregator でマスキング** → VPCE | 生ログを外に出さない（禁則 K-13） |
+| **HIBP 照会** | NFW 経由でインターネット（B-O8 / I-O7） | Broker = 管理者 PW / **IdP-KC = ローカル PW が主** |
+| ノード ⇄ Red Hat CP | PrivateLink（HCP 組込） | B-M / I-M |
+
+**IdP-KC の外向きは HIBP と SES だけ**（§A.2.2）。外部 IdP へフェデしないため意図的にここまで軽い。
+
+---
+
 ## A.2 ROSA HCP クラスタ内部詳細(Broker/IdP-KC 共通、差分は §A.2.2)
 
 **この粒度の図は本書が初出**(U6 §6.1.1 はアカウントレベル、doc/common/drawio は EKS 前提で未改版)。
@@ -660,6 +756,7 @@ flowchart TB
 
 ## 改訂履歴
 
+- 2026-08-25: **§A.1.3 新設（Broker ⇄ IdP まわりの通信 経路まとめ）** — 情報が §A.1 図 / §A.2.2 / U6 §6.3 / 02a §2.3 に分散していたため 1 箇所へ集約。**Pod IP はオーバーレイでノード IP に変換される**前提（§A.1.3.1）→ 経路 5 系統一覧 → B-O1（唯一の重いインターネット経路・IdP 追加の律速）/ B-O2（PrivateLink 単方向）/ **split-horizon DNS で同一 FQDN が経路により別 IP に解決される**（§A.1.3.5）/ IdP-KC→Broker は EventBridge のみで HTTP 経路なし。**送信元粒度の是正**（Pod 単位は表現不可 → Worker サブネット単位）は [U6 §6.7.3](06-infra-network-design.md) へ。
 - 2026-07-24: 初版。ユーザー提供のフロー表(B-*/I-* 系)を全量反映 + 抜け 8 系統を追加 + ROSA 内部詳細図(初出)+ OVN IP レンジ表。
 - 2026-08-07 (v1.7): **§A.6 新設 — アカウント別 詳細構成（Broker / IdP-KC ブランド）**。現行トポロジ（ADR-062 Lambda / ADR-063 ブランド主役 / A 案 outbox / REQ-IN-12 API GW 例外 / A+C credential-authz 内部分離）を全体トポロジ図 + Broker/IdP-KC アカウント別詳細表に集約（現行構成の SSOT。drawio v2 は旧 EKS 版で未反映）。
 - 2026-07-29 (v1.6): NFW ルート論点が**認証 ROSA パスにも同じく効く**(VPC origins 採用なら本命)ことを §A.1.1 に注記 + U6 REQ-IN-13(CloudFront→エッジ LB 到達方式 + NFW ingress ルート設計)/ §6.7.2 注記(In-A/In-B とは別軸)と連動。

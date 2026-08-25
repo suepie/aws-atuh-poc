@@ -532,20 +532,32 @@ Broker KC は顧客 IdP の authorization/token/JWKS/userinfo エンドポイン
 | 案 | 方式 | IdP 追加リードタイム < 1 営業日（§NFR-3）との整合 | 統制 | 評価 |
 |----|------|----------------------------------------------|------|------|
 | ① 都度申請 | IdP 追加ごとに先方へドメイン許可申請 | **申請 SLA 次第で破綻**（先方の変更管理が週次なら SLA 違反が常態化） | 先方フル統制 | ❌ 単独では不成立 |
-| ② 認証基盤向け一括ポリシー | 「Broker KC の Egress 専用ルールグループ」を事前合意で設置。宛先 FQDN リストを弊社が管理し、先方は**枠（送信元 = Broker KC Pod CIDR、ポート = 443 のみ、プロトコル = TLS）を統制** | ✅ 追加はリスト更新のみ | 枠 = 先方 / 中身 = 弊社（委任） | ◎ 推奨の主軸 |
+| ② 認証基盤向け一括ポリシー | 「Broker KC の Egress 専用ルールグループ」を事前合意で設置。宛先 FQDN リストを弊社が管理し、先方は**枠（送信元 = Broker クラスタの Worker サブネット CIDR〔3AZ 分〕、ポート = 443 のみ、プロトコル = TLS）を統制** | ✅ 追加はリスト更新のみ | 枠 = 先方 / 中身 = 弊社（委任） | ◎ 推奨の主軸 |
 | ③ FQDN 許可の自動化 API | 弊社の IdP オンボーディングパイプラインから先方 Firewall のルール更新 API（もしくは先方提供の申請 API）を呼び、自動反映 + 監査ログ | ✅ 分単位 | ②の委任を API 化 | ◎ ② の実装形態として要求 |
 
 **決定 D-U6-13（要求案）**: **② + ③ のハイブリッドを第一要求**とする。
-- 要求文: 「認証基盤（Broker KC）専用の Egress ルールグループ（Suricata 互換、送信元 = Broker KC CIDR / TCP:443 / TLS SNI ベース FQDN 許可）を設置し、FQDN リストの更新権限を弊社オンボーディングパイプラインに委任（API または CI 連携）いただきたい。全更新は双方の監査ログに記録し、四半期レビューで先方が棚卸しする。」
+- 要求文: 「認証基盤（Broker）専用の Egress ルールグループ（Suricata 互換、**送信元 = Broker クラスタの Worker サブネット CIDR〔3AZ 分、具体値は別紙〕** / TCP:443 / TLS SNI ベース FQDN 許可）を設置し、FQDN リストの更新権限を弊社オンボーディングパイプラインに委任（API または CI 連携）いただきたい。全更新は双方の監査ログに記録し、四半期レビューで先方が棚卸しする。」
 - **フォールバック条件（G-EGRESS ゲートの合否基準）**: ② / ③ が受け入れられない場合、①都度申請の**申請 SLA ≤ 4 営業時間**を合意できなければ、§NFR-3 の「IdP 追加リードタイム < 1 営業日」は成立しない → NFR 側改訂（リードタイム緩和）を U9 経由でエスカレーションする。**「SLA 未合意のまま Phase 1 契約」を禁止する**のが本ゲートの趣旨（U1 §1.5 G-EGRESS）。
 - 付帯要求: LDAPS 顧客 AD への Egress（TCP:636、ADR-039 §F.1.A の 3 ルール: 許可 CIDR 限定 / 未知宛先 636 drop+alert / 平文 389 全 drop）も同ルールグループ内で**要求仕様として提示**する（実装主体は先方に変更、監査ログ連携 REQ-OUT-03 で受領）。
+
+#### 送信元の粒度についての注記（2026-08-24 是正）
+
+**要求文の「送信元」は Pod 単位ではなく Worker サブネット単位でしか表現できない。**
+
+ROSA（OVN-Kubernetes）では **Pod IP はオーバーレイ（`10.128.0.0/14`）で VPC の外に出ず、クラスタ外向きの通信はノードの VPC IP に変換される**（[06a §A.2.1](06a-network-flow-diagrams.md)）。よって Network Firewall / SG から観測できる送信元は**ノードが載る Worker サブネット**であり、**Pod や Machine Pool を区別できない**。
+
+さらに [06a §A.5.3](06a-network-flow-diagrams.md) のサブネット割付では **KC Pool / infra Pool / 2xlarge Pool のノードが同一 Worker サブネットに同居**する。したがって、**従来記載の「送信元 = Broker KC Pod CIDR」は実現できない**（実態は Worker サブネット全体の許可であり、infra Pool 上のコンポーネント〔Fluent Bit Aggregator / SCIM Facade 等〕も同じ送信元に見える）。
+
+- **決め**: **要求文を実態に合わせて「Worker サブネット CIDR」と正確に記載する**（本節で是正済み）。**先方へ「KC Pod だけに絞っている」と説明しない** — 受入試験（§6.7.4）で齟齬が出る。
+- **残余リスクの評価**: 当該サブネットに載るのは全て自社管理コンポーネントであり、外部からの侵入経路が別途無い限り実害は限定的。**許可先が「顧客 IdP の FQDN のみ」に絞られている**こと（REQ-OUT-01 の SNI ベース許可 + REQ-OUT-02 デフォルト Deny）が実質的な統制。
+- **採らなかった案**: ① **KC Pool を専用サブネットへ分離** — HCP の Machine Pool はサブネット単位で作成できるため技術的には可能だが、**サブネットは install 後変更不可**のため構築前に確定する必要があり、分離で得られる統制の増分が小さいため不採用（採るなら Phase 1 構築前が唯一の機会）。② **EgressIP による namespace 単位の送信元 IP 割当** — OpenShift の機能としては存在するが、**ROSA HCP + zero-egress 構成での成立性が未確認**のため Phase 1 では採らない。
 
 **その他 Outbound 要求**:
 
 | # | 要求 | 内容 |
 |---|------|------|
 | REQ-OUT-01 | Egress ルールグループ設置 + 更新委任（上記 D-U6-13 本文） | — |
-| REQ-OUT-02 | デフォルト Deny の維持 | Broker/IdP-KC CIDR からの許可外 Egress は drop + alert（C2 通信検知。弊社側も SG Egress 最小化で二重化、ADR-010） |
+| REQ-OUT-02 | デフォルト Deny の維持 | Broker/IdP-KC の **Worker サブネット CIDR** からの許可外 Egress は drop + alert（C2 通信検知。弊社側も SG Egress 最小化で二重化、ADR-010） |
 | REQ-OUT-03 | Firewall Alert/Flow ログの共有 | Network Firewall Alert Log と該当 Flow Log を弊社監査 Acct へ配信（S3 レプリケーション or 購読）。ITDR（L-GD 系検知、ADR-060 §C.2.2）の入力に必要 |
 | REQ-OUT-04 | DNS 解決の整合 | 顧客 IdP FQDN の名前解決経路（Route 53 Resolver）と Firewall の FQDN 評価が同一解決系であること（DNS 分裂による誤 drop 防止） |
 
@@ -611,6 +623,7 @@ Broker KC は顧客 IdP の authorization/token/JWKS/userinfo エンドポイン
 
 ## 改訂履歴
 
+- 2026-08-25: **§6.7.3 の REQ-OUT-01 送信元表記を是正** — 「送信元 = Broker KC Pod CIDR」は**実現できない**（ROSA/OVN では Pod IP が VPC に出ず、クラスタ外向きはノード IP に変換される。かつ KC Pool と infra Pool が同一 Worker サブネットに同居）。**「Broker クラスタの Worker サブネット CIDR〔3AZ 分〕」へ正確化**し、粒度の限界・残余リスク評価・不採用案（KC Pool 専用サブネット分離 / EgressIP）を注記として追加。**先方へ「KC Pod だけに絞っている」と説明しない**（受入試験で齟齬）。REQ-OUT-02 も同様に是正。経路の全体像は [06a §A.1.3](06a-network-flow-diagrams.md)。
 - 2026-08-24: **§6.2.2b 決定 D-U6-17 新設（ノードの時刻同期）** — 設計 10 冊に時刻同期の要件が一箇所も無かったため新設。Amazon Time Sync Service 統一・許容 ±1 秒。**セッション TTL には影響しない**（各サーバ自己完結）が、`auth_time`/`max_age`・TOTP・ID Token 検証・監査相関に効くことを表で明示。**未決 O-12**（ROSA worker の chrony 設定確認と是正の責任分界 → [RH-C-07](../requirements/redhat-inquiry/00-plan.md)）。
 - 2026-08-12: **D-U6-14 新設（§6.6.3）** — テナント隔離契約 + 認証フローのテナント別公平性（noisy-neighbor 対策 + `tenant_id` 一貫強制 + realm 分離脱出条件、B-TENANT-ISO-1）。
 
