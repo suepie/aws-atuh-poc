@@ -370,7 +370,7 @@ stateDiagram-v2
 | ゲート | 内容 | 本書での再定義 | 状態 |
 |---|---|---|:---:|
 | **G-SCIM** | 旧: Metatavu 3 点検証 | **再定義: SCIM Facade の SCIM 2.0 準拠検証**（Entra/Okta SCIM Validator + D1/D2 E2E + Soft Delete 写像 + `deprovisioned_at` セット確認）。Metatavu 3 点は Metatavu 採用判断時のみ再検証（§3.5） | ⬜ |
-| **G-LDAP**（= B-SCIM-13）🚨 最優先 | LDAP User Federation 経由の SPI 発火検証 | LDAP は Broker Flow を通らないため First/Post Broker 配置 SPI が**動かないリスク**。FAIL 時は経路 ③ の deprovisioning 設計（LDAP Sync 委譲、D3-04）が唯一の防御となるため、Browser forms 配置での発火可否 + 追加 Flow 要否を確定 | ⬜ |
+| ~~**G-LDAP**（= B-SCIM-13）~~ | ~~LDAP User Federation 経由の SPI 発火検証~~ | 🔴 **2026-08-27 廃止（C-8）**: **経路 ③（LDAP）は Phase 1 対象外**（P-12）のため検証対象が存在しない。**将来 LDAP 顧客が入る場合は本ゲートを最優先で復活させる**（LDAP 経由の利用者は通常のログイン処理を通らず、そこに置いた拡張が動かないため、退職者の遮断設計が成立しなくなる） | ❌ 廃止 |
 | B-SCIM-12 ⚠ | SAML IdP 経由フェデ JIT の SPI 検証（V3'''） | First/Post Broker 共通のため PASS 見込みだが NameID handling 差を確認 | ⬜ |
 | B-SCIM-14 ⚠ | 実 IdP（Entra/Okta trial）統合テスト | Phase 1 β 必須。Claims マッピング / `iss` 形式 / **SPI ①での** `provisioned_by=jit` セット確認 | ⬜ |
 

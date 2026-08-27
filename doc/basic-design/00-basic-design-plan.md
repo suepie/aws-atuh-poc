@@ -67,7 +67,7 @@
 ### U3. ID・プロビジョニング・ライフサイクル設計
 - 決めること: 3 階層識別子の DB スキーマ / マッピング DB（ADR-054）、JIT/SCIM 共存の Case 1-5 判別ロジック、ライフサイクル S1-S10・責任分界 L1-L3、削除 3 段階モデル（§10.4.K）+ Phase 2 物理削除バッチ仕様（deprovisioned_at）、SCIM エンドポイント設計（/scim/v2、Metatavu PoC 3 点の残検証）
 - 主インプット: ADR-018/025/054、jit-scim-coexistence-keycloak.md §10.4.G/H/I/J/K/L、scim-deletion-realtime-detection.md
-- ゲート: B-SCIM-12(SAML)/B-SCIM-13(LDAP 🚨)/B-SCIM-14(実 IdP)、B-JIT-LC-1/B-JIT-RA-1/B-SCIM-JIT-1
+- ゲート: B-SCIM-12(SAML)/B-SCIM-14(実 IdP)、B-JIT-LC-1/B-JIT-RA-1/B-SCIM-JIT-1 ※~~B-SCIM-13(LDAP)~~ は **2026-08-27 廃止（C-8、P-12 で LDAP は Phase 1 対象外）**
 - **新規論点（P-17）**: IdP-KC 同居アカウントのアプリからのユーザ登録・削除経路の設計（Keycloak Admin API 直叩き vs SCIM vs 専用 API 層）。`provisioned_by` の第 3 の値（app 発 CRUD）とライフサイクル S1-S10・Re-Activation SPI 除外条件への影響整理
 
 ### U4. 認証体験・UX 設計
@@ -122,7 +122,7 @@ U1（前提凍結）
 |------|---------------------------|------------------------------|
 | U1 | 01-architecture-baseline.md | MAU 幅の解消ロジック、ROSA Classic vs HCP + RHBK サブスク、コア/エッジ判定基準 |
 | U2 | 02-keycloak-logical-design.md | **1000+ IdP/Org スケール実証（最重要）**、Organizations の属性格納制約、SPI 3 系統配置の realm.json 表現 |
-| U3 | 03-identity-provisioning-design.md | Metatavu SCIM 残 PoC、B-SCIM-13(LDAP) の扱い、アプリ発ユーザ CRUD 経路（P-17） |
+| U3 | 03-identity-provisioning-design.md | Metatavu SCIM 残 PoC、アプリ発ユーザ CRUD 経路（P-17） ※~~B-SCIM-13(LDAP)~~ は 2026-08-27 廃止（C-8） |
 | U4 | 04-auth-ux-design.md | Keycloak Theme と A11y の両立、Sorry の Lambda@Edge 実装 |
 | U5 | 05-token-session-authz-design.md | クレーム辞書のテナント拡張規約、RP 実装ガイド様式 |
 | U6 | 06-infra-network-design.md | サイジング計算（フェデ比率 B-BROK-1 の暫定値要設定）、他組織管理の境界アカウントへの要求仕様書式、Broker↔IdP-KC クロスアカウント経路 |

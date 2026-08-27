@@ -244,7 +244,7 @@ post-broker-std（Post Broker Login Flow）
 - **初回二重発火への対応**: 初回ログインでは First → Post が**連続して発火**する（PoC V3'' 新知見）。SPI の debounce・Re-Activation 分岐は両 Flow 兼用で冪等に実装する（§2.4.3）。
 - **根拠**: PoC V3''（フェデ JIT 経路 P-3 主用途）で 3 系統配置の動作を実測 PASS（[jit-scim §10.4.F.9](../common/jit-scim-coexistence-keycloak.md)、[ADR-060 §C.2.3](../adr/060-auth-protocol-attack-path-residual-tbd.md)）。
 - **代替案**: Event Listener SPI での属性書込 — Keycloak Issue #14942 により動作しない可能性が高く不採用（案 B = Authenticator SPI 確定）。
-- **未決事項**: **V3'' の外部 IdP は Keycloak モック（OIDC のみ）**。SAML IdP（B-SCIM-12）/ LDAP User Federation（B-SCIM-13 🚨 LDAP は Broker Flow を通らないため本節の配置では SPI が発火しない）/ 実 IdP 統合（B-SCIM-14）は Phase 1 前ゲート（§2.8）。
+- **未決事項**: **V3'' の外部 IdP は Keycloak モック（OIDC のみ）**。SAML IdP（B-SCIM-12）/ 実 IdP 統合（B-SCIM-14）は Phase 1 前ゲート（§2.8）。~~LDAP User Federation（B-SCIM-13）~~ → 🔴 **2026-08-27 廃止（C-8）**: **LDAP 経路は Phase 1 対象外**（P-12、LDAP 利用の顧客が存在しないため）。将来 LDAP 顧客が入る場合は本ゲートを復活させる。
 
 ### 2.3.3 系統③: HRD（Home Realm Discovery）
 
@@ -364,7 +364,7 @@ flowchart LR
 | 処理 | (1) **Re-Activation 分岐**（`enabled=false` の場合）: `provisioned_by=scim` or `scim_active=true` → **拒否**（SCIM 明示削除の再有効化禁止 = セキュリティ上重大）/ `local-admin` → 拒否（運用者操作待ち）/ `app` → **拒否 + 専用監査ログ**（アプリ経由 reactivate API のみ許可、D3-05）/ `ldap` → 拒否（LDAP Sync 委譲）/ `jit` → `setEnabled(true)` + `reactivated_at` 書込 + `USER_REACTIVATED` 監査イベント / 未設定等の想定外 → **安全側拒否**。(2) `last_login` 書込（epoch ms、**debounce 1 日**、初回 First+Post 連続発火に対し冪等） (3) `provisioned_by` **未設定の場合のみ** `jit` / `jit_idp_alias` / `jit_created_at` を書込。**既設定値は経路を問わず上書き禁止**（D3-04 Case 1/6 保護 — SCIM 先登録ユーザの初回フェデログインで `scim`→`jit` 上書きを防ぐ） |
 | 失敗時挙動 | Re-Activation 拒否 = `USER_DISABLED` でログイン失敗（fail-closed）。**属性書込失敗はログイン自体を失敗させない**（WARN ログ + イベント emit のみ。可用性 > 記録完全性。書込欠落は 90 日バッチ側の安全側判定（無効化前アラート）で補償 — U3） |
 | 根拠 | [ADR-060 §C.2.3](../adr/060-auth-protocol-attack-path-residual-tbd.md)（案 B 確定 + Re-Activation 統合）、[jit-scim §10.4.F/I](../common/jit-scim-coexistence-keycloak.md)、PoC V3'/V3'' |
-| 未決事項 | LDAP User Federation 経路（Broker Flow 非通過）での発火設計（B-SCIM-13 🚨）。Re-Activation の要否・条件自体は B-JIT-RA-1（顧客合意、U3 ゲート） |
+| 未決事項 | ~~LDAP User Federation 経路での発火設計（B-SCIM-13）~~ → **2026-08-27 Phase 1 対象外（C-8）**。Re-Activation の要否・条件自体は B-JIT-RA-1（顧客合意、U3 ゲート） |
 
 ### 2.4.2 SPI ②: HRD Authenticator
 
@@ -561,7 +561,7 @@ Broker 内部 username は `<orgAlias>-<userid>`（Username Template Importer �
 
 | ゲート | 主管 | 本書への影響 |
 |---|---|---|
-| **B-SCIM-13（LDAP、🚨最優先）** | U3 | LDAP User Federation は Broker Flow を通らず SPI ① 3 系統配置が無効。LDAP 顧客が Phase 1 に入るなら §2.3.2 / §2.4.1 の追加設計必須 |
+| ~~**B-SCIM-13（LDAP）**~~ | U3 | 🔴 **2026-08-27 廃止（C-8、P-12 で LDAP は Phase 1 対象外）**。技術的な論点（LDAP 経由の利用者は通常のログイン処理を通らないため、そこに置いた拡張が動かない）は**将来 LDAP 顧客が入るときのために記録として残す** |
 | B-SCIM-12（SAML フェデ） | U3 | First/Post Broker Flow は共通の見込みだが未実測。SAML IdP テンプレート（IdP alias `-saml01`）の Mapper 定義を実測後に確定 |
 | B-SCIM-14（実 IdP 統合） | U3 | login_hint 転送 / claims 差 / `mfa_indicator` 正規化の実地確認（§2.4.4） |
 | B-JIT-RA-1 / B-SCIM-JIT-1 / B-JIT-LC-1 | U3 | Re-Activation 要否・JIT/SCIM 混在ポリシー・S7 ポリシー。回答次第で §2.4.1 の分岐仕様を確定版に改訂 |
@@ -589,7 +589,7 @@ Broker 内部 username は `<orgAlias>-<userid>`（Username Template Importer �
 |---|---|---|
 | 1 | RHBK 26.4 × upstream SPI 互換（全 SPI） | G-SPI-Compat |
 | 2 | HRD SPI の forms 先頭配置の Flow 互換実測 | G-SPI-Compat に追加 |
-| 3 | LDAP 経路の SPI 発火設計 | B-SCIM-13 後（U3 合同） |
+| ~~3~~ | ~~LDAP 経路の SPI 発火設計~~ | 🔴 **2026-08-27 Phase 1 対象外（C-8）** |
 | 4 | 2-tier client 認証の private_key_jwt / mTLS 昇格時期 | U6 |
 | 5 | 複数 IdP リンク時の優先度属性・セレクター UX | U4 合同 |
 | 6 | 顧客拡張属性の受入枠（`ext_` プレフィックス案） | U3（SCIM スキーマと同時） |
