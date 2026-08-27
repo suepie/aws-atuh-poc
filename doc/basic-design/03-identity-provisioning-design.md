@@ -399,6 +399,8 @@ stateDiagram-v2
 
 ### 3.8.0 管理コントロールプレーン全体構成（ブランド主役 + EventBridge 2 本、2026-08-06 [ADR-063](../adr/063-brand-unit-architecture.md)/[ADR-062](../adr/062-idm-api-execution-form-lambda.md)）
 
+> **テナント別の機能出し分けの標準方法（2026-08-27 明文化）**: 「ログイン後にテナントごとにデフォルト機能・メニューを出し分けたい」は**本節の `/api/me/context` で解く**のが標準。テナント別のデフォルト機能セットは **authz DB のテナント設定行**（SSOT = ADR-038 Backend、管理画面から変更・リリース不要）に置き、アプリはログイン直後に context を 1 read して UI を出し分ける（参照実装 = ランチパッド [U4 D-U4-06](04-auth-ux-design.md)）。**アンチパターン 3 つ**: ① JWT に機能フラグを載せる（P-10 Stage 1 最小 + 30 分固定で変更が遅延）② KC roles/groups で機能制御（D3-14 で禁止済み）③ アプリごとの独自テナント設定 DB（分散して乖離する）。前提 = 全アプリが context API を呼べること（**QA-BIND-01** で確認中）。1 ユーザ複数テナント所属の切替は Phase 1 スコープ外（§FR-2.3.C）。
+
 CRUD・権限・authz・projection はブランド側（idm-api）でローカル完結し、**アカウント越境は EventBridge の 2 本のみ**（① 削除 `user.deprovisioned` = idm-api→Broker〔outbox で必達〕/ ② 初回 sub 通知 = Broker→ブランド）。ホットパス（`/api/me/context`）はブランドローカル read で越境ゼロ。
 
 ```mermaid
@@ -539,6 +541,7 @@ sequenceDiagram
 
 ## 改訂履歴
 
+- 2026-08-27 (2): **§3.8.0 にテナント別機能出し分けの標準方法を明文化** — `/api/me/context` + authz DB テナント設定行で解く（参照実装 = ランチパッド D-U4-06）。アンチパターン 3 つ（JWT 機能フラグ / KC roles 制御 / アプリ独自テナント設定 DB）を明記。前提 = QA-BIND-01（全アプリが context を呼べるか）。
 - 2026-08-27: **D3-09 に対外表明の規律を追加** — 第 3 段階（物理削除、Phase 2）は**実施時期が未確定**のため、**顧客説明・契約で時期を伴う将来提供を述べない**（[U5 §5.2.4](05-token-session-authz-design.md) と同一方針）。**帰結として「削除完了」の証明書は第 3 段階の実施が前提**である旨を明示し、[B-TENANT-EXIT-1](../requirements/hearing-checklist.md) の契約文言へ連動。`deprovisioned_at` の全経路セットは**第 3 段階の実施可否に関わらず Phase 1 で必ず行う**（後から遡れないため）と補強。
 - 2026-08-06: **属性正準化（[attribute-canonicalization ノート](research/attribute-canonicalization-notes.md)）と 射影 vs 都度 join 結論（[me-context-projection 比較ノート](research/me-context-projection-comparison-notes.md)）を反映** — D3-15 に「顧客 IdP 素通し不可・正準スキーマ写像/基盤付与・source 3 ケース・②が①で上書きされない規約・hosted 編集可/federated 読取のみ・移行マッピング表」、D3-16 に「Option A（射影）維持・都度 join は P-17 抵触で却下・ハイブリッド案 2 部分射影・G-SCIM 実測」を追記（[ADR-062](../adr/062-idm-api-execution-form-lambda.md) 系の管理コントロールプレーン確定と連動）。
 - 2026-08-06: **削除の確実性 = A 案（outbox）確定** — D3-17 を「IdP-KC トリガーのイベント駆動」から **outbox パターン**（soft-delete + outbox を authz DB 1 Tx / リレーが EventBridge へ必達送信 / shadow 制御 Lambda 冪等 / **遮断チェックのみ数分リコンサイル**）に更新。楽観文言「数秒/24h 回避」を worst-case 正しく是正（通常数秒 / worst = リコンサイル間隔）。**ロックアウト SLA を Open Item に格上げ**。§3.8.0 に管理コントロールプレーン全体構成図（ブランド主役 + EventBridge 2 本 + outbox）を新設。
