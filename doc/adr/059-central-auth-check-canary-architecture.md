@@ -2,6 +2,16 @@
 
 - **ステータス**: Proposed（要件定義フェーズで Accepted 昇格予定）
 - **日付**: 2026-07-06 作成、**2026-07-24 更新（基本設計 Wave 3 [U9 D-U9-16](../basic-design/09-operations-observability-design.md): Canary 実行環境を弊社監査 Acct へ配置変更 + 運用主体 = 弊社 SRE。§M.4 逆転採用）**
+
+---
+
+> ### 📌 2026-08 決定の反映（C-3、基本設計 8 月分）
+>
+> 監視の**到達経路が変わった**: 管理 API は **VPC-M（Transit に繋がないネットワーク）** に移った（[ADR-062](062-idm-api-execution-form-lambda.md) / [U6 §6.2.5](../basic-design/06-infra-network-design.md)）。
+>
+> - **外形監視（外から叩く）は影響なし** — 入口は配信基盤 → API ゲートウェイ → 関数の直接呼び出しで、**ネットワーク経路を通らない**ため。
+> - **内部から叩く監視を作る場合は不可**。VPC-M には**外から入る経路が存在しない**（出る方向専用）。内部監視が必要なら**監視処理自体を VPC-M 内に置く**しかない。
+> - 監視用の読み取り専用資格のスコープ設計は [00a D-9.3](../basic-design/00a-remaining-tasks-and-effort.md) で確定する。
 - **関連**:
   - [ADR-039 ネットワーク監査アカウント設計](039-centralized-network-account-edge-layer.md)（Origin Protection、本 ADR の配置前提。**2026-07-24: 参照は v3〔6 アカウント体系、NW 監査 Acct = 他組織管理 — P-18〕へ読み替え**）
   - [§C-API-6 §C-6.6 認証実装漏れ検知 5 レイヤー](../api-platform/proposal/common/06-external-api-auth-architecture.md#c-6-6-認証実装漏れの-6-パターン--5-検知レイヤー)（本 ADR は L5 Behavioral の実装詳細）

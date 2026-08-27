@@ -34,7 +34,7 @@
 | P-06 | テナント分離 | L2 単一 Realm + Organizations + tenant_id クレーム | ADR-017/033/058 |
 | P-07 | ユーザーカテゴリ | γ シナリオ（管理者層のみローカル、P-3 はフェデ強制） | §FR-1.2.0.0 第一推奨。β フォールバック余地を残す |
 | P-08 | 識別子 | 3 階層（Layer A sub UUID / Layer B `<tenant>-<userid>` / Layer C IdP sub）、email は補助属性 | ADR-018/054/055 |
-| P-09 | トークン | AT 30 分 / RT 30 日 + Rotation / 絶対 24h / アイドル 1h / 署名 ES256 | §NFR-4.2、ADR-045 |
+| P-09 | トークン | AT 30 分 / **RT 30 日 + Rotation ※実効は最大 24h** / 絶対 24h / アイドル 1h / 署名 ES256 | §NFR-4.2、ADR-045 ※ **2026-08-27 精密化（C-2③）: 「RT 30 日」は設定上の上限値であり、実効寿命はセッションの絶対 24h に従属する**（[U5 §5.2.2](05-token-session-authz-design.md)）。30 日級の長期ログインは Phase 1 では成立しない |
 | P-10 | JWT クレーム | Stage 1 最小（iss/sub/aud/azp/tenant_id/exp/iat）、PII 非搭載 | ADR-030 |
 | P-11 | SSO 信頼レベル | L1 完全信頼デフォルト、L3 は規制業種オプション | §FR-4.2 |
 | P-12 | プロビジョニング | JIT + SCIM 受信併用（native inbound SCIM 非依存、Custom Authenticator SPI 案 B、3 系統 Flow 配置） | PoC V1〜V3'' 検証済 |
@@ -53,7 +53,7 @@
 - 既知の矛盾・改訂必要文書（本単元で解消）:
   1. MAU 前提 100K〜10M の幅（P-02）
   2. ~~EKS vs ECS~~ → **ROSA HCP + RHBK Operator で解消（2026-07-23 調査済み）**。ADR-056 改訂骨子は research/rosa-hcp-adoption-research.md に作成済み。波及: ADR-041（IRSA 方式へ）/ ADR-055 §A.6-A.7 / ADR-051（大阪成立追記）/ rosa-detailed-analysis.md / rhbk-support-and-pricing.md
-  3. ADR-040 PAM は Out of Scope 化済みだが §FR-8.6/NFR 側に記述残存 → 参照整理
+  3. ~~ADR-040 PAM は Out of Scope 化済みだが §FR-8.6/NFR 側に記述残存 → 参照整理~~ → 🔴 **2026-08-27 前提が反転（C-5）**: [ADR-040](../adr/040-pam-jit-admin-privilege-management.md) は **2026-07-23 に Phase 1 実装対象へ格上げ**（運用も要件定義に含めるユーザー要望）。**「Out of Scope 残存参照の整理」ではなく「Phase 1 対象としての整合」が正しい作業**
   4. ADR-033/§C-7: IdP-KC 同一 Acct 前提 → 別 Acct 配置（P-17）に改訂
   5. ADR-039 v2: ネットワーク監査 Acct 自管理前提 → 他組織管理（P-18）に責任分界を改訂
   6. ~~§NFR-3.1/3.2「10K IdPs 実証あり」~~ → **誤りと判明、2026-07-23 修正済み**（10K は Keycloak #45293 の未実装将来目標。実装済みは 1K 目標のみ、実測未公開） |
@@ -71,7 +71,7 @@
 - **新規論点（P-17）**: IdP-KC 同居アカウントのアプリからのユーザ登録・削除経路の設計（Keycloak Admin API 直叩き vs SCIM vs 専用 API 層）。`provisioned_by` の第 3 の値（app 発 CRUD）とライフサイクル S1-S10・Re-Activation SPI 除外条件への影響整理
 
 ### U4. 認証体験・UX 設計
-- 決めること: HRD 画面フロー + フォールバック UX、ログイン画面ブランディング（ADR-024 パターン A/A'）、Post-login Landing（Pattern 1）+ Sorry Page（CloudFront + Lambda@Edge）、MFA 4 ケース別フロー（amr 評価 → WebAuthn → TOTP → ローカル）、A11y WCAG 2.2 AA 適用箇所
+- 決めること: HRD 画面フロー + フォールバック UX、ログイン画面ブランディング（ADR-024 パターン A/A'）、Post-login Landing（Pattern 1）+ **Sorry 画面 = 基盤側の画面として実装**（2026-08-27 是正 — C-5。旧記述「配信基盤側で実装」は **P-18 でインターネット境界が他組織管理となり我々が実装を保証できない**ため [U4 D-U4-07](04-auth-ux-design.md) で変更済み。他組織へは要求仕様として提示）、MFA 4 ケース別フロー（amr 評価 → WebAuthn → TOTP → ローカル）、A11y WCAG 2.2 AA 適用箇所
 - 主インプット: ADR-020/021/022/024/026/031/043、§FR-3.4/3.5、§FR-4.3
 
 ### U5. トークン・セッション・認可設計

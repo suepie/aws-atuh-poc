@@ -756,6 +756,7 @@ ROSA（OVN-Kubernetes）では **Pod IP はオーバーレイ（`10.128.0.0/14`�
 | REQ-OUT-01 | Egress ルールグループ設置 + 更新委任（上記 D-U6-13 本文） | — |
 | REQ-OUT-02 | デフォルト Deny の維持 | Broker/IdP-KC の **Worker サブネット CIDR** からの許可外 Egress は drop + alert（C2 通信検知。弊社側も SG Egress 最小化で二重化、ADR-010） |
 | REQ-OUT-03 | Firewall Alert/Flow ログの共有 | Network Firewall Alert Log と該当 Flow Log を弊社監査 Acct へ配信（S3 レプリケーション or 購読）。ITDR（L-GD 系検知、ADR-060 §C.2.2）の入力に必要 |
+| **REQ-OUT-06** 🆕 | **通知配信の Egress 許可**（2026-08-27 起票 — C-4、[U10 §10.3.3](10-integration-migration-design.md) からの依頼） | **送信元・宛先とも REQ-OUT-01 とは別物**（REQ-OUT-01 = 認証製品 → 顧客の認証システム／本項 = **通知配信処理 → 顧客アプリの受け口**）。**送信元 = VPC-M の関数用サブネット CIDR（3AZ 分）**、**宛先 = 顧客が登録した受け口の FQDN**（テナント追加のたびに増える → [U9 RB-TEN-07](09-operations-observability-design.md) に FQDN 追加手順を組込み）。デフォルト Deny・許可外は drop + alert は REQ-OUT-02 と同一 |
 | REQ-OUT-04 | DNS 解決の整合 | 顧客 IdP FQDN の名前解決経路（Route 53 Resolver）と Firewall の FQDN 評価が同一解決系であること（DNS 分裂による誤 drop 防止） |
 
 ### 6.7.4 要求仕様の運用

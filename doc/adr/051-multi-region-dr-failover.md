@@ -3,6 +3,18 @@
 - **ステータス**: Proposed（要件定義フェーズで Accepted に昇格予定）
 - **日付**: 2026-06-23 作成、**2026-07-23 更新（ROSA HCP 転換: 大阪対称構成の成立確認 + multi-cluster v2 追記 + 基本設計 [U8](../basic-design/08-availability-dr-design.md) §8.8 に基づく正式改訂: Realm Export 全廃 → 復元 2 経路（IaC 再適用 + Aurora Global DB）/ パイロットライト（KC Scale 0）/ Tier 1 Phase 2 化 / コスト ROSA 実額化）**、**2026-07-24 更新（U9 確定: テナント層 IaC 再生を自作オンボーディング API に一本化 — U9 D-U9-10）**、**2026-07-30 更新（D-18: DR をパイロットライト → 手動コールド DR〔RTO ≈ 14 日・大阪オンデマンド再構築〕へ転換 + イミュータブルスナップショット追加。冒頭バナー参照、U8 D-U8-14 が SSOT）**
 
+---
+
+> ### 📌 2026-08 決定の反映（C-3、基本設計 8 月分）
+>
+> 復旧の対象と手順が **8 月の 3 決定**で変わる:
+>
+> 1. **ネットワークが 1 つ → 2 つになった**（[U6 §6.2.5](../basic-design/06-infra-network-design.md)）。**再構築対象は VPC-K（認証製品・利用者情報）と VPC-M（管理・権限）の 2 系統**であり、**両者を繋ぐ閉域接続の受け口も作り直しが必要**（作成に承認手続が要るため、復旧時間の見積に含めること）。
+> 2. **CIDR の事前確保が VPC-M 分も必要**。VPC-M は隠蔽帯を使うため、切替先でも同じ帯を確保しておく（クラスタ作成後に変更できないのは VPC-K と同様）。
+> 3. **DB が 3 系統になった**（認証製品用 × 2 + 権限用 × 1）。**権限用 DB は管理 API と非同期処理群からしか到達できない**ため、復旧順序は「権限用 DB → 管理 API → 認証製品」となる（逆順では疎通確認ができない）。
+>
+> ⚠ **RTO への影響は未評価**。現行の「約 14 日」は単一ネットワーク前提の見積であり、上記 3 点を織り込んだ再見積が必要 → [00a D-18.3](../basic-design/00a-remaining-tasks-and-effort.md) で実施。
+
 > **2026-07-23 実行基盤転換に伴う追記（[ADR-056](056-rosa-adoption-decision.md) 逆転）**:
 > - **大阪（ap-northeast-3）は ROSA HCP 対応済み**（AWS 公式リージョン表 2026-07-23 確認）→ **東京 + 大阪の ROSA HCP 対称 DR 構成が成立**。本文の実行基盤記述（EKS/ECS 前提箇所）は ROSA HCP に読み替え。残 TBD: 大阪側インスタンス在庫・vCPU クォータの実確認
 > - **Keycloak 26.1 以降 `jdbc-ping` がデフォルト**（multicast 不要、ノードディスカバリは KC DB 経由）。**multi-cluster v2 で外部 Infinispan 要件が撤廃**され、同期レプリケーション DB を single source of truth とする構成に簡素化。**RHBK 26.4 HA Guide は Aurora PostgreSQL 15/16/17 を multi-site HA サポート DB に明記**し、keycloak-benchmark 公式が「ROSA クロスサイト + Aurora」を手順化 — 本 ADR の Aurora Global DB 方針と方向一致（RHBK での multi-cluster v2 サポート版数確認は残 TBD）

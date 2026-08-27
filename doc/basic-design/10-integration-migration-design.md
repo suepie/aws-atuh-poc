@@ -598,11 +598,11 @@ flowchart TB
 |---|---|---|---|
 | U10-OP-1 | SAML 用 RSA 鍵・証明書のローテーション周期と SN 側再登録手順（2 証明書並走の可否） | 年 1 回 + 2 世代並走 | U7 ADR-045 設計時 |
 | U10-OP-2 | Webhook critical イベントの配信 SLA 値 | < 1 分目標（ベストエフォート） | §FR-9.3 TBD-A 回答 |
-| U10-OP-3 | エンタイトルメントテーブルと App Registry（ADR-059）のスキーマ統合 | 同居・同一 `app_id` 名前空間 | U9 の Canary Blueprint 設計時 |
+| U10-OP-3 | 権限テーブルとアプリ台帳のスキーマ統合 | 同居・同一 `app_id` 名前空間 | **決着させる作業 = [00a D-9.1](00a-remaining-tasks-and-effort.md)（1.5 人日）**（2026-08-27 参照付与 — C-5） |
 | U10-OP-4 | 管理画面 Backend の監査ストア（DynamoDB）と U7 監査 Acct の二重書きの整合方式 | EventBridge から二又配信 | U7/U9 実装設計時 |
 | U10-OP-5 | DSAR Phase 2 前倒しトリガー（月 10 件超）の妥当性 | 月 10 件 | 運用実績 3 ヶ月 |
 | U10-OP-6 | オンボーディング承認 UI（U9 §9.7 ステップ 2）を idm-api / 管理画面 Backend に共用するか | 共用（ADR-038 Backend 基盤共用） | U9 §9.7 / Phase 1 実装設計時 |
-| U10-OP-7 | `canary-central-readonly` Client のスコープ設計（読取専用 audience の付与規約） | U5 §5.8 のスコープ規約に準拠 | U9 D-U9-16 / Phase 1 実装時 |
+| U10-OP-7 | `canary-central-readonly` Client のスコープ設計（読取専用 audience の付与規約） | U5 §5.8 のスコープ規約に準拠 | **決着させる作業 = [00a D-9.3](00a-remaining-tasks-and-effort.md)（2 人日、承認 UI 共用・監視スコープ・SLO 境界と一括）**（2026-08-27 参照付与 — C-5） |
 | U10-OP-8 | Admin API SLO にユーザ管理画面 API（idm-api）を含める境界 | idm-api は Admin API SLO（99.5%）区分に含める | U9 §9.2 と合同確定 |
 | **U10-OP-9** | **監査ログ 7 年保持の法令根拠の確定**（D-U10-13c） | 暫定 = 契約・監査要件（PCI DSS は B-PCI-1 で Phase 1 対象外化済み） | **[Q&A Q9-24](https://www.ppc.go.jp/files/pdf/250701_APPI_QA.pdf) が「将来の行政調査等のための保管」を正当化根拠として否定**しているため、**7 年の根拠を「法令上の保存義務」「契約上の義務」「その他」のどれで説明するかを確定**する必要がある。根拠が契約のみなら、消去請求時の代替措置・通知（35 条 7 項）の説明文が変わる。**F-3 法務 / G-DPA と同一バッチ**で確認 |
 

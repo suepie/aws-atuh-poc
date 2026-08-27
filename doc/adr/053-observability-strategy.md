@@ -2,6 +2,20 @@
 
 - **ステータス**: Proposed（要件定義フェーズで Accepted に昇格予定）— **2026-07-24 付記: Accepted 昇格可（U9 確定による）**
 - **日付**: 2026-06-23 作成、**2026-07-24 更新（基本設計 Wave 3 [U9](../basic-design/09-operations-observability-design.md) 実装確定を反映 — 下記注記参照）**
+
+---
+
+> ### 📌 2026-08 決定の反映（C-3、基本設計 8 月分）
+>
+> **監視対象に 3 つ追加**（いずれも 8 月の決定に由来し、無いと障害が沈黙する）:
+>
+> | 追加する監視 | 理由 |
+> |---|---|
+> | **ネットワーク間の閉域接続 2 本の疎通** | 切れると管理操作と認証の裏経路が同時に止まるが、**アプリからは「なぜか失敗する」としか見えない**（[U6 §6.2.5.3](../basic-design/06-infra-network-design.md)） |
+> | **DB 接続の使用率**（3 系統それぞれ） | [接続予算表](../basic-design/06-infra-network-design.md)の **60% を超えたら方式の見直しが必要**。台数が増えると比例して増えるため、**気付かないうちに上限へ近づく** |
+> | **ノードの時刻ずれ** | [D-U6-17](../basic-design/06-infra-network-design.md)。**沈黙型の障害**（ずれても正常に動き続け、閾値超過の瞬間に全ログインが失敗する） |
+>
+> また **本番でのログ出力レベルを詳細側に上げることを禁止**する（禁則 K-13）。詳細ログには利用者の個人情報が生のまま出るため、[基盤の運用元から閲覧されうる](../basic-design/research/rosa-sre-live-log-visibility-2026-08-14.md)。
 - **関連**:
   - [ADR-033 Keycloak 2-tier アーキテクチャ](033-keycloak-2tier-broker-idp-architecture.md)
   - [ADR-035 ITDR](035-identity-threat-detection-response.md)

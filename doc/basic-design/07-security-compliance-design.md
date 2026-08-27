@@ -524,7 +524,7 @@ flowchart LR
 
 - **根拠**: ADR-040 §A/§B、P-17。Composite Role 2 状態モデルは Keycloak ネイティブで追加製品ゼロ。
 - **代替**: ADR-040 §F の通り（CyberArk 等は不採用済み）。
-- **未決**: L3 昇格 API の実装配置（管理画面 Backend 同居 vs 独立ツール）— ADR-040 P1-05 の実装設計時（T-6〜T-3）に確定。
+- **未決**: L3 昇格 API の実装配置（管理画面 Backend 同居 vs 独立ツール）→ **決着させる作業は [00a D-15「権限を一時的に上げる仕組みの置き場所」](00a-remaining-tasks-and-effort.md)（2 人日）**。**[ADR-040](../adr/040-pam-jit-admin-privilege-management.md) は 2026-07-23 に Phase 1 実装対象へ格上げ済み**（Out of Scope ではない）ため、本件は着手可能（2026-08-27 参照付与・前提是正 — C-5）。
 
 ### 7.6.2 決定 D-U7-12: /admin 経路・監査ログ集約の整合確定
 

@@ -2,6 +2,15 @@
 
 - **ステータス**: Proposed（要件定義フェーズで Accepted に昇格予定）
 - **日付**: 2026-06-15 作成、**2026-07-24 更新（基本設計 Wave 3 [U10 §10.1](../basic-design/10-integration-migration-design.md) 是正: 第 1 Matching 属性 = `employee_number` / roles Phase 1 非送出 / SP-initiated のみ / Case 1-6 — §F・§L.8 注記参照）**
+
+---
+
+> ### 📌 2026-08 決定の反映（C-3、基本設計 8 月分）
+>
+> **§L.8 の実装スコープに対する 8 月分の影響 = 軽微**。連携は SAML（ブラウザ経由）で成立するため、ネットワーク分離の影響を受けない。ただし 2 点を明記する:
+>
+> 1. **将来 SCIM で押し込む方式（Phase 2）を採る場合の送信元は VPC-M 側**になる（管理系がそちらへ移ったため）。その際の外向き通信許可は **[REQ-OUT-06](../basic-design/06-infra-network-design.md)（2026-08-27 起票）の枠**を使う。
+> 2. **利用者の停止が連携先に効く仕組みは変わらない** — 本基盤側で無効化すれば認証が拒否され、連携先の利用も止まる（連携先の利用者情報は履歴保持のため残す）。
 - **関連**:
   - [§FR-2.4 外部 SP（SaaS）連携 — ServiceNow ケース](../requirements/proposal/fr/02-federation.md#fr-24-外部-spsaas連携--servicenow-ケース)
   - [§FR-7.4.10 発信プロビジョニング（基盤 → ServiceNow 等）](../requirements/proposal/fr/07-user.md#fr-7410-発信プロビジョニング基盤--servicenow-等)

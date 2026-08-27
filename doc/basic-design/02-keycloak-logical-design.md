@@ -85,7 +85,7 @@ P-01（ROSA HCP + RHBK）/ P-02（10M MAU）/ P-06（L2 単一 Realm + Organizat
 
 - **根拠**: alias は Broker のコールバック URL `/realms/broker/broker/<alias>/endpoint` に固定され、顧客 IdP 側に redirect URI として登録される。alias 変更 = 顧客側再設定であり、IdP 製品乗換（jit-scim §10.4.G S8: Entra→Okta 差替）で alias を変えずに済むよう製品中立の命名とする。`<orgAlias>-` プレフィックスにより IdP 一覧の検索・Terraform/API 操作のスコープが機械的に切れる。
 - **代替案**: `acme-entra` 等の製品名入り（ADR-033 図・PoC の例）— 可読性は高いが S8 で破綻するため本番規則としては不採用。
-- **未決事項**: 同一 Org 複数 IdP（hrd-implementation §4 パターン B）の優先度・セレクタ表示順の属性設計（`idp_priority` Org attribute 案）は U4（UX）と合同で確定。
+- **未決事項**: 同一 Org 複数 IdP（hrd-implementation §4 パターン B）の優先度・セレクタ表示順の属性設計は U4（UX）と合同で確定 → **決着させる作業は [00a D-1「接続先の表示順の決め方」](00a-remaining-tasks-and-effort.md)（2 人日、U2×U4 合同）**（2026-08-27 参照付与 — C-5）。
 
 ---
 

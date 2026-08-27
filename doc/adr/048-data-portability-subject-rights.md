@@ -2,6 +2,20 @@
 
 - **ステータス**: Proposed（要件定義フェーズで Accepted に昇格予定）
 - **日付**: 2026-06-23 作成、**2026-07-24 更新（基本設計 Wave 3 [U10 §10.5](../basic-design/10-integration-migration-design.md): Phase 1 Erasure = Soft Delete + 仮名化、エクスポート/削除は手動運用 — §C 注記参照）**
+
+---
+
+> ### 📌 2026-08 決定の反映（C-3、基本設計 8 月分）
+>
+> **本人からの請求に応じるとき、データの所在が 8 月の決定で変わった**:
+>
+> | 請求内容 | 集めに行く先 |
+> |---|---|
+> | 本人に関する情報の開示 | **認証製品用 DB**（本人の基本情報）＋ **権限用 DB**（使えるアプリ・役割・対応づけ）の **2 系統**。権限用 DB は VPC-M 側にあり、**管理 API 経由でしか読めない** |
+> | 利用の停止・消去 | 停止は認証製品側の状態変更 → **送信予定イベント経由で他方へ伝播**（[ADR-064](064-deprovisioning-propagation-outbox.md)）。**権限側を直接消しても認証製品側は止まらない**点に注意 |
+> | 記録の長期保管分 | **7 年保管領域**（消せない設定のため、請求があっても保存義務が優先する範囲を切り分けて回答する） |
+>
+> → **手作業で対応する前提（Phase 1）でも、3 箇所を回る手順書が要る**。[U10 §10.5](../basic-design/10-integration-migration-design.md) の手順に反映すること。
 - **関連**:
   - [ADR-037 Shared Responsibility Model + 軽量 IGA](037-shared-responsibility-and-lightweight-iga.md)
   - [ADR-038 ユーザ管理画面](038-tenant-admin-portal.md)

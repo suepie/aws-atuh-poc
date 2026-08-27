@@ -2,6 +2,17 @@
 
 - **ステータス**: Proposed（要件定義フェーズで Accepted に昇格予定）
 - **日付**: 2026-06-18 作成、**2026-06-24 認可スコープ C 案ハイブリッド確定**、**2026-06-29 Organization 管理を Phase 1 必須機能に追加（ADR-055 連動）**、**2026-07-24 更新（基本設計 Wave 3 [U10 D-U10-08](../basic-design/10-integration-migration-design.md): API 実装確定 = `idm-api` v1 + ロードマップ一部前倒し + URL `/idm/v1` 正規化 — 下記注記参照）**
+
+---
+
+> ### 📌 2026-08 決定の反映（C-3、基本設計 8 月分）
+>
+> **管理 API の置き場所が確定した**（[ADR-062](062-idm-api-execution-form-lambda.md) / [U6 §6.2.5](../basic-design/06-infra-network-design.md)）:
+>
+> - 管理 API は **VPC-M（管理・権限用ネットワーク）** に置く。**認証製品と同じネットワークには置かない**。
+> - **管理 API は利用者のパスワードのハッシュに到達できない**（経路も接続許可も持たない）。認証製品への操作は**閉域の一方向経路で管理用の口を叩く**形に限定される。
+> - **画面（SPA）は配信基盤から直接配信**され、ネットワーク経路を通らない。
+> - **同時実行数の上限設定が必須**（[接続予算表](../basic-design/06-infra-network-design.md)。上限を設けないと DB の接続枠を食い潰す）。現行の割当は **管理 API 100・権限情報の一括取得 200（参照用の複製側へ振る）**。
 - **関連**:
   - [ADR-037 Shared Responsibility Model + 軽量 IGA](037-shared-responsibility-and-lightweight-iga.md)
   - [ADR-033 Keycloak 2-tier アーキテクチャ](033-keycloak-2tier-broker-idp-architecture.md)

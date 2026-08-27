@@ -17,7 +17,7 @@
 要件定義で「Stage 1 最小クレーム（[ADR-030](../adr/030-minimal-jwt-claim-design.md)）/ TTL 推奨値（§NFR-4.2、P-09）/ ログアウト 4 レイヤー（[§FR-5](../requirements/proposal/fr/05-logout-session.md)）/ 認可はアプリ側（[§FR-6](../requirements/proposal/fr/06-authz.md)）」という**方針レベル**の判断は確定した。しかし Wave 1 の U2（[02-keycloak-logical-design.md](02-keycloak-logical-design.md)）・U3（[03-identity-provisioning-design.md](03-identity-provisioning-design.md)）から、次の**宙吊り事項**が本単元に明示的に委ねられている:
 
 1. **`sid` クレームの確定**: ADR-030（2026-07-23 更新）と U2 §2.5.1 は `sid` を「Stage 1.5（セッション系）として既定発行 — **最終確定は U5**」と保留した。`sid` は Back-Channel Logout の前提であり、ログアウト設計（§5.5）と不可分のため本書で同時に閉じる。
-2. **TTL 体系の最終値**: ADR-025 §I.5 が AT 30 分（P-09 凍結値）へ改訂済みだが、「最終確定は基本設計 U5」と明記。**RT 30 日と絶対 24h の Keycloak 実装上の関係**（§5.2.2）も未整理。
+2. **TTL 体系の最終値**: ADR-025 §I.5 が AT 30 分（P-09 凍結値）へ改訂済みだが、「最終確定は基本設計 U5」と明記。~~**RT 30 日と絶対 24h の Keycloak 実装上の関係**（§5.2.2）も未整理~~ → ✅ **2026-08-27 解消済み（C-2③）**: [§5.2.2](#522-決定-d-u5-02-ttl-体系) で「**継続利用の権利は認証製品の仕組み上セッションに従属するため、単独で 30 日は成立しない。Phase 1 の実効寿命は最大 24 時間**」と確定。30 日級の長期ログイン維持は別方式（Phase 1 は無効）。
 3. **Token Exchange の適用範囲**: §FR-6.3 の判定フローと [token-exchange-spec-and-patterns.md](../common/token-exchange-spec-and-patterns.md) の 7 パターンから、本基盤で実際に有効化する対象・audience 設計・Client 設定方針を確定する必要がある（U2 §2.8.3 が本書からのフィードバックを待っている）。
 4. **専用 API 層の Client Credentials スコープ設計**: U3 D3-05（アプリ発 CRUD = 専用 API 層）が「認可スコープ設計は U2/U5 に引き渡す」とした未決（U3 §3.7.4 #4）。
 5. **RP 実装ガイドの正式骨子**: ADR-057（CSRF 3 層分界）L2/L3 の RP 側要求を、アプリ開発者向けガイドの形に確定する。
@@ -536,7 +536,7 @@ Back-Channel Logout はサーバ間 POST のため、**バックエンドを持�
 | # | 未決事項 | 決定トリガー / 予定 |
 |---|---|---|
 | 1 | **DPoP 導入判断（Phase 2）**: 対象（SPA+BFF 先行 or 全 RP）、SDK 提供範囲 | ADR-060 §B.4 のトリガー ①〜③（ADR-057 §I 検討 / AT 漏洩事案 / 金融顧客要件）。Keycloak 26.1+ で正式サポート済みのため技術ブロックなし |
-| 2 | `acr` 値体系 = ACR-to-LoA "1"/"2"/"3"（U2 §2.3.4）、**max_age は AAL2=900s / AAL3=300s で確定**（U4 D-U4-05 初期値を採用、ADR-026 §H）。残未決は『AAL2/AAL3 を要求する操作一覧（アプリ側契約）』のみ | RP 実装ガイド確定時（アプリ側契約） |
+| 2 | `acr` 値体系 = ACR-to-LoA "1"/"2"/"3"（U2 §2.3.4）、**max_age は AAL2=900s / AAL3=300s で確定**（U4 D-U4-05 初期値を採用、ADR-026 §H）。残未決は『AAL2/AAL3 を要求する操作一覧（アプリ側契約）』のみ → **決着させる作業は [00a D-2「強い本人確認を要求する操作の一覧」](00a-remaining-tasks-and-effort.md)（3 人日）**（2026-08-27 参照付与 — C-5） | RP 実装ガイド確定時（アプリ側契約） |
 | 3 | テナント別 TTL 短縮（5-15 分）の対象テナント・値 | 規制業種顧客ヒアリング（PCI DSS / 金融）。設定方式は §5.2.3 で確定済み |
 | 4 | `offline_access` 解禁の個別審査基準（モバイル長期セッション） | ADR-050 Mobile SDK 設計時（Phase 2） |
 | 5 | Token Exchange Pattern 5（Delegation / `act` 連鎖）の V2 実測と解禁 | B-304 回答 + Phase 2 PoC |
