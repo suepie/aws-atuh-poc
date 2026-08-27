@@ -157,7 +157,7 @@ flowchart TB
 | Control Plane | **Red Hat サービスアカウント内**（API server × 2 + etcd × 3、3 AZ 冗長）。顧客 VPC には出ない。Worker → CP は顧客 VPC 内の **PrivateLink Endpoint** 経由。CP のサイジングは Worker 数に応じ **Red Hat が自動管理**（顧客関与なし） | 同左 | 2026-07-23 ユーザー検討（[research note](research/rosa-hcp-machine-pool-egress-notes.md)） |
 | Ingress | デフォルト IngressController を **Private / NLB** で作成（HCP 新規は CLB でなく **NLB が既定**）。**「platform 用 Private NLB」と「アプリ選択公開用」は追加 IngressController で分離**（OpenShift 4.14+ で HCP もサポート、Red Hat Cloud Experts〔MOBB〕推奨パターン。**ただし追加 IC の LB は Red Hat 管理外の顧客管理リソース扱い** — HCP サービス定義は default IC の LB のみ RH 管理、2026-07-24 検証追記）。前段に自管理 Internal ALB を置き L7 制御（§6.6 の 403 ルール、secret header 検証）を ALB 側で実施 | 同左 | research #1、ユーザー検討、ADR-010 の Private 原則 |
 | ネットワーク | 各 Acct に専用 VPC（Private Subnet × 3 AZ + VPC Endpoint 群: S3 / ECR / Logs / KMS / Secrets / STS）。**CIDR は Broker / IdP-KC / 社内 NW / 顧客 AD 系と重複しないよう採番**（§6.3 PrivateLink 採用により必須ではないが、TGW 転換余地を残す） | 同左 | ADR-010 |
-| **サブネット 4 層設計（2026-07-24 追記、2026-08-17 /23 具体化）** | AZ ごとに用途別 4 層で採番: **① TGW Attachment 用 /28** ② **ALB 専用 /27**（Internal ALB は専用サブネットに分離 — スケール時の ENI 枯渇防止）③ **Node 用 /26（内部 NLB＋Worker＋Infra）**（**OVN-Kubernetes のため Pod 数でなくノード数ベースで採番**。Failover 後の東京同等スケール〔KC Pool max 9/18 + infra〕を収容。/26=59usable に対し最大 ~10/AZ で 8 倍ヘッドルーム）④ **Aurora 用 /28**。→ **AZ あたり /25、3 AZ で VPC = /23（+/25 予備）に収まる**（[research 2026-08-17](research/rosa-vpc-ip-conservation-2026-08-17.md)）。**CIDR はクラスタ install 後に変更不可のため事前確定必須**（大阪側も同サイズで確保、§6.2.4）。**（2026-08-06 追記）層③は idm-api（ブランド管理 API）+ 中央 shadow 制御 + 非同期の糊 Lambda（射影フィード/Webhook/idmap ハンドラ）の VPC ENI アタッチ先も兼ねる（[ADR-062](../adr/062-idm-api-execution-form-lambda.md)、egress 目的、06a §A.5.3）** | 同左 | 2026-07-24 ユーザー検討（[research note](research/rosa-hcp-machine-pool-egress-notes.md)）、2026-08-06 ADR-062、2026-08-17 /23 具体化 |
+| **サブネット 4 層設計（2026-07-24 追記、2026-08-17 /23 具体化）** | AZ ごとに用途別 4 層で採番: **① TGW Attachment 用 /28** ② **ALB 専用 /27**（Internal ALB は専用サブネットに分離 — スケール時の ENI 枯渇防止）③ **Node 用 /26（内部 NLB＋Worker＋Infra）**（**OVN-Kubernetes のため Pod 数でなくノード数ベースで採番**。Failover 後の東京同等スケール〔KC Pool max 9/**29**〔2026-08-27 是正〕+ infra〕を収容。**/26=59 usable に対し IdP-KC 側は 29÷3AZ ≈ 10 ノード/AZ + infra 1 + 内部 NLB の ENI 3 + Lambda ENI 6 ≈ 20 → 約 3 倍ヘッドルーム**（旧「8 倍」は max 18 前提）。**フェデ比率がさらにローカル寄りへ振れると /26 が効き始める**ため、ローカル 100%（58 ノード = 20/AZ）を想定する場合は Node 層を /25 へ拡張すること）④ **Aurora 用 /28**。→ **AZ あたり /25、3 AZ で VPC = /23（+/25 予備）に収まる**（[research 2026-08-17](research/rosa-vpc-ip-conservation-2026-08-17.md)）。**CIDR はクラスタ install 後に変更不可のため事前確定必須**（大阪側も同サイズで確保、§6.2.4）。**（2026-08-06 追記）層③は idm-api（ブランド管理 API）+ 中央 shadow 制御 + 非同期の糊 Lambda（射影フィード/Webhook/idmap ハンドラ）の VPC ENI アタッチ先も兼ねる（[ADR-062](../adr/062-idm-api-execution-form-lambda.md)、egress 目的、06a §A.5.3）** | 同左 | 2026-07-24 ユーザー検討（[research note](research/rosa-hcp-machine-pool-egress-notes.md)）、2026-08-06 ADR-062、2026-08-17 /23 具体化 |
 | **Egress 形態（要決定 O-10）** | 通常構成では **AZ ごとに Public Subnet + NAT Gateway が必須**（Worker の registry.redhat.io / quay / OLM / STS 等への outbound）。**案 A**: NAT GW → 他組織 NFW ドメインフィルタ（P-18 接続）/ **案 B**: `zero_egress:true`（ECR ミラー化）+ **TGW で他組織 Outbound 専用経路へ** — **NAT 不要となり P-18（自 Acct に NAT を置かず他組織アウトバウンド経由）と製品仕様が噛み合うため積極検討**。§6.7.3 参照。**（2026-08-17 追記）本決定は VPC IP 節約策とも連動**: CGNAT 退避／PrivateLink で「ノード CIDR を Transit から隠す」場合、集中 egress（NFW = L3 到達要）と完全隠蔽は **案 B（zero_egress + VPC 内 Interface/Gateway Endpoint）でこそ両立**する（[research 2026-08-17](research/rosa-vpc-ip-conservation-2026-08-17.md)） | 同左 | 2026-07-23 ユーザー検討、2026-08-17 IP 節約連動 |
 
 - **⚠ HCP には専用 Infra Node が存在しない**（Classic の 3 Infra Node は廃止）: ingress **router pod** / in-cluster monitoring(Prometheus) / image registry（デフォルト配備）は **Worker Node に同居**する。**（2026-07-24 公式検証で訂正）OLM 本体（olm/catalog-operator・カタログ Pod）と Ingress Operator・ネットワーク系 Operator は Red Hat 側 Hosted Control Plane 内で稼働**し、Worker 上に載るのは **OperatorHub からインストールした Operator（RHBK Operator 等）とそのワークロード**。KC と infra 系の食い合いを防ぐため、§6.2.2 で **Machine Pool を役割分離**する（2026-07-23 ユーザー検討による設計変更）。
@@ -186,16 +186,46 @@ Tier ごとに CPU プロファイルが 10-30 倍異なる（Broker = JWT/SAML 
 | Machine Pool 構成 | `kc-az1/2/3`（テイント付き）+ `default-az1/2/3`（infra） | 同左 |
 | KC Pool インスタンス（第一候補） | **c7g.xlarge（4 vCPU/8 GB）** — Phase 1 ベースライン | **c7g.xlarge（4 vCPU/8 GB）** — Phase 1 ベースライン |
 | KC Pool スケール上限タイプ | c7g.2xlarge — **サイズ変更 = EC2 作り直しのため、ピーク帯用 c7g.2xlarge Pool を事前に別 Machine Pool として定義**しておき必要時に台数を増やす（Blue/Green、稼働中の作り直し回避） | 同左 |
-| KC Pool ノード数（東京） | min 3（AZ × 1）/ max 9 | min 3 / max 18（フェデ比率感度大、§6.5.3） |
+| KC Pool ノード数（東京） | min 3（AZ × 1）/ **max 9** | min 3 / **max 29**（2026-08-27 是正: 旧 18。フェデ比率 50:50 への改訂で必要 vCPU が 135 → 225 に増加、§6.5.3） |
 | **default（infra）Pool** | **c7g.large × 2〜3/クラスタ**（monitoring 規模で増減、準静的） | 同左 |
 | 代替（Graviton 非対応時） | c7i.xlarge | m7i.xlarge（Argon2id メモリ余裕） |
-| KC Pod リソース | requests 2 vCPU / 3 GB、`MaxRAMPercentage=60-70`、G1GC | 同左 + Argon2id メモリ余裕（§6.5.4） |
+| KC Pod リソース | **少数大型 Pod モデル = 1 ノード 1 KC Pod**（下記 6.2.2a）。requests はノード割当可能量のほぼ全量（c7g.xlarge 期 = 3 vCPU / 6 GB、c7g.2xlarge 期 = 6.5 vCPU / 13 GB）、`MaxRAMPercentage=60-70`、G1GC | 同左 + Argon2id メモリ余裕（§6.5.4） |
 
 - 根拠: インスタンス候補と 3y RI 単価は [sizing-guide §8](../reference/keycloak-cpu-bottleneck-sizing-guide.md)。c7g（Graviton3）は Broker/IdP-KC とも第一候補。**（2026-07-24 検証済み）ROSA HCP の Graviton/arm64 Machine Pool は 2024-07-24 以降作成クラスタで公式対応済み** — 残る確認は **RHBK Operator の arm64 イメージ提供**と**東京/大阪の c7g 在庫**のみ（未対応なら c7i/m7i 系へ差替、コスト +15-20%）→ §6.8 未決事項。
-- ワーカー最小数: HCP はクラスタあたり最小 2 ノードだが、Multi-AZ 要件（P-04）により **KC Pool 最小 3（AZ × 1）を下限**とする。§6.5 のノード数試算（Broker max 9 / IdP-KC max 18）は **KC Pool の数値**であり、infra Pool は別建てで加算（§6.2.3）。
+- ワーカー最小数: HCP はクラスタあたり最小 2 ノードだが、Multi-AZ 要件（P-04）により **KC Pool 最小 3（AZ × 1）を下限**とする。§6.5 のノード数試算（Broker max 9 / **IdP-KC max 29**〔2026-08-27 是正、フェデ 50:50〕）は **KC Pool の数値**であり、infra Pool は別建てで加算（§6.2.3）。
 - ノードのスケールアウト/イン・バージョンアップは**ノード完全置換のローリング**（**既定 maxSurge=1 / maxUnavailable=0** — 1 台余分に立ててから抜く。pool ごとに変更可、2026-07-24 公式検証で既定値訂正）+ drain で実施。**PDB が尊重されるのは pool の `node-drain-grace-period`（最大 30 分等の設定値）の範囲内で、超過時は drain が強行される** — KC Pod の PDB + レプリカ配置 + 猶予時間の 3 点が揃って無停止が成立する。
 - **Machine Pool 名の実体（2026-07-24 注記）**: HCP はクラスタ作成時にサブネットごとの pool（`workers` / `workers-2`…）を自動作成する。本書の `default-az1/2/3` / `kc-az1/2/3` は論理名であり、IaC 上は「自動作成 pool（infra 役）+ 追加作成 pool（KC 役）」に対応付ける。
 - **アップグレード順序制約（U9 引き渡し）**: CP と Machine Pool は独立アップグレードで **CP を先行**、pool は CP から 2 マイナー版以内に維持（U9 §9.6 の KC 昇格ゲートと合わせて Runbook 化）。将来オプション: **AutoNode（Karpenter v1.9 ベース、2026Q2 に HCP 対応）**は Pool 事前定義不要の動的プロビジョニング — 本設計の準静的 infra + 動的 KC には従来型 Autoscaler が適合するため Phase 1 不採用、Phase 2 で再評価。
+
+#### 6.2.2a 決定 D-U6-18: 少数大型 Pod モデル（2026-08-27 新設 — Pod 数定義の不整合是正）
+
+**背景（是正の経緯）**: 本書には Pod 数の記述が 3 箇所あり、定義が揃っていなかった。§6.2.2 は **ノード数**（max 9 / 18）、[§6.4.2](#642-決定-d-u6-08-jdbc-ping-前提のコネクション設計) は **「最大 Pod 数 27（Broker 9 + IdP-KC 18）」= ノード数の合算を Pod 数として流用**、[§6.5](#65-サイジングmau-10m-上限--フェデ比率-5050--argon2id) は **vCPU 数**（51 / 135）で記述していた。「27」という値自体は **1 ノード 1 Pod を暗黙に仮定すれば正しい**が、同じ §6.2.2 の「KC Pod リソース requests 2 vCPU」は **1 ノードに複数 Pod が載る前提**であり、両者が矛盾していた。**モデルを明文化して解消する。**
+
+**採用: 1 ノードに KC Pod を 1 個だけ載せる（少数大型 Pod モデル）**
+
+| 観点 | 少数大型（採用） | 多数小型（不採用） |
+|---|---|---|
+| **クラスタ内の状態共有コスト** | メンバー数が少なく、状態複製の相手が減る | **メンバー数の増加に対して複製の組合せが急増**し、キャッシュ同期が支配的になる |
+| **DB 接続数** | Pod 数 × プール 30 で線形 → **ピークでも 1,140 本**（下表） | 同じ vCPU 総量でも Pod 数が 3 倍 → **3,400 本超で Writer 上限に接触** |
+| **JVM の固定費** | ヒープ・メタスペース・JIT の固定オーバーヘッドが Pod 数分だけで済む | Pod ごとに固定費が乗り、実効効率が落ちる |
+| **暖機** | 台数が少なく、スケールアウト時の暖機対象が限定的 | 暖機待ちの Pod が増え、スケールアウトの応答が鈍る |
+| **AZ 分散** | ノード = Pod なので **AZ 分散がノード配置と一致し単純** | Pod の AZ 偏りを別途 topologySpreadConstraints で制御する必要 |
+
+- **requests の決め方**: ノード全 vCPU から DaemonSet・kubelet・OS 分（約 1 vCPU / 2 GB）を控除した残り全量を KC Pod の requests とする。c7g.xlarge 期は **3 vCPU / 6 GB**、ピーク帯の c7g.2xlarge 期は **6.5 vCPU / 13 GB**。
+- **`dedicated=keycloak:NoSchedule` テイント（§6.2.2）と併用**することで「1 ノード 1 Pod」が構造的に保証される（infra 系が同じノードに入らない）。
+- **HPA は Pod 数ではなくノード数を動かす**: HPA が Pod を増やしても収容ノードが無ければ Pending → Cluster Autoscaler がノードを追加、という連鎖で **Pod 数とノード数が 1:1 で追従**する。よって §6.5 の「必要 vCPU → ノード数」の試算が **そのまま Pod 数**になる。
+
+**Pod 数と DB 接続数の確定表（本書内でこの値を正とする）**
+
+| 時点 | Broker Pod（= ノード） | IdP-KC Pod（= ノード） | 合計 Pod | Broker 接続 | IdP-KC 接続 |
+|---|---:|---:|---:|---:|---:|
+| **Phase 1 ベースライン**（c7g.xlarge × 3、初回 100 万 MAU 下限） | 3 | 3 | **6** | 90 | 90 |
+| **初回リリース上限**（500 万 MAU 上限、§6.5） | 4 | 15 | **19** | 120 | 450 |
+| **10M ピーク上限**（フェデ 50:50） | 9 | **29** | **38** | 270 | **870** |
+
+> ⚠ **旧記述「最大 Pod 数 27」は 10M ピークの値としては過小**だった（フェデ比率 70/30 前提の IdP-KC 18 ノードに基づく）。**50:50 への改訂（[§6.5.1](#651-前提と暫定値の明示)）で IdP-KC は 29 ノード = 29 Pod** となる。§6.4.2 の接続見積もこれに合わせて改訂済み。
+
+---
 
 #### 6.2.2b 決定 D-U6-17: ノードの時刻同期（2026-08-24 新設）
 
@@ -251,13 +281,32 @@ Tier ごとに CPU プロファイルが 10-30 倍異なる（Broker = JWT/SAML 
 - 10M MAU ピーク帯までスケールした場合のワーカー増分は §6.5 の vCPU 試算から別途線形加算（Broker +$350〜1,000/月、IdP-KC +$500〜2,500/月程度。B-BROK-1 確定後に再計算）。
 - Aurora / ALB / VPC Endpoint 等は §6.4 と ADR-051 §G を参照（DR 込み Aurora ≈ $2,280/月 × 2 DB 系統ベース）。
 
+#### 6.2.3a 時点別コスト再計算（2026-08-27 新設 — C-1.3、フェデ 50:50 × MAU 時点分離）
+
+上表は **c7g.xlarge × 3 のベースライン固定**での試算であり、[§6.5](#65-サイジングmau-10m-上限--フェデ比率-5050--argon2id) の改訂で**ベースラインが成立する範囲が「100 万 MAU かつ TPS 下限」に限られる**ことが判明したため、時点別に再計算する。
+
+**単価**（上表から逆算）: c7g.xlarge ≈ **$118/ノード/月**（EC2 3y RI $62 + ROSA Worker fee $56）、c7g.2xlarge ≈ **$237/ノード/月**。HCP cluster fee $182.5/クラスタ/月、infra Pool 2 クラスタ計 $354/月。
+
+| 時点 | Broker ノード | IdP-KC ノード | KC Pool 費 | HCP fee | infra Pool | **ROSA 計/月** |
+|---|---|---|---:|---:|---:|---:|
+| **ベースライン**（100 万 MAU・TPS 下限） | c7g.xlarge × 3 | c7g.xlarge × 3 | $708 | $365 | $354 | **≈ $1,427** |
+| **初回 100 万 MAU・上限** | c7g.xlarge × 3 | c7g.2xlarge × 3 | $1,065 | $365 | $354 | **≈ $1,784** |
+| **初回 500 万 MAU・下限** | c7g.xlarge × 3 | c7g.2xlarge × 5 | $1,539 | $365 | $354 | **≈ $2,258** |
+| **初回 500 万 MAU・上限** | c7g.2xlarge × 4 | c7g.2xlarge × 15 | $4,503 | $365 | $354 | **≈ $5,222** |
+| **10M ピーク上限** | c7g.2xlarge × 9 | **c7g.2xlarge × 29** | $9,006 | $365 | $354 | **≈ $9,725** |
+
+- **初回リリース時点だけで $1,427 〜 $5,222 の 3.7 倍幅**がある。**幅を決めるのは MAU 見込みと TPS 見込みとフェデ比率の 3 点**（いずれも B-BROK-1 と P-02 の確定待ち）。**調達判断はこの 3 点が揃うまで確定できない**。
+- 旧試算 **$2,032/月**は「両クラスタ c7g.xlarge × 3」前提であり、**上表のベースライン $1,427 と一致しない**（旧試算は大阪パイロットライト廃止前の infra 計上差）。**本表を正**とする。
+- 10M ピークは**常時ではなくピーク帯のみ**の値。Machine Pool の Autoscaler により平時は下位段へ縮退するため、**月額はピーク滞留時間で按分**される（実測は [PT-01/PT-02](research/wbs-test-refinement-2026-08-26.md)）。
+- Aurora はインスタンスクラス据置き（接続予算の使用率が最大 28%、[§6.4.2a](#642a-接続予算表2026-08-27-新設--c-12)）のため**本改訂による増分なし**。
+
 ### 6.2.4 大阪（DR）側の扱い
 
 > **2026-07-30 D-18 転換（コールド DR）**: 大阪は**平時 ROSA クラスタを持たない**。被災時に IaC で**オンデマンド再構築**（RTO ≈ 14 日、U8 D-U8-14）。以下の「大阪パイロットライト（平時 2 ノード + Aurora Global Secondary）」記述のうち **ROSA 常時ノード分は廃止**。**Aurora Global Secondary（データ層）は維持**（U8 D-U8-14 推奨 A、RPO < 1 分・ストレージのみ）。**CIDR/サブネットは再構築先として事前確保**（install 後不変制約のため、平時クラスタが無くても IP レンジは予約）。
 
 - 東京 + 大阪の **ROSA HCP 対称構成が成立**（AWS 公式リージョン表で確認済み、ADR-051 2026-07-23 更新。**平時は東京のみ稼働、大阪はオンデマンド再構築先**）。
 - 残: **G-OSAKA** — 大阪側の該当インスタンスタイプ在庫 + vCPU クォータの実確認（U1 §1.5 ゲート、§6.8）。
-- **大阪の Machine Pool 構成（2026-07-24 明確化）**: infra Pool（c7g.large × 2、テイントなし）+ **KC 専用 Pool（labeled/tainted、min 0、東京と同一のテイント/ラベル定義で事前作成）**。CIDR・サブネットも Failover 後の東京同等スケール（KC Pool max 9/18）を収容できるサイズで事前確保する（§6.2.1 サブネット設計参照）。
+- **大阪の Machine Pool 構成（2026-07-24 明確化）**: infra Pool（c7g.large × 2、テイントなし）+ **KC 専用 Pool（labeled/tainted、min 0、東京と同一のテイント/ラベル定義で事前作成）**。CIDR・サブネットも Failover 後の東京同等スケール（**KC Pool max 9/29**、2026-08-27 是正）を収容できるサイズで事前確保する（§6.2.1 サブネット設計参照）。
 - DR の Failover 手順・RTO/RPO 設計は U8（本書は「Broker/IdP-KC それぞれ大阪にパイロットライト・クラスタと Aurora Global Secondary を持つ」という物理配置のみ確定）。
 
 ---
@@ -321,9 +370,61 @@ KC 26.1 以降 **jdbc-ping がデフォルト**（ノードディスカバリを
 |------|---------------|------|
 | 接続先エンドポイント | **Cluster（Writer）エンドポイントのみ**。Reader エンドポイントを KC に渡さない | jdbc-ping のハートビート書込 + KC のトランザクション整合。読取分散は KC では行わない |
 | Pod あたり接続プール | **`db-pool-initial-size` = `db-pool-min-size` = `db-pool-max-size` = 30 の等値**を明示設定（2026-07-23 改訂: 旧 10/30 → Keycloak 公式推奨の等値化。Agroal デフォルト max 100/pod は放置厳禁） | 等値化で接続チャーン回避 + PostgreSQL server-side prepared statement（5 回実行で有効化）が効き **p99 に有利**。トレードオフ: scale-out 時に新 Pod が即 30 本確保するが、下記の Writer 余裕内に収まる |
-| 総接続数見積 | 最大 Pod 数 27（Broker 9 + IdP-KC 18）× 30 = **810**。Writer 上限は r7g.xlarge で **max_connections ≈ 3,300**（`LEAST(DBInstanceClassMemory/9531392, 5000)`、32GB）から**予約枠**（superuser 3 + Aurora 内部 + 管理画面 Backend の Admin API クライアント + postgres_exporter + 移行バッチ + **退職者遮断バッチの advisory lock 接続**〔U9 D-U9-17、少数・短命〕）を控除して評価 — それでも大幅な余裕 | 2 系統 DB に分かれるため実際はさらに余裕（Broker 270 / IdP-KC 540）。**idmap 補助 DB の接続は API 層/バッチ側の別プールで独立計上**（KC の枠と混ぜない） |
+| 総接続数見積 | **2026-08-27 是正**（[D-U6-18 少数大型 Pod モデル](#622a-決定-d-u6-18-少数大型-pod-モデル2026-08-27-新設--pod-数定義の不整合是正)確定 + フェデ 50:50 改訂）: **10M ピークで Broker 9 Pod × 30 = 270 / IdP-KC 29 Pod × 30 = 870**（旧記述「27 Pod × 30 = 810」は 70/30 前提のため過小）。Writer 上限は r7g.xlarge で **max_connections ≈ 3,300**（`LEAST(DBInstanceClassMemory/9531392, 5000)`、32GB）。**2 系統 DB に分かれるため、1 系統あたりの評価は下記「接続予算」表で行う** | **Pod 数とノード数が 1:1 のため、Machine Pool の max を上げると接続数も比例して増える** — max 変更時は必ず本表を再評価すること（禁則 [K-2](09-operations-observability-design.md)） |
+| **接続予算（2026-08-27 新設 — C-1.2）** | **1 つの Aurora Writer に接続しうる全主体を列挙し、上限 3,300 を配分する規約**。下記「接続予算表」を DB 系統ごとに維持し、**新たな接続主体を追加する変更は必ず本表への行追加を伴う**（表に無い主体が接続してはならない） | 従来は KC の分だけを見て「大幅な余裕」と評価しており、**Lambda 群・バッチ・監視の枠が明示されていなかった**。[ADR-062](../adr/062-idm-api-execution-form-lambda.md) で管理 API が Lambda 化されたことで、**同時実行数 × 接続数で膨らむ主体**が加わったため規約化する |
 | jdbc-ping 留意 | Failover（Writer 交代 / Global DB Promote）中はディスカバリ書込が一時失敗する。**クラスタ全 Pod の同時再起動を伴う操作は Writer 安定後に実施**する運用制約を U8/U9 Runbook に引き渡す | KC 26.1 リリースノート、ADR-051 |
 | タイムアウト | JDBC socket/login timeout を ALB/Route 53 Failover TTL（30s）より短く設定し、Failover 検知を DB 側で先行させる | ADR-051 §D.2 |
+
+#### 6.4.2a 接続予算表（2026-08-27 新設 — C-1.2）
+
+**規約 3 点**:
+
+1. **表に無い主体は接続してはならない**。接続主体を増やす変更は、本表への行追加とレビューを必須とする。
+2. **Lambda は接続プールを持てない**（実行環境が同時実行数だけ独立に立ち上がるため）。したがって **予約同時実行数をそのまま最大接続数として計上**する。予約同時実行数を設定しない Lambda を Aurora に接続させてはならない（**アカウント既定の同時実行上限まで接続が膨らみ、Writer を枯渇させる**）。
+3. **使用率が上限の 60% を超えたら**、[§6.4.3](#643-決定-d-u6-09-rds-proxy-は暫定不採用) の RDS Proxy 不採用判断とインスタンスクラスを再評価する。
+
+**① Broker Keycloak DB（Broker Aurora）— 上限 ≈ 3,300**
+
+| 接続主体 | 算定根拠 | 本数 |
+|---|---|---:|
+| KC Pod（10M ピーク） | 9 Pod × プール 30（等値固定） | 270 |
+| superuser 予約 | PostgreSQL 既定 | 3 |
+| Aurora 内部（autovacuum / レプリケーション等） | 実測で補正 | ~20 |
+| メトリクス収集 | postgres_exporter | 2 |
+| 移行バッチ | 移行期間のみ・短命 | 10 |
+| 退職者遮断バッチ（[U9 D-U9-17](09-operations-observability-design.md)） | 排他ロック用・少数短命 | 5 |
+| **合計 / 使用率** | | **≈ 310 / 9%** |
+
+> **Keycloak 以外のアプリケーションが本 DB に接続することを禁止**する（製品所有スキーマのため。管理操作は Admin API 経由に限る — [ADR-062](../adr/062-idm-api-execution-form-lambda.md)）。
+
+**② IdP-KC Keycloak DB（identity Aurora）— 上限 ≈ 3,300**
+
+| 接続主体 | 算定根拠 | 本数 |
+|---|---|---:|
+| KC Pod（10M ピーク・フェデ 50:50） | **29 Pod** × プール 30 | **870** |
+| superuser / Aurora 内部 / メトリクス | 上に同じ | ~25 |
+| 移行バッチ / 遮断バッチ | 上に同じ | 15 |
+| **合計 / 使用率** | | **≈ 910 / 28%** |
+
+> **フェデ比率が 50:50 より低ローカル側へ振れると Pod 数が増え、本表が最初に効く**。ローカル 100%（フォールバック β）では IdP-KC ≈ 58 Pod × 30 = **1,740 本（53%）** となり、60% 閾値に接近する。
+
+**③ authz 系 Aurora（VPC-M）— 上限 ≈ 3,300**
+
+| 接続主体 | 算定根拠 | Writer | Reader |
+|---|---|---:|---:|
+| 管理 API（idm-api） | 予約同時実行 100 = 100 接続 | 100 | — |
+| 受け取り窓口（SCIM Facade） | 予約同時実行 100 | 100 | — |
+| 権限情報の一括取得（`/api/me/context`） | 予約同時実行 200、**参照専用のため Reader へ振る** | — | 200 |
+| 参照用データの更新（射影フィード） | 予約同時実行 50 | 50 | — |
+| 送信予定イベントの中継（outbox リレー） | 予約同時実行 20 | 20 | — |
+| 対応づけハンドラ / Webhook 系 | 予約同時実行 30 | 30 | — |
+| 定期バッチ（保持・消去・整合確認） | 逐次実行・少数 | 20 | — |
+| superuser / Aurora 内部 / メトリクス | | ~25 | ~5 |
+| **合計 / 使用率** | | **≈ 345 / 10%** | **≈ 205 / 6%** |
+
+> **Keycloak 用 DB と異なり Reader エンドポイントを併用**する（KC は整合上 Writer 固定だが、authz 系の参照 API は遅延許容のため Reader へ逃がせる）。**読み取りが増えたら Reader を増設**することで Writer 予算を守る。
+
+---
 
 ### 6.4.3 決定 D-U6-09: RDS Proxy は暫定不採用
 
@@ -334,19 +435,22 @@ KC 26.1 以降 **jdbc-ping がデフォルト**（ノードディスカバリを
 | コスト | vCPU 課金が Aurora 2 系統 × 東西で加算 |
 
 **判断**: **Phase 1 は不採用（Aurora SG 直接続）**。ただし U8 の DR 検証で「Writer Failover 時の KC 再接続時間」が RTO 内訳を圧迫する場合に限り再評価する（§6.8 未決事項に登録）。
-- 一般則の裏付け（2026-07-23 追記）: 外部 pooler が必要になるのは「1 pod あたり接続 < 5 × pod 数百」の形態。本設計は **pod 少数（最大 27）× 中規模プール（30）の長命プール直結**が最適解。将来 P-16 超過で IdP-KC を数百 pod 規模へシャーディングする段階で初めて **PgBouncer transaction mode** を拡張パスとして検討する。
+- 一般則の裏付け（2026-07-23 追記、**2026-08-27 数値是正**）: 外部 pooler が必要になるのは「1 pod あたり接続 < 5 × pod 数百」の形態。本設計は **pod 少数（10M ピークで Broker 9 / IdP-KC 29、[D-U6-18](#622a-決定-d-u6-18-少数大型-pod-モデル2026-08-27-新設--pod-数定義の不整合是正)）× 中規模プール（30）の長命プール直結**が最適解。将来 P-16 超過で IdP-KC を数百 pod 規模へシャーディングする段階で初めて **PgBouncer transaction mode** を拡張パスとして検討する。
+- **再評価トリガー（2026-08-27 新設）**: [§6.4.2a 接続予算表](#642a-接続予算表2026-08-27-新設--c-12)の**いずれかの系統で使用率が 60% を超えた時点**で本判断を再開する（現状の最大は identity Aurora の 28%、ローカル 100% 振れで 53%）。
 
 ---
 
-## 6.5 サイジング（MAU 10M 上限 / フェデ比率 70/30 暫定 / Argon2id）
+## 6.5 サイジング（MAU 10M 上限 / フェデ比率 50:50 暫定 / Argon2id）
 
 ### 6.5.1 前提と暫定値の明示
 
+> **2026-08-27 改訂（C-1.3）**: ① フェデ比率を **70/30 → 50:50**（B-BROK-1 の暫定値、2026-08-16 決定）へ差し替え ② **MAU を「初回リリース時点」と「上限」に分離**（P-02）し、初回リリースのサイジングを独立して算定 ③ Pod 数は [D-U6-18 少数大型 Pod モデル](#622a-決定-d-u6-18-少数大型-pod-モデル2026-08-27-新設--pod-数定義の不整合是正)（1 ノード 1 Pod）に統一。
+
 | パラメータ | 値 | 位置づけ |
 |-----------|-----|---------|
-| MAU | 10M 上限 | P-02（凍結） |
-| ピーク Login TPS | 1,000-3,000 | ADR-033 §A（10M MAU 試算） |
-| フェデ比率 | **70% フェデ / 30% ローカル — 暫定**。**B-BROK-1（ヒアリング）未回答のため典型値を仮置き**。P-07 γ シナリオ（管理者層のみローカル）が確定すればローカル比率は 5% 未満まで縮小し得るため、**本節の IdP-KC 側は上限保守値** | [sizing-guide §7](../reference/keycloak-cpu-bottleneck-sizing-guide.md)、P-07 |
+| MAU（**時点分離**） | **初回リリース = 100 万〜500 万** ／ **上限 = 10M** | P-02（凍結）。**設備は初回リリース値で調達し、上限値はスケール余地として設計にのみ反映**する |
+| ピーク Login TPS | **10M で 1,000〜3,000**。MAU に線形按分（100 万 = 100〜300 / 500 万 = 500〜1,500） | ADR-033 §A（10M MAU 試算） |
+| フェデ比率 | **50% フェデ / 50% ローカル — 暫定**（2026-08-16、B-BROK-1 の暫定回答）。**旧 70/30 から改訂**。P-07 γ シナリオ（管理者層のみローカル）が確定すればローカル比率は 5% 未満まで縮小し得るため、**本節の IdP-KC 側は上限保守値** | [sizing-guide §7](../reference/keycloak-cpu-bottleneck-sizing-guide.md)、P-07 |
 | PW ハッシュ | **Argon2id**（KC 25+ デフォルト、P-03 FIPS 不要のため維持）。スループット 8-12 TPS/vCPU（t=1/m=64MB 帯の保守値。KC デフォルトパラメータ m=7MiB/t=5 での実測は PoC で補正） | sizing-guide §3/§6 |
 | Safety Margin | 1.5x | sizing-guide §6 |
 
@@ -354,30 +458,47 @@ KC 26.1 以降 **jdbc-ping がデフォルト**（ノードディスカバリを
 
 公式（sizing-guide §6）: `Broker vCPU ≈ (L × 0.003 + R × 0.002 + 1) × M`、R（Refresh TPS）= L × 4 と仮置き。
 
-| シナリオ | L | R | 必要 vCPU | ワーカー構成（c7g、Pod requests 2 vCPU 前提） |
+| シナリオ | L | R | 必要 vCPU | ノード構成（= **Pod 数**、[D-U6-18](#622a-決定-d-u6-18-少数大型-pod-モデル2026-08-27-新設--pod-数定義の不整合是正)） |
 |---------|---:|---:|----------:|--------------------------------|
-| 10M MAU ピーク下限 | 1,000 | 4,000 | **≈ 18** | c7g.2xlarge × 3（24 vCPU） |
-| 10M MAU ピーク上限 | 3,000 | 12,000 | **≈ 51** | c7g.2xlarge × 7（56 vCPU）へ HPA + Machine Pool autoscale |
-| Phase 1 立上げ（〜1.5M 想定） | 125 | 500 | ≈ 6-9 | **c7g.xlarge × 3（ベースライン、§6.2.2）** |
+| **初回 100 万 MAU・下限** | 100 | 400 | ≈ 3 | **c7g.xlarge × 3**（AZ 冗長の下限が支配、ベースライン） |
+| **初回 100 万 MAU・上限** | 300 | 1,200 | ≈ 6 | c7g.xlarge × 3（12 vCPU で充足） |
+| **初回 500 万 MAU・下限** | 500 | 2,000 | ≈ 10 | c7g.xlarge × 3（12 vCPU、ほぼ限界） |
+| **初回 500 万 MAU・上限** | 1,500 | 6,000 | **≈ 26** | **c7g.2xlarge × 4**（32 vCPU）— ここでベースラインを超える |
+| 10M MAU ピーク下限 | 1,000 | 4,000 | ≈ 18 | c7g.2xlarge × 3（24 vCPU） |
+| 10M MAU ピーク上限 | 3,000 | 12,000 | **≈ 51** | **c7g.2xlarge × 7**（56 vCPU）→ Machine Pool **max 9** |
 
-- Broker は Password Hashing ~0%（sizing-guide §5）のため CPU 需要は署名/検証系で線形。SAML 顧客 IdP 比率が高い場合 DSig 検証分の上振れに注意（監視で補正、U9）。
+- Broker は Password Hashing ~0%（sizing-guide §5）のため CPU 需要は署名/検証系で線形。**フェデ比率の影響を受けない**（フェデもローカルも Broker を通るため）ので、50:50 への改訂で Broker 側の数値は変わらない。SAML 顧客 IdP 比率が高い場合 DSig 検証分の上振れに注意（監視で補正、U9）。
 
 ### 6.5.3 IdP-KC クラスタ CPU 試算（フェデ比率感度）
 
 公式: `IdP-KC vCPU ≈ (L × (1 - F) / T_login) × M`、T_login = 10 TPS/vCPU（Argon2id 中央値）。
 
-| フェデ比率 F | ローカル TPS（L=1,000 / 3,000） | 必要 vCPU | ワーカー構成 |
+**① フェデ比率の感度（10M ピーク時）**
+
+| フェデ比率 F | ローカル TPS（L=1,000 / 3,000） | 必要 vCPU | ノード構成（= Pod 数） |
 |-------------|-------------------------------:|----------:|-------------|
-| **70/30 ★暫定** | 300 / 900 | **45 / 135** | c7g.2xlarge × 6 〜 × 17 + margin。**最大ケースは Machine Pool max=18 の根拠（§6.2.2）** |
+| **50:50 ★暫定（2026-08-16 改訂）** | 500 / 1,500 | **75 / 225** | c7g.2xlarge × 10 〜 **× 29**。**最大ケースが Machine Pool max=29 の根拠（§6.2.2）** |
+| 70/30（**旧暫定・参考**） | 300 / 900 | 45 / 135 | c7g.2xlarge × 6 〜 × 17 |
 | 90/10 | 100 / 300 | 15 / 45 | c7g.2xlarge × 2 〜 × 6 |
 | γ シナリオ確定時（≈97/3） | 30 / 90 | 5 / 14 | **c7g.xlarge × 3 で収まる** |
 
-- **B-BROK-1 の回答が IdP-KC のノード数（= コスト）を 3〜17 台の幅で直接決める**。回答受領時は本節のみ差し替えれば §6.2.3 コスト表まで機械的に再計算できる構造とした。
-- ローカル 100% への振れ（フォールバック β）でも c7g.2xlarge × 20 前後で線形に吸収可能（sizing-guide §7）であり、アーキテクチャ変更は不要。
+> ⚠ **50:50 への改訂の影響**: 10M ピーク上限の必要 vCPU が **135 → 225（+67%）**、ノード = Pod 数が **18 → 29** に増える。これに伴い ① **Machine Pool max を 18 → 29 へ引き上げ**（§6.2.2）② **DB 接続予算を 540 → 870 本へ改訂**（[§6.4.2a](#642a-接続予算表2026-08-27-新設--c-12)）③ **ピーク時コストが上振れ**（§6.2.3）。**フェデ比率は本設計で最も感度の高いパラメータ**であり、B-BROK-1 の確定回答は最優先で取得する。
+
+**② 初回リリース時点（100 万〜500 万 MAU、フェデ 50:50）**
+
+| MAU | L（下限 / 上限） | 必要 vCPU | ノード構成（= Pod 数） |
+|---|---:|---:|---|
+| **100 万** | 100 / 300 | **8 / 23** | c7g.xlarge × 3（12 vCPU）で下限は充足、**上限は c7g.2xlarge × 3 が必要** |
+| **500 万** | 500 / 1,500 | **38 / 113** | **c7g.2xlarge × 5 〜 × 15** — **ベースライン c7g.xlarge × 3 では下限すら賄えない** |
+
+> ⚠ **重要な発見（2026-08-27）**: 従来 §6.2.2 が「Phase 1 ベースライン = c7g.xlarge × 3」としてきたが、**50:50 では初回 500 万 MAU の時点で IdP-KC は c7g.2xlarge × 5 以上が必要**であり、**ベースラインが成立するのは「100 万 MAU かつ TPS 下限」の場合に限られる**。初回リリースの MAU 見込みと TPS 見込みの確定（B-BROK-1 とセット）が、**調達する設備量を 3 台〜15 台の 5 倍幅で左右する**。
+
+- **B-BROK-1 の回答が IdP-KC のノード数（= コスト）を 3〜29 台の幅で直接決める**。回答受領時は本節のみ差し替えれば §6.2.3 コスト表まで機械的に再計算できる構造とした。
+- ローカル 100% への振れ（フォールバック β）では 10M ピークで **≈ 450 vCPU = c7g.2xlarge × 58**（接続 1,740 本 = 予算の 53%、[§6.4.2a](#642a-接続予算表2026-08-27-新設--c-12)）。線形に吸収可能（sizing-guide §7）でアーキテクチャ変更は不要だが、**接続予算の 60% 閾値に接近する**ため RDS Proxy 判断（§6.4.3）の再開点となる。
 
 ### 6.5.4 メモリ・Argon2id 留意
 
-- Argon2id はメモリハード（sizing-guide §4）。KC デフォルト（m=7MiB）なら同時ハッシュ 900 並列でも +6.3 GB/クラスタ程度で c7g の 1:2 メモリ比で吸収可能。**m=64MB 系へ強化する場合は m7g 系へ変更**（セキュリティパラメータ選定は U7）。
+- Argon2id はメモリハード（sizing-guide §4）。KC デフォルト（m=7MiB）なら同時ハッシュ **1,500 並列**（フェデ 50:50・L=3,000 時）でも **+10.5 GB/クラスタ**程度で、**29 Pod × 13 GB = 377 GB** の枠に対し十分吸収可能。**m=64MB 系へ強化する場合は m7g 系へ変更**（セキュリティパラメータ選定は U7）。
 - IdP-KC はスケールアウト時の JVM warmup + Infinispan 参加が遅いため、**Scale-Out 予兆トリガ（`login_success_password_rate` > 8 TPS/node 3 分）を CPU 閾値より優先**（sizing-guide §9）→ U9 に引き渡し。
 
 ### 6.5.5 決定 D-U6-10: IdP 1000+ 時の Infinispan キャッシュ初期値
@@ -389,7 +510,7 @@ P-16（1000+ IdP、条件付き成立）の必須対策 6「キャッシュサ�
 | realms 系（IdP 専用キャッシュ含む、KC 26.0 `IdentityProviderStorageProvider` 経由） | **max-count 200,000 entries** | 26.4 公式ベンチ: 10k → 200k entries で Aurora CPU 77.8% → 63.8%（research 必須対策 6）。IdP 2,000 ×（IdP 1 + Mapper 6 + org 紐付け）≈ 16,000 entries に対し 10 倍超の余裕 |
 | users | 100,000（アクティブ作業集合ベース。ヒット率 < 90% で増量） | sizing-guide §9 `infinispan_cache_hit_ratio` 監視と連動 |
 | sessions 系 | KC 26 の Persistent user sessions（DB 永続）デフォルトを維持し、メモリ側は既定上限。Off-heap 化は負荷試験後（sizing-guide §10 Level 5） | ADR-051 §C.4（Session は Region 間非同期・失効許容） |
-| ヒープ影響 | 上記で +1.5〜2 GB/Pod を見込み、Pod メモリ 3 GB → 4 GB へ引上げ可能な余裕を Machine Pool に確保 | §6.2.2 |
+| ヒープ影響 | 上記で +1.5〜2 GB/Pod を見込む。**[D-U6-18 少数大型 Pod モデル](#622a-決定-d-u6-18-少数大型-pod-モデル2026-08-27-新設--pod-数定義の不整合是正)により Pod メモリは c7g.xlarge 期 6 GB / c7g.2xlarge 期 13 GB** を確保済みのため、**キャッシュ増分は既存枠内で吸収できる**（旧記述「3 GB → 4 GB へ引上げ」は多数小型 Pod 前提のため無効） | §6.2.2 |
 
 - 併せて P-16 必須対策 4「realm 全体 export/import 運用禁止」をインフラ運用禁則として U9 Runbook に引き渡す。
 

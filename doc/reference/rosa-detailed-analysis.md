@@ -164,6 +164,16 @@ ROSA の総コスト = ① ROSA Service Fee + ② AWS Infrastructure Fee + ③ H
 
 ## 4. コスト試算 — 本基盤の Keycloak HA 想定
 
+> 🔴 **2026-08-27 是正（C-6）— 本節は「ROSA を採用するか」を判断した時点の概算であり、現行の本番設計とは前提が 3 点異なる。設備量・費用の正は [基本設計 U6 §6.2.3 / §6.2.3a](../basic-design/06-infra-network-design.md) とする。**
+>
+> | 相違点 | 本節（2024 調査時点） | 現行設計 |
+> |---|---|---|
+> | クラスタ数 | **1 クラスタ** | **2 クラスタ**（外部連携を受ける側 + 利用者を直接収容する側を別アカウントで分離） |
+> | ノード構成 | worker 3 台のみ | **役割分離 2 系統**（認証製品専用 Pool + 基盤機能 Pool）× 2 クラスタ |
+> | 規模の前提 | 固定 12 vCPU | **利用者数と接続先の内訳で 3.7 倍の幅**（月 $1,427〜$5,222、上限時 $9,725） |
+>
+> したがって本節の「月 $590〜$1,046」「3 年 TCO 約 $25,000」は**現行設計の値ではない**。**ROSA と他方式の相対比較（HCP は Classic より約 50% 安い、等）の材料としてのみ有効**。
+
 ### 前提条件
 
 - Keycloak HA: worker node 3 個（Multi-AZ）
@@ -294,14 +304,14 @@ ROSA は AWS マネージドサービスとネイティブ統合:
 
 | AWS サービス | ROSA との連携 |
 |---|---|
-| **RDS / Aurora** | 認証情報を OpenShift Secret で管理。**接続は SG 直接続（2026-07-23 訂正: HCP でも worker は顧客 VPC 内で稼働するため PrivateLink は不要。PrivateLink は control plane ↔ worker 間の話）** |
+| **RDS / Aurora** | 認証情報を OpenShift Secret で管理。**接続は SG 直接続（2026-07-23 訂正: HCP でも worker は顧客 VPC 内で稼働するため PrivateLink は不要。PrivateLink は control plane ↔ worker 間の話）**。**（2026-08-27 追記）本基盤は 2 ネットワーク分離を採用したため、認証製品用 DB は認証製品と同一ネットワーク内の直接続、権限用 DB は別ネットワーク側に置き、管理 API から直接続する**（[U6 §6.2.1](../basic-design/06-infra-network-design.md)） |
 | **S3** | OpenShift Storage 経由 / アプリ直接アクセス |
 | **EFS** | OpenShift Storage Class として利用可 |
 | **IAM** | STS-based ROSA Roles（クラスタごとに別 IAM Role）|
 | **ALB / NLB** | OpenShift Ingress / Service として直接統合 |
 | **CloudWatch / Cost Explorer** | コスト・メトリクス可視化 |
 | **Secrets Manager** | OpenShift Secret に投入 |
-| **AWS PrivateLink** | HCP では control plane アクセスを PrivateLink 経由可 |
+| **AWS PrivateLink** | HCP では control plane アクセスを PrivateLink 経由可。**（2026-08-27 追記）本基盤では用途がこれ以外に 2 つある**: ① 外部連携を受ける側 → 利用者収容側への認証の裏経路 ② 管理 API を別ネットワークから呼ぶ経路（[U6 §6.3](../basic-design/06-infra-network-design.md)、いずれも呼ぶ側 → 呼ばれる側の一方向） |
 | **KMS** | EBS / RDS / S3 暗号化キー |
 | **Route 53** | OpenShift Ingress の DNS 統合 |
 
