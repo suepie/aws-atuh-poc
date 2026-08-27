@@ -609,10 +609,18 @@ flowchart TB
 
 ### A.5.2 アカウント別 VPC 割当表
 
+> 🔴 **2026-08-27 是正（C-10）— 本表は 2026-07-24 版で、以降の 2 つの決定が未反映だった**:
+> 1. **2 ネットワーク分離の採用**（2026-08-18、[U6 §6.2.5](06-infra-network-design.md)）→ Broker / IdP-KC の各アカウントに **管理・権限用ネットワーク（VPC-M）が増える**。
+> 2. **サイズの見直し**（2026-08-17、[IP 節約 research](research/rosa-vpc-ip-conservation-2026-08-17.md)）→ ROSA はオーバーレイのため Pod が VPC IP を消費せず、**クラスタ側は /21 ではなく /23 で足りる**（下表の /21 は EKS 前提の過大採番だった）。
+>
+> **CIDR の実値は P-17（D-19）の確定待ち**のため、下表の値は**採番の形だけを示す暫定**であり、確定前に構築へ進んではならない（クラスタ作成後に変更不可）。
+
 | Acct | リージョン | VPC 名(論理) | CIDR | 中身 | 備考 |
 |------|-----------|--------------|------|------|------|
-| Broker | 東京 | broker-tyo | **10.64.0.0/21** | ROSA #1 + Internal ALB + Aurora(Broker/idmap) + Lambda 統合 | Machine CIDR = 本 CIDR |
-| IdP-KC | 東京 | idpkc-tyo | **10.64.8.0/21** | ROSA #2 + Internal ALB + Aurora(IdP-KC) + **同居アプリ用サブネット** | 同居アプリの実行形態(ROSA 同居 or 別コンピュート)未確定 → 別コンピュートなら /23 をアプリ層に割く(A6a-6) |
+| Broker | 東京 | broker-tyo（**VPC-K**） | **10.64.0.0/21 → /23 へ縮小**（2026-08-27） | ROSA #1 + Internal ALB + Broker Aurora + **内部 NLB 2 本** | Machine CIDR = 本 CIDR。**Lambda 群は VPC-M へ移動**（下行） |
+| IdP-KC | 東京 | idpkc-tyo（**VPC-K**） | **10.64.8.0/21 → /23 へ縮小**（2026-08-27） | ROSA #2 + Internal ALB + **identity Aurora** + **内部 NLB 2 本（ログイン用 / 管理用）** | 同居アプリの実行形態未確定(A6a-6) |
+| **IdP-KC** 🆕 | **東京** | **idpkc-mgmt-tyo（VPC-M）** | **`100.65.0.0/25`（CGNAT・Transit へ非広告）** | **idm-api Lambda ENI + 非同期処理群 + authz 系 Aurora + エンドポイント群** | **2026-08-27 新設（C-10）**。TGW 非接続のため **Transit の IP を一切消費しない**。[U6 §6.2.5](06-infra-network-design.md) |
+| **Broker** 🆕 | **東京** | **broker-mgmt-tyo（VPC-M）** | **`100.65.1.0/25`（同上）** | **shadow 制御 Lambda + 非同期の糊 Lambda + エンドポイント群** | 同上。**Broker 側は authz DB を持たない**（[ADR-063](../adr/063-brand-unit-architecture.md)）ため DB 層なし |
 | 監査 | 東京 | audit-tyo(任意) | 10.64.16.0/24 | Canary を VPC 内実行する場合のみ(外形監視は VPC 不要のため通常は未作成) | 任意 |
 | (予備) | 東京 | — | 10.64.32.0/19 ほか | IdP-KC シャーディング時の第 3 クラスタ等(P-16 拡張パス) | 台帳予約のみ |
 | Broker | 大阪 | broker-osa | **10.72.0.0/21** | 東京と対称(パイロットライト。**Failover 後の東京同等スケールを収容できる同サイズで事前確保**) | — |
@@ -621,6 +629,8 @@ flowchart TB
 | 他組織(NW 監査/NW) | — | — | **未入手 → REQ で CIDR 一覧交換** | Inbound エッジ / Egress VPC / TGW | 弊社の使用帯 + 禁止帯を先に提示する(A6a-5) |
 
 ### A.5.3 クラスタ VPC 内サブネット割付(例: broker-tyo 10.64.0.0/21。他 3 VPC は同形)
+
+> 🔴 **2026-08-27 是正（C-10）**: 本表の **層③ Lambda/統合 は VPC-K から削除**され、**VPC-M の関数用サブネットへ移動**した（2 ネットワーク分離、[U6 §6.2.5](06-infra-network-design.md)）。また **層① Worker は /24 ではなく /26 で足りる**（オーバーレイのためノード数ベース採番）。**VPC-K の正は [U6 §6.2.1 サブネット 4 層設計](06-infra-network-design.md)、VPC-M の正は [U6 §6.2.5.2](06-infra-network-design.md)**。本表は旧採番の記録として残す。
 
 | 層 | サブネット(AZ-a / AZ-c / AZ-d) | サイズ | 収容物 | サイジング根拠 |
 |----|-------------------------------|--------|--------|----------------|
@@ -672,6 +682,7 @@ flowchart TB
 ### A.6.1 全体トポロジ（2 アカウント + 越境 + inbound）
 
 - **inbound の 3 系統**: ① auth./idp.（クラスタ）= 他組織 CloudFront+WAF+**NFW**→TGW→Internal ALB→KC / ② api.（idm-api）= CloudFront+WAF→**API GW〔NFW 例外〕**→Lambda invoke / ③ admin./launchpad.（SPA）= CloudFront+WAF→**OAC〔NFW 例外〕**→S3。「全 inbound NFW 必須、ただし静的 SPA・API GW は例外」（REQ-IN-12/13）。
+- **2026-08-27 追記（C-10）**: ブランドユニット アカウント内は **2 ネットワークに分離**（[U6 §6.2.5](06-infra-network-design.md)）。**VPC-K**（認証製品・利用者情報・TGW 接続あり）と **VPC-M**（管理 API・権限 DB・**TGW 非接続で Transit から隠蔽**）。両者を跨ぐのは **管理 API 経路（EPS-Admin）の一方向のみ**で、**管理 API は利用者情報 DB への経路も接続許可も持たない**。
 - **越境は 3 本のみ**: EventBridge ①ブランド→Broker（`user.deprovisioned`、outbox 発）②Broker→ブランド（初回 sub 通知）+ PrivateLink ③Broker→IdP-KC（フェデ backchannel `idpkc-oidc01`、D-U6-06）。ホットパス（`/api/me/context`）はブランドローカル read で越境ゼロ。
 
 ```mermaid
@@ -689,23 +700,30 @@ flowchart TB
     SHC["shadow制御 Lambda"]
   end
   subgraph BRAND["IdP-KC = ブランドユニット Acct"]
-    IALB["Internal ALB"]
-    IKC["IdP-KC KC(ROSA#2)<br/>hosted identity(local PW)"]
-    IAur[("identity Aurora<br/>PWハッシュ・専用CMK/SG")]
+    subgraph VPCK["VPC-K(認証製品・利用者情報/TGW接続あり)"]
+      IALB["Internal ALB"]
+      IKC["IdP-KC KC(ROSA#2)<br/>hosted identity(local PW)"]
+      IAur[("identity Aurora<br/>PWハッシュ・専用CMK/SG")]
+      NLBo["内部NLB: ログイン用"]
+      NLBa["内部NLB: 管理用"]
+    end
+    subgraph VPCM["VPC-M(管理・権限/TGW非接続・CGNAT可)"]
+      API2["idm-api = Lambda(主役)<br/>CRUD/権限/authz/projection"]
+      ZAur[("authz系 Aurora<br/>authz+idmap+projection<br/>別CMK/別SG:Option C")]
+      OBX["outbox リレー Lambda"]
+      EPa["エンドポイント<br/>(管理API到達用)"]
+    end
     APIGW["API GW(JWT L1)"]
-    API2["idm-api = Lambda(主役)<br/>CRUD/権限/authz/projection"]
-    ZAur[("authz系 Aurora<br/>authz+idmap+projection<br/>別CMK/別SG:Option C")]
-    OBX["outbox リレー Lambda"]
   end
   S3["SPA(S3+OAC)"]
   APP["ブランドのアプリ(App Acct)"]
   CFa --> NFWi
   NFWi -->|TGW| BALB --> BKC --> BAur
-  NFWi -->|TGW| IALB --> IKC --> IAur
+  NFWi -->|TGW| IALB --> NLBo --> IKC --> IAur
   CFapi --> APIGW -->|invoke| API2
   CFspa --> S3
-  BKC -. "フェデ PrivateLink(idpkc-oidc01)" .-> IKC
-  API2 -->|"CRUD: 内部NLB"| IKC
+  BKC -. "フェデ PrivateLink(EPS-OIDC・単方向)" .-> NLBo
+  API2 --> EPa -. "PrivateLink(EPS-Admin・単方向)" .-> NLBa --> IKC
   API2 -->|"authz/projection"| ZAur
   API2 -->|"soft-delete+outbox 1Tx"| ZAur
   ZAur --> OBX
@@ -735,6 +753,16 @@ flowchart TB
 ### A.6.3 IdP-KC = ブランドユニット アカウント詳細（Phase 1 = 1 ブランド）
 
 役割 = **hosted identity（local PW）+ CRUD/権限/authz/projection/idmap の実体**（ブランド主役、ADR-063）。**credential(identity) と authz 系は Option C で内部分離**（D-U7-19）。
+
+> **2026-08-27 是正（C-10）**: 下表の「層③」表記は単一ネットワーク時代のもの。**2 ネットワーク分離後の所属は下記のとおり**（[U6 §6.2.5](06-infra-network-design.md)）:
+>
+> | 所属 | リソース |
+> |---|---|
+> | **VPC-K**（TGW 接続あり・最高機微） | ROSA #2 / **identity Aurora** / Internal ALB / **内部 NLB 2 本（ログイン用・管理用）** |
+> | **VPC-M**（TGW 非接続・隠蔽可） | **idm-api Lambda** / outbox リレー Lambda / SCIM Facade Lambda / **authz 系 Aurora** / エンドポイント群 |
+> | どちらにも属さない | **API GW**（Lambda をネイティブ呼び出しするためネットワーク経路を通らない） |
+>
+> **不変条件**: idm-api は **identity Aurora へのルートも接続許可も持たない**（管理 API 経由のみ・一方向）。
 
 | レイヤ | リソース | 備考 |
 |---|---|---|

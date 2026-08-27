@@ -157,14 +157,14 @@ flowchart TB
 | Control Plane | **Red Hat サービスアカウント内**（API server × 2 + etcd × 3、3 AZ 冗長）。顧客 VPC には出ない。Worker → CP は顧客 VPC 内の **PrivateLink Endpoint** 経由。CP のサイジングは Worker 数に応じ **Red Hat が自動管理**（顧客関与なし） | 同左 | 2026-07-23 ユーザー検討（[research note](research/rosa-hcp-machine-pool-egress-notes.md)） |
 | Ingress | デフォルト IngressController を **Private / NLB** で作成（HCP 新規は CLB でなく **NLB が既定**）。**「platform 用 Private NLB」と「アプリ選択公開用」は追加 IngressController で分離**（OpenShift 4.14+ で HCP もサポート、Red Hat Cloud Experts〔MOBB〕推奨パターン。**ただし追加 IC の LB は Red Hat 管理外の顧客管理リソース扱い** — HCP サービス定義は default IC の LB のみ RH 管理、2026-07-24 検証追記）。前段に自管理 Internal ALB を置き L7 制御（§6.6 の 403 ルール、secret header 検証）を ALB 側で実施 | 同左 | research #1、ユーザー検討、ADR-010 の Private 原則 |
 | ネットワーク | 各 Acct に専用 VPC（Private Subnet × 3 AZ + VPC Endpoint 群: S3 / ECR / Logs / KMS / Secrets / STS）。**CIDR は Broker / IdP-KC / 社内 NW / 顧客 AD 系と重複しないよう採番**（§6.3 PrivateLink 採用により必須ではないが、TGW 転換余地を残す） | 同左 | ADR-010 |
-| **サブネット 4 層設計（2026-07-24 追記、2026-08-17 /23 具体化）** | AZ ごとに用途別 4 層で採番: **① TGW Attachment 用 /28** ② **ALB 専用 /27**（Internal ALB は専用サブネットに分離 — スケール時の ENI 枯渇防止）③ **Node 用 /26（内部 NLB＋Worker＋Infra）**（**OVN-Kubernetes のため Pod 数でなくノード数ベースで採番**。Failover 後の東京同等スケール〔KC Pool max 9/**29**〔2026-08-27 是正〕+ infra〕を収容。**/26=59 usable に対し IdP-KC 側は 29÷3AZ ≈ 10 ノード/AZ + infra 1 + 内部 NLB の ENI 3 + Lambda ENI 6 ≈ 20 → 約 3 倍ヘッドルーム**（旧「8 倍」は max 18 前提）。**フェデ比率がさらにローカル寄りへ振れると /26 が効き始める**ため、ローカル 100%（58 ノード = 20/AZ）を想定する場合は Node 層を /25 へ拡張すること）④ **Aurora 用 /28**。→ **AZ あたり /25、3 AZ で VPC = /23（+/25 予備）に収まる**（[research 2026-08-17](research/rosa-vpc-ip-conservation-2026-08-17.md)）。**CIDR はクラスタ install 後に変更不可のため事前確定必須**（大阪側も同サイズで確保、§6.2.4）。**（2026-08-06 追記）層③は idm-api（ブランド管理 API）+ 中央 shadow 制御 + 非同期の糊 Lambda（射影フィード/Webhook/idmap ハンドラ）の VPC ENI アタッチ先も兼ねる（[ADR-062](../adr/062-idm-api-execution-form-lambda.md)、egress 目的、06a §A.5.3）** | 同左 | 2026-07-24 ユーザー検討（[research note](research/rosa-hcp-machine-pool-egress-notes.md)）、2026-08-06 ADR-062、2026-08-17 /23 具体化 |
+| **サブネット 4 層設計（2026-07-24 追記、2026-08-17 /23 具体化、**2026-08-27: 本行は [VPC-K（認証製品側）](#625-決定-d-u6-19-2-ネットワーク分離構成2026-08-27-本文化--c-9)の記述**）** | AZ ごとに用途別 4 層で採番: **① TGW Attachment 用 /28** ② **ALB 専用 /27**（Internal ALB は専用サブネットに分離 — スケール時の ENI 枯渇防止）③ **Node 用 /26（内部 NLB＋Worker＋Infra）**（**OVN-Kubernetes のため Pod 数でなくノード数ベースで採番**。Failover 後の東京同等スケール〔KC Pool max 9/**29**〔2026-08-27 是正〕+ infra〕を収容。**/26=59 usable に対し IdP-KC 側は 29÷3AZ ≈ 10 ノード/AZ + infra 1 + 内部 NLB の ENI 3 + Lambda ENI 6 ≈ 20 → 約 3 倍ヘッドルーム**（旧「8 倍」は max 18 前提）。**フェデ比率がさらにローカル寄りへ振れると /26 が効き始める**ため、ローカル 100%（58 ノード = 20/AZ）を想定する場合は Node 層を /25 へ拡張すること）④ **Aurora 用 /28**。→ **AZ あたり /25、3 AZ で VPC = /23（+/25 予備）に収まる**（[research 2026-08-17](research/rosa-vpc-ip-conservation-2026-08-17.md)）。**CIDR はクラスタ install 後に変更不可のため事前確定必須**（大阪側も同サイズで確保、§6.2.4）。~~**（2026-08-06 追記）層③は idm-api + shadow 制御 + 非同期の糊 Lambda の VPC ENI アタッチ先も兼ねる**~~ → **2026-08-27 無効化（C-9）: 2 ネットワーク分離の採用により、これらは [VPC-M の関数用サブネット](#625-決定-d-u6-19-2-ネットワーク分離構成2026-08-27-本文化--c-9)へ移動**（[ADR-062](../adr/062-idm-api-execution-form-lambda.md) Decision 2）。層③に残るのは worker と内部 NLB 2 本のみ | 同左 | 2026-07-24 ユーザー検討（[research note](research/rosa-hcp-machine-pool-egress-notes.md)）、2026-08-06 ADR-062、2026-08-17 /23 具体化 |
 | **Egress 形態（要決定 O-10）** | 通常構成では **AZ ごとに Public Subnet + NAT Gateway が必須**（Worker の registry.redhat.io / quay / OLM / STS 等への outbound）。**案 A**: NAT GW → 他組織 NFW ドメインフィルタ（P-18 接続）/ **案 B**: `zero_egress:true`（ECR ミラー化）+ **TGW で他組織 Outbound 専用経路へ** — **NAT 不要となり P-18（自 Acct に NAT を置かず他組織アウトバウンド経由）と製品仕様が噛み合うため積極検討**。§6.7.3 参照。**（2026-08-17 追記）本決定は VPC IP 節約策とも連動**: CGNAT 退避／PrivateLink で「ノード CIDR を Transit から隠す」場合、集中 egress（NFW = L3 到達要）と完全隠蔽は **案 B（zero_egress + VPC 内 Interface/Gateway Endpoint）でこそ両立**する（[research 2026-08-17](research/rosa-vpc-ip-conservation-2026-08-17.md)） | 同左 | 2026-07-23 ユーザー検討、2026-08-17 IP 節約連動 |
 
 - **⚠ HCP には専用 Infra Node が存在しない**（Classic の 3 Infra Node は廃止）: ingress **router pod** / in-cluster monitoring(Prometheus) / image registry（デフォルト配備）は **Worker Node に同居**する。**（2026-07-24 公式検証で訂正）OLM 本体（olm/catalog-operator・カタログ Pod）と Ingress Operator・ネットワーク系 Operator は Red Hat 側 Hosted Control Plane 内で稼働**し、Worker 上に載るのは **OperatorHub からインストールした Operator（RHBK Operator 等）とそのワークロード**。KC と infra 系の食い合いを防ぐため、§6.2.2 で **Machine Pool を役割分離**する（2026-07-23 ユーザー検討による設計変更）。
 - **接続 3 系統の分離**: ①ユーザ（フロントチャネル）= 他組織エッジ → 自管理 Internal ALB → IngressController NLB → KC Pod / ②Red Hat SRE = **backplane 経由の JIT アクセス（短命トークン・MFA・全操作監査、PrivateLink 経由で CP 管理。昇格は 2h 限定・承認制の Red Hat 側手続。顧客の /admin とは完全別経路。※「break-glass credential」は HCP では顧客側機能の名称のため SRE アクセスの呼称に使わない — 2026-07-24 用語修正）**/ ③顧客側メンテ = SSM ポートフォワード（D-U6-12）。
 - **SCIM Facade の配置**: **2026-08-06 更新 — O-9（管理コントロールプレーン実行形態）は Lambda で確定（[ADR-062](../adr/062-idm-api-execution-form-lambda.md)）**。SCIM Facade も idm-api（ブランド）・shadow 制御・非同期の糊と同じ Lambda substrate（層③）へ寄せる（旧「default（infra）Pool 常駐」から変更、§6.8.1 O-9）。受信経路は §6.7.1 REQ-IN-09（scim-broker / scim-idp、API GW → Lambda）。レイテンシ/読取 p99 は G-SCIM で実測。
 
-- **単一 VPC 集約の受容条件と分離トリガー（2026-08-18、[research](research/single-vpc-consolidation-risk-2026-08-18.md)）**: 現行は idm-api Lambda ENI をクラスタ VPC の層③に同居させる**単一 VPC（A 案）**だが、**AWS SEC05-BP01 は「全リソースを単一 VPC に作る」を High リスクのアンチパターン**とする（機微度で境界を サブネット→VPC→アカウント へ格上げせよ）。8 リスク（横展開/ブラスト半径・PrivateLink 単方向喪失・機微データ comingling・監査境界肥大・ROSA/SRE 隣接・DR 結合・IP 結合・VPC 障害ドメイン）を出典付きで評価。**A 案受容の必須要件**: ① east-west 最小権限（**identity Aurora SG＝KC Pod のみ / idm-api は Admin API 経由のみ**）② Flow Log+GuardDuty で東西横展開検知 ③ data perimeter（RCP/SCP）④ 層順の CI 機械検査。**分離トリガー**（規制ブランド/高保証/SRE 隔離強化/構造的ブラスト半径縮小）が立てば **2 VPC 分離（Keycloak/identity VPC ＋ 管理/authz VPC、idm-api は 1 本のまま管理 VPC・Admin API へ PrivateLink 単方向）→ さらに authz 別アカウント（[ADR-063 オプション B](../adr/063-brand-unit-architecture.md)）** へ格上げ。**決定（2026-08-18）= 2 VPC 分離（B 案）採用**（SEC05-BP01 アンチパターン回避＋ブラスト半径を構造で縮小）。**VPC-K（Keycloak/identity＋identity Aurora〔PW ハッシュ〕＋Admin/OIDC 内部 NLB）** と **VPC-M（idm-api Lambda〔1 本〕＋authz Aurora＋IF Endpoint、TGW 非 attach・CGNAT 可）** に分割。**idm-api → authz Aurora＝同一 VPC 直結／→ Keycloak Admin API＝PrivateLink 単方向（EPS-Admin）／identity Aurora は VPC-K で KC Pod のみ到達（idm-api はルートも SG も持たない）**。サブネット×リソース×接続×SG×PrivateLink の**構成図用 詳細は [research 2026-08-18](research/brand-unit-2vpc-topology-2026-08-18.md)**。※現行 D-U6-11 の「idm-api 侵害時 Admin API 到達は in-cluster と引き分け」評価は **Admin API 経路限定**で、identity/authz Aurora・クラスタ網への横展開全体は評価外だった点に注意（B 案でこの残リスクを構造的に解消）。
+- **単一 VPC 集約の受容条件と分離トリガー（2026-08-18、[research](research/single-vpc-consolidation-risk-2026-08-18.md)）**: 現行は idm-api Lambda ENI をクラスタ VPC の層③に同居させる**単一 VPC（A 案）**だが、**AWS SEC05-BP01 は「全リソースを単一 VPC に作る」を High リスクのアンチパターン**とする（機微度で境界を サブネット→VPC→アカウント へ格上げせよ）。8 リスク（横展開/ブラスト半径・PrivateLink 単方向喪失・機微データ comingling・監査境界肥大・ROSA/SRE 隣接・DR 結合・IP 結合・VPC 障害ドメイン）を出典付きで評価。**A 案受容の必須要件**: ① east-west 最小権限（**identity Aurora SG＝KC Pod のみ / idm-api は Admin API 経由のみ**）② Flow Log+GuardDuty で東西横展開検知 ③ data perimeter（RCP/SCP）④ 層順の CI 機械検査。**分離トリガー**（規制ブランド/高保証/SRE 隔離強化/構造的ブラスト半径縮小）が立てば **2 VPC 分離（Keycloak/identity VPC ＋ 管理/authz VPC、idm-api は 1 本のまま管理 VPC・Admin API へ PrivateLink 単方向）→ さらに authz 別アカウント（[ADR-063 オプション B](../adr/063-brand-unit-architecture.md)）** へ格上げ。**決定（2026-08-18）= 2 VPC 分離（B 案）採用**（SEC05-BP01 アンチパターン回避＋ブラスト半径を構造で縮小）。**→ 構成としての本文は [§6.2.5 D-U6-19](#625-決定-d-u6-19-2-ネットワーク分離構成2026-08-27-本文化--c-9)（2026-08-27 本文化）**。**VPC-K（Keycloak/identity＋identity Aurora〔PW ハッシュ〕＋Admin/OIDC 内部 NLB）** と **VPC-M（idm-api Lambda〔1 本〕＋authz Aurora＋IF Endpoint、TGW 非 attach・CGNAT 可）** に分割。**idm-api → authz Aurora＝同一 VPC 直結／→ Keycloak Admin API＝PrivateLink 単方向（EPS-Admin）／identity Aurora は VPC-K で KC Pod のみ到達（idm-api はルートも SG も持たない）**。サブネット×リソース×接続×SG×PrivateLink の**構成図用 詳細は [research 2026-08-18](research/brand-unit-2vpc-topology-2026-08-18.md)**。※現行 D-U6-11 の「idm-api 侵害時 Admin API 到達は in-cluster と引き分け」評価は **Admin API 経路限定**で、identity/authz Aurora・クラスタ網への横展開全体は評価外だった点に注意（B 案でこの残リスクを構造的に解消）。
 - **VPC IP 節約と CIDR 隠蔽（2026-08-17、[research](research/rosa-vpc-ip-conservation-2026-08-17.md)）**: 「ROSA が大きな CIDR を食う」は EKS VPC CNI の話で **ROSA は OVN オーバーレイ＝ Pod は VPC IP を消費しない**（routable を食うのはノードのみ、マルチ AZ 最小 /24）。**Transit-routable に本当に晒す必要があるのは「インバウンド ALB ＋ TGW attachment」だけ**（Node/Aurora/Interface Endpoint はクラスタ内〔VPC 内〕で完結し TGW 到達不要）。**構成: Broker 1 VPC・IdP-KC 1 VPC・編集系〔idm-api＋管理 SPA〕別 VPC**、各 /23（上表 4 層×3AZ）。**routable の縮小策 2 段**: **(既定) そのまま**（Broker/IdP = /22 相当を Transit へ、現行 P-18 経路）/ **(節約案 B) ノード・Aurora・Endpoint を secondary CGNAT CIDR（`100.64.0.0/16`〔OVN 予約〕は回避）へ退避し Transit へは ALB の極小 CIDR のみ広告**（1 VPC のまま・追加コストほぼゼロ、2 クラスタ＋別 VPC＋将来ブランドが単一 /24 に収まる余地）。**PrivateLink 分割（front/ROSA 2 VPC）** は ② を完全隔離アイランドにしたい場合の上位オプション（[D-U6-06](06-infra-network-design.md) と同方式、TGW から見えるのは公開 NLB のみ＝クラスタ網スキャン不可）。**編集系別 VPC → IdP-KC Admin API（内部 NLB）は PrivateLink 到達**。いずれも **egress を zero_egress（O-10 案 B）で固めるのが前提**（PrivateLink 単方向ゆえノード外向きは別経路、集中 egress と完全隠蔽は zero_egress で両立）。**未確認**: ROSA のノードサブネット CGNAT 公式サポート／ノード実 ENI 数（要 Red Hat 確認・PoC）。
 
 ### 6.2.2 決定 D-U6-04: Machine Pool・インスタンスタイプ案（2026-07-23 改訂: 役割分離 2 Pool 構成）
@@ -308,6 +308,82 @@ Tier ごとに CPU プロファイルが 10-30 倍異なる（Broker = JWT/SAML 
 - 残: **G-OSAKA** — 大阪側の該当インスタンスタイプ在庫 + vCPU クォータの実確認（U1 §1.5 ゲート、§6.8）。
 - **大阪の Machine Pool 構成（2026-07-24 明確化）**: infra Pool（c7g.large × 2、テイントなし）+ **KC 専用 Pool（labeled/tainted、min 0、東京と同一のテイント/ラベル定義で事前作成）**。CIDR・サブネットも Failover 後の東京同等スケール（**KC Pool max 9/29**、2026-08-27 是正）を収容できるサイズで事前確保する（§6.2.1 サブネット設計参照）。
 - DR の Failover 手順・RTO/RPO 設計は U8（本書は「Broker/IdP-KC それぞれ大阪にパイロットライト・クラスタと Aurora Global Secondary を持つ」という物理配置のみ確定）。
+
+---
+
+### 6.2.5 決定 D-U6-19: 2 ネットワーク分離構成（2026-08-27 本文化 — C-9）
+
+> **本節の位置づけ**: 2026-08-18 に「単一ネットワーク集約（A 案）→ **2 ネットワーク分離（B 案）採用**」を決定したが、[§6.2.1](#621-決定-d-u6-03-クラスタ構成) の箇条書き（決定の記録）に留まり、**本文の構成記述が単一ネットワーク前提のまま**だった。本節で構成として書き下す。**詳細（サブネット × リソース × 接続 × SG × 通信シーケンス）は [トポロジ note](research/brand-unit-2vpc-topology-2026-08-18.md) を正**とし、本節はその要約と設計上の不変条件を担う。
+>
+> ⚠ **CIDR の実値は P-17（[D-19](00a-remaining-tasks-and-effort.md)）の確定待ち**のため、本節では変数で記述する（`$CIDR_K` / `$CIDR_M`）。**クラスタ作成後に CIDR は変更できない**ため、確定前に構築へ進んではならない。
+
+#### 6.2.5.1 分離の単位と理由
+
+| ネットワーク | 収容するもの | 機微度 | ROSA 管理下 | TGW 接続 | CIDR |
+|---|---|---|---|---|---|
+| **VPC-K（認証製品・利用者情報）** | ROSA クラスタ（認証製品 Pod）／**利用者情報 DB（パスワードのハッシュを保持）**／ログイン用と管理用の内部 NLB 2 本 | **最高** | ○ | **必要**（ログインの入口が経由するため） | `$CIDR_K`（Transit へ広告する） |
+| **VPC-M（管理・権限）** | **管理 API（idm-api）**／非同期処理群／**権限 DB**／各種エンドポイント | 中 | × | **不要** | `$CIDR_M`（**Transit へ広告しない = 隠蔽できる**） |
+
+**なぜ 2 つに分けるか**: [AWS の設計原則 SEC05-BP01](research/single-vpc-consolidation-risk-2026-08-18.md) は「**全リソースを 1 つのネットワークに置く**」を **High リスクのアンチパターン**として明示し、機微度が異なるものは境界を「サブネット → ネットワーク → アカウント」の順に格上げせよとする。単一ネットワークでは **管理 API が侵害されたときにパスワードのハッシュを保持する DB まで到達しうる**が、分離すれば**経路そのものが存在しない**状態を作れる。
+
+**VPC-M が TGW に繋がなくてよい理由**: 管理 API への入口は「配信 → API ゲートウェイ → 関数の直接呼び出し」であり、**ネットワーク経路を通らない**。関数側のネットワーク接続は**出ていく方向専用**（権限 DB・管理 API・AWS サービス）。よって **Transit から見えない孤立した島**にでき、[CGNAT 帯](research/rosa-vpc-ip-conservation-2026-08-17.md)を使って Transit の IP を一切消費しない構成が取れる。
+
+#### 6.2.5.2 サブネット構成（AZ ごと × 3）
+
+**VPC-K** — [§6.2.1](#621-決定-d-u6-03-クラスタ構成) の「サブネット 4 層設計」は**本ネットワークの記述**である（VPC-M には適用されない）:
+
+| 層 | サイズ/AZ | 収容 |
+|---|---|---|
+| TGW 接続用 | /28 | Transit の接続点。ログインの入口 |
+| ロードバランサ用 | /27 | 内部 ALB（L7 制御・`/admin` 遮断） |
+| ノード用 | /26 | ROSA worker（認証製品 Pod）／**ログイン用 内部 NLB**／**管理用 内部 NLB** |
+| DB 用 | /28 | **利用者情報 DB**（認証製品 Pod のみ到達可） |
+| エンドポイント用 | /27 | 外向き通信を閉域化するための各種エンドポイント |
+
+**VPC-M**（3 層のみ・小規模）:
+
+| 層 | サイズ/AZ | 収容 |
+|---|---|---|
+| 関数用 | /27 | 管理 API の実行環境／非同期処理群の実行環境 |
+| エンドポイント用 | /27 | **管理 API 到達用エンドポイント**／AWS サービス用エンドポイント |
+| DB 用 | /28 | **権限 DB**（管理 API のみ到達可） |
+
+#### 6.2.5.3 ネットワークをまたぐ経路は 2 本だけ
+
+| 経路 | 呼ぶ側 → 呼ばれる側 | 用途 | 方向 |
+|---|---|---|---|
+| **① 認証の裏経路** | 外部連携を受ける側（別アカウント） → VPC-K のログイン用 NLB | 利用者を直接収容する側へ認証を委譲する際の、トークン取得・鍵取得・属性取得 | **一方向**（逆向きに接続できない） |
+| **② 管理 API 経路** | VPC-M の管理 API → VPC-K の管理用 NLB | 利用者・接続先の作成／更新／削除 | **一方向** |
+
+- **接続を受ける側の NLB を 2 本に分ける**ことで、**管理用の口をログインの面から隔離**する（ログイン経路から管理 API へ横に移動できない）。
+- 名前解決は**呼ぶ側のネットワーク内に閉じた DNS** で行い、外部からは解決できない。
+
+#### 6.2.5.4 守るべき不変条件（設計・実装・レビューの合格基準）
+
+| # | 不変条件 | 破れたときに起きること |
+|---|---|---|
+| **1** | **管理 API は利用者情報 DB への経路も接続許可も持たない** | パスワードのハッシュが管理面の侵害で流出する |
+| **2** | **利用者情報 DB に接続できるのは認証製品 Pod のみ** | 同上 |
+| **3** | **権限 DB に接続できるのは管理 API と非同期処理群のみ** | 権限情報の直接改ざん |
+| **4** | **ネットワーク間の接続は「呼ぶ側 → 呼ばれる側」の一方向で、逆向きの接続を張れない** | VPC-K 側が侵害された場合に管理面へ横展開される |
+| **5** | **管理用 NLB に到達できるのは VPC-M の当該エンドポイントのみ** | 管理 API が広く公開される |
+| **6** | **VPC-M は Transit に接続しない** | 社内網から権限 DB へ到達しうる |
+
+> **管理 API が全侵害された場合の到達範囲**: 権限 DB と、管理 API 経由でできる操作のみ。**パスワードのハッシュには到達できず**、**クラスタ網の探索もできない**。これが単一ネットワーク構成との決定的な差である。
+
+#### 6.2.5.5 単一ネットワーク構成からの差分
+
+| 観点 | 旧（A 案・単一） | **新（B 案・2 分離）** |
+|---|---|---|
+| ネットワーク数 | 1 | **2** |
+| 管理 API の実行環境の置き場所 | クラスタと同じネットワークのノード層 | **VPC-M の専用層** |
+| 管理 API → 認証製品 | 同一ネットワーク内で直接到達 | **一方向の閉域接続のみ** |
+| 利用者情報 DB への到達可能性 | 同一ネットワークのため**経路が存在した** | **経路が存在しない** |
+| Transit が消費する IP | 全リソース分 | **VPC-K のみ**（VPC-M は隠蔽可） |
+| 設定の複雑さ | 低 | **中**（エンドポイント 2 系統・DNS 2 系統の増） |
+
+- **増える運用**: 閉域接続の受け口 2 本の作成・承認、名前解決の設定、接続の疎通監視。→ [U9](09-operations-observability-design.md) へ引き渡し、[IT-08 疎通試験](research/wbs-test-refinement-2026-08-26.md)で検証する。
+- **アカウントまで分ける案**（権限側を別アカウントへ）は [ADR-063 オプション B](../adr/063-brand-unit-architecture.md) として保留。Phase 1 は 2 ネットワーク分離まで。
 
 ---
 
