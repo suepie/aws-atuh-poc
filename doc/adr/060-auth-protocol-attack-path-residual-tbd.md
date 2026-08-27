@@ -195,7 +195,8 @@ s/(KEYCLOAK_SESSION|KEYCLOAK_IDENTITY)=[^;\s]+/\1=[REDACTED]/g
 ### B.6 Phase 1 の残リスク明示
 
 - **O20 Token Substitution は Phase 1 で完全防御されない**（短寿命化による影響最小化のみ）
-- **顧客説明で明記**：「本基盤は Phase 1 で Access Token 30 分（[U5 §5.2.1](../basic-design/05-token-session-authz-design.md) 確定）+ Refresh Rotation で影響最小化、Phase 2 で DPoP により完全防御予定」
+- **顧客説明で明記（2026-08-27 改訂 — 将来時期の約束を撤去）**：「本基盤は Access Token 30 分（[U5 §5.2.1](../basic-design/05-token-session-authz-design.md) 確定）+ Refresh Rotation で影響を最小化する。**即時遮断（数分以内）を要する場合は TTL 短縮オプションを提供する。**」
+- **⚠ 旧文言「Phase 2 で DPoP により完全防御予定」は撤去**。理由 = **Phase 2 の実施自体が未確定**であり、時期を伴う将来提供の約束は**果たせない可能性がある約束**になる。DPoP は技術的な発展方向として設計に残す（[U5 §5.10.6 D-U5-14](../basic-design/05-token-session-authz-design.md)）が、**顧客・契約に対しては「Phase 1 で提供する範囲」のみを述べる**。同一方針を Phase 3 Introspection にも適用。
 
 ### B.7 実装 ADR
 

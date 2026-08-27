@@ -254,8 +254,13 @@ stateDiagram-v2
 | 第 2 段階: Soft Delete | `enabled=false` + `not_before` + Session Revoke + **`deprovisioned_at=now` 必須セット** | Phase 1 | PCI DSS 8.2.6 "removed **or disabled**"（PCI SSC Information Supplement: フラグ disable で十分。物理削除を求める QSA はほぼ無い）。**顧客 IdP 側 disabled でも本基盤内の明示 Soft Delete は必須**（監査のシステムごと独立性、[jit-scim §10.4.H.3](../common/jit-scim-coexistence-keycloak.md)） |
 | 第 3 段階: 物理削除 | `deprovisioned_at + retention_years` 経過後、監査ログ S3 Glacier Deep Archive → DELETE CASCADE + `idmap` 掃除 | **Phase 2** | 起算は `last_login` ではなく **`deprovisioned_at`**（退職判定時点起算が法規制の標準解釈、[jit-scim §10.4.K.6.5](../common/jit-scim-coexistence-keycloak.md)） |
 
+
+> **対外表明の規律（2026-08-27、[U5 §5.2.4](05-token-session-authz-design.md) と同一方針）**: 上表の **Phase 2 / Phase 3 は設計上の発展方向であり、実施時期は未確定**である。したがって**顧客説明・契約・提案書では「Phase 2 で〜を提供する」という時期を伴う将来提供を述べない**。対外的に述べるのは **Phase 1 で提供する範囲のみ**とし、それ以降は「**提供時期は未定**」と明示する。理由 = **Phase 2 の実施自体が未確定**であり、果たせない可能性のある約束を契約に載せないため。**設計内部では発展方向を保持してよい**（本節の記述は維持）。
+
+> **本節に固有の帰結**: 第 3 段階が未実施である限り、**利用者データについて「削除完了」を証明する書面は発行できない**（無効化した旨の証明は発行できる）。サービス離脱時の取扱い（[B-TENANT-EXIT-1](../requirements/hearing-checklist.md)）で「物理削除 + 完了証明書発行」を契約に書く場合、**第 3 段階の実施が前提条件になる**ことを法務と共有すること。
+
 **Phase 1 準備必須事項**（[jit-scim §10.4.K.6.6](../common/jit-scim-coexistence-keycloak.md)）:
-1. **全 Soft Delete 経路（90 日バッチ / SCIM Facade / API 層 / 管理者操作）で `deprovisioned_at` をセット** — 1 箇所でも漏れると Phase 2 バッチの対象から永久に外れる。
+1. **全 Soft Delete 経路（90 日バッチ / SCIM Facade / API 層 / 管理者操作）で `deprovisioned_at` をセット** — 1 箇所でも漏れると Phase 2 バッチの対象から永久に外れる。**第 3 段階を実施するか否かに関わらず Phase 1 で必ず行う**（後から遡って埋められず、記録が将来の選択肢を残す唯一の手段。追加コストはほぼゼロ）。
 2. Realm 属性 `retention_years`（デフォルト 3、顧客 override 5/7/10 — ゲート B-JIT-DEL-2）を Terraform で設定可能に。
 3. Phase 1 の物理削除は**原則禁止**。4 層ガードレール（admin role に `delete-users` 非付与 / API 層で DELETE 動詞封鎖 / SCIM DELETE → Soft Delete 写像 / Aurora PITR）を適用（[jit-scim §10.5.1](../common/jit-scim-coexistence-keycloak.md)）。
 
@@ -533,6 +538,7 @@ sequenceDiagram
 
 ## 改訂履歴
 
+- 2026-08-27: **D3-09 に対外表明の規律を追加** — 第 3 段階（物理削除、Phase 2）は**実施時期が未確定**のため、**顧客説明・契約で時期を伴う将来提供を述べない**（[U5 §5.2.4](05-token-session-authz-design.md) と同一方針）。**帰結として「削除完了」の証明書は第 3 段階の実施が前提**である旨を明示し、[B-TENANT-EXIT-1](../requirements/hearing-checklist.md) の契約文言へ連動。`deprovisioned_at` の全経路セットは**第 3 段階の実施可否に関わらず Phase 1 で必ず行う**（後から遡れないため）と補強。
 - 2026-08-06: **属性正準化（[attribute-canonicalization ノート](research/attribute-canonicalization-notes.md)）と 射影 vs 都度 join 結論（[me-context-projection 比較ノート](research/me-context-projection-comparison-notes.md)）を反映** — D3-15 に「顧客 IdP 素通し不可・正準スキーマ写像/基盤付与・source 3 ケース・②が①で上書きされない規約・hosted 編集可/federated 読取のみ・移行マッピング表」、D3-16 に「Option A（射影）維持・都度 join は P-17 抵触で却下・ハイブリッド案 2 部分射影・G-SCIM 実測」を追記（[ADR-062](../adr/062-idm-api-execution-form-lambda.md) 系の管理コントロールプレーン確定と連動）。
 - 2026-08-06: **削除の確実性 = A 案（outbox）確定** — D3-17 を「IdP-KC トリガーのイベント駆動」から **outbox パターン**（soft-delete + outbox を authz DB 1 Tx / リレーが EventBridge へ必達送信 / shadow 制御 Lambda 冪等 / **遮断チェックのみ数分リコンサイル**）に更新。楽観文言「数秒/24h 回避」を worst-case 正しく是正（通常数秒 / worst = リコンサイル間隔）。**ロックアウト SLA を Open Item に格上げ**。§3.8.0 に管理コントロールプレーン全体構成図（ブランド主役 + EventBridge 2 本 + outbox）を新設。
 - 2026-08-06: **[ADR-063 ブランドユニット](../adr/063-brand-unit-architecture.md) を反映** — D3-16 に per-brand（authz/idmap/projection はブランドユニット・`/api/me/context` はブランドローカル read・越境ゼロ / 都度 join 却下前提は per-brand で消える / RC-1〜4 は単一マルチテナント前提として保持）を追記、**D3-17 削除フローを「Broker-first 同期 2 コール」→「IdP-KC トリガーのイベント駆動」に改訂**（idm-api soft-delete → `user.deprovisioned` EventBridge → shadow 制御 Lambda が Broker shadow 無効化、数秒窓は AT30分+リコンサイルで許容、旧 PrivateLink 委譲は撤回、federated は SCIM/90 日バッチ）。

@@ -180,7 +180,8 @@ AT は Stateless JWT のため、失効操作後も **最大 30 分（テナン�
 | Z-4 | ITDR L4 / 大規模侵害（Realm/Client 単位） | not-before push + 全セッション削除（§5.4.3） | 即時 | ローカル検証 RP では ≤30 分（not-before は RP ローカル検証に伝播しない） | Phase 3: API GW での Token Introspection によるリアルタイム化（ADR-025 §I.5 ④） |
 | Z-5 | AT 単体の盗難（XSS / ログ漏洩 / MITM） | なし（Bearer の宿命、ADR-060 §B.1） | — | **≤30 分（構造的残余リスク）** | Phase 1 = 短寿命化のみ。**Phase 2 DPoP で完全防御**（ADR-060 §B.4、§5.9） |
 
-- **契約明示事項**（ADR-060 §B.6 と同一方針): 「本基盤は Phase 1 で AT 30 分 + RT Rotation により影響を最小化する。即時遮断（数分以内）を要する規制テナントには TTL 短縮オプション（§5.2.3）を提供し、Phase 2 で DPoP、Phase 3 で Introspection によるリアルタイム失効を計画する」。
+- **契約明示事項**（[ADR-060 §B.6](../adr/060-auth-protocol-attack-path-residual-tbd.md) と同一方針。**2026-08-27 改訂 — 将来時期の約束を撤去**): 「本基盤は **AT 30 分 + RT Rotation により影響を最小化する**。即時遮断（数分以内）を要する規制テナントには **TTL 短縮オプション（§5.2.3）を提供する**」。
+  - **⚠ 旧文言の「Phase 2 で DPoP、Phase 3 で Introspection によるリアルタイム失効を計画する」は契約・顧客説明から撤去**。**Phase 2 の実施自体が未確定**であり、**時期を伴う将来提供は果たせない可能性のある約束**になるため。DPoP / Introspection は**技術的な発展方向としては設計に残す**（§5.10.6 / §5.9）が、**対外的には「今提供する範囲」のみを述べる**。この原則は CAEP（§5.10）・物理削除（U3 D3-09）にも同様に適用する。
 - **全セッション層の一覧・作成/削除フロー・退職者実効遮断ラグの完全な整理は [session-lifecycle-and-flows.md](../common/session-lifecycle-and-flows.md) を SSOT とする**（2026-07-27 新設。AT 30 分は「オフライン窓」であって遮断時間ではない旨、退職者の実効遮断 = SCIM 数分 / JIT アイドル 1h・絶対 24h〔規制 8h〕を明示）。
 
 ---
@@ -574,7 +575,7 @@ Back-Channel Logout はサーバ間 POST のため、**バックエンドを持�
 
 ### 5.10.1 決定 D-U5-09: 継続アクセス（CAEP / Shared Signals）= ゾンビ窓の恒久解
 
-**採用**: ゾンビ窓（§5.2.4）の恒久解として **CAEP を目標アーキ**とする（[ADR-065](../adr/065-continuous-access-caep-shared-signals.md)）。**Phase 1 = 暫定ブリッジ**（短命 AT + not-before push〔§5.4.3〕+ 高価値リソースの Introspection + DPoP）**+ ADR-064 outbox 起点の自作 SET エミッタ**（transmitter 先行、opt-in RP へ `session-revoked`/RISC `account-disabled` を配信）。Phase 2 で Keycloak native SSF、Phase 3 で receiver（顧客 IdP 失効の inbound）。**RP 実装ガイド（§5.6）に CAEP receiver 章を追加**。最終確定 = gate **G-SSF** + hearing **B-CAEP-1**。
+**採用**: ゾンビ窓（§5.2.4）の恒久解として **CAEP を目標アーキ**とする（[ADR-065](../adr/065-continuous-access-caep-shared-signals.md)）。**Phase 1 = 暫定ブリッジ**（短命 AT + not-before push〔§5.4.3〕+ 高価値リソースの Introspection + DPoP）**+ ADR-064 outbox 起点の自作 SET エミッタ**（transmitter 先行、opt-in RP へ `session-revoked`/RISC `account-disabled` を配信）。Phase 2 で Keycloak native SSF、Phase 3 で receiver（顧客 IdP 失効の inbound）。**⚠ 対外表明の規律（2026-08-27、§5.2.4 と同一方針）: この Phase 2/3 は設計上の発展方向であり実施時期は未確定。顧客説明・契約では「Phase 2 で製品標準へ移行」等の時期を伴う将来提供を述べず、Phase 1 で提供する範囲のみを述べる**（採用製品の実装が実験的段階〔送信のみ・既定オフ・受信未完成〕であり、自社都合だけで時期を決められないことも理由）。**RP 実装ガイド（§5.6）に CAEP receiver 章を追加**。最終確定 = gate **G-SSF** + hearing **B-CAEP-1**。
 
 ### 5.10.2 決定 D-U5-10: API 層ステップアップ = RFC 9470 準拠（必要時）
 
@@ -598,6 +599,7 @@ Back-Channel Logout はサーバ間 POST のため、**バックエンドを持�
 
 ## 改訂履歴
 
+- 2026-08-27: **§5.2.4 契約明示事項から将来時期の約束を撤去**（「Phase 2 で DPoP、Phase 3 で Introspection」→ 削除）。**Phase 2 の実施自体が未確定**であり、時期を伴う将来提供は果たせない可能性のある約束になるため。**対外的には「今提供する範囲」のみを述べる**原則を確立し、§5.10.1 CAEP・[U3 D3-09](03-identity-provisioning-design.md) 物理削除にも同一規律を適用。[ADR-060 §B.6](../adr/060-auth-protocol-attack-path-residual-tbd.md) も同時改訂。**設計内部では発展方向（DPoP / Introspection / CAEP）を保持**。
 - 2026-07-26 (v1.3): 可読性向上のための図示追加（本文の決定内容の変更なし） — §5.2.2 TTL 体系構造図（RT = SSO 従属 / 絶対 24h 防御線）、§5.3.3 Token Exchange Pattern 2 シーケンス、§5.4.3 Revocation 3 粒度 × ITDR L4 関係図、§5.5.1 ログアウト伝播シーケンス（L2 → L4 + IdP-KC 連鎖）。
 
 - 2026-07-24 (v1.2): **02a GAP-1/2 反映** — L3 に idpkc-oidc01 例外（既定 ON、自社基盤のため越境問題なし。OFF だと共有端末で無操作再ログイン可）、2 層セッション TTL 整合（IdP-KC は Broker 同値以下、P-09 絶対 24h は 2 層合成で担保）、既定到達範囲を「L1+L2+L4+IdP-KC 連鎖」に更新。
