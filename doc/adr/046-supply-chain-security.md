@@ -85,7 +85,9 @@
 
 ### 採用方針
 
-**「6 層 Supply Chain Defense」**を採用。ソースコード / 依存ライブラリ / コンテナ / ビルドパイプライン / 配布 / ランタイムの各段階に対策を配置。SLSA Level 3 を 12 ヶ月以内に達成目標。
+**「6 層 Supply Chain Defense」**を採用。ソースコード / 依存ライブラリ / コンテナ / ビルドパイプライン / 配布 / ランタイムの各段階に対策を配置。**Phase 1 = SLSA L2**。L3 への引き上げは**設計上の目標として保持するが、達成時期は未確定**。
+
+> **対外表明の規律（2026-08-27 追加、[U5 §5.2.4](../basic-design/05-token-session-authz-design.md) と同一方針）**: 旧記述「**SLSA Level 3 を 12 ヶ月以内に達成目標**」は**社内の努力目標**であり、**顧客説明・契約では時期を伴う約束として述べない**。対外的には「**Phase 1 = L2。L3 は目標として持つが時期は未定**」と表明する（[顧客説明資料 ④](../requirements/customer-explanation/04-security.md)）。理由 = **L3 の達成は Phase 2 の実施可否・体制・CI 基盤の成熟に依存**し、当社の意思だけで期限を確約できないため。**設計内部では L3 を目標として保持してよい**（本 ADR の記述は維持）。
 
 | 層 | 対策 | ツール |
 |---|---|---|
@@ -102,7 +104,7 @@
 |---|---|---|
 | **SBOM 形式** | **CycloneDX**（プライマリ）+ SPDX（互換性必要時生成） | CycloneDX は脆弱性情報統合に強い、業界トレンド |
 | **コンテナ署名** | **Sigstore Cosign + Rekor Transparency Log** | OSS 標準、AWS との統合容易 |
-| **SLSA 目標** | **L3 を 12 ヶ月以内**（Phase 1 は L2、Phase 2 で L3）| L4 は Reproducible Build 必要、過剰 |
+| **SLSA 目標** | **Phase 1 = L2 / L3 は目標（達成時期は未確定 — 2026-08-27 改訂、対外的に時期を約束しない）**。旧記述は「L3 を 12 ヶ月以内」 | L4 は Reproducible Build 必要、過剰 |
 | **依存自動更新ツール** | **Renovate**（Dependabot より柔軟）| グループ更新、Lock ファイル対応充実 |
 | **CI/CD プラットフォーム** | **GitHub Actions + OIDC Federation**（IRSA）| Long-lived AWS Key 廃止、PCI DSS §8.6.2 |
 | **脆弱性スキャナ** | **Trivy**（プライマリ）+ AWS Inspector（補完）| Trivy は OSS かつカバレッジ広い |

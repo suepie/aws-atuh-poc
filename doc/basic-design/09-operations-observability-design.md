@@ -449,7 +449,7 @@ flowchart LR
 **採用**: SPI 3 JAR・4 機能（JIT 制御〔Re-Activation 統合〕/ HRD / Event Listener / mfa_indicator Mapper — U2 §2.4 と整合）のサプライチェーンを ADR-046 の 6 層に沿って確定する:
 
 1. **ビルド**: Maven（`cyclonedx-maven-plugin` で SBOM 生成）→ KC ベースイメージ（ECR ミラー済み RHBK）へ SPI JAR を焼き込み、**単一のカスタムイメージ**として出荷（JAR 単体配布はしない — イメージ digest = 検証単位）。
-2. **検証**: Trivy スキャン（SLA: Critical 24h / High 7 日、ADR-046 §C.3）→ **Cosign 署名 + SLSA Provenance 生成**（Phase 1 = SLSA L2、12 ヶ月以内 L3 — ADR-046 §E.1）→ クラスタ側は admission policy で **Cosign verify 必須**（未署名イメージの Pod 起動を拒否）。
+2. **検証**: Trivy スキャン（SLA: Critical 24h / High 7 日、ADR-046 §C.3）→ **Cosign 署名 + SLSA Provenance 生成**（**Phase 1 = SLSA L2**。L3 は目標として保持するが**達成時期は未確定** — [ADR-046](../adr/046-supply-chain-security.md) §E.1、2026-08-27 改訂。**対外的に時期を約束しない**）→ クラスタ側は admission policy で **Cosign verify 必須**（未署名イメージの Pod 起動を拒否）。
 3. **機能検証**: Staging で ①SPI 3 系統 Flow 配置の回帰（Browser forms / First Broker / Post Broker — PoC F-6 / K-6 lint 含む）②**1000 IdP 合成データセット回帰（ログイン p99 / Admin API p99、ベースライン比 +10% 以内）**③G-SPI-Compat 項目（RHBK × upstream SPI 互換）。
 4. **カナリアデプロイ**: 本番は RHBK Operator ローリング（PDB maxUnavailable=1）を利用し、**1 Pod 目更新後に bake time 15 分**を置く。bake 中は §9.8 の synthetic ログインチェック（認証成功 + 該当 SPI パスの発火メトリクス）を毎分実行し、失敗で自動ロールバック（Git revert → ArgoCD 同期）。ユーザ影響ゼロ（Persistent user sessions が DB 保存のため、U8 D-U8-04）。
 
@@ -460,7 +460,7 @@ flowchart TB
     PR["SPI / 設定変更 PR (Git)"] --> CI["GitHub Actions (CI)<br/>OIDC Federation (long-lived key なし)"]
     CI --> BLD["Maven ビルド + SBOM (CycloneDX)<br/>RHBK ベースイメージ (ECR ミラー) へ SPI JAR 焼き込み<br/>= 単一カスタムイメージ"]
     BLD --> SCAN["Trivy スキャン<br/>(SLA: Critical 24h / High 7 日)"]
-    SCAN --> SIGN["Cosign 署名 + SLSA Provenance<br/>(Phase 1 = L2、12 ヶ月以内 L3)"]
+    SCAN --> SIGN["Cosign 署名 + SLSA Provenance<br/>(Phase 1 = L2 / L3 は時期未定)"]
     SIGN --> ECR["ECR push (タグでなく digest 指定)<br/>東西 ECR 同時レプリケーション"]
     ECR --> STG["Staging 昇格ゲート (パッチ含む全昇格必須)<br/>SPI 3 系統 Flow 回帰 + 1000 IdP 合成回帰<br/>(p99 ベースライン比 +10% 以内) + G-SPI-Compat"]
     STG --> GIT["Git 上の digest 書き換え<br/>(本番昇格は手動承認)"]
@@ -633,6 +633,7 @@ flowchart TB
 
 ## 改訂履歴
 
+- 2026-08-27: **SLSA L3 の「12 ヶ月以内」表記を「達成時期は未確定」へ是正**（§9.6.2 本文 + 図）。L3 達成は Phase 2 の実施可否・体制・CI 基盤の成熟に依存し**自社の意思だけで期限を確約できない**ため、対外的に時期を約束しない（[ADR-046](../adr/046-supply-chain-security.md) / [U5 §5.2.4](05-token-session-authz-design.md) の対外表明規律）。**設計内部では L3 を目標として保持**。
 - 2026-08-24: **§9.1.2 に #18（ノード時刻のずれ）/ #19（HRD 解決の失敗率と探索パターン）を追加**。#18 は観点「**沈黙**」（同期が止まってもずれが顕在化するまで無症状 → 最終同期からの経過時間を存在確認）、#19 は**テナント列挙探索の唯一の検知手段**（Brute Force Protection が数えない領域）。§9.1.2b の「沈黙」行に時刻同期停止を追記。**メトリクス表の番号重複（12/13/14 の二重採番）を検出し注記**（機械的振り直しは参照破壊のため見送り）。
 - 2026-08-13: **SIEM 取込セットを [U7 D-U7-04a](07-security-compliance-design.md) と整合** — 成功 `CODE_TO_TOKEN` / `REFRESH_TOKEN` を emit 対象から除外し失敗系（`*_ERROR`）を追加（Event Listener は認証スレッドで同期実行のため、10M MAU で最大流量の成功 refresh を全量 PutEvents すると Token API SLO を圧迫）。全量はログ 3 層に残る。
 
