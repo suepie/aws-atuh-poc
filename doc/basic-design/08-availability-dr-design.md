@@ -2,13 +2,6 @@
 
 作成日: 2026-07-23
 ステータス: Draft v1（Wave 2）
-> 🔴 **2026-09-02 決定: 別地域への切替（災害対策）は Phase 1 スコープ外**（ユーザー判断）。
-> **切替先は持たない**。手順書・方式判断・機材確保はすべて対象外とし、**顧客にはリスクを説明して同意を得る**。
-> **残すもの**: 🔴 **同一地域内の復元**（誤操作・データの壊れ・身代金要求型の攻撃への対応）と、**同一地域内の可用性**（DB の自動切替・入替）。
-> **今やること**: **ネットワークの番号予約のみ**（作成後に変更できないため。将来は「足すだけ」で済む）。
-> **受け入れるリスク**: **地域全体の障害でサービスが止まったままになり、接続するアプリすべてが使えなくなる**。
-> 詳細 = [dr-scope-decision-2026-09-02](research/dr-scope-decision-2026-09-02.md)。**本文の別地域切替に関する記述は参考扱い**。
-
 前提: [01-architecture-baseline.md](01-architecture-baseline.md) **Baseline v1**（**P-19 ブランドユニット** = authz/idmap/projection の Aurora も DR 対象〔DU-U8-10〕/ **P-20** = Lambda 群は IaC 再適用で復旧、特に P-04 SLA 99.9% / P-05 DR Tier 2: RTO 1h・RPO 1min・Active-Passive / P-15 東京+大阪 / P-01 ROSA HCP + RHBK Operator / P-02 10M MAU）
 上位文書: [00-basic-design-plan.md](00-basic-design-plan.md) U8
 物理配置の前提: [06-infra-network-design.md](06-infra-network-design.md)（D-U6-03/05/07、§6.8.2 の U8 引き渡し）
