@@ -78,9 +78,9 @@ flowchart TB
     DISC -.->|"読み取り AssumeRole：<br/>資材 VersionId 比較・<br/>monitoring.yaml・spec 取得"| ARTA
     DISC -.->|"同"| ARTB
     DISC -->|自動登録・スナップショット・spec Put| Reg
-    DISC -->|変化あり → 自動差分検査（モード1）起動| CC
+    DISC -->|"変化あり → 自動差分検査（モード1）起動"| CC
 
-    CC -->|台帳 List/Get + spec Get<br/>（自動差分検査(モード1)は対象のみ/全量検査(モード2)は全量）| Reg
+    CC -->|"台帳 List/Get + spec Get<br/>（自動差分検査(モード1)は対象のみ/全量検査(モード2)は全量）"| Reg
     CC -->|probe は実 UX と同じ境界経由| CFA
     CFA --> APIA
     CC --> CFB

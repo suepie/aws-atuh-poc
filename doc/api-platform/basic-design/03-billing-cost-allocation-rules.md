@@ -271,7 +271,7 @@ flowchart TB
 
     APIK -->|GetUsage: used/remaining quota| ATH
     ALOG -->|S3 export| ATH
-    RES -->|Cost Allocation Tag<br/>(要 activate)| CUR
+    RES -->|"Cost Allocation Tag<br/>(要 activate)"| CUR
     CUR --> ATH
     CC -.->|部門/BU 分類列を付与| CUR
     ATH --> QS
