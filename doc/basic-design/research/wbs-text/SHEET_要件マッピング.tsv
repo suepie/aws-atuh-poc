@@ -1,178 +1,210 @@
-要件ID	種別	優先度	要件実現対象	構築場所	担当	担当の理由	項目	概要	① 基本設計	② 詳細設計	③ 製造	④ テスト	状況
-FR-AUTH-001	機能要件	Must	対象	Keycloak-IdP	アプリ	Keycloak-IdP に収容するユーザの話。基盤は基盤（ROSA）まで作って引き渡す	ID/PW 認証（ローカルユーザー）	ID とパスワードで直接ログインできること。顧客IdP を持たない顧客のユーザと運用者が使う	HB-F-AUTH-01 HJ-20	DDG-01	MKA-01 MKJ-01	IT-03	アプリ側で実施（本基盤にも 4 工程あり）
-FR-AUTH-002	機能要件	Must	対象	Keycloak-Broker	インフラ	—	Authorization Code + PKCE（SPA / モバイル）	画面を持つアプリが、標準の手順（認可コード＋PKCE）でログインを開始し JWT を受け取れること	GD-09 GD-10 GD-14 GD-15 HB-F-AUTH-05 HE-14 HJ-02a HJ-09 HJ-10a	DDB-01 DDB-14 DDE-01 DDI-02	MKB-02 MKB-03 MKB-22 MKI-02 MKI-13	IT-07 ST-04	全工程あり
-FR-AUTH-003	機能要件	Must	対象	Keycloak-Broker	インフラ	—	Authorization Code + client_secret（SSR）	サーバ側で処理するアプリが、接続用パスワードを使う標準の手順でログインできること	GD-09 GD-10 GD-14 GD-15 HB-F-AUTH-05 HE-14 HJ-02a HJ-09 HJ-10a	DDB-01 DDB-14 DDE-01 DDI-02	MKB-02 MKB-03 MKB-22 MKI-02 MKI-13	IT-01 IT-07 RI-01 RI-02 ST-04	全工程あり
-FR-AUTH-004	機能要件	Must	対象	Keycloak-Broker	インフラ	—	Client Credentials（M2M）	人ではなくシステムが API を呼ぶための資格を発行できること	HB-F-AZ-07	DDB-13	MKB-21 MKI-12	IT-06	全工程あり
-FR-AUTH-005	機能要件	TBD	対象外	—	—	Phase 1 では作らない。必要になれば Keycloak の標準機能で足せる	Token Exchange（RFC 8693）	あるアプリ向けの JWT を、別のアプリ向けに交換できること					Phase 1 では作らない
-FR-AUTH-006	機能要件	不要	対象外	—	—	2026-08-16 の判断で Phase 1 対象外	Device Code Flow（画面のない機器・CLI 向けログイン）	画面のない機器や CLI からログインできること					Phase 1 では作らない
-FR-AUTH-007	機能要件	不要	対象外	—	—	2026-08-16 の判断で対象外。金融水準の顧客が現れたときに再評価	mTLS Client Authentication（RFC 8705、証明書によるアプリ認証）	証明書でアプリを認証できること					Phase 1 では作らない
-FR-AUTH-008	機能要件	Won't	対象外	—	—	採用しない（安全でないため）	ROPC（Password Grant）	アプリがユーザのパスワードを直接受け取ってログインさせる方式					Phase 1 では作らない
-FR-AUTH-009	機能要件	Must	対象	Keycloak-IdP	アプリ	ローカルに収容するユーザだけの話。フェデレーションのユーザは顧客IdP 側の規則に従う	パスワードポリシー（最小長・複雑性）	パスワードの最小の長さと文字種の組み合わせを決められること	HB-F-AUTH-01 HJ-20	DDG-01	MKA-01 MKJ-01	IT-03	アプリ側で実施（本基盤にも 4 工程あり）
-FR-AUTH-010	機能要件	Should	対象	Keycloak-IdP	アプリ	同上	パスワード履歴（N 個と一致禁止）	過去に使ったパスワードを一定個数まで再利用させないこと	HB-F-AUTH-01 HJ-20	DDG-01	MKA-01 MKJ-01	IT-03	アプリ側で実施（本基盤にも 4 工程あり）
-FR-AUTH-011	機能要件	Must	対象	Keycloak-IdP	アプリ	同上。Keycloak-Broker はパスワードを持たないため、こちらの対象は顧客IdP の実在推測の防止に置き換わる	アカウントロック（連続失敗）	パスワードを連続で間違えたら一時的にログインを受け付けないこと	HB-F-AUTH-21	DDB-05	MKB-07 MKI-05	SEC-01	アプリ側で実施（本基盤にも 4 工程あり）
-FR-AUTH-012	機能要件	Should	対象	Keycloak-IdP	アプリ	同上	パスワード有効期限	パスワードに有効期限を設けられること	HB-F-AUTH-01 HJ-20	DDG-01	MKA-01 MKJ-01	IT-03	アプリ側で実施（本基盤にも 4 工程あり）
-FR-AUTH-013	機能要件	Must	対象	Keycloak-IdP	アプリ	同上	セルフサービスパスワードリセット	ユーザが自分でパスワードを再設定できること					アプリ側で実施
-FR-AUTH-014	機能要件	Should	対象	Keycloak-IdP	アプリ	同上	初期パスワード強制変更	初回ログイン時にパスワードの変更を強制できること					アプリ側で実施
-FR-AUTH-015	機能要件	TBD	対象外	—	—	提案書で新規想定として挙げた項目。Phase 1 では作らない	DPoP（RFC 9449、送信者に縛った JWT）	JWT を受け取った本人以外が使い回せないよう、送信者を JWT に縛りつけること（DPoP）					Phase 1 では作らない
-FR-FED-001	機能要件	推奨値あり	対象	Keycloak-Broker	インフラ	—	Auth0 OIDC IdP 連携	Auth0 を顧客IdP として接続できること	GD-09 GD-10 GD-14 GD-15 HB-F-ADM-16 HB-F-AUTH-05 HE-14 HJ-02a HJ-10a	DDB-01 DDE-01 DDI-02	MKB-02 MKB-03 MKB-16 MKI-02	IT-01 RI-02	全工程あり
-FR-FED-002	機能要件	Must	対象	Keycloak-Broker	インフラ	—	Entra ID（Azure AD）OIDC 連携	Entra ID（Azure AD）を顧客IdP として接続できること	GD-09 GD-10 GD-14 GD-15 HB-F-ADM-16 HB-F-AUTH-05 HE-14 HJ-02a HJ-10a	DDB-01 DDE-01 DDI-02	MKB-02 MKB-03 MKB-16 MKI-02	RI-01	全工程あり
-FR-FED-003	機能要件	Should	対象	Keycloak-Broker	インフラ	—	Okta OIDC 連携	Okta を顧客IdP として接続できること	GD-09 GD-10 GD-14 GD-15 HB-F-ADM-16 HB-F-AUTH-05 HE-14 HJ-02a HJ-10a	DDB-01 DDE-01 DDI-02	MKB-02 MKB-03 MKB-16 MKI-02	IT-01 OP-01 RI-01 RI-02 ST-04	全工程あり
-FR-FED-004	機能要件	Could	対象	Keycloak-Broker	インフラ	—	Google Workspace OIDC 連携	Google Workspace を顧客IdP として接続できること	GD-09 GD-10 GD-14 GD-15 HB-F-ADM-16 HB-F-AUTH-05 HE-14 HJ-02a HJ-10a	DDB-01 DDE-01 DDI-02	MKB-02 MKB-03 MKB-16 MKI-02	IT-01 OP-01 RI-01 RI-02 ST-04	全工程あり
-FR-FED-005	機能要件	Should	対象	Keycloak-Broker	インフラ	—	SAML 2.0 IdP として受け入れ（SP モード）	旧方式（SAML）の顧客IdP からログインを受け入れられること	HB-F-ADM-16 HB-F-AUTH-06 HE-15	DDB-02 DDE-02 DDI-03	MKB-04 MKB-16 MKI-03	IT-02 RI-03 ST-05	全工程あり
-FR-FED-006	機能要件	TBD	対象	Keycloak-Broker	インフラ	ServiceNow 連携で必要	SAML 2.0 IdP として発行（IdP モード）	Keycloak-Broker が旧方式（SAML）の提供元として、業務システムへログインを提供できること	GD-13 HB-F-INT-01 HE-16	DDB-15 DDI-08	MKB-23 MKI-14	IT-08 RI-05 ST-25 ST-26	全工程あり
-FR-FED-007	機能要件	TBD	対象外	—	—	Phase 1 では作らない	LDAP / AD 直接連携	社内ディレクトリ（LDAP / AD）に直接つなげること					Phase 1 では作らない
-FR-FED-008	機能要件	Must	対象	Keycloak-Broker	インフラ	—	JIT プロビジョニング	顧客IdP 経由で初めて来た人を、その場でユーザとして自動作成できること	HB-F-AUTH-07	DDB-03 DDI-04	MKB-05 MKI-04	ST-04 ST-06 ST-12	全工程あり
-FR-FED-009	機能要件	Must	対象	Keycloak-Broker	インフラ	—	属性マッピング / クレーム変換	顧客ごとにバラバラな属性名を、基盤の統一名に変換して取り込めること	HB-F-PROV-02 HD-05 HD-18	DDB-04 DDD-01	MKB-06 MKB-10	IT-04 ST-07 ST-16	全工程あり
-FR-FED-010	機能要件	Must	対象	Keycloak-Broker	インフラ	—	複数 IdP 並行運用（マルチテナント）	複数の顧客IdP を同時に運用でき、顧客ごとに分離できること	HB-F-AZ-05a HJ-01a	DDB-12 DDB-17	MKB-20 MKB-27 MKI-11	IT-12 ST-24	全工程あり
-FR-FED-011	機能要件	Must	対象	Keycloak-Broker	インフラ	—	顧客追加時のオンボーディングフロー	新しい顧客を迎え入れるときの、登録から利用開始までの流れが用意されていること	HB-F-ADM-14 HB-F-ADM-16	DDB-09	MKB-14 MKB-16	OP-02 ST-21 UAT-02	全工程あり
-FR-FED-012	機能要件	Must	対象	その他	顧客	追加認証は顧客IdP の責務。Keycloak-Broker は関与しない	フェデレーション時の MFA 重複回避	顧客IdP 側で追加認証を済ませた人に、Keycloak-Broker で二重に追加認証を求めないこと				RI-01	顧客側で実施
-FR-FED-013	機能要件	Should	対象	Keycloak-Broker	インフラ	—	ログイン画面で IdP 選択 UX	ログイン画面でどの顧客IdP を使うかを選べること	HB-F-AUTH-02 HB-F-AUTH-04 HC-04a HJ-03	DDC-01 DDH-01 DDI-01	MKB-01 MKC-01 MKC-03 MKI-01 MKI-08	ST-01 ST-02 ST-03	全工程あり
-FR-FED-014	機能要件	Should	対象外	—	—	Phase 1 では作らない	Custom Domain での federation	顧客ごとの独自ドメインでフェデレーションできること					Phase 1 では作らない
-FR-MFA-001	機能要件	Must	対象	Keycloak-IdP	アプリ	追加認証は Keycloak-Broker では扱わない。ローカル収容ユーザは Keycloak-IdP 側	TOTP（Google Authenticator 等）	スマートフォンアプリの数字コードで追加認証できること					アプリ側で実施
-FR-MFA-002	機能要件	Should	対象	Keycloak-IdP	アプリ	同上	WebAuthn / FIDO2（Passkeys）	生体認証やセキュリティキーで追加認証できること					アプリ側で実施
-FR-MFA-003	機能要件	Could	対象外	—	—	Phase 1 では作らない	SMS OTP	SMS の数字コードで追加認証できること					Phase 1 では作らない
-FR-MFA-004	機能要件	Could	対象外	—	—	Phase 1 では作らない	メール OTP	メールの数字コードで追加認証できること					Phase 1 では作らない
-FR-MFA-005	機能要件	Should	対象	Keycloak-IdP	アプリ	同上	バックアップコード	端末を失くしたときに使う予備のコードを発行できること					アプリ側で実施
-FR-MFA-006	機能要件	Should	対象外	—	—	Phase 1 では作らない	条件付き MFA（IP / リスクベース）	接続元やリスクに応じて追加認証を出し分けられること					Phase 1 では作らない
-FR-MFA-007	機能要件	Must	対象	Keycloak-IdP	アプリ	同上	MFA 強制 / 任意の切替（ロール単位）	追加認証を必須にするか任意にするかを役割ごとに切り替えられること					アプリ側で実施
-FR-MFA-008	機能要件	Could	対象外	—	—	Phase 1 では作らない	端末記憶（Trusted Device）	一度確認した端末を覚えて、次回から追加認証を省けること					Phase 1 では作らない
-FR-MFA-009	機能要件	Must	対象	Keycloak-IdP	アプリ	同上	管理者の MFA 強制	管理者には追加認証を必ず求めること					アプリ側で実施
-FR-SSO-001	機能要件	Must	対象	Keycloak-Broker	インフラ	—	同一 IdP 内の複数 Client 間 SSO	同じ顧客の複数のアプリを、一度のログインで行き来できること	GD-21 GD-24 HA-10	DDA-01 DDI-05	MKB-08 MKI-06	ST-08	全工程あり
-FR-SSO-002	機能要件	Must	対象	Keycloak-Broker	インフラ	—	Auth0/Entra 経由のクロス IdP SSO	顧客IdP を経由した場合も、複数のアプリを一度のログインで行き来できること	GD-09 GD-10 GD-14 GD-15 GD-21 GD-24 HA-10 HB-F-AUTH-05 HE-14 HJ-02a HJ-10a	DDA-01 DDB-01 DDE-01 DDI-02 DDI-05	MKB-02 MKB-03 MKB-08 MKI-02 MKI-06	IT-01 RI-01 RI-02 ST-04 ST-08	全工程あり
-FR-SSO-003	機能要件	Must	対象	その他	アプリ	アプリ側の実装。ガイドで示す	ローカルログアウト（アプリ Cookie 削除のみ）	アプリ側だけでログアウトできること（Keycloak-Broker の状態は保つ）	HK-03	DDJ-05	MKJ-05	UAT-04	アプリ側で実施（本基盤にも 4 工程あり）
-FR-SSO-004	機能要件	Must	対象	Keycloak-Broker	インフラ	—	IdP セッション破棄（OIDC RP-Initiated Logout）	Keycloak-Broker のログイン状態を破棄できること	GD-22 GD-23	DDE-03	MKB-09 MKI-07	ST-09	全工程あり
-FR-SSO-005	機能要件	Should	対象	Keycloak-Broker	インフラ	—	フェデレーション IdP セッション破棄（連動ログアウト）	Keycloak-Broker のログアウトを顧客IdP 側にも連動させられること	GD-22 GD-23	DDE-03	MKB-09 MKI-07	ST-09	全工程あり
-FR-SSO-006	機能要件	Should	対象外	—	—	Back-Channel を採用するため作らない	Front-Channel Logout	画面経由で他のアプリにログアウトを伝えられること					Phase 1 では作らない
-FR-SSO-007	機能要件	Should	対象	Keycloak-Broker	インフラ	—	Back-Channel Logout（RFC 8606）	サーバ間の通知で他のアプリにログアウトを伝えられること	GD-22 GD-23	DDE-03	MKB-09 MKI-07	ST-09	全工程あり
-FR-SSO-008	機能要件	Must	対象	Keycloak-Broker	インフラ	—	セッションタイムアウト設定	ログイン状態が切れるまでの時間を設定できること	GD-21 GD-24 HA-10	DDA-01 DDI-05	MKB-08 MKI-06	ST-08	全工程あり
-FR-SSO-009	機能要件	Should	対象	Keycloak-Broker	インフラ	—	アクセストークン強制無効化（Revocation）	発行済みの JWT を強制的に使えなくできること	GD-16 GD-17 HB-F-PROV-10 HJ-07	DDB-07 DDE-08 DDI-07	MKB-12 MKB-19 MKI-10	ST-18	全工程あり
-FR-SSO-010	機能要件	Must	対象	その他	アプリ	管理画面からの操作。Keycloak-Broker は API を提供する	強制全セッション破棄（管理者操作）	管理者の操作で、対象のログイン状態をまとめて破棄できること					アプリ側で実施
-FR-AUTHZ-001	機能要件	Must	対象	Keycloak-Broker	インフラ	JWT を出すところまでが Keycloak-Broker。判断はアプリ	JWT クレームベース認可	JWT に載せた情報でアプリが可否を判断できること	GD-16 GD-17 HJ-07	DDE-08 DDI-07	MKB-19 MKI-10	IT-05 ST-23	全工程あり
-FR-AUTHZ-002	機能要件	Must	対象	Keycloak-Broker	インフラ	Keycloak-Broker 側の越境防止。権限データ側の越境防止はアプリ	tenant_id によるテナント分離	顧客を指す値で、他の顧客のデータに触れられないようにできること	HB-F-AZ-05a	DDB-12	MKB-20 MKI-11	ST-15 ST-24	全工程あり
-FR-AUTHZ-003	機能要件	Must	対象	その他	アプリ	認可はこちらでは行わない	roles クレームによるロール認可	役割を表す情報で可否を判断できること					アプリ側で実施
-FR-AUTHZ-004	機能要件	Should	対象	その他	アプリ	同上	ロール階層（継承）	役割に上下関係を持たせられること					アプリ側で実施
-FR-AUTHZ-005	機能要件	Must	対象	Keycloak-Broker	インフラ	—	scope ベース認可（M2M）	システム間の呼び出しで、許す範囲を限定できること	HB-F-AZ-07	DDB-13	MKB-21 MKI-12	IT-06	全工程あり
-FR-AUTHZ-006	機能要件	Must	対象	Keycloak-Broker	インフラ	—	カスタムクレーム注入（任意属性）	任意の属性を JWT に載せられること	GD-16 GD-17 HD-05 HD-18 HJ-07	DDD-01 DDE-08 DDI-07	MKB-10 MKB-19 MKI-10	PT-02 ST-16 ST-23	全工程あり
-FR-AUTHZ-007	機能要件	Must	対象	その他	アプリ	アプリ側の実装。ガイドで示す	API Gateway 認可統合（Lambda Authorizer）	API の入口で JWT を検証して可否を判断できること	HK-03	DDJ-05	MKJ-05	UAT-04	アプリ側で実施（本基盤にも 4 工程あり）
-FR-AUTHZ-008	機能要件	Must	対象	Keycloak-Broker	インフラ	—	マルチイシュア対応（複数 User Pool / Realm）	発行元が複数あっても正しく検証できること	GD-16 GD-17 HJ-01a HJ-07	DDB-17 DDE-08 DDI-07	MKB-19 MKB-27 MKI-10	IT-12	全工程あり
-FR-AUTHZ-009	機能要件	Could	対象	その他	アプリ	認可はこちらでは行わない	リソースレベル認可（UMA 2.0 / Fine-grained）	データ 1 件ごとに細かく可否を判断できること					アプリ側で実施
-FR-AUTHZ-010	機能要件	Could	対象	その他	アプリ	同上	動的属性ベース認可（ABAC）	属性の組み合わせで動的に可否を判断できること					アプリ側で実施
-FR-USER-001	機能要件	Must	対象	その他	アプリ	管理画面はアプリ。Keycloak-Broker は API を提供する	ユーザー作成 / 更新 / 削除（CRUD）	ユーザを作る・変える・消せること					アプリ側で実施
-FR-USER-002	機能要件	Must	対象	Keycloak-Broker	インフラ	属性の宣言と変換は Keycloak-Broker	カスタム属性（任意フィールド）	顧客ごとの追加の項目を持たせられること	HD-05 HD-18	DDD-01	MKB-10	ST-16 ST-17	全工程あり
-FR-USER-003	機能要件	TBD	対象	Keycloak-Broker	インフラ	—	SCIM 2.0 プロビジョニング	顧客の人事システムから SCIM でユーザを受け取れること	HB-F-PROV-03 HB-F-PROV-04 HB-F-PROV-05 HB-F-PROV-06 HE-09	DDE-04 DDE-05 DDE-06 DDE-07 DDI-06	MKE-01 MKE-02 MKI-09	IT-04 RI-04 ST-12 ST-13 ST-14 ST-15	全工程あり
-FR-USER-004	機能要件	Must	対象	Keycloak-IdP	アプリ	ローカル収容ユーザの話	セルフサービスプロフィール編集	ユーザが自分で自分の情報を変えられること	HB-F-AUTH-01 HJ-20	DDG-01	MKA-01 MKJ-01	IT-03	アプリ側で実施（本基盤にも 4 工程あり）
-FR-USER-005	機能要件	Must	対象	その他	アプリ	管理画面はアプリ	ユーザー検索・一覧	ユーザを検索・一覧表示できること					アプリ側で実施
-FR-USER-006	機能要件	Must	対象	Keycloak-Broker	インフラ	停止と再開は Keycloak-Broker。画面はアプリ	ユーザー有効化 / 無効化（suspend）	ユーザを一時的に使えなくする／戻せること	HB-F-PROV-10 HB-F-PROV-11	DDB-07 DDB-08	MKB-12 MKB-13	ST-18 ST-19	全工程あり
-FR-USER-007	機能要件	Should	対象外	—	—	Phase 1 では作らない（SCIM のグループ連携も対象外）	ユーザーグループ管理	ユーザをグループでまとめられること	HB-F-PROV-07				Phase 1 では作らない
-FR-USER-008	機能要件	Must	対象	その他	アプリ	権限はこちらでは扱わない	ロール割り当て	ユーザに役割を割り当てられること					アプリ側で実施
-FR-USER-009	機能要件	Should	対象	その他	アプリ	管理画面はアプリ	バルクインポート（CSV / JSON）	ファイルからまとめてユーザを取り込めること					アプリ側で実施
-FR-USER-010	機能要件	Must	対象	Keycloak-IdP	アプリ	ローカル収容ユーザの話	ユーザーパスワード強制リセット	管理者がユーザのパスワードを強制的に初期化できること					アプリ側で実施
-FR-USER-011	機能要件	Should	対象	Keycloak-Broker	インフラ	保持と消去の方針は本基盤で決める	ユーザー削除時の関連データ削除（GDPR 等）	ユーザを消すときに関連するデータも消せること	HD-24 HK-07	DDB-16 DDD-02	MKB-26 MKF-01	ST-20	全工程あり
-FR-USER-012	機能要件	Should	対象	その他	アプリ	管理画面はアプリ	ユーザー作成時の招待メール	新しいユーザに招待を送れること					アプリ側で実施
-FR-ADMIN-001	機能要件	Must	対象	その他	アプリ	管理画面はアプリが作る	管理コンソール UI	管理のための画面があること					アプリ側で実施
-FR-ADMIN-002	機能要件	Must	対象	Keycloak-Broker	インフラ	設計は本基盤。細部は運用設計で詰める	テナント追加・削除	顧客を追加・削除できること	G-1.2 HB-F-ADM-14	DDB-09 DDB-10	MKB-14 MKB-15	ST-21 ST-22	全工程あり
-FR-ADMIN-003	機能要件	Must	対象	Keycloak-Broker	インフラ	—	IdP 追加・削除・更新	顧客IdP を追加・変更・削除できること	D-12 HB-F-ADM-16	DDB-11	MKB-16 MKB-17	OP-01 UAT-02	全工程あり
-FR-ADMIN-004	機能要件	Must	対象	Keycloak-Broker	インフラ	—	クライアント（App）管理	アプリの接続登録を管理できること	HJ-09	DDB-14	MKB-22 MKI-13	IT-07	全工程あり
-FR-ADMIN-005	機能要件	Must	対象	その他	アプリ	権限はこちらでは扱わない	ロール定義管理	役割の定義を管理できること					アプリ側で実施
-FR-ADMIN-006	機能要件	Could	対象	その他	アプリ	同上	パーミッション管理（細粒度）	権限を細かく設定できること					アプリ側で実施
-FR-ADMIN-007	機能要件	Must	対象	Keycloak-Broker	インフラ	出力と集約は本基盤。参照は全体の共通基盤で行う	監査ログ閲覧	監査の記録を閲覧できること	HG-04 HG-05	DDD-04 DDE-09	MKH-01 MKI-15	IT-09 OP-03	全工程あり
-FR-ADMIN-008	機能要件	Should	対象	Keycloak-Broker	インフラ	—	設定変更履歴	設定を変えた履歴が残ること	HG-04 HG-05	DDD-04 DDE-09	MKH-01 MKI-15	IT-09 OP-03	全工程あり
-FR-ADMIN-009	機能要件	Must	対象	Keycloak-Broker	インフラ	—	テナント別設定の分離	顧客ごとに設定を分けられること	HB-F-AZ-05a	DDB-12	MKB-20 MKI-11	IT-12 ST-24	全工程あり
-FR-ADMIN-010	機能要件	Must	対象	その他	アプリ	管理画面の権限はアプリ	管理者ロール（RBAC for Admin）	管理者にも役割を持たせて操作を制限できること					アプリ側で実施
-FR-ADMIN-011	機能要件	Should	対象	その他	アプリ	同上	テナント管理者の委譲（顧客の自社運用）	顧客の管理者に運用の一部を任せられること					アプリ側で実施
-FR-ADMIN-012	機能要件	Should	対象	Keycloak-Broker	インフラ	振り分けの識別子入力画面とエラー画面は Keycloak-Broker で作る	カスタマイズ可能なログイン UI	ログイン画面の見た目を変えられること	HC-04a HC-04j	DDC-01 DDC-02	MKC-03 MKC-04 MKI-08	ST-10 ST-11	全工程あり
-FR-INT-001	機能要件	Must	対象	Keycloak-Broker	インフラ	—	OIDC 1.0 / OAuth 2.0 標準準拠	OIDC / OAuth 2.0 の標準に従っていること	GD-09 GD-10 GD-14 GD-15 GD-16 GD-17 HB-F-AUTH-05 HE-14 HJ-02a HJ-07 HJ-10a	DDB-01 DDE-01 DDE-08 DDI-02 DDI-07	MKB-02 MKB-03 MKB-19 MKI-02 MKI-10	IT-01	全工程あり
-FR-INT-002	機能要件	Must	対象	Keycloak-Broker	インフラ	—	OIDC Discovery（`.well-known`）	接続情報を公開の場所から自動で取得できること	HJ-09	DDB-14	MKB-22 MKI-13	IT-07	全工程あり
-FR-INT-003	機能要件	Must	対象	Keycloak-Broker	インフラ	—	JWKS 公開エンドポイント	署名鍵を公開の場所から取得できること	GD-18 HB-F-BAT-04 HJ-09	DDB-14 DDF-02	MKB-22 MKF-03 MKI-13 MKI-16	ST-23	全工程あり
-FR-INT-004	機能要件	Should	対象	Keycloak-Broker	インフラ	—	SAML 2.0 メタデータ	旧方式（SAML）の接続情報を交換できること	GD-13 HB-F-AUTH-06 HB-F-INT-01 HE-15 HE-16	DDB-02 DDB-15 DDE-02 DDI-03 DDI-08	MKB-04 MKB-23 MKI-03 MKI-14	IT-02 IT-08 ST-25 ST-27	全工程あり
-FR-INT-005	機能要件	Should	対象外	—	—	Phase 1 では作らない	Webhook イベント通知（user.created 等）	ユーザの変更をアプリへ通知できること（Webhook）					Phase 1 では作らない
-FR-INT-006	機能要件	Must	対象	Keycloak-Broker	インフラ	—	管理 REST API	管理のための API があること	HE-22a HJ-09	DDB-14 DDE-10	MKB-22 MKI-13	IT-15	全工程あり
-FR-INT-007	機能要件	Must	対象	その他	アプリ	アプリ側の実装。ガイドで示す	API Gateway / Lambda Authorizer 統合	API の入口で JWT を検証する仕組みと組み合わせられること	HK-03	DDJ-05	MKJ-05	UAT-04	アプリ側で実施（本基盤にも 4 工程あり）
-FR-INT-008	機能要件	Must	対象	Keycloak-Broker	インフラ	全体の共通基盤へ出して集約する	監査ログ外部出力（CloudWatch / S3 / Kinesis）	監査の記録を外部へ出力できること	HG-04 HG-05	DDD-04 DDE-09	MKH-01 MKI-15	IT-09	全工程あり
-FR-INT-009	機能要件	Could	対象外	—	—	共通基盤側の範囲	監査ログ SIEM 連携（Splunk / Datadog）	監査の記録を分析製品へ連携できること					Phase 1 では作らない
-FR-INT-010	機能要件	Must	対象	Keycloak-Broker	インフラ	—	Terraform / IaC 管理	構成をコードで管理できること	HA-16 HA-17	DDG-13	MKA-19	OP-11	全工程あり
-NFR-AVL-001	非機能要件	TBD	対象	Keycloak-Broker	インフラ	—	サービス稼働率 SLA	顧客に約束する稼働率を定めて満たすこと	HK-02			OP-06	🔺 一部の工程のみ
-NFR-AVL-002	非機能要件	TBD	対象	Keycloak-Broker	インフラ	—	計画メンテナンス窓	計画的に止める時間の枠を定めること	E-5 HJ-06	DDG-12 DDH-02	MKA-18 MKC-05	OP-10 SEC-09	全工程あり
-NFR-AVL-003	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ	—	マルチ AZ 配置	複数の区画に分けて配置し、片方が落ちても動くこと	HJ-17 HJ-19	DDG-04	MKA-05 MKA-06 MKD-01	DR-03	全工程あり
-NFR-AVL-004	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ	—	自動復旧（コンテナ障害）	部品が落ちたときに自動で立ち上がり直すこと	HJ-17 HJ-19	DDG-04	MKA-05 MKA-06 MKD-01	PT-03	全工程あり
-NFR-AVL-005	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ	—	単一障害点の排除	1 か所が落ちると全部止まる箇所を無くすこと	HD-01 HD-04 HD-25 HJ-17 HJ-19	DDD-05 DDD-06 DDG-04	MKA-05 MKA-06 MKD-01	IT-14 PT-03 PT-04	全工程あり
-NFR-AVL-006	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ	—	デプロイ時のダウンタイム	入れ替えのときにログインを止めないこと	E-5 HJ-06	DDG-12 DDH-02	MKA-18 MKC-05	OP-10 SEC-09	全工程あり
-NFR-PERF-001	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ	—	認証応答時間（P50 / P95 / P99）	ログインの応答時間が目標に収まること	HA-21	DDA-02	MKA-09	PT-05	全工程あり
-NFR-PERF-002	非機能要件	TBD	対象	Keycloak-Broker	インフラ	—	同時認証リクエスト処理能力	同時に来るログインの数を目標まで捌けること	E-4a E-4d E-4e HA-21	DDA-02 DDA-03	MKA-09 MKB-28	PT-01	全工程あり
-NFR-PERF-003	非機能要件	推奨値あり	対象	その他	アプリ	アプリ側の実装	Lambda Authorizer 応答時間	API の入口での判定が目標時間に収まること	HK-03	DDJ-05	MKJ-05	UAT-04	アプリ側で実施（本基盤にも 4 工程あり）
-NFR-PERF-004	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ	—	JWT 検証スループット	JWT の検証を目標の件数まで捌けること	HA-21	DDA-02	MKA-09	PT-02	全工程あり
-NFR-PERF-005	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ	—	JWKS キャッシュ TTL	署名鍵の取得結果を一定時間持ち回して負荷を下げること	HA-11 HA-13	DDA-07	MKB-29	PT-06	全工程あり
-NFR-PERF-006	非機能要件	TBD	対象	Keycloak-Broker	インフラ	—	API Gateway スロットリング	過大な要求を受けたときに流量を絞れること	E-4a E-4d E-4e	DDA-03	MKB-28	PT-07	全工程あり
-NFR-PERF-007	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ	—	認証ピーク時間帯への耐性	始業時などの山に耐えられること	E-2 HA-21	DDA-02 DDI-09	MKA-09 MKH-02	PT-05	全工程あり
-NFR-PERF-008	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ	—	DB 応答時間（Keycloak のみ）	データベースの応答時間が目標に収まること	HD-01 HD-04 HD-25	DDD-05 DDD-06		IT-14 PT-04	🔺 一部の工程のみ
-NFR-SCL-001	非機能要件	TBD	対象	Keycloak-Broker	インフラ	—	MAU スケール上限	想定するユーザ数まで伸ばせること	A-1.7 G-5.8 HA-22	DDD-07	MKA-10	PT-06	全工程あり
-NFR-SCL-002	非機能要件	TBD	対象	Keycloak-Broker	インフラ	—	ピーク時同時セッション数	同時にログインしている数の山に耐えられること	A-1.7 G-5.8 HA-22	DDD-07	MKA-10	PT-05	全工程あり
-NFR-SCL-003	非機能要件	TBD	対象	Keycloak-Broker	インフラ	—	顧客テナント数（IdP 数）スケール	顧客IdP の数が増えても捌けること	A-1.7 G-5.8 HA-22 HB-F-ADM-16	DDD-07	MKA-10 MKB-16	PT-06	全工程あり
-NFR-SCL-004	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ	—	IdP 追加リードタイム	顧客IdP を追加してから使えるまでの時間が目標に収まること	HB-F-ADM-16		MKB-16	OP-01	🔺 一部の工程のみ
-NFR-SCL-005	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ	—	自動スケーリング	負荷に応じて自動で増減すること	HJ-17 HJ-19	DDG-04	MKA-05 MKA-06 MKD-01	PT-03	全工程あり
-NFR-SCL-006	非機能要件	不要	対象外	—	—	災害対策の結論に従属。Phase 1 では別地域は待機のみ	マルチリージョン対応（複数地域での同時稼働）	複数の地域で同時に動かせること					Phase 1 では作らない
-NFR-SCL-007	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ	—	データベーススケール（Keycloak）	データベースを増強できること	HD-01 HD-04 HD-25	DDD-05 DDD-06		IT-14 PT-04	🔺 一部の工程のみ
-NFR-SEC-001	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ	—	通信暗号化	通信が暗号化されていること	E-4c G-4.2 HA-05 HA-26 HE-19a	DDA-05 DDG-03	MKA-03 MKA-04 MKA-16	SEC-06	全工程あり
-NFR-SEC-002	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ	—	データ暗号化（at-rest）	保管したデータが暗号化されていること	E-4c HA-26 HE-19a	DDA-05	MKA-16	SEC-08	全工程あり
-NFR-SEC-003	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ	—	トークン署名アルゴリズム	JWT の署名方式が安全なものであること	GD-16 GD-17 GD-18 HB-F-BAT-04 HJ-07	DDE-08 DDF-02 DDI-07	MKB-19 MKF-03 MKI-10 MKI-16	ST-23	全工程あり
-NFR-SEC-004	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ	—	Access Token TTL	JWT の有効期限が適切に短いこと	GD-16 GD-17 HJ-07	DDE-08 DDI-07	MKB-19 MKI-10	PT-02 ST-23	全工程あり
-NFR-SEC-005	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ	—	Refresh Token TTL	更新用の資格の有効期限が定められていること	GD-21 GD-24 HA-10	DDA-01 DDI-05	MKB-08 MKI-06	ST-08	全工程あり
-NFR-SEC-006	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ	—	ID Token TTL	本人確認結果の有効期限が定められていること	GD-16 GD-17 HJ-07	DDE-08 DDI-07	MKB-19 MKI-10	PT-02 ST-23	全工程あり
-NFR-SEC-007	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ	—	Refresh Token Rotation	更新用の資格を使うたびに入れ替えること	GD-21 GD-24 HA-10	DDA-01 DDI-05	MKB-08 MKI-06	ST-08	全工程あり
-NFR-SEC-008	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ	—	トークン失効（Revocation）	発行済みの資格を失効させられること	HB-F-PROV-10	DDB-07	MKB-12	ST-18	全工程あり
-NFR-SEC-009	非機能要件	推奨値あり	対象	Keycloak-IdP	アプリ	ローカル収容ユーザの話	パスワード保管アルゴリズム	パスワードを安全な方式で保管すること	HB-F-AUTH-01 HJ-20	DDG-01	MKA-01 MKJ-01	IT-03	アプリ側で実施（本基盤にも 4 工程あり）
-NFR-SEC-010	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ	Keycloak-Broker はパスワードを持たないため、振り分けの実在推測の防止と試行回数の制限に置き換える	ブルートフォース対策	総当たりを防ぐこと	HB-F-AUTH-21	DDB-05	MKB-07 MKI-05	SEC-01 SEC-05 ST-01 ST-11	全工程あり
-NFR-SEC-011	非機能要件	推奨値あり	対象外	—	—	WAF 側で行う。本基盤では実装しない	WAF 適用	外部からの攻撃を入口で遮ること（WAF）				IT-11	Phase 1 では作らない
-NFR-SEC-012	非機能要件	推奨値あり	対象外	—	—	同上	DDoS 対策	大量の通信で止められないようにすること					Phase 1 では作らない
-NFR-SEC-013	非機能要件	TBD	対象	Keycloak-Broker	インフラ	—	ペネトレーションテスト	疑似攻撃検査を定期的に受けること	E-4b HG-08	DDA-04	MKA-15 MKI-18	SEC-04	全工程あり
-NFR-SEC-014	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ	—	脆弱性スキャン	部品の弱点を定期的に検査すること	E-5 HJ-06	DDG-12 DDH-02	MKA-18 MKC-05	SEC-09	全工程あり
-NFR-SEC-015	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ	—	シークレット管理	接続用パスワードや鍵を安全に保管すること	E-4c HA-26 HB-F-BAT-05 HE-19a	DDA-05 DDF-03	MKA-16 MKF-04	SEC-03 SEC-07	全工程あり
-NFR-SEC-016	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ	—	ネットワーク分離（Private Subnet）	外から直接触れない区画に置くこと	G-4.2 HA-05	DDG-03	MKA-03 MKA-04	IT-11	全工程あり
-NFR-SEC-017	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ	—	管理画面アクセス制御	管理のための入口を限られた元からだけ通すこと	G-1.6 G-4.2 HA-05	DDG-03 DDG-11	MKA-03 MKA-04 MKA-17	OP-09	全工程あり
-NFR-SEC-018	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ	—	JWKS エンドポイント保護	署名鍵の公開先を守ること	E-4b HG-08	DDA-04	MKA-15 MKI-18	SEC-04 SEC-05	全工程あり
-NFR-SEC-019	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ	—	内部通信の認証（Lambda → Keycloak）	内部の呼び出しでも相手を確認すること	G-4.2 HA-05	DDG-03	MKA-03 MKA-04	IT-11	全工程あり
-NFR-SEC-020	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ	—	セッション固定攻撃対策	ログインの前後で状態を作り替え、乗っ取りを防ぐこと	GD-21 GD-24 HA-10	DDA-01 DDI-05	MKB-08 MKI-06	ST-08	全工程あり
-NFR-DR-001	非機能要件	TBD	対象	Keycloak-Broker	インフラ	—	RTO（目標復旧時間）	目標の時間内に復旧できること	D-18.1 D-18.2 D-18.3 D-18.4 G-1.11 G-1.8 G-1.9 HK-02	DDG-06 DDG-07 DDG-08	MKA-11 MKA-12 MKA-13 MKI-17	DR-01 OP-06	全工程あり
-NFR-DR-002	非機能要件	TBD	対象	Keycloak-Broker	インフラ	—	RPO（目標復旧地点）	失うデータを目標の範囲に収めること	D-18.1 D-18.2 D-18.3 D-18.4 G-1.11 G-1.8 G-1.9 HK-02	DDG-06 DDG-07 DDG-08	MKA-11 MKA-12 MKA-13 MKI-17	DR-01 DR-02 OP-06	全工程あり
-NFR-DR-003	非機能要件	TBD	対象	Keycloak-Broker	インフラ	—	フェイルオーバー方式	別地域へ切り替える方式が定まっていること	D-18.1 D-18.2 D-18.3 D-18.4 G-1.11 G-1.8 G-1.9	DDG-06 DDG-07 DDG-08	MKA-11 MKA-12 MKA-13 MKI-17	DR-01 DR-02	全工程あり
-NFR-DR-004	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ	—	バックアップ保存期間	控えを一定期間保つこと	G-1.10	DDG-09	MKA-14	DR-04	全工程あり
-NFR-DR-005	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ	—	PITR（Point-in-Time Recovery）	時点を指定して戻せること	G-1.10	DDG-09	MKA-14	DR-03 DR-04	全工程あり
-NFR-DR-006	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ	—	クロスリージョンバックアップ	控えを別の地域にも置くこと	D-18.1 D-18.2 D-18.3 D-18.4 G-1.11 G-1.8 G-1.9	DDG-06 DDG-07 DDG-08	MKA-11 MKA-12 MKA-13 MKI-17	DR-01 DR-02	全工程あり
-NFR-DR-007	非機能要件	TBD	対象	Keycloak-Broker	インフラ	—	DR 訓練	復旧の訓練を定期的に行うこと	D-18.1 D-18.2 D-18.3 D-18.4 G-1.11 G-1.8 G-1.9	DDG-06 DDG-07 DDG-08	MKA-11 MKA-12 MKA-13 MKI-17	DR-01 DR-02	全工程あり
-NFR-DR-008	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ	—	DR 切替時のセッション維持	切り替えてもログインし直さずに済むこと	D-18.1 D-18.2 D-18.3 D-18.4 G-1.11 G-1.8 G-1.9	DDG-06 DDG-07 DDG-08	MKA-11 MKA-12 MKA-13 MKI-17	DR-02	全工程あり
-NFR-OPS-001	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ	—	監視・メトリクス	動きを測る値が取れること	HH-01 HH-02 HH-03	DDG-10	MKH-04	OP-07	全工程あり
-NFR-OPS-002	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ	—	アラート通知	異常を検知したら通知が届くこと	HH-01 HH-02 HH-03	DDG-10	MKH-04	OP-02 OP-05	全工程あり
-NFR-OPS-003	非機能要件	TBD	対象	Keycloak-Broker	インフラ	—	ログ保存期間	記録を定められた期間保つこと	HG-04 HG-05	DDD-04 DDE-09	MKH-01 MKI-15	IT-09	全工程あり
-NFR-OPS-004	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ	参照は全体の共通基盤で行う	ログ検索性	記録を必要な条件で探せること	HG-04 HG-05	DDD-04 DDE-09	MKH-01 MKI-15	OP-03	全工程あり
-NFR-OPS-005	非機能要件	TBD	対象	Keycloak-Broker	インフラ	—	バージョンアップ方針	Keycloak の版を上げる方針が定まっていること	E-5 HJ-06	DDG-12 DDH-02	MKA-18 MKC-05	OP-10	全工程あり
-NFR-OPS-006	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ	—	パッチ適用（CVE 対応）	弱点への修正を定めた期間内に当てること	E-5 HJ-06	DDG-12 DDH-02	MKA-18 MKC-05	SEC-09	全工程あり
-NFR-OPS-007	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ	—	設定変更プロセス	設定を変えるときの手順が定まっていること	G-5.1 G-5.2 G-5.3 G-5.6				🔺 一部の工程のみ
-NFR-OPS-008	非機能要件	TBD	対象	Keycloak-Broker	インフラ	—	インシデント対応体制	障害に対応する体制があること	G-1.3 G-1.4 G-5.1 G-5.2 G-5.3 G-5.6		MKH-06	OP-08 UAT-03	🔺 一部の工程のみ
-NFR-OPS-009	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ	—	運用工数（人月）	運用にかかる人手が想定の範囲に収まること	G-5.5 G-5.7				🔺 一部の工程のみ
-NFR-OPS-010	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ	—	デプロイ自動化（CI/CD）	入れ替えを自動で行えること	HA-16 HA-17	DDG-13	MKA-19	OP-11	全工程あり
-NFR-OPS-011	非機能要件	TBD	対象	Keycloak-Broker	インフラ	—	テナント追加の運用 SLA	顧客を追加してから使えるまでの時間を約束できること	G-5.4 HB-F-ADM-16		MKB-16	OP-01	🔺 一部の工程のみ
-NFR-COMP-001	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ	—	個人情報保護法対応	個人情報保護法に沿った扱いをすること	D-20	DDA-06	MKH-03	SEC-08	全工程あり
-NFR-COMP-002	非機能要件	TBD	対象外	—	—	海外展開時に再評価	GDPR / CCPA（海外展開時）	海外の個人情報の規則に沿えること					Phase 1 では作らない
-NFR-COMP-003	非機能要件	TBD	対象外	—	—	取得の予定が決まってから	SOC 2 Type II	第三者認証（SOC 2）に対応できること					Phase 1 では作らない
-NFR-COMP-004	非機能要件	TBD	対象外	—	—	同上	ISO 27001	第三者認証（ISO 27001）に対応できること					Phase 1 では作らない
-NFR-COMP-005	非機能要件	TBD	対象外	—	—	該当する顧客が現れてから	PCI DSS（金融）	カード業界の基準に対応できること					Phase 1 では作らない
-NFR-COMP-006	非機能要件	不要	対象外	—	—	不要と確定（2026-07-30）	FIPS 140-3 認定（暗号モジュール認定、旧 140-2）	暗号の実装が国の認定を受けていること				SEC-06	Phase 1 では作らない
-NFR-COMP-007	非機能要件	TBD	対象	Keycloak-Broker	インフラ	—	監査ログ保存期間（法令要件）	法令が求める期間まで記録を保つこと	HG-04 HG-05	DDD-04 DDE-09	MKH-01 MKI-15	IT-09 ST-20	全工程あり
-NFR-COMP-008	非機能要件	TBD	対象	Keycloak-Broker	インフラ	—	データ所在地（リージョン制限）	データを置く地域を限定できること	HA-04	DDG-02	MKA-02	IT-10	全工程あり
-NFR-COMP-009	非機能要件	TBD	対象	Keycloak-Broker	インフラ	—	個人データ削除権（GDPR Right to Erasure）	本人の求めに応じてデータを消せること	HK-07	DDB-16	MKB-26	OP-04 ST-22	全工程あり
-NFR-COMP-010	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ	—	アクセス監査の追跡可能性	誰がいつ何をしたかを追えること	HG-04 HG-05	DDD-04 DDE-09	MKH-01 MKI-15	OP-03	全工程あり
-NFR-COMP-011	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ	—	暗号鍵のローテーションと所在の可視化	鍵を定期的に入れ替え、どこにあるか分かること	E-4c GD-18 HA-26 HB-F-BAT-04 HB-F-BAT-05 HB-F-BAT-07 HE-19a	DDA-05 DDF-02 DDF-03 DDF-04	MKA-16 MKF-03 MKF-04 MKF-05 MKI-16	SEC-02 SEC-07	全工程あり
-NFR-COST-001	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ	—	初期構築費	初期に作るための費用が見積もられていること					別シートで管理（コスト見積もり）
-NFR-COST-002	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ	—	月額固定インフラ費	毎月かかる設備の費用が見積もられていること					別シートで管理（コスト見積もり）
-NFR-COST-003	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ	—	MAU あたりコスト（連携）	ユーザ 1 人あたりの費用が把握できること					別シートで管理（コスト見積もり）
-NFR-COST-004	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ	—	DR 追加月額	災害対策を持つ場合の追加費用が把握できること	D-18.1 D-18.2 D-18.3 D-18.4 G-1.11 G-1.8 G-1.9	DDG-06 DDG-07 DDG-08	MKA-11 MKA-12 MKA-13 MKI-17	DR-01 DR-02	別シートで管理（コスト見積もり）
-NFR-COST-005	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ	—	運用人件費	運用にかかる人件費が見積もられていること	G-5.5 G-5.7				別シートで管理（コスト見積もり）
-NFR-COST-006	非機能要件	TBD	対象	Keycloak-Broker	インフラ	—	RHBK サブスクリプション	Keycloak の商用サポート費用の要否が定まっていること	E-5 HJ-06	DDG-12 DDH-02	MKA-18 MKC-05	OP-10 SEC-09	別シートで管理（コスト見積もり）
-NFR-COST-007	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ	—	損益分岐 MAU（連携のみ）	どの規模から自前が有利になるかが分かること					別シートで管理（コスト見積もり）
-NFR-COST-008	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ	—	3 年 TCO（10 万 MAU 想定）	3 年分の総額が把握できること（小規模）					別シートで管理（コスト見積もり）
-NFR-COST-009	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ	—	3 年 TCO（50 万 MAU 想定）	3 年分の総額が把握できること（中規模）					別シートで管理（コスト見積もり）
-NFR-MIG-001	非機能要件	不要	対象	その他	アプリ	2026-08-17 の判断で本基盤の対象外。移行はアプリ側	既存認証システムからのユーザー移行	既存の認証からユーザを移せること					アプリ側で実施
-NFR-MIG-002	非機能要件	不要	対象	その他	アプリ	同上	パスワード移行（ハッシュ持ち越し）	パスワードを暗号化したまま引き継げること					アプリ側で実施
-NFR-MIG-003	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ	—	ベンダーロックイン回避	特定の製品に縛られない作りであること	GD-09 GD-10 GD-14 GD-15 HB-F-AUTH-05 HE-14 HE-22a HJ-02a HJ-10a	DDB-01 DDE-01 DDE-10 DDI-02	MKB-02 MKB-03 MKI-02	IT-01 IT-15 RI-01 RI-02 ST-04	全工程あり
-NFR-MIG-004	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ	—	データエクスポート	データを取り出せること	G-1.2	DDB-10	MKB-15	ST-22	全工程あり
-NFR-MIG-005	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ	切替の計画は本基盤、実施はアプリ	段階的移行（並行稼働）	新旧を並行して動かしながら段階的に移せること	D-16.4	DDJ-01	MKJ-02	TE-03	全工程あり
+要件ID	種別	優先度	要件実現対象	構築場所	担当	担当の理由	項目	概要	① 基本設計	② 詳細設計	③ 製造	④ テスト	状況	Keycloak-IdP 側
+FR-AUTH-001-a	機能要件	Must	対象	Keycloak-Broker	インフラ（本基盤）	Keycloak-Broker にローカルで残るのは運用者だけ。認証は WebAuthn 必須（NFR-SEC-021）	ID/PW 認証（ローカルユーザー）（本基盤運用者）	ID とパスワードで直接ログインできること。顧客IdP を持たない顧客のユーザは Keycloak-IdP（アプリ責務）、本基盤の運用者は Keycloak-Broker（NFR-SEC-021）で満たす	HB-F-AUTH-01 HG-09	DDB-19	MKB-31	SEC-10	全工程あり	アプリ（主体）
+FR-AUTH-001-b	機能要件	Must	対象	Keycloak-IdP	アプリ（Keycloak-IdP）	Keycloak-IdP に収容するユーザの話。本基盤は ROSA の引き渡しまで（NFR-OPS-012）	ID/PW 認証（ローカルユーザー）（顧客IdP を持たない顧客のユーザ）	ID とパスワードで直接ログインできること。顧客IdP を持たない顧客のユーザは Keycloak-IdP（アプリ責務）、本基盤の運用者は Keycloak-Broker（NFR-SEC-021）で満たす					アプリ側で実施（Keycloak-IdP 側。本基盤は ROSA の引き渡しまで＝NFR-OPS-012）	アプリ（主体）
+FR-AUTH-002	機能要件	Must	対象	Keycloak-Broker	インフラ（本基盤）	—	Authorization Code + PKCE（SPA / モバイル）	画面を持つアプリが、標準の手順（認可コード＋PKCE）でログインを開始し JWT を受け取れること	GD-09 GD-10 GD-14 GD-15 HB-F-AUTH-05 HE-14 HJ-02a HJ-09 HJ-10a	DDB-01 DDB-14 DDE-01 DDI-02	MKB-02 MKB-03 MKB-22 MKI-02 MKI-13	IT-07 ST-04	全工程あり	—
+FR-AUTH-003	機能要件	Must	対象	Keycloak-Broker	インフラ（本基盤）	—	Authorization Code + client_secret（SSR）	サーバ側で処理するアプリが、接続用パスワードを使う標準の手順でログインできること	GD-09 GD-10 GD-14 GD-15 HB-F-AUTH-05 HE-14 HJ-02a HJ-09 HJ-10a	DDB-01 DDB-14 DDE-01 DDI-02	MKB-02 MKB-03 MKB-22 MKI-02 MKI-13	IT-01 IT-07 RI-01 RI-02 ST-04	全工程あり	—
+FR-AUTH-004	機能要件	Must	対象	Keycloak-Broker	インフラ（本基盤）	—	Client Credentials（M2M）	人ではなくシステムが API を呼ぶための資格を発行できること	HB-F-AZ-07	DDB-13	MKB-21 MKI-12	IT-06	全工程あり	—
+FR-AUTH-005	機能要件	TBD	対象外	—	—	Phase 1 では作らない。必要になれば Keycloak の標準機能で足せる	Token Exchange（RFC 8693）	あるアプリ向けの JWT を、別のアプリ向けに交換できること					Phase 1 では作らない	—
+FR-AUTH-006	機能要件	不要	対象外	—	—	2026-08-16 の判断で Phase 1 対象外	Device Code Flow（画面のない機器・CLI 向けログイン）	画面のない機器や CLI からログインできること					Phase 1 では作らない	—
+FR-AUTH-007	機能要件	不要	対象外	—	—	2026-08-16 の判断で対象外。金融水準の顧客が現れたときに再評価	mTLS Client Authentication（RFC 8705、証明書によるアプリ認証）	証明書でアプリを認証できること					Phase 1 では作らない	—
+FR-AUTH-008	機能要件	Won't	対象外	—	—	採用しない（安全でないため）	ROPC（Password Grant）	アプリがユーザのパスワードを直接受け取ってログインさせる方式					Phase 1 では作らない	—
+FR-AUTH-009	機能要件	Must	対象	Keycloak-IdP	アプリ（Keycloak-IdP）	ローカルに収容するユーザだけの話。フェデレーションのユーザは顧客IdP 側の規則に従う	パスワードポリシー（最小長・複雑性）	パスワードの最小の長さと文字種の組み合わせを決められること					アプリ側で実施（Keycloak-IdP 側。本基盤は ROSA の引き渡しまで＝NFR-OPS-012）	アプリ（主体）
+FR-AUTH-010	機能要件	Should	対象	Keycloak-IdP	アプリ（Keycloak-IdP）	同上	パスワード履歴（N 個と一致禁止）	過去に使ったパスワードを一定個数まで再利用させないこと					アプリ側で実施（Keycloak-IdP 側。本基盤は ROSA の引き渡しまで＝NFR-OPS-012）	アプリ（主体）
+FR-AUTH-011	機能要件	Must	対象	Keycloak-IdP	アプリ（Keycloak-IdP）	パスワードのロックは Keycloak-IdP 側（アプリ）。Keycloak-Broker はパスワードを持たないため、本基盤側の対策は NFR-SEC-010（実在推測の防止・試行回数の制限）で扱う	アカウントロック（連続失敗）	パスワードを連続で間違えたら一時的にログインを受け付けないこと					アプリ側で実施（Keycloak-IdP 側）	アプリ（主体）
+FR-AUTH-012	機能要件	Should	対象	Keycloak-IdP	アプリ（Keycloak-IdP）	同上	パスワード有効期限	パスワードに有効期限を設けられること					アプリ側で実施（Keycloak-IdP 側。本基盤は ROSA の引き渡しまで＝NFR-OPS-012）	アプリ（主体）
+FR-AUTH-013	機能要件	Must	対象	Keycloak-IdP	アプリ（Keycloak-IdP）	同上	セルフサービスパスワードリセット	ユーザが自分でパスワードを再設定できること					アプリ側で実施	アプリ（主体）
+FR-AUTH-014	機能要件	Should	対象	Keycloak-IdP	アプリ（Keycloak-IdP）	同上	初期パスワード強制変更	初回ログイン時にパスワードの変更を強制できること					アプリ側で実施	アプリ（主体）
+FR-AUTH-015	機能要件	TBD	対象外	—	—	提案書で新規想定として挙げた項目。Phase 1 では作らない	DPoP（RFC 9449、送信者に縛った JWT）	JWT を受け取った本人以外が使い回せないよう、送信者を JWT に縛りつけること（DPoP）					Phase 1 では作らない	—
+FR-AUTH-016	機能要件	TBD	対象	Keycloak-Broker	インフラ（本基盤）	要否未確定。顧客回答待ち（D-22 で判断のみ計上）	利用規約への同意取得と記録	利用規約などへの同意を取り、いつ誰がどの版に同意したかを記録できること	D-22				要件確認（判断のみ計上）	—
+FR-FED-001	機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	Auth0 も Phase 1 の対象（2026-09-07 決定）。PoC で使った接続を実機突合（RI-02）に流用する	Auth0 OIDC IdP 連携	Auth0 を顧客IdP として接続できること	GD-09 GD-10 GD-14 GD-15 HB-F-ADM-16 HB-F-AUTH-05 HE-14 HJ-02a HJ-10a	DDB-01 DDE-01 DDI-02	MKB-02 MKB-03 MKB-16 MKI-02	IT-01 RI-02	全工程あり	—
+FR-FED-002	機能要件	Must	対象	Keycloak-Broker	インフラ（本基盤）	—	Entra ID（Azure AD）OIDC 連携	Entra ID（Azure AD）を顧客IdP として接続できること	GD-09 GD-10 GD-14 GD-15 HB-F-ADM-16 HB-F-AUTH-05 HE-14 HJ-02a HJ-10a	DDB-01 DDE-01 DDI-02	MKB-02 MKB-03 MKB-16 MKI-02	RI-01	全工程あり	—
+FR-FED-003	機能要件	Should	対象	Keycloak-Broker	インフラ（本基盤）	—	Okta OIDC 連携	Okta を顧客IdP として接続できること	GD-09 GD-10 GD-14 GD-15 HB-F-ADM-16 HB-F-AUTH-05 HE-14 HJ-02a HJ-10a	DDB-01 DDE-01 DDI-02	MKB-02 MKB-03 MKB-16 MKI-02	IT-01 OP-01 RI-01 RI-02 ST-04	全工程あり	—
+FR-FED-004	機能要件	Could	対象	Keycloak-Broker	インフラ（本基盤）	—	Google Workspace OIDC 連携	Google Workspace を顧客IdP として接続できること	GD-09 GD-10 GD-14 GD-15 HB-F-ADM-16 HB-F-AUTH-05 HE-14 HJ-02a HJ-10a	DDB-01 DDE-01 DDI-02	MKB-02 MKB-03 MKB-16 MKI-02	IT-01 OP-01 RI-01 RI-02 ST-04	全工程あり	—
+FR-FED-005	機能要件	Should	対象	Keycloak-Broker	インフラ（本基盤）	—	SAML 2.0 IdP として受け入れ（SP モード）	旧方式（SAML）の顧客IdP からログインを受け入れられること	HB-F-ADM-16 HB-F-AUTH-06 HE-15	DDB-02 DDE-02 DDI-03	MKB-04 MKB-16 MKI-03	IT-02 RI-03 ST-05	全工程あり	—
+FR-FED-006	機能要件	TBD	対象	Keycloak-Broker	インフラ（本基盤）	ServiceNow 連携で必要	SAML 2.0 IdP として発行（IdP モード）	Keycloak-Broker が旧方式（SAML）の提供元として、業務システムへログインを提供できること	GD-13 HB-F-INT-01 HE-16	DDB-15 DDI-08	MKB-23 MKI-14	IT-08 RI-05 ST-25 ST-26	全工程あり	—
+FR-FED-007	機能要件	TBD	対象外	—	—	Phase 1 では作らない	LDAP / AD 直接連携	社内ディレクトリ（LDAP / AD）に直接つなげること					Phase 1 では作らない	—
+FR-FED-008	機能要件	Must	対象	Keycloak-Broker	インフラ（本基盤）	—	JIT プロビジョニング	顧客IdP 経由で初めて来た人を、その場でユーザとして自動作成できること	HB-F-AUTH-07	DDB-03 DDI-04	MKB-05 MKI-04	ST-04 ST-06 ST-12	全工程あり	アプリ（Keycloak-IdP 側の同じ設定は接続仕様 HE-23 に従う）
+FR-FED-009	機能要件	Must	対象	Keycloak-Broker	インフラ（本基盤）	—	属性マッピング / クレーム変換	顧客ごとにバラバラな属性名を、基盤の統一名に変換して取り込めること	HB-F-PROV-02 HD-05 HD-18	DDB-04 DDD-01	MKB-06 MKB-10	IT-04 ST-07 ST-16	全工程あり	アプリ（Keycloak-IdP 側の同じ設定は接続仕様 HE-23 に従う）
+FR-FED-010	機能要件	Must	対象	Keycloak-Broker	インフラ（本基盤）	—	複数 IdP 並行運用（マルチテナント）	複数の顧客IdP を同時に運用でき、顧客ごとに分離できること	HB-F-AZ-05a HJ-01a	DDB-12 DDB-17	MKB-20 MKB-27 MKI-11	IT-12 ST-24	全工程あり	—
+FR-FED-011-a	機能要件	Must	対象	Keycloak-Broker	インフラ（本基盤）	登録の手順と疎通確認は本基盤	顧客追加時のオンボーディングフロー（本基盤側の登録）	新しい顧客を迎え入れるときの、登録から利用開始までの流れが用意されていること	HB-F-ADM-14 HB-F-ADM-16	DDB-09	MKB-14 MKB-16	OP-02 ST-21 UAT-02	全工程あり	—
+FR-FED-011-b	機能要件	Must	対象	その他	顧客（顧客IdP）	自社 IdP 側の設定（接続先の登録・返す項目・証明書）は顧客が接続ガイドどおりに行う	顧客追加時のオンボーディングフロー（顧客側の設定）	新しい顧客を迎え入れるときの、登録から利用開始までの流れが用意されていること				UAT-02	顧客側で実施	—
+FR-FED-012-a	機能要件	Must	対象	Keycloak-Broker	インフラ（本基盤）	追加認証済みの印（amr）を取り込み、二重に求めない設定は Keycloak-Broker 側	フェデレーション時の MFA 重複回避（取り込み側）	顧客IdP 側で追加認証を済ませた人に、Keycloak-Broker で二重に追加認証を求めないこと	HB-F-AUTH-05 HB-F-AUTH-09 HE-14 HE-23	DDB-01 DDB-18	MKB-02 MKB-30	RI-01 ST-04 ST-28	全工程あり	—
+FR-FED-012-b	機能要件	Must	対象	その他	顧客（顧客IdP）	追加認証そのものは顧客IdP（Keycloak-IdP 収容ユーザは Keycloak-IdP）が行い、結果を amr で返す。接続ガイドで求める	フェデレーション時の MFA 重複回避（実施側）	顧客IdP 側で追加認証を済ませた人に、Keycloak-Broker で二重に追加認証を求めないこと				RI-01	顧客側で実施	—
+FR-FED-013	機能要件	Should	対象	Keycloak-Broker	インフラ（本基盤）	—	ログイン画面での顧客IdP への振り分け（HRD）	ログイン画面で入力した識別子から顧客IdP を自動で判定して送ること。顧客IdP の一覧は見せない。1 顧客に複数ある場合のみ選ばせる	HB-F-AUTH-02 HB-F-AUTH-04 HC-04a HJ-03	DDC-01 DDH-01 DDI-01	MKB-01 MKC-01 MKC-03 MKI-01 MKI-08	ST-01 ST-02 ST-03	全工程あり	—
+FR-FED-014	機能要件	Should	対象外	—	—	Phase 1 では作らない	Custom Domain での federation	顧客ごとの独自ドメインでフェデレーションできること					Phase 1 では作らない	—
+FR-FED-015	機能要件	Must	対象	Keycloak-Broker	インフラ（本基盤）	顧客IdP を持たない顧客のユーザは全員ここを通る。Keycloak-IdP 側の Client・Realm 設定は要求仕様（HE-23）でアプリチームへ渡す	Keycloak-Broker ⇄ Keycloak-IdP 連携	顧客IdP を持たない顧客のユーザを Keycloak-Broker から Keycloak-IdP へ委譲してログインさせられること。識別子の引き継ぎ・追加認証結果の取り込み・ログアウト連鎖・セッション上限の同値（12 時間）・閉域の単方向接続を含む	HB-F-AUTH-09 HE-23 HI-11	DDB-18 DDE-11 DDI-10	MKA-20 MKB-30 MKI-19	IT-16 ST-28	全工程あり	アプリ（要求仕様どおりに broker-rp Client と Realm 設定を作る）
+FR-MFA-001	機能要件	Must	対象	Keycloak-IdP	アプリ（Keycloak-IdP）	追加認証は Keycloak-Broker では扱わない。ローカル収容ユーザは Keycloak-IdP 側	TOTP（Google Authenticator 等）	スマートフォンアプリの数字コードで追加認証できること					アプリ側で実施	アプリ（主体）
+FR-MFA-002	機能要件	Should	対象	Keycloak-IdP	アプリ（Keycloak-IdP）	同上	WebAuthn / FIDO2（Passkeys）	生体認証やセキュリティキーで追加認証できること					アプリ側で実施	アプリ（主体）
+FR-MFA-003	機能要件	Could	対象外	—	—	Phase 1 では作らない	SMS OTP	SMS の数字コードで追加認証できること					Phase 1 では作らない	—
+FR-MFA-004	機能要件	Could	対象外	—	—	Phase 1 では作らない	メール OTP	メールの数字コードで追加認証できること					Phase 1 では作らない	—
+FR-MFA-005	機能要件	Should	対象	Keycloak-IdP	アプリ（Keycloak-IdP）	同上	バックアップコード	端末を失くしたときに使う予備のコードを発行できること					アプリ側で実施	アプリ（主体）
+FR-MFA-006	機能要件	Should	対象外	—	—	Phase 1 では作らない	条件付き MFA（IP / リスクベース）	接続元やリスクに応じて追加認証を出し分けられること					Phase 1 では作らない	—
+FR-MFA-007	機能要件	Must	対象	Keycloak-IdP	アプリ（Keycloak-IdP）	同上	MFA 強制 / 任意の切替（ロール単位）	追加認証を必須にするか任意にするかを役割ごとに切り替えられること					アプリ側で実施	アプリ（主体）
+FR-MFA-008	機能要件	Could	対象外	—	—	Phase 1 では作らない	端末記憶（Trusted Device）	一度確認した端末を覚えて、次回から追加認証を省けること					Phase 1 では作らない	—
+FR-MFA-009	機能要件	Must	対象	Keycloak-IdP	アプリ（Keycloak-IdP）	顧客の管理者分は Keycloak-IdP（アプリ）。本基盤運用者分は NFR-SEC-021 で本基盤が満たす	管理者の MFA 強制	管理者には追加認証を必ず求めること					アプリ側で実施	アプリ（主体）
+FR-SSO-001	機能要件	Must	対象	Keycloak-Broker	インフラ（本基盤）	—	同一 IdP 内の複数 Client 間 SSO	同じ顧客の複数のアプリを、一度のログインで行き来できること	GD-21 GD-24 HA-10	DDA-01 DDI-05	MKB-08 MKI-06	ST-08	全工程あり	—
+FR-SSO-002	機能要件	Must	対象	Keycloak-Broker	インフラ（本基盤）	—	Auth0/Entra 経由のクロス IdP SSO	顧客IdP を経由した場合も、複数のアプリを一度のログインで行き来できること	GD-09 GD-10 GD-14 GD-15 GD-21 GD-24 HA-10 HB-F-AUTH-05 HE-14 HJ-02a HJ-10a	DDA-01 DDB-01 DDE-01 DDI-02 DDI-05	MKB-02 MKB-03 MKB-08 MKI-02 MKI-06	IT-01 RI-01 RI-02 ST-04 ST-08	全工程あり	—
+FR-SSO-003-a	機能要件	Must	対象	その他	アプリ（業務アプリ）	業務アプリ側の実装。本基盤はガイドとサンプルで示す	ローカルログアウト（アプリ Cookie 削除のみ）（アプリの実装）	アプリ側だけでログアウトできること（Keycloak-Broker の状態は保つ）					アプリ側で実施	—
+FR-SSO-003-b	機能要件	Must	対象	Keycloak-Broker	インフラ（本基盤）	アプリ開発者向けガイドとサンプル実装・試用環境を本基盤が提供する	ローカルログアウト（アプリ Cookie 削除のみ）（ガイド・サンプル）	アプリ側だけでログアウトできること（Keycloak-Broker の状態は保つ）	GD-22	DDJ-05	MKJ-05	UAT-04	全工程あり	—
+FR-SSO-004	機能要件	Must	対象	Keycloak-Broker	インフラ（本基盤）	—	IdP セッション破棄（OIDC RP-Initiated Logout）	Keycloak-Broker のログイン状態を破棄できること	GD-22 GD-23	DDE-03	MKB-09 MKI-07	ST-09	全工程あり	—
+FR-SSO-005	機能要件	Should	対象	Keycloak-Broker	インフラ（本基盤）	—	フェデレーション IdP セッション破棄（連動ログアウト）	Keycloak-Broker のログアウトを顧客IdP 側にも連動させられること	GD-22 GD-23	DDE-03	MKB-09 MKI-07	ST-09	全工程あり	アプリ（Keycloak-IdP 側の同じ設定は接続仕様 HE-23 に従う）
+FR-SSO-006	機能要件	Should	対象外	—	—	Back-Channel を採用するため作らない	Front-Channel Logout	画面経由で他のアプリにログアウトを伝えられること					Phase 1 では作らない	—
+FR-SSO-007	機能要件	Should	対象	Keycloak-Broker	インフラ（本基盤）	—	Back-Channel Logout（RFC 8606）	サーバ間の通知で他のアプリにログアウトを伝えられること	GD-22 GD-23	DDE-03	MKB-09 MKI-07	ST-09	全工程あり	—
+FR-SSO-008	機能要件	Must	対象	Keycloak-Broker	インフラ（本基盤）	—	セッションタイムアウト設定	ログイン状態が切れるまでの時間を設定できること。無操作 1 時間・上限 12 時間（2026-09-07 更新、旧 24 時間）	GD-21 GD-24 HA-10	DDA-01 DDI-05	MKB-08 MKI-06	ST-08	全工程あり	アプリ（Keycloak-IdP 側の同じ設定は接続仕様 HE-23 に従う）
+FR-SSO-009	機能要件	Should	対象	Keycloak-Broker	インフラ（本基盤）	—	アクセストークン強制無効化（Revocation）	発行済みの JWT を強制的に使えなくできること。セッションとリフレッシュトークンは即時失効、アクセストークンは署名のみで検証されるため最大 30 分は残る（契約説明に明記）	GD-16 GD-17 HB-F-PROV-10 HJ-07	DDB-07 DDE-08 DDI-07	MKB-12 MKB-19 MKI-10	ST-18	全工程あり	—
+FR-SSO-010-a	機能要件	Must	対象	その他	アプリ（管理画面・idm-api）	管理画面・idm-api 側の実装。Keycloak-Broker の管理 API を内部経路で呼ぶ	強制全セッション破棄（管理者操作）（管理画面からの操作）	管理者の操作で、対象のログイン状態をまとめて破棄できること					アプリ側で実施	—
+FR-SSO-010-b	機能要件	Must	対象	Keycloak-Broker	インフラ（本基盤）	管理 API の内部公開（F-INT-14）: 経路・呼び出し元の資格・許す操作の範囲	強制全セッション破棄（管理者操作）（本基盤側の受け口）	管理者の操作で、対象のログイン状態をまとめて破棄できること	HE-24	DDE-12	MKB-32	IT-17	全工程あり	—
+FR-AUTHZ-001-a	機能要件	Must	対象	Keycloak-Broker	インフラ（本基盤）	JWT に載せる項目と要求できる範囲は本基盤が定義し発行する	JWT クレームベース認可（JWT に載せる側）	JWT に載せた情報でアプリが可否を判断できること	GD-16 GD-17 HJ-07	DDE-08 DDI-07	MKB-19 MKI-10	IT-05 ST-23	全工程あり	—
+FR-AUTHZ-001-b	機能要件	Must	対象	その他	アプリ（業務アプリ）	載った情報で可否を判断するのは業務アプリ（認可・権限判定は本基盤ではやらない）	JWT クレームベース認可（判定する側）	JWT に載せた情報でアプリが可否を判断できること					アプリ側で実施	—
+FR-AUTHZ-002-a	機能要件	Must	対象	Keycloak-Broker	インフラ（本基盤）	他顧客の顧客IdP で入れないことと、顧客を指す値を JWT に載せることは Keycloak-Broker 側（F-AZ-05）	tenant_id によるテナント分離（認証側の越境防止と tenant_id）	顧客を指す値で、他の顧客のデータに触れられないようにできること	HB-F-AZ-05a	DDB-12	MKB-20 MKI-11	ST-15 ST-24	全工程あり	—
+FR-AUTHZ-002-b	機能要件	Must	対象	その他	アプリ（管理画面・idm-api）	権限データや業務データで他顧客に触れさせないのは管理画面・idm-api と業務アプリの責務	tenant_id によるテナント分離（権限データ側の越境防止）	顧客を指す値で、他の顧客のデータに触れられないようにできること					アプリ側で実施	—
+FR-AUTHZ-003	機能要件	Must	対象	その他	アプリ（業務アプリ）	認可はこちらでは行わない	roles クレームによるロール認可	役割を表す情報で可否を判断できること					アプリ側で実施	—
+FR-AUTHZ-004	機能要件	Should	対象	その他	アプリ（管理画面・idm-api）	同上	ロール階層（継承）	役割に上下関係を持たせられること					アプリ側で実施	—
+FR-AUTHZ-005	機能要件	Must	対象	Keycloak-Broker	インフラ（本基盤）	—	scope ベース認可（M2M）	システム間の呼び出しで、許す範囲を限定できること	HB-F-AZ-07	DDB-13	MKB-21 MKI-12	IT-06	全工程あり	—
+FR-AUTHZ-006	機能要件	Must	対象	Keycloak-Broker	インフラ（本基盤）	—	カスタムクレーム注入（任意属性）	任意の属性を JWT に載せられること	GD-16 GD-17 HD-05 HD-18 HJ-07	DDD-01 DDE-08 DDI-07	MKB-10 MKB-19 MKI-10	PT-02 ST-16 ST-23	全工程あり	アプリ（Keycloak-IdP 側の同じ設定は接続仕様 HE-23 に従う）
+FR-AUTHZ-007-a	機能要件	Must	対象	その他	アプリ（業務アプリ）	業務アプリ側の実装。本基盤はガイドとサンプルで示す	API 入口での JWT 検証（アプリ側の認可統合）（アプリの実装）	API の入口でアプリが JWT を検証して可否を判断できること（ガイドで示す。Lambda Authorizer は PoC 時の実装名）					アプリ側で実施	—
+FR-AUTHZ-007-b	機能要件	Must	対象	Keycloak-Broker	インフラ（本基盤）	アプリ開発者向けガイドとサンプル実装・試用環境を本基盤が提供する	API 入口での JWT 検証（アプリ側の認可統合）（ガイド・サンプル）	API の入口でアプリが JWT を検証して可否を判断できること（ガイドで示す。Lambda Authorizer は PoC 時の実装名）	GD-16 GD-18	DDJ-05	MKJ-05	UAT-04	全工程あり	—
+FR-AUTHZ-008	機能要件	Must	対象	Keycloak-Broker	インフラ（本基盤）	—	マルチイシュア対応（複数 User Pool / Realm）	発行元が複数あっても正しく検証できること	GD-16 GD-17 HJ-01a HJ-07	DDB-17 DDE-08 DDI-07	MKB-19 MKB-27 MKI-10	IT-12	全工程あり	—
+FR-AUTHZ-009	機能要件	Could	対象	その他	アプリ（業務アプリ）	認可はこちらでは行わない	リソースレベル認可（UMA 2.0 / Fine-grained）	データ 1 件ごとに細かく可否を判断できること					アプリ側で実施	—
+FR-AUTHZ-010	機能要件	Could	対象	その他	アプリ（業務アプリ）	同上	動的属性ベース認可（ABAC）	属性の組み合わせで動的に可否を判断できること					アプリ側で実施	—
+FR-USER-001-a	機能要件	Must	対象	その他	アプリ（管理画面・idm-api）	管理画面・idm-api 側の実装。Keycloak-Broker の管理 API を内部経路で呼ぶ	ユーザー作成 / 更新 / 削除（CRUD）（管理画面と API）	ユーザを作る・変える・消せること					アプリ側で実施	—
+FR-USER-001-b	機能要件	Must	対象	Keycloak-Broker	インフラ（本基盤）	管理 API の内部公開（F-INT-14）: 経路・呼び出し元の資格・許す操作の範囲	ユーザー作成 / 更新 / 削除（CRUD）（本基盤側の受け口）	ユーザを作る・変える・消せること	HE-24	DDE-12	MKB-32	IT-17	全工程あり	—
+FR-USER-002	機能要件	Must	対象	Keycloak-Broker	インフラ（本基盤）	属性の宣言と変換は Keycloak-Broker	カスタム属性（任意フィールド）	顧客ごとの追加の項目を持たせられること	HD-05 HD-18	DDD-01	MKB-10	ST-16 ST-17	全工程あり	アプリ（Keycloak-IdP 側の同じ設定は接続仕様 HE-23 に従う）
+FR-USER-003-a	機能要件	TBD	対象	Keycloak-Broker	インフラ（本基盤）	受信窓口は Keycloak-Broker の上に立てる	SCIM 2.0 プロビジョニング（受信側）	顧客の人事システムから SCIM でユーザを受け取れること	HB-F-PROV-03 HB-F-PROV-04 HB-F-PROV-05 HB-F-PROV-06 HE-09	DDE-04 DDE-05 DDE-06 DDE-07 DDI-06	MKE-01 MKE-02 MKI-09	IT-04 RI-04 ST-12 ST-13 ST-14 ST-15	全工程あり	—
+FR-USER-003-b	機能要件	TBD	対象	その他	顧客（顧客IdP）	顧客の人事システム・IdP 側の SCIM 送信設定と再送の作法は顧客が行う	SCIM 2.0 プロビジョニング（送信側）	顧客の人事システムから SCIM でユーザを受け取れること				RI-04	顧客側で実施	—
+FR-USER-004	機能要件	Must	対象	Keycloak-IdP	アプリ（Keycloak-IdP）	ローカル収容ユーザの話	セルフサービスプロフィール編集	ユーザが自分で自分の情報を変えられること					アプリ側で実施（Keycloak-IdP 側。本基盤は ROSA の引き渡しまで＝NFR-OPS-012）	アプリ（主体）
+FR-USER-005	機能要件	Must	対象	その他	アプリ（管理画面・idm-api）	管理画面はアプリ	ユーザー検索・一覧	ユーザを検索・一覧表示できること					アプリ側で実施	—
+FR-USER-006-a	機能要件	Must	対象	Keycloak-Broker	インフラ（本基盤）	停止と再開は Keycloak-Broker。画面はアプリ	ユーザー有効化 / 無効化（suspend）（Keycloak-Broker 側）	ユーザを一時的に使えなくする／戻せること。Keycloak-IdP 側で止めたユーザの Keycloak-Broker 側の写しは伝播しない。残存は Keycloak-Broker のセッション上限（12 時間）で受容（2026-09-07 決定）	HB-F-PROV-10 HB-F-PROV-11	DDB-07 DDB-08	MKB-12 MKB-13	ST-18 ST-19	全工程あり	アプリ（Keycloak-IdP 側の同じ設定は接続仕様 HE-23 に従う）
+FR-USER-006-b	機能要件	Must	対象	その他	アプリ（管理画面・idm-api）	管理者が止める・戻す操作は管理画面から、管理 API の内部公開（F-INT-14）経由で行う	ユーザー有効化 / 無効化（suspend）（操作画面）	ユーザを一時的に使えなくする／戻せること。Keycloak-IdP 側で止めたユーザの Keycloak-Broker 側の写しは伝播しない。残存は Keycloak-Broker のセッション上限（12 時間）で受容（2026-09-07 決定）				IT-17	アプリ側で実施	アプリ（Keycloak-IdP 側の同じ設定は接続仕様 HE-23 に従う）
+FR-USER-007	機能要件	Should	対象外	—	—	Phase 1 では作らない（SCIM のグループ連携も対象外）	ユーザーグループ管理	ユーザをグループでまとめられること					Phase 1 では作らない	—
+FR-USER-008	機能要件	Must	対象	その他	アプリ（管理画面・idm-api）	権限はこちらでは扱わない	ロール割り当て	ユーザに役割を割り当てられること					アプリ側で実施	—
+FR-USER-009	機能要件	Should	対象	その他	アプリ（管理画面・idm-api）	管理画面はアプリ	バルクインポート（CSV / JSON）	ファイルからまとめてユーザを取り込めること					アプリ側で実施	—
+FR-USER-010	機能要件	Must	対象	Keycloak-IdP	アプリ（Keycloak-IdP）	ローカル収容ユーザの話	ユーザーパスワード強制リセット	管理者がユーザのパスワードを強制的に初期化できること					アプリ側で実施	アプリ（主体）
+FR-USER-011-a	機能要件	Should	対象	Keycloak-Broker	インフラ（本基盤）	保持と消去の方針は本基盤で決める。消去の対象は Keycloak-Broker・Keycloak-IdP（アプリ）・権限データ（アプリ）・共通ログ基盤にまたがるため、HK-07 は横断の手順とする	ユーザー削除時の関連データ削除（GDPR 等）（本基盤の窓口と Keycloak-Broker 側）	ユーザを消すときに関連するデータも消せること	HD-24 HK-07	DDB-16 DDD-02	MKB-26 MKF-01	ST-20	全工程あり	—
+FR-USER-011-b	機能要件	Should	対象	その他	アプリ（管理画面・idm-api）	権限データ・参照用データの消去は管理画面・idm-api 側。本基盤の手順（HK-07）から依頼する	ユーザー削除時の関連データ削除（GDPR 等）（権限データ側）	ユーザを消すときに関連するデータも消せること				OP-04	アプリ側で実施	—
+FR-USER-012	機能要件	Should	対象	その他	アプリ（管理画面・idm-api）	管理画面はアプリ	ユーザー作成時の招待メール	新しいユーザに招待を送れること					アプリ側で実施	—
+FR-USER-013	機能要件	Should	対象	Keycloak-Broker	インフラ（本基盤）	対象で計上（2026-09-07 決定）。顧客IdP 経由で自動作成したユーザだけが対象で、Keycloak-IdP 収容ユーザはアプリ側の判断	長期未使用ユーザの自動停止	90 日ログインの無いユーザを自動で止められること	HB-F-BAT-01	DDF-05	MKF-06	ST-29	全工程あり	アプリ（Keycloak-IdP 収容ユーザ分は任意）
+FR-ADMIN-001	機能要件	Must	対象	その他	アプリ（管理画面・idm-api）	管理画面はアプリが作る	管理コンソール UI	管理のための画面があること					アプリ側で実施	—
+FR-ADMIN-002	機能要件	Must	対象	Keycloak-Broker	インフラ（本基盤）	設計は本基盤。細部は運用設計で詰める	テナント追加・削除	顧客を追加・削除できること	G-1.2 HB-F-ADM-14	DDB-09 DDB-10	MKB-14 MKB-15	ST-21 ST-22	全工程あり	—
+FR-ADMIN-003	機能要件	Must	対象	Keycloak-Broker	インフラ（本基盤）	—	IdP 追加・削除・更新	顧客IdP を追加・変更・削除できること	D-12 HB-F-ADM-16	DDB-11	MKB-16 MKB-17	OP-01 UAT-02	全工程あり	—
+FR-ADMIN-004	機能要件	Must	対象	Keycloak-Broker	インフラ（本基盤）	—	クライアント（App）管理	アプリの接続登録を管理できること	HJ-09	DDB-14	MKB-22 MKI-13	IT-07	全工程あり	—
+FR-ADMIN-005	機能要件	Must	対象	その他	アプリ（管理画面・idm-api）	権限はこちらでは扱わない	ロール定義管理	役割の定義を管理できること					アプリ側で実施	—
+FR-ADMIN-006	機能要件	Could	対象	その他	アプリ（管理画面・idm-api）	同上	パーミッション管理（細粒度）	権限を細かく設定できること					アプリ側で実施	—
+FR-ADMIN-007-a	機能要件	Must	対象	Keycloak-Broker	インフラ（本基盤）	何を記録し何年保つかは本基盤が決めて出力する	監査ログ閲覧（出力・項目・保持年数の指定）	監査の記録を閲覧できること。参照は全体の共通基盤側で行い、本基盤に照会画面は作らない（本基盤は出力と集約まで）	HG-04 HG-05	DDD-04 DDE-09	MKH-01 MKI-15	IT-09 OP-03	全工程あり	—
+FR-ADMIN-007-b	機能要件	Must	対象	その他	他組織（境界・共通基盤）	記録の閲覧は全体の共通基盤側。本基盤は指定した保持年数と形式で出すまで（OP-03 で確認）	監査ログ閲覧（共通基盤側の閲覧）	監査の記録を閲覧できること。参照は全体の共通基盤側で行い、本基盤に照会画面は作らない（本基盤は出力と集約まで）				OP-03	他組織で実施	—
+FR-ADMIN-008	機能要件	Should	対象	Keycloak-Broker	インフラ（本基盤）	—	設定変更履歴	設定を変えた履歴が残ること	HG-04 HG-05	DDD-04 DDE-09	MKH-01 MKI-15	IT-09 OP-03	全工程あり	—
+FR-ADMIN-009	機能要件	Must	対象	Keycloak-Broker	インフラ（本基盤）	—	テナント別設定の分離	顧客ごとに設定を分けられること	HB-F-AZ-05a	DDB-12	MKB-20 MKI-11	IT-12 ST-24	全工程あり	—
+FR-ADMIN-010	機能要件	Must	対象	その他	アプリ（管理画面・idm-api）	管理画面の権限はアプリ	管理者ロール（RBAC for Admin）	管理者にも役割を持たせて操作を制限できること					アプリ側で実施	—
+FR-ADMIN-011	機能要件	Should	対象	その他	アプリ（管理画面・idm-api）	同上	テナント管理者の委譲（顧客の自社運用）	顧客の管理者に運用の一部を任せられること					アプリ側で実施	—
+FR-ADMIN-012	機能要件	Should	対象	Keycloak-Broker	インフラ（本基盤）	振り分けの識別子入力画面とエラー画面は Keycloak-Broker で作る	カスタマイズ可能なログイン UI	ログイン画面の見た目を変えられること	HC-04a HC-04j	DDC-01 DDC-02	MKC-03 MKC-04 MKI-08	ST-10 ST-11	全工程あり	—
+FR-INT-001	機能要件	Must	対象	Keycloak-Broker	インフラ（本基盤）	—	OIDC 1.0 / OAuth 2.0 標準準拠	OIDC / OAuth 2.0 の標準に従っていること	GD-09 GD-10 GD-14 GD-15 GD-16 GD-17 HB-F-AUTH-05 HE-14 HJ-02a HJ-07 HJ-10a	DDB-01 DDE-01 DDE-08 DDI-02 DDI-07	MKB-02 MKB-03 MKB-19 MKI-02 MKI-10	IT-01	全工程あり	—
+FR-INT-002	機能要件	Must	対象	Keycloak-Broker	インフラ（本基盤）	—	OIDC Discovery（`.well-known`）	接続情報を公開の場所から自動で取得できること	HJ-09	DDB-14	MKB-22 MKI-13	IT-07	全工程あり	—
+FR-INT-003	機能要件	Must	対象	Keycloak-Broker	インフラ（本基盤）	—	JWKS 公開エンドポイント	署名鍵を公開の場所から取得できること	GD-18 HB-F-BAT-04 HJ-09	DDB-14 DDF-02	MKB-22 MKF-03 MKI-13 MKI-16	ST-23	全工程あり	—
+FR-INT-004	機能要件	Should	対象	Keycloak-Broker	インフラ（本基盤）	—	SAML 2.0 メタデータ	旧方式（SAML）の接続情報を交換できること	GD-13 HB-F-AUTH-06 HB-F-INT-01 HE-15 HE-16	DDB-02 DDB-15 DDE-02 DDI-03 DDI-08	MKB-04 MKB-23 MKI-03 MKI-14	IT-02 IT-08 ST-25 ST-27	全工程あり	—
+FR-INT-005	機能要件	Should	対象外	—	—	Phase 1 では作らない	Webhook イベント通知（user.created 等）	ユーザの変更をアプリへ通知できること（Webhook）					Phase 1 では作らない	—
+FR-INT-006	機能要件	Must	対象	Keycloak-Broker	インフラ（本基盤）	Keycloak 標準の管理 API。内部経路・呼び出し元の資格・許す操作の範囲を本基盤が決める（F-INT-14）	管理 REST API	管理のための API があること	HE-22a HE-24 HJ-09	DDB-14 DDE-10 DDE-12	MKB-22 MKB-32 MKI-13	IT-15 IT-17	全工程あり	—
+FR-INT-007-a	機能要件	Must	対象	その他	アプリ（業務アプリ）	業務アプリ側の実装。本基盤はガイドとサンプルで示す	API 入口での JWT 検証との統合（アプリの実装）	API の入口で JWT を検証する仕組み（API Gateway 等）と組み合わせられること（ガイドで示す）					アプリ側で実施	—
+FR-INT-007-b	機能要件	Must	対象	Keycloak-Broker	インフラ（本基盤）	アプリ開発者向けガイドとサンプル実装・試用環境を本基盤が提供する	API 入口での JWT 検証との統合（ガイド・サンプル）	API の入口で JWT を検証する仕組み（API Gateway 等）と組み合わせられること（ガイドで示す）	GD-16 GD-18	DDJ-05	MKJ-05	UAT-04	全工程あり	—
+FR-INT-008	機能要件	Must	対象	Keycloak-Broker	インフラ（本基盤）	全体の共通基盤へ出して集約する	監査ログ外部出力（CloudWatch / S3 / Kinesis）	監査の記録を外部へ出力できること	HG-04 HG-05	DDD-04 DDE-09	MKH-01 MKI-15	IT-09	全工程あり	—
+FR-INT-009	機能要件	Could	対象外	—	—	共通基盤側の範囲	監査ログ SIEM 連携（Splunk / Datadog）	監査の記録を分析製品へ連携できること					Phase 1 では作らない	—
+FR-INT-010	機能要件	Must	対象	Keycloak-Broker	インフラ（本基盤）	—	Terraform / IaC 管理	構成をコードで管理できること	HA-16 HA-17	DDG-13	MKA-19	OP-11	全工程あり	—
+NFR-AVL-001	非機能要件	TBD	対象	Keycloak-Broker	インフラ（本基盤）	顧客IdP を持たない顧客のログインは Keycloak-IdP（アプリ運用）の稼働にも依存する。約束する稼働率の範囲と除外条件を HK-02 で明示する	サービス稼働率 SLA	顧客に約束する稼働率を定めて満たすこと	HK-02			OP-06	🔺 一部の工程のみ	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-AVL-002	非機能要件	TBD	対象	Keycloak-Broker	インフラ（本基盤）	—	計画メンテナンス窓	計画的に止める時間の枠を定めること	E-5 HJ-06	DDG-12 DDH-02	MKA-18 MKC-05	OP-10 SEC-09	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-AVL-003	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	—	マルチ AZ 配置	複数の区画に分けて配置し、片方が落ちても動くこと	HJ-17 HJ-19	DDG-04	MKA-05 MKA-06 MKD-01	DR-03	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-AVL-004	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	—	自動復旧（コンテナ障害）	部品が落ちたときに自動で立ち上がり直すこと	HJ-17 HJ-19	DDG-04	MKA-05 MKA-06 MKD-01	PT-03	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-AVL-005	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	—	単一障害点の排除	1 か所が落ちると全部止まる箇所を無くすこと	HD-01 HD-04 HD-25 HJ-17 HJ-19	DDD-05 DDD-06 DDG-04	MKA-05 MKA-06 MKD-01	IT-14 PT-03 PT-04	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-AVL-006	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	—	デプロイ時のダウンタイム	入れ替えのときにログインを止めないこと	E-5 HJ-06	DDG-12 DDH-02	MKA-18 MKC-05	OP-10 SEC-09	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-PERF-001	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	—	認証応答時間（P50 / P95 / P99）	ログインの応答時間が目標に収まること	HA-21	DDA-02	MKA-09	PT-05	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-PERF-002	非機能要件	TBD	対象	Keycloak-Broker	インフラ（本基盤）	—	同時認証リクエスト処理能力	同時に来るログインの数を目標まで捌けること	E-4a E-4d E-4e HA-21	DDA-02 DDA-03	MKA-09 MKB-28	PT-01	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-PERF-003-a	非機能要件	推奨値あり	対象	その他	アプリ（業務アプリ）	業務アプリ側の実装。本基盤はガイドとサンプルで示す	API 入口での JWT 検証の応答時間（アプリ側）（アプリの実装）	API の入口での判定が目標時間に収まること。署名鍵の一時保持（GD-18）が前提					アプリ側で実施	—
+NFR-PERF-003-b	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	アプリ開発者向けガイドとサンプル実装・試用環境を本基盤が提供する	API 入口での JWT 検証の応答時間（アプリ側）（ガイド・サンプル）	API の入口での判定が目標時間に収まること。署名鍵の一時保持（GD-18）が前提	GD-16 GD-18	DDJ-05	MKJ-05	UAT-04	全工程あり	—
+NFR-PERF-004	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	—	JWT 検証スループット	JWT の検証を目標の件数まで捌けること	HA-21	DDA-02	MKA-09	PT-02	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-PERF-005	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	—	JWKS キャッシュ TTL	署名鍵の取得結果を一定時間持ち回して負荷を下げること	HA-11 HA-13	DDA-07	MKB-29	PT-06	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-PERF-006	非機能要件	TBD	対象	Keycloak-Broker	インフラ（本基盤）	—	流量制限（同時受付数の上限）	過大な要求を受けたときに Keycloak-Broker 側で流量を絞れること（API Gateway は使わない。境界側の流量制限は NFR-SEC-011）	E-4a E-4d E-4e	DDA-03	MKB-28	PT-07	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-PERF-007	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	—	認証ピーク時間帯への耐性	始業時などの山に耐えられること	E-2 HA-21	DDA-02 DDI-09	MKA-09 MKH-02	PT-05	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-PERF-008	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	—	DB 応答時間（Keycloak のみ）	データベースの応答時間が目標に収まること	HD-01 HD-04 HD-25	DDD-05 DDD-06		IT-14 PT-04	🔺 一部の工程のみ	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-SCL-001	非機能要件	TBD	対象	Keycloak-Broker	インフラ（本基盤）	—	MAU スケール上限	想定するユーザ数まで伸ばせること	A-1.7 G-5.8 HA-22	DDD-07	MKA-10	PT-06	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-SCL-002	非機能要件	TBD	対象	Keycloak-Broker	インフラ（本基盤）	—	ピーク時同時セッション数	同時にログインしている数の山に耐えられること	A-1.7 G-5.8 HA-22	DDD-07	MKA-10	PT-05	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-SCL-003	非機能要件	TBD	対象	Keycloak-Broker	インフラ（本基盤）	—	顧客テナント数（IdP 数）スケール	顧客IdP の数が増えても捌けること	A-1.7 G-5.8 HA-22 HB-F-ADM-16	DDD-07	MKA-10 MKB-16	PT-06	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-SCL-004-a	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	登録から疎通確認までの所要時間は本基盤	IdP 追加リードタイム（本基盤側の作業）	顧客IdP を追加してから使えるまでの時間が目標に収まること。境界側の外向き許可の追加（他組織、当日〜翌日）を含む	HB-F-ADM-16		MKB-16	OP-01	🔺 一部の工程のみ	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-SCL-004-b	非機能要件	推奨値あり	対象	その他	他組織（境界・共通基盤）	顧客IdP 向けの外向き許可の追加は他組織（依頼から当日〜翌日）。約束する時間にこの分を含める	IdP 追加リードタイム（境界側の外向き許可）	顧客IdP を追加してから使えるまでの時間が目標に収まること。境界側の外向き許可の追加（他組織、当日〜翌日）を含む					他組織で実施	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-SCL-005	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	—	自動スケーリング	負荷に応じて自動で増減すること	HJ-17 HJ-19	DDG-04	MKA-05 MKA-06 MKD-01	PT-03	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-SCL-006	非機能要件	不要	対象外	—	—	災害対策の結論に従属。Phase 1 では別地域は待機のみ	マルチリージョン対応（複数地域での同時稼働）	複数の地域で同時に動かせること					Phase 1 では作らない	—
+NFR-SCL-007	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	—	データベーススケール（Keycloak）	データベースを増強できること	HD-01 HD-04 HD-25	DDD-05 DDD-06		IT-14 PT-04	🔺 一部の工程のみ	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-SEC-001	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	—	通信暗号化	通信が暗号化されていること	E-4c G-4.2 HA-05 HA-26 HE-19a	DDA-05 DDG-03	MKA-03 MKA-04 MKA-16	SEC-06	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-SEC-002	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	—	データ暗号化（at-rest）	保管したデータが暗号化されていること	E-4c HA-26 HE-19a	DDA-05	MKA-16	SEC-08	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-SEC-003	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	—	トークン署名アルゴリズム	JWT の署名方式が安全なものであること	GD-16 GD-17 GD-18 HB-F-BAT-04 HJ-07	DDE-08 DDF-02 DDI-07	MKB-19 MKF-03 MKI-10 MKI-16	ST-23	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-SEC-004	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	—	Access Token TTL	JWT の有効期限が適切に短いこと	GD-16 GD-17 HJ-07	DDE-08 DDI-07	MKB-19 MKI-10	PT-02 ST-23	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-SEC-005	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	—	Refresh Token TTL	更新用の資格の有効期限が定められていること。設定上限は 30 日だが、実効はセッションの上限（12 時間）に従属する	GD-21 GD-24 HA-10	DDA-01 DDI-05	MKB-08 MKI-06	ST-08	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-SEC-006	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	—	ID Token TTL	本人確認結果の有効期限が定められていること	GD-16 GD-17 HJ-07	DDE-08 DDI-07	MKB-19 MKI-10	PT-02 ST-23	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-SEC-007	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	—	Refresh Token Rotation	更新用の資格を使うたびに入れ替えること	GD-21 GD-24 HA-10	DDA-01 DDI-05	MKB-08 MKI-06	ST-08	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-SEC-008	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	—	トークン失効（Revocation）	発行済みの資格を失効させられること（アクセストークンの残存 30 分は FR-SSO-009 と同じ）	HB-F-PROV-10	DDB-07	MKB-12	ST-18	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-SEC-009	非機能要件	推奨値あり	対象	Keycloak-IdP	アプリ（Keycloak-IdP）	ローカル収容ユーザの話	パスワード保管アルゴリズム	パスワードを安全な方式で保管すること					アプリ側で実施（Keycloak-IdP 側。本基盤は ROSA の引き渡しまで＝NFR-OPS-012）	アプリ（主体）
+NFR-SEC-010	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	Keycloak-Broker はパスワードを持たないため、振り分けの実在推測の防止と試行回数の制限に置き換える	ブルートフォース対策	総当たりを防ぐこと	HB-F-AUTH-21	DDB-05	MKB-07 MKI-05	SEC-01 SEC-05 ST-01 ST-11	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-SEC-011-a	非機能要件	推奨値あり	対象	その他	他組織（境界・共通基盤）	境界を管理する他組織が WAF・DDoS 対策を持つ	WAF 適用（境界側の実装）	外部からの攻撃を入口で遮ること（WAF）			MKA-04	SEC-05	他組織で実施	—
+NFR-SEC-011-b	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	何を求めるかは本基盤の責務。要求仕様書（HK-10）を出し、受入確認を行う	WAF 適用（要求仕様と受入確認）	外部からの攻撃を入口で遮ること（WAF）	HG-08 HK-10			IT-11 SEC-05	🔺 一部の工程のみ	—
+NFR-SEC-012-a	非機能要件	推奨値あり	対象	その他	他組織（境界・共通基盤）	境界を管理する他組織が WAF・DDoS 対策を持つ	DDoS 対策（境界側の実装）	大量の通信で止められないようにすること			MKA-04	SEC-05	他組織で実施	—
+NFR-SEC-012-b	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	何を求めるかは本基盤の責務。要求仕様書（HK-10）を出し、受入確認を行う	DDoS 対策（要求仕様と受入確認）	大量の通信で止められないようにすること	HG-08 HK-10			SEC-05	🔺 一部の工程のみ	—
+NFR-SEC-013	非機能要件	TBD	対象	Keycloak-Broker	インフラ（本基盤）	—	ペネトレーションテスト	疑似攻撃検査を定期的に受けること	E-4b HG-08	DDA-04	MKA-15 MKI-18	SEC-04	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-SEC-014	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	—	脆弱性スキャン	部品の弱点を定期的に検査すること	E-5 HJ-06	DDG-12 DDH-02	MKA-18 MKC-05	SEC-09	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-SEC-015	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	—	シークレット管理	接続用パスワードや鍵を安全に保管すること	E-4c HA-26 HB-F-BAT-05 HE-19a	DDA-05 DDF-03	MKA-16 MKF-04	SEC-03 SEC-07	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-SEC-016	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	—	ネットワーク分離（Private Subnet）	外から直接触れない区画に置くこと	G-4.2 HA-05	DDG-03	MKA-03 MKA-04	IT-11	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-SEC-017	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	—	管理画面アクセス制御	管理のための入口を限られた元からだけ通すこと	G-1.6 G-4.2 HA-05	DDG-03 DDG-11	MKA-03 MKA-04 MKA-17	OP-09	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-SEC-018	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	署名鍵の公開先は公開のまま、流量制限は境界（他組織）に要求する	JWKS エンドポイント保護	署名鍵の公開先を守ること	E-4b HG-08 HK-10	DDA-04	MKA-15 MKI-18	SEC-04 SEC-05	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-SEC-019	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	—	内部通信の認証（idm-api → 管理 API、Keycloak-Broker → Keycloak-IdP）	内部の呼び出しでも相手を確認すること。管理 API は内部経路と資格で、Keycloak-IdP へは閉域の単方向接続で確認する	G-4.2 HA-05 HE-23 HE-24	DDG-03	MKA-03 MKA-04	IT-11 IT-16 IT-17	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-SEC-020	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	—	セッション固定攻撃対策	ログインの前後で状態を作り替え、乗っ取りを防ぐこと	GD-21 GD-24 HA-10	DDA-01 DDI-05	MKB-08 MKI-06	ST-08	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-SEC-010-2	非機能要件	TBD	対象	Keycloak-IdP	アプリ（Keycloak-IdP）	パスワードを持つのは Keycloak-IdP 側	侵害クレデンシャル検出	流出したパスワードの使用を拒否できること					アプリ側で実施（Keycloak-IdP 側）	アプリ（主体）
+NFR-SEC-021	非機能要件	Must	対象	Keycloak-Broker	インフラ（本基盤）	Keycloak-Broker にローカルで残る唯一の人が運用者。ADR-040 Phase 1 α（P1-04 / P1-08 / P1-09）	運用者アカウントと権限の保護	本基盤運用者の認証を WebAuthn 必須とし、常時の全権付与を禁止し、緊急時アクセスと定期棚卸しを定めること	G-1.6 G-5.6 HG-09	DDB-19 DDG-11	MKA-17 MKB-31	OP-09 SEC-10	全工程あり	—
+NFR-SEC-022	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	ADR-046 Phase 1 = SLSA L2	サプライチェーン対策（依存の検査・イメージ署名・部品一覧）	自社拡張と実行イメージの依存を検査し、署名し、部品一覧（SBOM）を出せること	HJ-06 HJ-22	DDH-02	MKA-21 MKC-05	SEC-09	全工程あり	アプリ（Keycloak-IdP 側の実行イメージも同様に）
+NFR-SEC-023	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	ADR-035 Phase 1a = 検知して通知するまで。自動遮断はしない	不正兆候の検知	ログイン失敗の急増などの不正兆候を検知して通知できること	HH-06	DDG-14	MKH-07	OP-12	全工程あり	アプリ（パスワード側の兆候は Keycloak-IdP で検知）
+NFR-DR-001	非機能要件	TBD	対象	Keycloak-Broker	インフラ（本基盤）	—	RTO（目標復旧時間）	目標の時間内に復旧できること	D-18.1 D-18.2 D-18.3 D-18.4 G-1.11 G-1.8 G-1.9 HK-02	DDG-06 DDG-07 DDG-08	MKA-11 MKA-12 MKA-13 MKI-17	DR-01 OP-06	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-DR-002	非機能要件	TBD	対象	Keycloak-Broker	インフラ（本基盤）	—	RPO（目標復旧地点）	失うデータを目標の範囲に収めること	D-18.1 D-18.2 D-18.3 D-18.4 G-1.11 G-1.8 G-1.9 HK-02	DDG-06 DDG-07 DDG-08	MKA-11 MKA-12 MKA-13 MKI-17	DR-01 DR-02 OP-06	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-DR-003	非機能要件	TBD	対象	Keycloak-Broker	インフラ（本基盤）	—	フェイルオーバー方式	別地域へ切り替える方式が定まっていること。現行の方向は手動・大阪で作り直し（復旧方式の決定 D-18.2 待ち。顧客希望 RTO 1 日との差は D-18.1 で明示）	D-18.1 D-18.2 D-18.3 D-18.4 G-1.11 G-1.8 G-1.9	DDG-06 DDG-07 DDG-08	MKA-11 MKA-12 MKA-13 MKI-17	DR-01 DR-02	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-DR-004	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	—	バックアップ保存期間	控えを一定期間保つこと	G-1.10	DDG-09	MKA-14	DR-04	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-DR-005	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	—	PITR（Point-in-Time Recovery）	時点を指定して戻せること	G-1.10	DDG-09	MKA-14	DR-03 DR-04	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-DR-006	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	—	クロスリージョンバックアップ	控えを別の地域にも置くこと	D-18.1 D-18.2 D-18.3 D-18.4 G-1.11 G-1.8 G-1.9	DDG-06 DDG-07 DDG-08	MKA-11 MKA-12 MKA-13 MKI-17	DR-01 DR-02	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-DR-007	非機能要件	TBD	対象	Keycloak-Broker	インフラ（本基盤）	—	DR 訓練	復旧の訓練を定期的に行うこと	D-18.1 D-18.2 D-18.3 D-18.4 G-1.11 G-1.8 G-1.9	DDG-06 DDG-07 DDG-08	MKA-11 MKA-12 MKA-13 MKI-17	DR-01 DR-02	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-DR-008	非機能要件	推奨値あり	対象外	—	—	別地域で作り直す方式ではログイン状態を引き継げない。再ログイン前提を DR-02 で確認する	DR 切替時のセッション維持	切り替えてもログインし直さずに済むこと				DR-02	Phase 1 では作らない（再ログイン前提。DR-02 で確認）	—
+NFR-OPS-001	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	—	監視・メトリクス	動きを測る値が取れること	HH-01 HH-02 HH-03	DDG-10	MKH-04	OP-07	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-OPS-002	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	—	アラート通知	異常を検知したら通知が届くこと	HH-01 HH-02 HH-03	DDG-10	MKH-04	OP-02 OP-05	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-OPS-003-a	非機能要件	TBD	対象	Keycloak-Broker	インフラ（本基盤）	何を記録し何年保つかは本基盤が決めて出力する	ログ保存期間（出力・項目・保持年数の指定）	記録を定められた期間保つこと	HG-04 HG-05	DDD-04 DDE-09	MKH-01 MKI-15	IT-09	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-OPS-003-b	非機能要件	TBD	対象	その他	他組織（境界・共通基盤）	記録の保管は全体の共通基盤側。本基盤は指定した保持年数と形式で出すまで（OP-03 で確認）	ログ保存期間（共通基盤側の保管）	記録を定められた期間保つこと				OP-03	他組織で実施	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-OPS-004-a	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	何を記録し何年保つかは本基盤が決めて出力する	ログ検索性（出力・項目・保持年数の指定）	記録を必要な条件で探せること	HG-04 HG-05	DDD-04 DDE-09	MKH-01 MKI-15	OP-03	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-OPS-004-b	非機能要件	推奨値あり	対象	その他	他組織（境界・共通基盤）	記録の検索は全体の共通基盤側。本基盤は指定した保持年数と形式で出すまで（OP-03 で確認）	ログ検索性（共通基盤側の検索）	記録を必要な条件で探せること				OP-03	他組織で実施	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-OPS-005	非機能要件	TBD	対象	Keycloak-Broker	インフラ（本基盤）	—	バージョンアップ方針	Keycloak の版を上げる方針が定まっていること	E-5 HJ-06	DDG-12 DDH-02	MKA-18 MKC-05	OP-10	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-OPS-006	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	—	パッチ適用（CVE 対応）	弱点への修正を定めた期間内に当てること	E-5 HJ-06	DDG-12 DDH-02	MKA-18 MKC-05	SEC-09	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-OPS-007	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	—	設定変更プロセス	設定を変えるときの手順が定まっていること	G-5.1 G-5.2 G-5.3 G-5.6				🔺 一部の工程のみ	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-OPS-008	非機能要件	TBD	対象	Keycloak-Broker	インフラ（本基盤）	—	インシデント対応体制	障害に対応する体制があること	G-1.3 G-1.4 G-5.1 G-5.2 G-5.3 G-5.6		MKH-06	OP-08 UAT-03	🔺 一部の工程のみ	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-OPS-009	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	—	運用工数（人月）	運用にかかる人手が想定の範囲に収まること	G-5.5 G-5.7				🔺 一部の工程のみ	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-OPS-010	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	—	デプロイ自動化（CI/CD）	入れ替えを自動で行えること	HA-16 HA-17	DDG-13	MKA-19	OP-11	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-OPS-011-a	非機能要件	TBD	対象	Keycloak-Broker	インフラ（本基盤）	登録から疎通確認までの所要時間は本基盤	テナント追加の運用 SLA（本基盤側の作業）	顧客を追加してから使えるまでの時間を約束できること。境界側の外向き許可の追加（他組織、当日〜翌日）を含む	G-5.4 HB-F-ADM-16		MKB-16	OP-01	🔺 一部の工程のみ	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-OPS-011-b	非機能要件	TBD	対象	その他	他組織（境界・共通基盤）	顧客IdP 向けの外向き許可の追加は他組織（依頼から当日〜翌日）。約束する時間にこの分を含める	テナント追加の運用 SLA（境界側の外向き許可）	顧客を追加してから使えるまでの時間を約束できること。境界側の外向き許可の追加（他組織、当日〜翌日）を含む					他組織で実施	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-OPS-012	非機能要件	Must	対象	Keycloak-IdP	インフラ（本基盤）	ROSA の引き渡しまでが本基盤。以降の構築・運用はアプリ責務（D-21 責任表）	Keycloak-IdP 側の構築・運用の責任分界	Keycloak-IdP 用の基盤（ROSA）をどこまで作って渡すか、渡した後の非機能を誰が持つかが合意されていること	D-21 HJ-20	DDG-01	MKA-01 MKJ-01	IT-03	全工程あり	本基盤（ROSA 引き渡しまで）→ アプリ（引き渡し後の非機能すべて）
+NFR-OPS-013	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	—	環境構成（本番 / 検証 / 開発）	環境ごとの構成差分と、検証環境に本番データを入れない規律が定まっていること	HH-05	DDG-05	MKA-07 MKA-08	IT-13 TE-01 TE-02	全工程あり	アプリ（Keycloak-IdP 側の環境はアプリが用意）
+NFR-COMP-001	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	—	個人情報保護法対応	個人情報保護法に沿った扱いをすること	D-20	DDA-06	MKH-03	SEC-08	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-COMP-002	非機能要件	TBD	対象外	—	—	海外展開時に再評価	GDPR / CCPA（海外展開時）	海外の個人情報の規則に沿えること					Phase 1 では作らない	—
+NFR-COMP-003	非機能要件	TBD	対象外	—	—	取得の予定が決まってから	SOC 2 Type II	第三者認証（SOC 2）に対応できること					Phase 1 では作らない	—
+NFR-COMP-004	非機能要件	TBD	対象外	—	—	同上	ISO 27001	第三者認証（ISO 27001）に対応できること					Phase 1 では作らない	—
+NFR-COMP-005	非機能要件	TBD	対象外	—	—	該当する顧客が現れてから	PCI DSS（金融）	カード業界の基準に対応できること					Phase 1 では作らない	—
+NFR-COMP-006	非機能要件	不要	対象外	—	—	不要と確定（2026-07-30）	FIPS 140-3 認定（暗号モジュール認定、旧 140-2）	暗号の実装が国の認定を受けていること					Phase 1 では作らない	—
+NFR-COMP-007-a	非機能要件	TBD	対象	Keycloak-Broker	インフラ（本基盤）	何を記録し何年保つかは本基盤が決めて出力する	監査ログ保存期間（法令要件）（出力・項目・保持年数の指定）	法令が求める期間まで記録を保つこと	HG-04 HG-05	DDD-04 DDE-09	MKH-01 MKI-15	IT-09 ST-20	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-COMP-007-b	非機能要件	TBD	対象	その他	他組織（境界・共通基盤）	記録の保管は全体の共通基盤側。本基盤は指定した保持年数と形式で出すまで（OP-03 で確認）	監査ログ保存期間（法令要件）（共通基盤側の保管）	法令が求める期間まで記録を保つこと				OP-03	他組織で実施	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-COMP-008	非機能要件	TBD	対象	Keycloak-Broker	インフラ（本基盤）	—	データ所在地（リージョン制限）	データを置く地域を限定できること	HA-04	DDG-02	MKA-02	IT-10	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-COMP-009-a	非機能要件	TBD	対象	Keycloak-Broker	インフラ（本基盤）	同上。本人からの請求は本基盤が窓口になり、Keycloak-IdP 側と権限データ側（アプリ）へ依頼する	個人データ削除権（GDPR Right to Erasure）（本基盤の窓口と Keycloak-Broker 側）	本人の求めに応じてデータを消せること	HK-07	DDB-16	MKB-26	OP-04 ST-22	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-COMP-009-b	非機能要件	TBD	対象	その他	アプリ（管理画面・idm-api）	権限データ・参照用データの消去は管理画面・idm-api 側。本基盤の手順（HK-07）から依頼する	個人データ削除権（GDPR Right to Erasure）（権限データ側）	本人の求めに応じてデータを消せること				OP-04	アプリ側で実施	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-COMP-010	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	—	アクセス監査の追跡可能性	誰がいつ何をしたかを追えること	HG-04 HG-05	DDD-04 DDE-09	MKH-01 MKI-15	OP-03	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-COMP-011	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	—	暗号鍵のローテーションと所在の可視化	鍵を定期的に入れ替え、どこにあるか分かること	E-4c GD-18 HA-26 HB-F-BAT-04 HB-F-BAT-05 HB-F-BAT-07 HE-19a	DDA-05 DDF-02 DDF-03 DDF-04	MKA-16 MKF-03 MKF-04 MKF-05 MKI-16	SEC-02 SEC-07	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-COST-001	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	—	初期構築費	初期に作るための費用が見積もられていること					別シートで管理（コスト見積もり）	—
+NFR-COST-002	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	—	月額固定インフラ費	毎月かかる設備の費用が見積もられていること					別シートで管理（コスト見積もり）	—
+NFR-COST-003	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	—	MAU あたりコスト（連携）	ユーザ 1 人あたりの費用が把握できること					別シートで管理（コスト見積もり）	—
+NFR-COST-004	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	—	DR 追加月額	災害対策を持つ場合の追加費用が把握できること	D-18.1 D-18.2 D-18.3 D-18.4 G-1.11 G-1.8 G-1.9	DDG-06 DDG-07 DDG-08	MKA-11 MKA-12 MKA-13 MKI-17	DR-01 DR-02	別シートで管理（コスト見積もり）	—
+NFR-COST-005	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	—	運用人件費	運用にかかる人件費が見積もられていること	G-5.5 G-5.7				別シートで管理（コスト見積もり）	—
+NFR-COST-006	非機能要件	TBD	対象	Keycloak-Broker	インフラ（本基盤）	—	RHBK サブスクリプション	Keycloak の商用サポート費用の要否が定まっていること					確定（RHBK は ROSA に内包され追加費用なし。P-01）	—
+NFR-COST-007	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	—	損益分岐 MAU（連携のみ）	どの規模から自前が有利になるかが分かること					別シートで管理（コスト見積もり）	—
+NFR-COST-008	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	—	3 年 TCO（10 万 MAU 想定）	3 年分の総額が把握できること（小規模）					別シートで管理（コスト見積もり）	—
+NFR-COST-009	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	—	3 年 TCO（50 万 MAU 想定）	3 年分の総額が把握できること（中規模）					別シートで管理（コスト見積もり）	—
+NFR-MIG-001	非機能要件	不要	対象	その他	アプリ（Keycloak-IdP）	本基盤は受け入れ口（SCIM 受信・管理 API・JIT）を提供するのみ。旧システムからの吸い上げと Keycloak-IdP への投入はアプリ側	既存認証システムからのユーザー移行	既存の認証からユーザを移せること					アプリ側で実施	—
+NFR-MIG-002	非機能要件	不要	対象	その他	アプリ（Keycloak-IdP）	パスワードのハッシュを持つのは Keycloak-IdP。Keycloak 非対応のハッシュ方式なら Keycloak-IdP 側の拡張（アプリ責務）	パスワード移行（ハッシュ持ち越し）	パスワードを暗号化したまま引き継げること					アプリ側で実施	—
+NFR-MIG-003	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	—	ベンダーロックイン回避	特定の製品に縛られない作りであること	GD-09 GD-10 GD-14 GD-15 HB-F-AUTH-05 HE-14 HE-22a HJ-02a HJ-10a	DDB-01 DDE-01 DDE-10 DDI-02	MKB-02 MKB-03 MKI-02	IT-01 IT-15 RI-01 RI-02 ST-04	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-MIG-004	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	—	データエクスポート	データを取り出せること	G-1.2	DDB-10	MKB-15	ST-22	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-MIG-005	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	切替の計画は本基盤、実施はアプリ	段階的移行（並行稼働）	新旧を並行して動かしながら段階的に移せること	D-16.4	DDJ-01	MKJ-02	TE-03	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
