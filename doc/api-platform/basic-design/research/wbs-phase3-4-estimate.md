@@ -70,7 +70,7 @@ SigV4 Positive / Cookie Positive・cleanup / heartbeat 型検査（旧 M2、廃�
 | A13-d | 基盤IaC | タグ + Budgets 設計 | 監視系リソース自身への必須タグ値（app-id 等、BL-1）と月次 Budget 額・通知先（BL-2）| — | 1 | 0.15 |
 | A13-i | 基盤IaC | タグ + Budgets 実装 | 全リソースへのタグ付与（IaC 共通タグ）+ Budgets 作成 | A13-d | 2 | 0.25 |
 | A14-i | 基盤IaC | Lambda ログ保持設定 | 3 Lambda のロググループ保持期間の明示設定（OBS-4。組織標準値、未定なら 90 日仮置き）| — | 1 | 0.15 |
-| A15-i | 基盤IaC | 全量検査の日次 Scheduler 実装 | EventBridge Scheduler（日次、時刻帯は M-Q-18-3）→ 認証実装チェック Lambda `mode=full` 起動の IaC + 起動確認。【補足】heartbeat 型（旧 M2）廃止の代替として、シグナルなし変化（ALB 直手動変更・設定駆動の認証切替等）を最大 24h で機械的に捕捉する（D-M-18-4、18 §18.1.1）| A5 | 2 | 0.25 |
+| A15-i | 基盤IaC | 全量検査の日次 Scheduler 実装 | EventBridge Scheduler（日次、時刻帯は M-Q-18-3）→ 認証実装チェック Lambda `mode=full` 起動の IaC + 起動確認。【補足】heartbeat 型（旧 M2）廃止の代替として、シグナルなし変化（ALB 直手動変更・設定駆動の認証切替等）を最大 24h で機械的に捕捉する（D-M-18-4、18 §18.1.1）| A6-d, A5-i | 2 | 0.25 |
 | **小計** | | | | | **29** | **3.6** |
 
 ## 5. W2-B 監視（定型）（10 行。§10 の別表で横断集計）
