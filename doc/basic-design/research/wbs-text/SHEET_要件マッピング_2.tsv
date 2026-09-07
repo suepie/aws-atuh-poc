@@ -1,0 +1,105 @@
+要件ID	種別	優先度	要件実現対象	構築場所	担当	担当の理由	項目	概要	① 基本設計	② 詳細設計	③ 製造	④ テスト	状況	Keycloak-IdP 側
+FR-INT-007-b	機能要件	Must	対象	Keycloak-Broker	インフラ（本基盤）	アプリ開発者向けガイドとサンプル実装・試用環境を本基盤が提供する	API 入口での JWT 検証との統合（ガイド・サンプル）	API の入口で JWT を検証する仕組み（API Gateway 等）と組み合わせられること（ガイドで示す）	GD-16 GD-18	DDJ-05	MKJ-05	UAT-04	全工程あり	—
+FR-INT-008	機能要件	Must	対象	Keycloak-Broker	インフラ（本基盤）	全体の共通基盤へ出して集約する	監査ログ外部出力（CloudWatch / S3 / Kinesis）	監査の記録を外部へ出力できること	HG-04 HG-05	DDD-04 DDE-09	MKH-01 MKI-15	IT-09	全工程あり	—
+FR-INT-009	機能要件	Could	対象外	—	—	共通基盤側の範囲	監査ログ SIEM 連携（Splunk / Datadog）	監査の記録を分析製品へ連携できること					Phase 1 では作らない	—
+FR-INT-010	機能要件	Must	対象	Keycloak-Broker	インフラ（本基盤）	—	Terraform / IaC 管理	構成をコードで管理できること	HA-16 HA-17	DDG-13	MKA-19	OP-11	全工程あり	—
+NFR-AVL-001	非機能要件	TBD	対象	Keycloak-Broker	インフラ（本基盤）	顧客IdP を持たない顧客のログインは Keycloak-IdP（アプリ運用）の稼働にも依存する。約束する稼働率の範囲と除外条件を HK-02 で明示する	サービス稼働率 SLA	顧客に約束する稼働率を定めて満たすこと	HK-02			OP-06	🔺 一部の工程のみ	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-AVL-002	非機能要件	TBD	対象	Keycloak-Broker	インフラ（本基盤）	—	計画メンテナンス窓	計画的に止める時間の枠を定めること	E-5 HJ-06	DDG-12 DDH-02	MKA-18 MKC-05	OP-10 SEC-09	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-AVL-003	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	—	マルチ AZ 配置	複数の区画に分けて配置し、片方が落ちても動くこと	HJ-17 HJ-19	DDG-04	MKA-05 MKA-06 MKD-01	DR-03	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-AVL-004	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	—	自動復旧（コンテナ障害）	部品が落ちたときに自動で立ち上がり直すこと	HJ-17 HJ-19	DDG-04	MKA-05 MKA-06 MKD-01	PT-03	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-AVL-005	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	—	単一障害点の排除	1 か所が落ちると全部止まる箇所を無くすこと	HD-01 HD-04 HD-25 HJ-17 HJ-19	DDD-05 DDD-06 DDG-04	MKA-05 MKA-06 MKD-01	IT-14 PT-03 PT-04	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-AVL-006	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	—	デプロイ時のダウンタイム	入れ替えのときにログインを止めないこと	E-5 HJ-06	DDG-12 DDH-02	MKA-18 MKC-05	OP-10 SEC-09	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-PERF-001	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	—	認証応答時間（P50 / P95 / P99）	ログインの応答時間が目標に収まること	HA-21	DDA-02	MKA-09	PT-05	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-PERF-002	非機能要件	TBD	対象	Keycloak-Broker	インフラ（本基盤）	—	同時認証リクエスト処理能力	同時に来るログインの数を目標まで捌けること	E-4a E-4d E-4e HA-21	DDA-02 DDA-03	MKA-09 MKB-28	PT-01	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-PERF-003-a	非機能要件	推奨値あり	対象	その他	アプリ（業務アプリ）	業務アプリ側の実装。本基盤はガイドとサンプルで示す	API 入口での JWT 検証の応答時間（アプリ側）（アプリの実装）	API の入口での判定が目標時間に収まること。署名鍵の一時保持（GD-18）が前提					アプリ側で実施	—
+NFR-PERF-003-b	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	アプリ開発者向けガイドとサンプル実装・試用環境を本基盤が提供する	API 入口での JWT 検証の応答時間（アプリ側）（ガイド・サンプル）	API の入口での判定が目標時間に収まること。署名鍵の一時保持（GD-18）が前提	GD-16 GD-18	DDJ-05	MKJ-05	UAT-04	全工程あり	—
+NFR-PERF-004	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	—	JWT 検証スループット	JWT の検証を目標の件数まで捌けること	HA-21	DDA-02	MKA-09	PT-02	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-PERF-005	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	—	JWKS キャッシュ TTL	署名鍵の取得結果を一定時間持ち回して負荷を下げること	HA-11 HA-13	DDA-07	MKB-29	PT-06	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-PERF-006	非機能要件	TBD	対象	Keycloak-Broker	インフラ（本基盤）	—	流量制限（同時受付数の上限）	過大な要求を受けたときに Keycloak-Broker 側で流量を絞れること（API Gateway は使わない。境界側の流量制限は NFR-SEC-011）	E-4a E-4d E-4e	DDA-03	MKB-28	PT-07	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-PERF-007	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	—	認証ピーク時間帯への耐性	始業時などの山に耐えられること	E-2 HA-21	DDA-02 DDI-09	MKA-09 MKH-02	PT-05	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-PERF-008	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	—	DB 応答時間（Keycloak のみ）	データベースの応答時間が目標に収まること	HD-01 HD-04 HD-25	DDD-05 DDD-06		IT-14 PT-04	🔺 一部の工程のみ	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-SCL-001	非機能要件	TBD	対象	Keycloak-Broker	インフラ（本基盤）	—	MAU スケール上限	想定するユーザ数まで伸ばせること	A-1.7 G-5.8 HA-22	DDD-07	MKA-10	PT-06	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-SCL-002	非機能要件	TBD	対象	Keycloak-Broker	インフラ（本基盤）	—	ピーク時同時セッション数	同時にログインしている数の山に耐えられること	A-1.7 G-5.8 HA-22	DDD-07	MKA-10	PT-05	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-SCL-003	非機能要件	TBD	対象	Keycloak-Broker	インフラ（本基盤）	—	顧客テナント数（IdP 数）スケール	顧客IdP の数が増えても捌けること	A-1.7 G-5.8 HA-22 HB-F-ADM-16	DDD-07	MKA-10 MKB-16	PT-06	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-SCL-004-a	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	登録から疎通確認までの所要時間は本基盤	IdP 追加リードタイム（本基盤側の作業）	顧客IdP を追加してから使えるまでの時間が目標に収まること。境界側の外向き許可の追加（他組織、当日〜翌日）を含む	HB-F-ADM-16		MKB-16	OP-01	🔺 一部の工程のみ	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-SCL-004-b	非機能要件	推奨値あり	対象	その他	他組織（境界・共通基盤）	顧客IdP 向けの外向き許可の追加は他組織（依頼から当日〜翌日）。約束する時間にこの分を含める	IdP 追加リードタイム（境界側の外向き許可）	顧客IdP を追加してから使えるまでの時間が目標に収まること。境界側の外向き許可の追加（他組織、当日〜翌日）を含む					他組織で実施	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-SCL-005	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	—	自動スケーリング	負荷に応じて自動で増減すること	HJ-17 HJ-19	DDG-04	MKA-05 MKA-06 MKD-01	PT-03	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-SCL-006	非機能要件	不要	対象外	—	—	災害対策の結論に従属。Phase 1 では別地域は待機のみ	マルチリージョン対応（複数地域での同時稼働）	複数の地域で同時に動かせること					Phase 1 では作らない	—
+NFR-SCL-007	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	—	データベーススケール（Keycloak）	データベースを増強できること	HD-01 HD-04 HD-25	DDD-05 DDD-06		IT-14 PT-04	🔺 一部の工程のみ	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-SEC-001	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	—	通信暗号化	通信が暗号化されていること	E-4c G-4.2 HA-05 HA-26 HE-19a	DDA-05 DDG-03	MKA-03 MKA-04 MKA-16	SEC-06	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-SEC-002	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	—	データ暗号化（at-rest）	保管したデータが暗号化されていること	E-4c HA-26 HE-19a	DDA-05	MKA-16	SEC-08	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-SEC-003	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	—	トークン署名アルゴリズム	JWT の署名方式が安全なものであること	GD-16 GD-17 GD-18 HB-F-BAT-04 HJ-07	DDE-08 DDF-02 DDI-07	MKB-19 MKF-03 MKI-10 MKI-16	ST-23	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-SEC-004	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	—	Access Token TTL	JWT の有効期限が適切に短いこと	GD-16 GD-17 HJ-07	DDE-08 DDI-07	MKB-19 MKI-10	PT-02 ST-23	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-SEC-005	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	—	Refresh Token TTL	更新用の資格の有効期限が定められていること。設定上限は 30 日だが、実効はセッションの上限（12 時間）に従属する	GD-21 GD-24 HA-10	DDA-01 DDI-05	MKB-08 MKI-06	ST-08	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-SEC-006	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	—	ID Token TTL	本人確認結果の有効期限が定められていること	GD-16 GD-17 HJ-07	DDE-08 DDI-07	MKB-19 MKI-10	PT-02 ST-23	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-SEC-007	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	—	Refresh Token Rotation	更新用の資格を使うたびに入れ替えること	GD-21 GD-24 HA-10	DDA-01 DDI-05	MKB-08 MKI-06	ST-08	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-SEC-008	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	—	トークン失効（Revocation）	発行済みの資格を失効させられること（アクセストークンの残存 30 分は FR-SSO-009 と同じ）	HB-F-PROV-10	DDB-07	MKB-12	ST-18	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-SEC-009	非機能要件	推奨値あり	対象	Keycloak-IdP	アプリ（Keycloak-IdP）	ローカル収容ユーザの話	パスワード保管アルゴリズム	パスワードを安全な方式で保管すること					アプリ側で実施（Keycloak-IdP 側。本基盤は ROSA の引き渡しまで＝NFR-OPS-012）	アプリ（主体）
+NFR-SEC-010	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	Keycloak-Broker はパスワードを持たないため、振り分けの実在推測の防止と試行回数の制限に置き換える	ブルートフォース対策	総当たりを防ぐこと	HB-F-AUTH-21	DDB-05	MKB-07 MKI-05	SEC-01 SEC-05 ST-01 ST-11	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-SEC-011-a	非機能要件	推奨値あり	対象	その他	他組織（境界・共通基盤）	境界を管理する他組織が WAF・DDoS 対策を持つ	WAF 適用（境界側の実装）	外部からの攻撃を入口で遮ること（WAF）			MKA-04	SEC-05	他組織で実施	—
+NFR-SEC-011-b	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	何を求めるかは本基盤の責務。要求仕様書（HK-10）を出し、受入確認を行う	WAF 適用（要求仕様と受入確認）	外部からの攻撃を入口で遮ること（WAF）	HG-08 HK-10			IT-11 SEC-05	🔺 一部の工程のみ	—
+NFR-SEC-012-a	非機能要件	推奨値あり	対象	その他	他組織（境界・共通基盤）	境界を管理する他組織が WAF・DDoS 対策を持つ	DDoS 対策（境界側の実装）	大量の通信で止められないようにすること			MKA-04	SEC-05	他組織で実施	—
+NFR-SEC-012-b	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	何を求めるかは本基盤の責務。要求仕様書（HK-10）を出し、受入確認を行う	DDoS 対策（要求仕様と受入確認）	大量の通信で止められないようにすること	HG-08 HK-10			SEC-05	🔺 一部の工程のみ	—
+NFR-SEC-013	非機能要件	TBD	対象	Keycloak-Broker	インフラ（本基盤）	—	ペネトレーションテスト	疑似攻撃検査を定期的に受けること	E-4b HG-08	DDA-04	MKA-15 MKI-18	SEC-04	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-SEC-014	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	—	脆弱性スキャン	部品の弱点を定期的に検査すること	E-5 HJ-06	DDG-12 DDH-02	MKA-18 MKC-05	SEC-09	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-SEC-015	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	—	シークレット管理	接続用パスワードや鍵を安全に保管すること	E-4c HA-26 HB-F-BAT-05 HE-19a	DDA-05 DDF-03	MKA-16 MKF-04	SEC-03 SEC-07	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-SEC-016	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	—	ネットワーク分離（Private Subnet）	外から直接触れない区画に置くこと	G-4.2 HA-05	DDG-03	MKA-03 MKA-04	IT-11	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-SEC-017	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	—	管理画面アクセス制御	管理のための入口を限られた元からだけ通すこと	G-1.6 G-4.2 HA-05	DDG-03 DDG-11	MKA-03 MKA-04 MKA-17	OP-09	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-SEC-018	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	署名鍵の公開先は公開のまま、流量制限は境界（他組織）に要求する	JWKS エンドポイント保護	署名鍵の公開先を守ること	E-4b HG-08 HK-10	DDA-04	MKA-15 MKI-18	SEC-04 SEC-05	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-SEC-019	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	—	内部通信の認証（idm-api → 管理 API、Keycloak-Broker → Keycloak-IdP）	内部の呼び出しでも相手を確認すること。管理 API は内部経路と資格で、Keycloak-IdP へは閉域の単方向接続で確認する	G-4.2 HA-05 HE-23 HE-24	DDG-03	MKA-03 MKA-04	IT-11 IT-16 IT-17	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-SEC-020	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	—	セッション固定攻撃対策	ログインの前後で状態を作り替え、乗っ取りを防ぐこと	GD-21 GD-24 HA-10	DDA-01 DDI-05	MKB-08 MKI-06	ST-08	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-SEC-010-2	非機能要件	TBD	対象	Keycloak-IdP	アプリ（Keycloak-IdP）	パスワードを持つのは Keycloak-IdP 側	侵害クレデンシャル検出	流出したパスワードの使用を拒否できること					アプリ側で実施（Keycloak-IdP 側）	アプリ（主体）
+NFR-SEC-021	非機能要件	Must	対象	Keycloak-Broker	インフラ（本基盤）	Keycloak-Broker にローカルで残る唯一の人が運用者。ADR-040 Phase 1 α（P1-04 / P1-08 / P1-09）	運用者アカウントと権限の保護	本基盤運用者の認証を WebAuthn 必須とし、常時の全権付与を禁止し、緊急時アクセスと定期棚卸しを定めること	G-1.6 G-5.6 HG-09	DDB-19 DDG-11	MKA-17 MKB-31	OP-09 SEC-10	全工程あり	—
+NFR-SEC-022	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	ADR-046 Phase 1 = SLSA L2	サプライチェーン対策（依存の検査・イメージ署名・部品一覧）	自社拡張と実行イメージの依存を検査し、署名し、部品一覧（SBOM）を出せること	HJ-06 HJ-22	DDH-02	MKA-21 MKC-05	SEC-09	全工程あり	アプリ（Keycloak-IdP 側の実行イメージも同様に）
+NFR-SEC-023	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	ADR-035 Phase 1a = 検知して通知するまで。自動遮断はしない	不正兆候の検知	ログイン失敗の急増などの不正兆候を検知して通知できること	HH-06	DDG-14	MKH-07	OP-12	全工程あり	アプリ（パスワード側の兆候は Keycloak-IdP で検知）
+NFR-DR-001	非機能要件	TBD	対象	Keycloak-Broker	インフラ（本基盤）	—	RTO（目標復旧時間）	目標の時間内に復旧できること	D-18.1 D-18.2 D-18.3 D-18.4 G-1.11 G-1.8 G-1.9 HK-02	DDG-06 DDG-07 DDG-08	MKA-11 MKA-12 MKA-13 MKI-17	DR-01 OP-06	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-DR-002	非機能要件	TBD	対象	Keycloak-Broker	インフラ（本基盤）	—	RPO（目標復旧地点）	失うデータを目標の範囲に収めること	D-18.1 D-18.2 D-18.3 D-18.4 G-1.11 G-1.8 G-1.9 HK-02	DDG-06 DDG-07 DDG-08	MKA-11 MKA-12 MKA-13 MKI-17	DR-01 DR-02 OP-06	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-DR-003	非機能要件	TBD	対象	Keycloak-Broker	インフラ（本基盤）	—	フェイルオーバー方式	別地域へ切り替える方式が定まっていること。現行の方向は手動・大阪で作り直し（復旧方式の決定 D-18.2 待ち。顧客希望 RTO 1 日との差は D-18.1 で明示）	D-18.1 D-18.2 D-18.3 D-18.4 G-1.11 G-1.8 G-1.9	DDG-06 DDG-07 DDG-08	MKA-11 MKA-12 MKA-13 MKI-17	DR-01 DR-02	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-DR-004	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	—	バックアップ保存期間	控えを一定期間保つこと	G-1.10	DDG-09	MKA-14	DR-04	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-DR-005	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	—	PITR（Point-in-Time Recovery）	時点を指定して戻せること	G-1.10	DDG-09	MKA-14	DR-03 DR-04	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-DR-006	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	—	クロスリージョンバックアップ	控えを別の地域にも置くこと	D-18.1 D-18.2 D-18.3 D-18.4 G-1.11 G-1.8 G-1.9	DDG-06 DDG-07 DDG-08	MKA-11 MKA-12 MKA-13 MKI-17	DR-01 DR-02	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-DR-007	非機能要件	TBD	対象	Keycloak-Broker	インフラ（本基盤）	—	DR 訓練	復旧の訓練を定期的に行うこと	D-18.1 D-18.2 D-18.3 D-18.4 G-1.11 G-1.8 G-1.9	DDG-06 DDG-07 DDG-08	MKA-11 MKA-12 MKA-13 MKI-17	DR-01 DR-02	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-DR-008	非機能要件	推奨値あり	対象外	—	—	別地域で作り直す方式ではログイン状態を引き継げない。再ログイン前提を DR-02 で確認する	DR 切替時のセッション維持	切り替えてもログインし直さずに済むこと				DR-02	Phase 1 では作らない（再ログイン前提。DR-02 で確認）	—
+NFR-OPS-001	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	—	監視・メトリクス	動きを測る値が取れること	HH-01 HH-02 HH-03	DDG-10	MKH-04	OP-07	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-OPS-002	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	—	アラート通知	異常を検知したら通知が届くこと	HH-01 HH-02 HH-03	DDG-10	MKH-04	OP-02 OP-05	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-OPS-003-a	非機能要件	TBD	対象	Keycloak-Broker	インフラ（本基盤）	何を記録し何年保つかは本基盤が決めて出力する	ログ保存期間（出力・項目・保持年数の指定）	記録を定められた期間保つこと	HG-04 HG-05	DDD-04 DDE-09	MKH-01 MKI-15	IT-09	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-OPS-003-b	非機能要件	TBD	対象	その他	他組織（境界・共通基盤）	記録の保管は全体の共通基盤側。本基盤は指定した保持年数と形式で出すまで（OP-03 で確認）	ログ保存期間（共通基盤側の保管）	記録を定められた期間保つこと				OP-03	他組織で実施	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-OPS-004-a	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	何を記録し何年保つかは本基盤が決めて出力する	ログ検索性（出力・項目・保持年数の指定）	記録を必要な条件で探せること	HG-04 HG-05	DDD-04 DDE-09	MKH-01 MKI-15	OP-03	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-OPS-004-b	非機能要件	推奨値あり	対象	その他	他組織（境界・共通基盤）	記録の検索は全体の共通基盤側。本基盤は指定した保持年数と形式で出すまで（OP-03 で確認）	ログ検索性（共通基盤側の検索）	記録を必要な条件で探せること				OP-03	他組織で実施	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-OPS-005	非機能要件	TBD	対象	Keycloak-Broker	インフラ（本基盤）	—	バージョンアップ方針	Keycloak の版を上げる方針が定まっていること	E-5 HJ-06	DDG-12 DDH-02	MKA-18 MKC-05	OP-10	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-OPS-006	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	—	パッチ適用（CVE 対応）	弱点への修正を定めた期間内に当てること	E-5 HJ-06	DDG-12 DDH-02	MKA-18 MKC-05	SEC-09	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-OPS-007	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	—	設定変更プロセス	設定を変えるときの手順が定まっていること	G-5.1 G-5.2 G-5.3 G-5.6				🔺 一部の工程のみ	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-OPS-008	非機能要件	TBD	対象	Keycloak-Broker	インフラ（本基盤）	—	インシデント対応体制	障害に対応する体制があること	G-1.3 G-1.4 G-5.1 G-5.2 G-5.3 G-5.6		MKH-06	OP-08 UAT-03	🔺 一部の工程のみ	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-OPS-009	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	—	運用工数（人月）	運用にかかる人手が想定の範囲に収まること	G-5.5 G-5.7				🔺 一部の工程のみ	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-OPS-010	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	—	デプロイ自動化（CI/CD）	入れ替えを自動で行えること	HA-16 HA-17	DDG-13	MKA-19	OP-11	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-OPS-011-a	非機能要件	TBD	対象	Keycloak-Broker	インフラ（本基盤）	登録から疎通確認までの所要時間は本基盤	テナント追加の運用 SLA（本基盤側の作業）	顧客を追加してから使えるまでの時間を約束できること。境界側の外向き許可の追加（他組織、当日〜翌日）を含む	G-5.4 HB-F-ADM-16		MKB-16	OP-01	🔺 一部の工程のみ	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-OPS-011-b	非機能要件	TBD	対象	その他	他組織（境界・共通基盤）	顧客IdP 向けの外向き許可の追加は他組織（依頼から当日〜翌日）。約束する時間にこの分を含める	テナント追加の運用 SLA（境界側の外向き許可）	顧客を追加してから使えるまでの時間を約束できること。境界側の外向き許可の追加（他組織、当日〜翌日）を含む					他組織で実施	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-OPS-012	非機能要件	Must	対象	Keycloak-IdP	インフラ（本基盤）	ROSA の引き渡しまでが本基盤。以降の構築・運用はアプリ責務（D-21 責任表）	Keycloak-IdP 側の構築・運用の責任分界	Keycloak-IdP 用の基盤（ROSA）をどこまで作って渡すか、渡した後の非機能を誰が持つかが合意されていること	D-21 HJ-20	DDG-01	MKA-01 MKJ-01	IT-03	全工程あり	本基盤（ROSA 引き渡しまで）→ アプリ（引き渡し後の非機能すべて）
+NFR-OPS-013	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	—	環境構成（本番 / 検証 / 開発）	環境ごとの構成差分と、検証環境に本番データを入れない規律が定まっていること	HH-05	DDG-05	MKA-07 MKA-08	IT-13 TE-01 TE-02	全工程あり	アプリ（Keycloak-IdP 側の環境はアプリが用意）
+NFR-COMP-001	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	—	個人情報保護法対応	個人情報保護法に沿った扱いをすること	D-20	DDA-06	MKH-03	SEC-08	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-COMP-002	非機能要件	TBD	対象外	—	—	海外展開時に再評価	GDPR / CCPA（海外展開時）	海外の個人情報の規則に沿えること					Phase 1 では作らない	—
+NFR-COMP-003	非機能要件	TBD	対象外	—	—	取得の予定が決まってから	SOC 2 Type II	第三者認証（SOC 2）に対応できること					Phase 1 では作らない	—
+NFR-COMP-004	非機能要件	TBD	対象外	—	—	同上	ISO 27001	第三者認証（ISO 27001）に対応できること					Phase 1 では作らない	—
+NFR-COMP-005	非機能要件	TBD	対象外	—	—	該当する顧客が現れてから	PCI DSS（金融）	カード業界の基準に対応できること					Phase 1 では作らない	—
+NFR-COMP-006	非機能要件	不要	対象外	—	—	不要と確定（2026-07-30）	FIPS 140-3 認定（暗号モジュール認定、旧 140-2）	暗号の実装が国の認定を受けていること					Phase 1 では作らない	—
+NFR-COMP-007-a	非機能要件	TBD	対象	Keycloak-Broker	インフラ（本基盤）	何を記録し何年保つかは本基盤が決めて出力する	監査ログ保存期間（法令要件）（出力・項目・保持年数の指定）	法令が求める期間まで記録を保つこと	HG-04 HG-05	DDD-04 DDE-09	MKH-01 MKI-15	IT-09 ST-20	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-COMP-007-b	非機能要件	TBD	対象	その他	他組織（境界・共通基盤）	記録の保管は全体の共通基盤側。本基盤は指定した保持年数と形式で出すまで（OP-03 で確認）	監査ログ保存期間（法令要件）（共通基盤側の保管）	法令が求める期間まで記録を保つこと				OP-03	他組織で実施	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-COMP-008	非機能要件	TBD	対象	Keycloak-Broker	インフラ（本基盤）	—	データ所在地（リージョン制限）	データを置く地域を限定できること	HA-04	DDG-02	MKA-02	IT-10	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-COMP-009-a	非機能要件	TBD	対象	Keycloak-Broker	インフラ（本基盤）	同上。本人からの請求は本基盤が窓口になり、Keycloak-IdP 側と権限データ側（アプリ）へ依頼する	個人データ削除権（GDPR Right to Erasure）（本基盤の窓口と Keycloak-Broker 側）	本人の求めに応じてデータを消せること	HK-07	DDB-16	MKB-26	OP-04 ST-22	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-COMP-009-b	非機能要件	TBD	対象	その他	アプリ（管理画面・idm-api）	権限データ・参照用データの消去は管理画面・idm-api 側。本基盤の手順（HK-07）から依頼する	個人データ削除権（GDPR Right to Erasure）（権限データ側）	本人の求めに応じてデータを消せること				OP-04	アプリ側で実施	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-COMP-010	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	—	アクセス監査の追跡可能性	誰がいつ何をしたかを追えること	HG-04 HG-05	DDD-04 DDE-09	MKH-01 MKI-15	OP-03	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-COMP-011	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	—	暗号鍵のローテーションと所在の可視化	鍵を定期的に入れ替え、どこにあるか分かること	E-4c GD-18 HA-26 HB-F-BAT-04 HB-F-BAT-05 HB-F-BAT-07 HE-19a	DDA-05 DDF-02 DDF-03 DDF-04	MKA-16 MKF-03 MKF-04 MKF-05 MKI-16	SEC-02 SEC-07	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-COST-001	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	—	初期構築費	初期に作るための費用が見積もられていること					別シートで管理（コスト見積もり）	—
+NFR-COST-002	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	—	月額固定インフラ費	毎月かかる設備の費用が見積もられていること					別シートで管理（コスト見積もり）	—
+NFR-COST-003	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	—	MAU あたりコスト（連携）	ユーザ 1 人あたりの費用が把握できること					別シートで管理（コスト見積もり）	—
+NFR-COST-004	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	—	DR 追加月額	災害対策を持つ場合の追加費用が把握できること	D-18.1 D-18.2 D-18.3 D-18.4 G-1.11 G-1.8 G-1.9	DDG-06 DDG-07 DDG-08	MKA-11 MKA-12 MKA-13 MKI-17	DR-01 DR-02	別シートで管理（コスト見積もり）	—
+NFR-COST-005	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	—	運用人件費	運用にかかる人件費が見積もられていること	G-5.5 G-5.7				別シートで管理（コスト見積もり）	—
+NFR-COST-006	非機能要件	TBD	対象	Keycloak-Broker	インフラ（本基盤）	—	RHBK サブスクリプション	Keycloak の商用サポート費用の要否が定まっていること					確定（RHBK は ROSA に内包され追加費用なし。P-01）	—
+NFR-COST-007	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	—	損益分岐 MAU（連携のみ）	どの規模から自前が有利になるかが分かること					別シートで管理（コスト見積もり）	—
+NFR-COST-008	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	—	3 年 TCO（10 万 MAU 想定）	3 年分の総額が把握できること（小規模）					別シートで管理（コスト見積もり）	—
+NFR-COST-009	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	—	3 年 TCO（50 万 MAU 想定）	3 年分の総額が把握できること（中規模）					別シートで管理（コスト見積もり）	—
+NFR-MIG-001	非機能要件	不要	対象	その他	アプリ（Keycloak-IdP）	本基盤は受け入れ口（SCIM 受信・管理 API・JIT）を提供するのみ。旧システムからの吸い上げと Keycloak-IdP への投入はアプリ側	既存認証システムからのユーザー移行	既存の認証からユーザを移せること					アプリ側で実施	—
+NFR-MIG-002	非機能要件	不要	対象	その他	アプリ（Keycloak-IdP）	パスワードのハッシュを持つのは Keycloak-IdP。Keycloak 非対応のハッシュ方式なら Keycloak-IdP 側の拡張（アプリ責務）	パスワード移行（ハッシュ持ち越し）	パスワードを暗号化したまま引き継げること					アプリ側で実施	—
+NFR-MIG-003	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	—	ベンダーロックイン回避	特定の製品に縛られない作りであること	GD-09 GD-10 GD-14 GD-15 HB-F-AUTH-05 HE-14 HE-22a HJ-02a HJ-10a	DDB-01 DDE-01 DDE-10 DDI-02	MKB-02 MKB-03 MKI-02	IT-01 IT-15 RI-01 RI-02 ST-04	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-MIG-004	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	—	データエクスポート	データを取り出せること	G-1.2	DDB-10	MKB-15	ST-22	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
+NFR-MIG-005	非機能要件	推奨値あり	対象	Keycloak-Broker	インフラ（本基盤）	切替の計画は本基盤、実施はアプリ	段階的移行（並行稼働）	新旧を並行して動かしながら段階的に移せること	D-16.4	DDJ-01	MKJ-02	TE-03	全工程あり	アプリ（Keycloak-IdP 側でも同じ要件を満たす。本基盤は ROSA の引き渡しまで）
