@@ -72,7 +72,7 @@ ROWS = [
 ('Broker','F-ADM-25','監査ログの取得','GET /admin/realms/{r}/events / GET /admin/realms/{r}/admin-events',ADMIN,LIM,'保管と検索は全体の共通基盤側。Keycloak の標準出力を流す方式が主で、この API は補助'),
 ('Broker','F-AZ-06','管理操作の権限の絞り込み','（API ではなく設定）Admin Permissions（FGAP v2）',ADMIN,CFG,'Keycloak 26.2 以降の標準機能。ユーザ・グループ・顧客の単位で管理権限を絞れる。**アプリへ Admin API を渡す場合の前提**'),
 # ============================ Keycloak-Broker: 標準に無いもの
-('Broker','F-AUTH-02','ログイン振り分け（HRD）','（一部のみ標準）Organizations のドメイン一致',BROWSER,CUS,'メールのドメインで振り分けるのは標準。**識別子（顧客コード）で振り分けるには拡張が要る**'),
+('Broker','F-AUTH-02','ログインの振り分け（HRD）','（一部のみ標準）Organizations のドメイン一致',BROWSER,CUS,'メールのドメインで振り分けるのは標準。**識別子（顧客コード）で振り分けるには拡張が要る**'),
 ('Broker','F-PROV-03','ユーザ登録の受信（SCIM）','（標準に無い）',SYS,CUS,'**Keycloak に SCIM の受信機能は無い**。作るか、外部の実装を持ち込むか、使わないかの判断が要る'),
 ('Broker','F-PROV-03','ユーザ更新の受信（SCIM）','（標準に無い）',SYS,CUS,'同上'),
 ('Broker','F-PROV-03','削除通知の受信（SCIM）','（標準に無い）',SYS,CUS,'同上'),
