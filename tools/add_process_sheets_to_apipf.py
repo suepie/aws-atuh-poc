@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
-"""認証実装確認処理 — 処理設計書（Excel）雛形ジェネレータ
+"""認証実装確認処理 — 処理設計セクションを apipf.xlsx へ追記するジェネレータ
 
 SSOT: doc/api-platform/basic-design/research/process-design-template.md
-出力: doc/excel/apipf-process-design.xlsx
+対象: doc/excel/apipf.xlsx（基本設計書。**既存 17 シートは触らない**）
 
-PROCESSES を更新したら上記 md の処理カタログも同時に更新すること。
-再実行すると出力ファイルを作り直す（記入済みの内容は失われるので注意）。
+追記するもの:
+  18_処理一覧 / 19_処理共通仕様 / 処理シート 33 枚（巡回-*, 全量-*, 確認-*, 通知-*, 運用-*, 連携-*）
+
+⚠ 再実行すると**追記分のシートのみ**作り直す（記入済みの処理シートは失われる）。
+   既存 17 シート（01〜17）には一切手を触れない。
+   実行前に Excel を閉じること。バックアップ: apipf.backup-*.xlsx
 """
 from __future__ import annotations
 
@@ -15,7 +19,8 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
-OUT = pathlib.Path(__file__).resolve().parents[1] / "doc" / "excel" / "apipf-process-design.xlsx"
+OUT = pathlib.Path(__file__).resolve().parents[1] / "doc" / "excel" / "apipf.xlsx"
+KEEP = 17  # 既存の基本設計シート数（01〜17）。これらは変更しない
 
 # ---------------------------------------------------------------- styles
 TITLE = Font(bold=True, size=14, color="FFFFFF")
@@ -154,74 +159,21 @@ def build_process_sheet(wb, p):
     return ws.title
 
 
-def build_common_sheets(wb, sheet_titles):
-    # 00 表紙
-    ws = wb.create_sheet("00_表紙・改訂履歴")
-    for col, w in zip("ABCDE", (18, 30, 18, 30, 40)):
+def build_index_sheet(wb, titles):
+    """18_処理一覧（本セクションのハブ）"""
+    ws = wb.create_sheet("18_処理一覧")
+    ws.sheet_properties.tabColor = "2F5597"
+    for col, w in zip("ABCDEFGHI", (10, 30, 22, 20, 30, 30, 10, 44, 20)):
         ws.column_dimensions[col].width = w
-    style_title(ws, "API 認証実装確認処理　処理設計書")
-    r = 3
-    for label in ("システム名", "文書名", "版", "作成日", "作成者", "承認者", "参照設計書（md）", "参照コミット"):
-        default = {"システム名": "API プラットフォーム / 認証実装確認処理",
-                   "文書名": "処理設計書（処理単位の I/O・シーケンス）",
-                   "参照設計書（md）": "doc/api-platform/basic-design/10〜18 章"}.get(label, "")
-        r = kv(ws, r, label, default, todo=not default)
-    r += 1
-    r = section(ws, r, "改訂履歴")
-    table(ws, r, ["版", "日付", "改訂内容", "作成者", "承認者"], blank_rows=5)
-
-    # 01 位置づけ・前提
-    ws = wb.create_sheet("01_位置づけ・前提")
-    for col, w in zip("ABCDE", (22, 30, 24, 30, 40)):
-        ws.column_dimensions[col].width = w
-    style_title(ws, "本書の位置づけ・前提")
-    r = 2
-    r = section(ws, r, "1. 目的と読者")
-    r = kv(ws, r, "目的", "10〜18 章の設計を処理単位に分解し、実装・単体テスト・運用手順の起点とする")
-    r = kv(ws, r, "読者", "実装担当 / テスト担当 / 運用担当 / レビュア")
-    r = kv(ws, r, "上位設計との関係", "設計の正は md（10〜18 章）。本書と矛盾した場合は md が優先する")
-    r += 1
-    r = section(ws, r, "2. 前提条件")
-    r = table(ws, r, ["ID", "前提", "根拠・参照", "確定状況", "備考"], blank_rows=0)
-    presets = [
-        ("前提1", "実行基盤は Lambda 3 本（対象検索 / 認証実装チェック / アラート検知）、すべて VPC 外配置", "10 §10.1.6 D-M-10-4", "確定"),
-        ("前提2", "変更検知は App アカウントの認証構成情報（S3）の版数比較のみ（資材オンリー原則）", "17 §17.2 / ADR-061 追記 2026-08-21", "確定"),
-        ("前提3", "実行モードは 2 つ（自動差分検査＝モード1 / 全量検査＝モード2：日次定期＋手動）", "18 §18.1", "確定"),
-        ("前提4", "台帳・API 仕様は共通基盤アカウントの認証構成情報配置バケット（S3 ×1）に集約", "12 / 13 章", "確定"),
-        ("前提5", "認証構成情報の配置漏れ・内容誤りは原則アプリ（ベンダー）責任", "17 §17.2.2 / D-M-17-8（顧客合意 M-Q-17-7）", "合意待ち"),
-        ("前提6", "検査は実利用者と同じ経路（CloudFront + WAF）を通過する", "10 §10.1.6 経路 A", "確定"),
-    ]
-    for i, (pid, txt, ref, st) in enumerate(presets):
-        for j, v in enumerate((pid, txt, ref, st, "")):
-            c = ws.cell(row=r + i, column=j + 1, value=v)
-            c.font, c.border, c.alignment = BASE, BOX, WRAP
-    r += len(presets) + 1
-    r = section(ws, r, "3. 用語")
-    r = table(ws, r, ["用語", "意味", "参照", "", ""], blank_rows=4)
-
-    # 02 全体構成
-    ws = wb.create_sheet("02_全体構成")
-    for col, w in zip("ABCDE", (26, 20, 46, 24, 20)):
-        ws.column_dimensions[col].width = w
-    style_title(ws, "全体構成（アカウント・リソース・通信経路）")
-    r = 2
-    r = section(ws, r, "1. リソース一覧（10 §10.1.5 より転記）")
-    r = table(ws, r, ["リソース", "サービス", "役割", "配置アカウント", "詳細章"], blank_rows=10)
-    r += 1
-    r = section(ws, r, "2. 通信経路（10 §10.1.6 より転記）")
-    r = table(ws, r, ["#", "経路", "中身", "通る境界", "必要な許可"], blank_rows=5)
-    r += 1
-    r = section(ws, r, "3. 構成図（貼付領域）")
-    ws.merge_cells(start_row=r, start_column=1, end_row=r + 14, end_column=5)
-    c = ws.cell(row=r, column=1, value="※ 10 章 §10.1.6 の AWS リソース構成図を貼り付ける")
-    c.font, c.border, c.alignment = BASE, BOX, WRAP
-
-    # 03 処理一覧
-    ws = wb.create_sheet("03_処理一覧")
-    for col, w in zip("ABCDEFGHI", (10, 30, 22, 20, 30, 30, 10, 44, 16)):
-        ws.column_dimensions[col].width = w
-    style_title(ws, "処理一覧（本書のハブ）", span=9)
-    r = 3
+    style_title(ws, "処理一覧（処理設計セクションのハブ）", span=9)
+    ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=9)
+    note = ws.cell(row=2, column=1, value=(
+        "本シート以降は「処理設計」セクション（シート 18〜）。1 処理 = 1 シートで I/O・シーケンス・例外を定義する。"
+        "構成図は 03、リソース一覧は 04、データ定義は 07、IAM は 08、コストは 16/17 を参照（重複記載しない）。"
+        "設計の正は md（doc/api-platform/basic-design/ 10〜18 章）。"))
+    note.font, note.alignment = BASE, WRAP
+    ws.row_dimensions[2].height = 32
+    r = 4
     headers = ["処理ID", "処理名", "系統", "実行契機", "起動元", "起動先", "方式", "概要", "シート"]
     for i, h in enumerate(headers, start=1):
         c = ws.cell(row=r, column=i, value=h)
@@ -234,19 +186,23 @@ def build_common_sheets(wb, sheet_titles):
         for j, v in enumerate(vals, start=1):
             c = ws.cell(row=rr, column=j, value=v)
             c.font, c.border, c.alignment = BASE, BOX, WRAP
-        title = sheet_titles[i]
-        c = ws.cell(row=rr, column=9, value=title)
-        c.hyperlink = f"#'{title}'!A1"
+        t = titles[i]
+        c = ws.cell(row=rr, column=9, value=t)
+        c.hyperlink = f"#'{t}'!A1"
         c.font, c.border, c.alignment = LINK, BOX, WRAP
     ws.auto_filter.ref = f"A{r}:I{r + len(PROCESSES)}"
 
-    # 04 共通仕様
-    ws = wb.create_sheet("04_共通仕様")
+
+def build_common_spec_sheet(wb):
+    """19_処理共通仕様（全処理に共通する規約・性能・監視）"""
+    ws = wb.create_sheet("19_処理共通仕様")
+    ws.sheet_properties.tabColor = "2F5597"
     for col, w in zip("ABCDE", (24, 60, 30, 20, 20)):
         ws.column_dimensions[col].width = w
-    style_title(ws, "共通仕様（全処理に適用）")
+    style_title(ws, "処理共通仕様（全処理に適用）")
     r = 2
     r = section(ws, r, "1. 全処理共通の規約")
+    r = table(ws, r, ["項目", "規約", "参照", "", ""], blank_rows=0)
     commons = [
         ("命名規約", "", "04 章 / 組織標準"),
         ("ログ出力", "相関 ID を必ず出力。トークン・資格情報はマスクする", "06 章 OBS-1〜4"),
@@ -259,68 +215,41 @@ def build_common_sheets(wb, sheet_titles):
         ("タグ", "app-id / env / cost-center / owner を必須付与", "03 章 BL-1"),
         ("宛先 allowlist", "外向き通信の宛先は台帳の baseUrl と設定済み token URL のみ（コードで強制）", "10 §10.1.6 代償統制"),
     ]
-    r = table(ws, r, ["項目", "規約", "参照", "", ""], blank_rows=0)
     for i, (k, v, ref) in enumerate(commons):
         for j, val in enumerate((k, v, ref, "", "")):
             c = ws.cell(row=r + i, column=j + 1, value=val)
             c.font, c.border, c.alignment = BASE, BOX, WRAP
             if j == 1 and not val:
                 c.fill = TODO_FILL
-
-    # 05 データ定義
-    ws = wb.create_sheet("05_データ定義")
-    for col, w in zip("ABCDE", (24, 14, 12, 46, 30)):
-        ws.column_dimensions[col].width = w
-    style_title(ws, "データ定義")
-    r = 2
-    for title in ("1. 台帳スキーマ（registry/{appId}/{env}.json）",
-                  "2. 監視資材（monitoring.yaml / openapi.yaml / deploy-info.json）",
-                  "3. イベント payload（Lambda 間）",
-                  "4. メトリクス"):
-        r = section(ws, r, title)
-        r = table(ws, r, ["項目", "型", "必須", "説明・例", "出典"], blank_rows=5)
-        r += 1
-
-    # 06 IAM
-    ws = wb.create_sheet("06_IAM・権限一覧")
-    for col, w in zip("ABCDE", (30, 24, 46, 24, 24)):
-        ws.column_dimensions[col].width = w
-    style_title(ws, "IAM・権限一覧")
-    r = 2
-    r = section(ws, r, "1. ロール一覧")
-    r = table(ws, r, ["ロール", "使い手", "権限", "配置アカウント", "利用する処理（P-xx）"], blank_rows=8)
+    r += len(commons) + 1
+    r = section(ws, r, "2. 性能・上限")
+    r = table(ws, r, ["項目", "値・方針", "根拠", "備考", ""], blank_rows=5)
     r += 1
-    r = section(ws, r, "2. 信頼関係")
-    table(ws, r, ["ロール", "信頼元", "条件（ExternalId 等）", "参照", ""], blank_rows=5)
-
-    # 07 非機能
-    ws = wb.create_sheet("07_非機能")
-    for col, w in zip("ABCDE", (26, 46, 24, 24, 24)):
-        ws.column_dimensions[col].width = w
-    style_title(ws, "非機能（性能・上限・コスト・監視）")
-    r = 2
-    for title, headers in (
-        ("1. 性能・上限", ["項目", "値・方針", "根拠", "備考", ""]),
-        ("2. 監視・アラーム", ["ID", "検知対象", "手段", "閾値", "通知先"]),
-        ("3. コスト", ["項目", "算定", "月額", "負担アカウント", "備考"]),
-        ("4. 保持期間", ["対象", "保持期間", "根拠", "備考", ""]),
-    ):
-        r = section(ws, r, title)
-        r = table(ws, r, headers, blank_rows=5)
-        r += 1
+    r = section(ws, r, "3. 監視・アラーム（メタ監視 MM-1〜5 ほか）")
+    r = table(ws, r, ["ID", "検知対象", "手段", "閾値", "通知先"], blank_rows=6)
+    r += 1
+    r = section(ws, r, "4. 参照（重複記載しないもの）")
+    for label, ref in (("構成図 / リソース一覧", "シート 03・04"), ("データ定義（台帳・認証構成情報）", "シート 07"),
+                       ("IAM・権限", "シート 08"), ("コスト", "シート 16・17"),
+                       ("設計判断 / 未決事項", "シート 10・11")):
+        r = kv(ws, r, label, ref)
 
 
 def main():
-    wb = Workbook()
-    wb.remove(wb.active)
+    from openpyxl import load_workbook
+    if not OUT.exists():
+        raise SystemExit(f"{OUT} が見つかりません")
+    wb = load_workbook(OUT)
+    base = wb.sheetnames[:KEEP]
+    # 追記分のみ作り直す（既存 17 シートには触れない）
+    for name in wb.sheetnames[KEEP:]:
+        del wb[name]
     titles = [build_process_sheet(wb, p) for p in PROCESSES]
-    build_common_sheets(wb, titles)
-    order = ["00_表紙・改訂履歴", "01_位置づけ・前提", "02_全体構成", "03_処理一覧",
-             "04_共通仕様", "05_データ定義", "06_IAM・権限一覧", "07_非機能"] + titles
-    wb._sheets = [wb[t] for t in order]
-    OUT.parent.mkdir(parents=True, exist_ok=True)
+    build_index_sheet(wb, titles)
+    build_common_spec_sheet(wb)
+    wb._sheets = [wb[t] for t in base + ["18_処理一覧", "19_処理共通仕様"] + titles]
     wb.save(OUT)
-    print(f"wrote {OUT} ({len(wb.sheetnames)} sheets)")
+    print(f"updated {OUT}: 既存 {len(base)} + 追記 {len(wb.sheetnames) - len(base)} = {len(wb.sheetnames)} sheets")
 
 
 if __name__ == "__main__":
