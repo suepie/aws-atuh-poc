@@ -29,7 +29,7 @@ proposal（§FR-API-* / §NFR-API-* / §C-API-*）は参照物として維持。
 | **認証実装確認処理 E2E フロー**（deploy→検知→通知→是正）| [10 §10.1.4](10-external-monitoring-overview.md) |
 | **認証実装確認処理 リソース一覧**（何が・どこで・何をするか）| [10 §10.1.5](10-external-monitoring-overview.md) |
 | **認証実装確認処理 AWS 構成図**（リソース単位・In/Out 境界アカウント込み・通信経路一覧）| [10 §10.1.6](10-external-monitoring-overview.md) |
-| **詳細通信フロー**（資材連携 W1-9 / 検査 P1-6 / 発報 N1-6。アカウント×リソース×エンドポイント）| [10 §10.1.7](10-external-monitoring-overview.md) |
+| **詳細通信フロー**（認証構成情報連携 W1-9 / 検査 P1-6 / 発報 N1-6。アカウント×リソース×エンドポイント）| [10 §10.1.7](10-external-monitoring-overview.md) |
 | 用語（probe とは何か 等）| [10 §10.0.4](10-external-monitoring-overview.md) |
 | 認証実装確認処理 実行シーケンス（1 実行の中身）| [11 §11.1](11-central-probe-architecture.md) |
 | 課金按分パイプライン概念図 | [03 §3.1.2](03-billing-cost-allocation-rules.md) |
@@ -59,11 +59,11 @@ proposal（§FR-API-* / §NFR-API-* / §C-API-*）は参照物として維持。
 | 10 | [10-external-monitoring-overview.md](10-external-monitoring-overview.md) | 外形監視 総論（Pattern β + 全体図 + 実装物ナビ + Phase4 検証状況）| ✅ Phase 2 |
 | 11 | [11-central-probe-architecture.md](11-central-probe-architecture.md) | 認証実装チェック 詳細（処理フロー / Hybrid 検証 / 4×4 / Positive トークン管理）| ✅ Phase 2 |
 | 12 | [12-app-registry-design.md](12-app-registry-design.md) | App Registry（S3 台帳 registry/{appId}/{env}.json / 巡回自動登録 / lastArtifactVersions）| ✅ Phase 2 |
-| 13 | [13-openapi-registry-design.md](13-openapi-registry-design.md) | OpenAPI Registry（S3 コピー置き場・正本はベンダー git、資材バケットのデプロイ版写し経由 / アノテーション）| ✅ Phase 2 |
+| 13 | [13-openapi-registry-design.md](13-openapi-registry-design.md) | OpenAPI Registry（S3 コピー置き場・正本はベンダー git、認証構成情報連携バケットのデプロイ版写し経由 / アノテーション）| ✅ Phase 2 |
 | 14 | [14-probe-implementation-guide.md](14-probe-implementation-guide.md) | 実装ガイド（probe lib 構成 / モノリス / Private / 要 PoC、Synthetics は将来）| ✅ Phase 2 |
 | 15 | [15-alert-routing-design.md](15-alert-routing-design.md) | 4×4 → SNS 振り分け（P1/P2/P3 / ARN 2 段解決）| ✅ Phase 2 |
 | 16 | [16-cross-account-iam-design.md](16-cross-account-iam-design.md) | クロスアカウント IAM（読み取りロール DiscoveryReadRole / StackSets 配布 / BD-Q-01）| ✅ Phase 2 |
-| 17 | [17-deployment-integration-and-registration.md](17-deployment-integration-and-registration.md) | デプロイ検知と登録（**中央巡回 pull 型・1h**、[ADR-061](../../adr/061-deploy-detection-pull-model.md)。S3 監視資材の VersionId 比較・モノリスも自動発見）| ✅ Phase 2 |
+| 17 | [17-deployment-integration-and-registration.md](17-deployment-integration-and-registration.md) | デプロイ検知と登録（**中央巡回 pull 型・1h**、[ADR-061](../../adr/061-deploy-detection-pull-model.md)。認証構成情報（S3）の VersionId 比較・モノリスも自動発見）| ✅ Phase 2 |
 | 18 | [18-scan-modes-and-scheduling.md](18-scan-modes-and-scheduling.md) ⭐ | **スキャン実行モード（自動差分検査（モード1、旧称 M1）/自動 1h + 全量検査（モード2、旧称 M3「手動全量検査」）/日次定期+手動、heartbeat 型検査（旧 M2）は廃止（2026-08-20、将来必要なら Synthetics で復活）、Lambda 基盤一本化）— 実行モデル SSOT** | ✅ Phase 2 |
 
 ## 実装物（code-samples/、認証基盤と分離）
@@ -81,6 +81,9 @@ proposal（§FR-API-* / §NFR-API-* / §C-API-*）は参照物として維持。
 | [code-samples/iac-guard-rules/](code-samples/iac-guard-rules/) | cfn-guard 3 ルール（認証 / Origin Protection / タグ）| ✅ |
 | [code-samples/semgrep-rules/](code-samples/semgrep-rules/) | Semgrep 言語別ルール（Python/Node/Java、P3/P5/P6）| ✅ |
 | [research/phase4-local-verification-results.md](research/phase4-local-verification-results.md) | **Phase 4 ローカル検証結果（P4-1〜P4-3、実バグ 2 件修正）** | ✅ |
+| [research/process-design-template.md](research/process-design-template.md) | **処理設計書の雛形 + 処理分解カタログの SSOT**（33 処理・系統別 ID）。Excel 実体 = `doc/excel/apipf-process-design.xlsx`（生成: `tools/build_process_design_template.py`）| ✅ 雛形 |
+| [research/excel-conversion-prompt.md](research/excel-conversion-prompt.md) | 基本設計 Excel（`doc/excel/apipf.xlsx`）化の**総則**（シート構成・禁止語・呼称対応表・検収リスト）| ✅ |
+| [research/excel-update-order-2026-09-11.md](research/excel-update-order-2026-09-11.md) | 上記 Excel への**差分反映指示**（S3 認証構成情報方式 / モード統合 / Lambda 呼称 / 用語改定の 4 件）| 反映待ち |
 | [research/](research/) | AWS 仕様確認等の一次記録 | 随時 |
 
 > **Phase 3 の検証成果**: Synthetics runtime/namespace/SDK v3 を公式確認、Multi Checks は `steps` オブジェクト schema（`checks` 配列ではない）を確認、`${AWS_SECRET:name:key}` 構文確認、Custom Resource 応答形式（4096 bytes 上限 / 必ず SUCCESS/FAILED 送信）確認、get-export の body は Uint8Array を確認。全 JS 構文 OK / 全 JSON valid / classify 16 + routing 19 テスト PASS。
@@ -104,7 +107,7 @@ proposal（§FR-API-* / §NFR-API-* / §C-API-*）は参照物として維持。
 - P4-2 SDK 実挙動: **LocalStack 3.8.1** で app-registry PutItem / alert-router SNS Publish（App Registry DDB 経由の本番ルーティング）を end-to-end 実証。⚠ LocalStack `latest`(2026.7.0) は auth token 必須 → community は `3.8.1` ピン留め必須
 - P4-3 probe lib logic: **27 PASS**（classify 16 + probe統合 4 + extractEndpoints 7）。full orchestration は registry Scan が LocalStack で成立、S3 は LocalStack の virtual-host addressing（`forcePathStyle` 要、実 AWS 無関係）で境界
 
-> **要 PoC 検証（P4-3 full / P4-4 / P4-5、実 AWS or SAM が必要）**: 認証実装チェック Lambda E2E（SAM local）/ Positive probe（Bearer・SigV4）/ Cookie モノリス Positive / **対象検索 Lambda（資材バケット List・VersionId 比較・GetObject + S3 台帳）E2E** / CloudWatch metrics 着地 / マルチアカウント E2E。手順は [research/phase4-environment-setup-guide.md](research/phase4-environment-setup-guide.md)（旧 get-export 検証は push 型時代の記録）。
+> **要 PoC 検証（P4-3 full / P4-4 / P4-5、実 AWS or SAM が必要）**: 認証実装チェック Lambda E2E（SAM local）/ Positive probe（Bearer・SigV4）/ Cookie モノリス Positive / **対象検索 Lambda（認証構成情報連携バケット List・VersionId 比較・GetObject + S3 台帳）E2E** / CloudWatch metrics 着地 / マルチアカウント E2E。手順は [research/phase4-environment-setup-guide.md](research/phase4-environment-setup-guide.md)（旧 get-export 検証は push 型時代の記録）。
 
 ## 参照する主要 proposal / ADR
 

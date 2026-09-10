@@ -23,14 +23,14 @@
 
 | モード | トリガ | 範囲 | 頻度 | 状態 |
 |---|---|---|---|:---:|
-| **自動差分検査（モード1）** | **中央巡回**（対象検索 Lambda ※旧称: 発見 Lambda が 1 時間毎に**各 App アカウントの S3 監視資材の VersionId 変化**を確認、[17 章 §17.2](17-deployment-integration-and-registration.md) / [ADR-061 追記 2026-08-21](../../adr/061-deploy-detection-pull-model.md)）| **変更のあったアプリの全 endpoint** | 1 時間毎（検知遅延 最大 1h）| ✅ Phase 1 |
+| **自動差分検査（モード1）** | **中央巡回**（対象検索 Lambda ※旧称: 発見 Lambda が 1 時間毎に**各 App アカウントの 認証構成情報（S3）の VersionId 変化**を確認、[17 章 §17.2](17-deployment-integration-and-registration.md) / [ADR-061 追記 2026-08-21](../../adr/061-deploy-detection-pull-model.md)）| **変更のあったアプリの全 endpoint** | 1 時間毎（検知遅延 最大 1h）| ✅ Phase 1 |
 | **全量検査（モード2）** | **定期自動（日次、EventBridge Scheduler）+ 手動（随時）** の 2 系統（実装は同一 `mode=full`）| 全アプリ全 endpoint | 日次 + オンデマンド | ✅ Phase 1 |
 
 > **旧 heartbeat 型（旧 M2「重要 endpoint への 5-15 分 probe」）は廃止**（2026-08-20、理由は §18.1.1）。旧 M3「手動全量検査（モード3）」は本モード2 に統合（手動トリガとして存続）。
 
 ```mermaid
 flowchart LR
-    SCH["EventBridge Scheduler<br/>1 時間毎"] --> DISC["対象検索 Lambda<br/>資材バケット巡回・VersionId 比較<br/>（17 章）"]
+    SCH["EventBridge Scheduler<br/>1 時間毎"] --> DISC["対象検索 Lambda<br/>認証構成情報連携バケット巡回・VersionId 比較<br/>（17 章）"]
     DISC -->|変化あり| MODE1["自動差分検査（モード1）<br/>変更アプリの全 endpoint"]
     SCHF["EventBridge Scheduler<br/>日次"] --> MODE2["全量検査（モード2）<br/>全アプリ全 endpoint"]
     Manual["運用者 手動（随時）"] -->|invoke| MODE2
@@ -68,17 +68,17 @@ flowchart LR
 
 ### §18.2.2 トリガ：中央巡回（pull、17 章が SSOT）
 
-変更検知は **対象検索 Lambda の 1 時間毎巡回**が行う。シグナルは **S3 監視資材の VersionId 比較（`lastArtifactVersions`）**（[17 章 §17.2](17-deployment-integration-and-registration.md)）で、資材が更新された（= 新しい版がデプロイされた）アプリだけ自動差分検査（モード1）を起動する。アプリ側イベントには依存しない（[ADR-061 追記 2026-08-21](../../adr/061-deploy-detection-pull-model.md)）。
+変更検知は **対象検索 Lambda の 1 時間毎巡回**が行う。シグナルは **認証構成情報（S3）の VersionId 比較（`lastArtifactVersions`）**（[17 章 §17.2](17-deployment-integration-and-registration.md)）で、認証構成情報が更新された（= 新しい版がデプロイされた）アプリだけ自動差分検査（モード1）を起動する。アプリ側イベントには依存しない（[ADR-061 追記 2026-08-21](../../adr/061-deploy-detection-pull-model.md)）。
 
 ```mermaid
 flowchart LR
-    SCH[Scheduler 1h] --> DISC[対象検索 Lambda<br/>資材列挙 + VersionId 比較]
+    SCH[Scheduler 1h] --> DISC[対象検索 Lambda<br/>認証構成情報列挙 + VersionId 比較]
     DISC -->|変更あり| L[認証実装チェック Lambda<br/>mode=delta, appId]
     DISC -->|新規発見| REG[(App Registry 自動登録)]
     L --> P[そのアプリの全 endpoint probe]
 ```
 
-> ⚠ **検知の穴と補完**（[17 章 §17.2.2](17-deployment-integration-and-registration.md)、2026-08-21 更新）: コンソール直変更は **Config Rules 実体化** + ガイド明記 + **全量検査（モード2、日次）の挙動検知（最大 24h）**で補完。**資材のアップロード忘れ・誤りは原則アプリ責任**（顧客合意 M-Q-17-7。中央は staleness 検知 + 棚卸しで補助）。
+> ⚠ **検知の穴と補完**（[17 章 §17.2.2](17-deployment-integration-and-registration.md)、2026-08-21 更新）: コンソール直変更は **Config Rules 実体化** + ガイド明記 + **全量検査（モード2、日次）の挙動検知（最大 24h）**で補完。**認証構成情報のアップロード忘れ・誤りは原則アプリ責任**（顧客合意 M-Q-17-7。中央は staleness 検知 + 棚卸しで補助）。
 
 ### §18.2.3 実行基盤：Lambda（対象検索 → probe の 2 段）
 
@@ -160,7 +160,7 @@ aws lambda invoke --function-name central-auth-probe \
 | 対象検索 → 検査の invoke | **非同期（Event invoke）**。Lambda 標準の自動リトライ（2 回）+ **DLQ（SQS）** を設定（MM-4）。同期にしないのは、1 アプリの検査失敗で巡回全体を巻き込まないため |
 | 検査 Lambda 内の endpoint 失敗 | endpoint 単位で継続（1 endpoint のタイムアウトで残りを打ち切らない）。接続不能は 4×4 の WARN（構成）系に分類 |
 | アラート検知 Lambda | 既存設計のとおり（1 件でも失敗したら throw → リトライ / DLQ、15 §15.4）|
-| S3 API スロットリング | 資材バケットの List/Get はプレフィックス単位で十分な RPS があるが、SDK 標準リトライ（指数バックオフ）+ 対象検索 Lambda の直列処理で吸収。並列化する場合の制御は M-Q-16-2 |
+| S3 API スロットリング | 認証構成情報連携バケットの List/Get はプレフィックス単位で十分な RPS があるが、SDK 標準リトライ（指数バックオフ）+ 対象検索 Lambda の直列処理で吸収。並列化する場合の制御は M-Q-16-2 |
 
 ### §18.5.3 スケール上限（Lambda 15 分制限）と fan-out 方針
 

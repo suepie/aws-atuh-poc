@@ -9,15 +9,15 @@
 ## §12.0 前提と背景
 
 **この章で定めること**: 「どのアプリを監視するか」の台帳（App Registry）のデータ構造と、そこへ載る仕組み。
-**なぜ要るか**: Pattern β で「Deploy 漏れ = ゼロ」を成立させる中核。**書き手は中央の対象検索 Lambda**（[17 章 §17.2](17-deployment-integration-and-registration.md) / [ADR-061 追記 2026-08-21](../../adr/061-deploy-detection-pull-model.md)）で、1 時間毎の巡回が **各 App アカウントの資材バケット（`{appId}/monitoring.yaml`）** からアプリを発見・登録し、認証実装確認処理が自動的に監視する。アプリ側に登録処理はない（デプロイ時の資材アップロードのみ、17 §17.3）。台帳の設定値の多くは monitoring.yaml 由来（**資材が宣言の正、台帳は巡回が写した実行用ビュー + 中央管理項目**）。
+**なぜ要るか**: Pattern β で「Deploy 漏れ = ゼロ」を成立させる中核。**書き手は中央の対象検索 Lambda**（[17 章 §17.2](17-deployment-integration-and-registration.md) / [ADR-061 追記 2026-08-21](../../adr/061-deploy-detection-pull-model.md)）で、1 時間毎の巡回が **各 App アカウントの認証構成情報連携バケット（`{appId}/monitoring.yaml`）** からアプリを発見・登録し、認証実装確認処理が自動的に監視する。アプリ側に登録処理はない（デプロイ時の認証構成情報アップロードのみ、17 §17.3）。台帳の設定値の多くは monitoring.yaml 由来（**認証構成情報が宣言の正、台帳は巡回が写した実行用ビュー + 中央管理項目**）。
 
-**ストアは S3**（DynamoDB は不使用）。台帳で本当に消せない情報は **① lastArtifactVersions（巡回状態）② alertRouting ③ enabled（中央管理項目）の 3 つだけ**で、書き手は対象検索 Lambda 1 本（1h 毎・直列）・データ量は MB 未満のため、DB の性能・整合性を要する要素がない。[Monitoring Registry バケット（13 章と同居）](13-openapi-registry-design.md)に JSON で置く（ADR-061 追記）。
+**ストアは S3**（DynamoDB は不使用）。台帳で本当に消せない情報は **① lastArtifactVersions（巡回状態）② alertRouting ③ enabled（中央管理項目）の 3 つだけ**で、書き手は対象検索 Lambda 1 本（1h 毎・直列）・データ量は MB 未満のため、DB の性能・整合性を要する要素がない。[認証構成情報配置バケット（13 章と同居）](13-openapi-registry-design.md)に JSON で置く（ADR-061 追記）。
 
 ---
 
 ## §12.1 データモデル（S3 JSON）
 
-**Monitoring Registry バケット**（共通基盤アカウント、13 章 §13.1 と同一バケット）の `registry/` プレフィックス配下に、**アプリ × 環境ごとに 1 オブジェクト**。
+**認証構成情報配置バケット**（共通基盤アカウント、13 章 §13.1 と同一バケット）の `registry/` プレフィックス配下に、**アプリ × 環境ごとに 1 オブジェクト**。
 
 - キー: `registry/{appId}/{env}.json`
 - 例: `registry/expense-api/prod.json`
@@ -50,8 +50,8 @@
 | `testTokenSecret` | monitoring.yaml | Positive 用 token の Secret 名 |
 | `alertRouting` | **台帳のみ・中央管理** | 通知先 `{p1,p2,p3}` の SNS ARN（未設定は全社デフォルト、15 章）|
 | `enabled` | **台帳のみ・中央管理** | 監視有効フラグ（monitoring.yaml には置かない）|
-| `artifactBucket` / `artifactPrefix` | 巡回が記録 | 発見元の資材バケットと `{appId}/` プレフィックス（17 §17.3）|
-| `lastArtifactVersions` | **巡回状態** | 前回確認した資材（monitoring.yaml / openapi.yaml）の S3 VersionId（**差分判定の基準**、17 §17.2）|
+| `artifactBucket` / `artifactPrefix` | 巡回が記録 | 発見元の認証構成情報連携バケットと `{appId}/` プレフィックス（17 §17.3）|
+| `lastArtifactVersions` | **巡回状態** | 前回確認した認証構成情報（monitoring.yaml / openapi.yaml）の S3 VersionId（**差分判定の基準**、17 §17.2）|
 | `deployInfo` | deploy-info.json（任意）| ベンダー CI が申告した commitId / deployedAt 等の**追跡用参考値**（検知には使わない。staleness 検知の補助）|
 | `lastSeenAt` | 巡回状態 | 最後に観測した日時（消滅検知用）|
 
@@ -79,24 +79,24 @@
 sequenceDiagram
     participant SCH as Scheduler（1h）
     participant DISC as 対象検索 Lambda / 共通基盤アカウント
-    participant ART as 資材バケット S3 / App アカウント（読み取り）
-    participant S3 as Monitoring Registry S3 / 共通基盤アカウント
+    participant ART as 認証構成情報連携バケット S3 / App アカウント（読み取り）
+    participant S3 as 認証構成情報配置バケット S3 / 共通基盤アカウント
 
     SCH->>DISC: 定期起動
     DISC->>ART: AssumeRole → List（{appId}/ プレフィックス + VersionId）
     DISC->>S3: registry/{appId}/{env}.json の lastArtifactVersions と比較
-    alt 新規資材（monitoring.yaml あり）
+    alt 新規認証構成情報（monitoring.yaml あり）
         DISC->>ART: GetObject（monitoring.yaml / openapi.yaml）
         DISC->>S3: PutObject（registry/… 自動登録 + openapi/… spec コピー）
     else VersionId 変化
-        DISC->>ART: GetObject（最新資材）
+        DISC->>ART: GetObject（最新認証構成情報）
         DISC->>S3: registry/… 更新（メタ同期 + lastArtifactVersions）→ 自動差分検査（モード1）の probe 起動（18 章）
     else 消滅（monitoring.yaml 削除）
         DISC->>S3: enabled=false に更新（棚卸しアラート）
     end
 ```
 
-- 台帳は**同一アカウント内**の書き込みのみ（クロスアカウント書き込みは発生しない。App アカウントへは資材バケットの s3 読み取り AssumeRole だけ、16 章）。
+- 台帳は**同一アカウント内**の書き込みのみ（クロスアカウント書き込みは発生しない。App アカウントへは認証構成情報連携バケットの s3 読み取り AssumeRole だけ、16 章）。
 - monitoring.yaml の規約は [17 章 §17.3](17-deployment-integration-and-registration.md)。**モノリスもリポジトリがあるため同じ仕組みで自動発見**される（17 章 §17.4）。
 
 > **旧実装の扱い**: 旧 push 型 Custom Resource（[`app-registry-lambda/`](code-samples/app-registry-lambda/)、DynamoDB PutItem）は参考保管。正規化ロジックは流用できるが、**ストアが S3 になったため書き込み部は S3 PutObject に差し替え**（M-Q-17-4 の実装スコープ）。probe lib の `lib/registry.js`（DynamoDB Scan 実装）も **S3 List/Get への改修が必要**（M-Q-12-3）。
@@ -134,10 +134,10 @@ pull 型（ADR-061）により、**App Registry への書き込みは共通基�
 
 | ID | 判断 | 根拠 |
 |---|---|---|
-| D-M-12-1 | **台帳ストアは S3**（`registry/{appId}/{env}.json`、Monitoring Registry バケットに 13 章と同居）。DynamoDB は不使用 | 消せない情報は 3 つ・書き手 1 本・MB 未満で DB が過剰。ストアを S3 1 つに集約（[ADR-061 追記 2026-08-13](../../adr/061-deploy-detection-pull-model.md)、2026-08-07 の DDB 維持決定を更新）|
+| D-M-12-1 | **台帳ストアは S3**（`registry/{appId}/{env}.json`、認証構成情報配置バケットに 13 章と同居）。DynamoDB は不使用 | 消せない情報は 3 つ・書き手 1 本・MB 未満で DB が過剰。ストアを S3 1 つに集約（[ADR-061 追記 2026-08-13](../../adr/061-deploy-detection-pull-model.md)、2026-08-07 の DDB 維持決定を更新）|
 | D-M-12-2 | probe 先は CloudFront URL（API GW 直でない）| Origin Protection を破らず実 UX 同一条件で検証（§12.1.1）|
 | D-M-12-3 | 登録は**中央巡回の自動発見**（書き手は対象検索 Lambda のみ、旧 Custom Resource 廃止）| 登録漏れ構造ゼロ + 書き込みクロスアカウント権限の排除（ADR-061）|
-| D-M-12-4 | 台帳に巡回スナップショット（lastArtifactVersions / lastSeenAt / 資材系属性）を同居 | 差分判定・消滅検知・発見元の監査を 1 箇所で完結 |
+| D-M-12-4 | 台帳に巡回スナップショット（lastArtifactVersions / lastSeenAt / 認証構成情報系属性）を同居 | 差分判定・消滅検知・発見元の監査を 1 箇所で完結 |
 | D-M-12-5 | enabled で監視の有効/無効を切替（中央管理）| メンテ時などに削除せず一時停止できる。アプリが自分で監視を止められない |
 
 ---
@@ -153,15 +153,15 @@ pull 型（ADR-061）により、**App Registry への書き込みは共通基�
 | どの test token か | `testTokenSecret` | ✗ 秘密情報の参照 |
 | 誰に通知するか | `alertRouting` | ✗ 運用情報であって API 仕様でない |
 | 監視 ON/OFF | `enabled` | ✗ |
-| 前回どこまで確認したか | `lastArtifactVersions` | ✗ 巡回自身の状態（資材側に書き戻せない）|
+| 前回どこまで確認したか | `lastArtifactVersions` | ✗ 巡回自身の状態（認証構成情報側に書き戻せない）|
 
 ### §12.6.1 代替案の比較
 
 | 案 | 仕組み | 評価 |
 |---|---|---|
-| **S3 台帳（採用）** | Monitoring Registry バケットに JSON | ストア 1 種で完結。規模・書き込みパターンに対して十分（§12.1.2）|
+| **S3 台帳（採用）** | 認証構成情報配置バケットに JSON | ストア 1 種で完結。規模・書き込みパターンに対して十分（§12.1.2）|
 | DynamoDB 台帳（旧採用）| 1 テーブル PK/SK | 必須ではない（項目単位更新・運用 UI は楽だが、リソース種が 1 つ増える割に性能要件がない）→ **S3 統合で置換**（ADR-061 追記）|
-| 動的発見**だけ**（台帳レス）| 巡回列挙の結果を毎回そのまま使う | **不可**: alertRouting / enabled / lastArtifactVersions は資材側に置けず保持場所が要る |
+| 動的発見**だけ**（台帳レス）| 巡回列挙の結果を毎回そのまま使う | **不可**: alertRouting / enabled / lastArtifactVersions は認証構成情報側に置けず保持場所が要る |
 | リポジトリ設定だけ（monitoring.yaml のみ）| 全メタを repo に置き毎回読む | メタの大半は monitoring.yaml に**移した**（§17.3）。ただし中央管理 3 項目の置き場として台帳は残る |
 
 → 台帳は「**中央管理 3 項目 + 巡回スナップショット + 実行用ビュー**」の置き場。**発見（pull 巡回）と台帳は代替関係ではなく組合せ**（発見が書き、probe が読む）。
