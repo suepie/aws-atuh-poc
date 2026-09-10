@@ -53,13 +53,13 @@ SigV4 Positive / Cookie Positive・cleanup / heartbeat 型検査（旧 M2、廃�
 | A3-i | 基盤IaC | S3 Lifecycle 実装 | Lifecycle ルール適用・確認 | A3-d | 1 | 0.15 |
 | A4-d | 基盤IaC | SNS 設計 | P1/P2/P3 のトピック名・サブスクリプション（W1-5 の DL）・アクセスポリシー | W1-5 | 0.5 | 0.1 |
 | A4-i | 基盤IaC | SNS 実装 | 3 トピック + メールサブスクリプション作成・確認メール承認 | A4-d | 2 | 0.25 |
-| A5-d | 基盤IaC | SQS DLQ 設計 | 検査 Lambda 用 / Alert Router 用の 2 本。保持期間・再処理手順の方針。【補足】DLQ（デッドレターキュー）＝処理に失敗したメッセージの退避先。失敗を握り潰さず、後から中身を見て再処理・原因調査するための受け皿 | — | 0.5 | 0.1 |
+| A5-d | 基盤IaC | SQS DLQ 設計 | 検査 Lambda 用 / アラート検知 Lambda（旧称: Alert Router）用の 2 本。保持期間・再処理手順の方針。【補足】DLQ（デッドレターキュー）＝処理に失敗したメッセージの退避先。失敗を握り潰さず、後から中身を見て再処理・原因調査するための受け皿 | — | 0.5 | 0.1 |
 | A5-i | 基盤IaC | SQS DLQ 実装 | 2 キュー作成・Lambda 非同期設定への紐付け | A5-d | 2 | 0.25 |
 | A6-d | 基盤IaC | Scheduler 設計 | rate(1 hour)・リトライポリシー（回数/間隔）・Scheduler 側 DLQ・実行ロール | — | 1 | 0.15 |
-| A6-i | 基盤IaC | Scheduler 実装 | EventBridge Scheduler 作成・発見 Lambda への紐付け・空振り起動確認 | A6-d | 2 | 0.25 |
+| A6-i | 基盤IaC | Scheduler 実装 | EventBridge Scheduler 作成・対象検索 Lambda（旧称: 発見 Lambda）への紐付け・空振り起動確認 | A6-d | 2 | 0.25 |
 | A7-d | 基盤IaC | IAM: DiscoveryLambdaRole 設計 | ポリシー明細（ListAccounts 委任呼出 / sts:AssumeRole / S3 registry・openapi / lambda:Invoke）と信頼ポリシー | — | 1 | 0.15 |
 | A7-i | 基盤IaC | IAM: DiscoveryLambdaRole 実装 | IaC 化・適用 | A7-d | 2 | 0.25 |
-| A8-d | 基盤IaC | IAM: CentralProbeRole 設計 | S3 Get/List・Secrets Get・CW Put・Invoke（Alert Router）の明細 | — | 0.5 | 0.1 |
+| A8-d | 基盤IaC | IAM: CentralProbeRole 設計 | S3 Get/List・Secrets Get・CW Put・Invoke（アラート検知 Lambda）の明細 | — | 0.5 | 0.1 |
 | A8-i | 基盤IaC | IAM: CentralProbeRole 実装 | IaC 化・適用 | A8-d | 1 | 0.15 |
 | A9-d | 基盤IaC | IAM: alert-router-role 設計 | S3 GetObject（registry/*）・SNS Publish の明細 | — | 0.5 | 0.1 |
 | A9-i | 基盤IaC | IAM: alert-router-role 実装 | IaC 化・適用 | A9-d | 1 | 0.15 |
@@ -78,26 +78,26 @@ SigV4 Positive / Cookie Positive・cleanup / heartbeat 型検査（旧 M2、廃�
 | ID | 区分 | タスク | 内容 | 依存 | 人時 | 人日 |
 |---|---|---|---|---|---:|---:|
 | B0-d | 監視(定型) | 監視設計書 | アラーム一覧表（8 本: 名称 / メトリクス / 閾値 / 評価期間 / 通知先 / 対応 Runbook）+ メトリクス定義（DiscoveryLastSuccess / AccountErrors の単位・Dimensions）| — | 2 | 0.25 |
-| B1-i | 監視(定型) | メトリクス emit 実装 | 発見 Lambda に DiscoveryLastSuccess（巡回成功時）/ DiscoveryAccountErrors（失敗アカウント数）の PutMetricData を実装 | C11-i | 2 | 0.25 |
+| B1-i | 監視(定型) | メトリクス emit 実装 | 対象検索 Lambda に DiscoveryLastSuccess（巡回成功時）/ DiscoveryAccountErrors（失敗アカウント数）の PutMetricData を実装 | C11-i | 2 | 0.25 |
 | B2-i | 監視(定型) | アラーム: AuthCheckCritical > 0 | 保険系。1 データポイントで発報 → SNS P1 | B0-d | 1 | 0.15 |
 | B3-i | 監視(定型) | アラーム: MM-1 巡回鮮度 | DiscoveryLastSuccess が 2 時間欠損（missing data 扱い= breaching）→ P2 | B0-d | 1 | 0.15 |
-| B4-i | 監視(定型) | アラーム: MM-2 発見 Lambda Errors | Lambda Errors ≥ 1（Scheduler 起動失敗も Errors で捕捉）→ P2 | B0-d | 1 | 0.15 |
+| B4-i | 監視(定型) | アラーム: MM-2 対象検索 Lambda Errors | Lambda Errors ≥ 1（Scheduler 起動失敗も Errors で捕捉）→ P2 | B0-d | 1 | 0.15 |
 | B5-i | 監視(定型) | アラーム: MM-3 AccountErrors | DiscoveryAccountErrors ≥ 1 → P2 | B0-d | 1 | 0.15 |
 | B6-i | 監視(定型) | アラーム: MM-4 検査 Lambda | Errors ≥ 1 + DLQ（検査用）滞留 ≥ 1 → P2 | B0-d | 1 | 0.15 |
-| B7-i | 監視(定型) | アラーム: MM-5 Alert Router | DLQ（Router 用）滞留 ≥ 1 → P2 | B0-d | 1 | 0.15 |
-| B8-i | 監視(定型) | アラーム: 発見 Lambda Duration | 15 分制限の前倒し検知（初期閾値は仮置き→ W3-5 で本決め）→ P2 | B0-d | 1 | 0.15 |
+| B7-i | 監視(定型) | アラーム: MM-5 アラート検知 Lambda | DLQ（Router 用）滞留 ≥ 1 → P2 | B0-d | 1 | 0.15 |
+| B8-i | 監視(定型) | アラーム: 対象検索 Lambda Duration | 15 分制限の前倒し検知（初期閾値は仮置き→ W3-5 で本決め）→ P2 | B0-d | 1 | 0.15 |
 | B9-t | 監視(定型) | 全アラームのテスト発報 | 8 本すべて閾値を跨がせ、SNS→メール到達まで実確認（訓練 W4-2 とは別の技術確認）| B2〜B8 | 2 | 0.25 |
 | **小計** | | | | | **13** | **1.6** |
 
 ## 6. W2-C 機能実装・改修（処理毎に 設計→実装→単体テスト。65 行）
 
-### C0 系: 発見 Lambda（34 行）
+### C0 系: 対象検索 Lambda（34 行）
 
 **C0-d（全体設計）を先行**し、各処理は `-d / -i / -t` の 3 行。
 
 | ID | 区分 | タスク | 内容 | 依存 | 人時 | 人日 |
 |---|---|---|---|---|---:|---:|
-| C0-d | 機能実装 | 発見 Lambda 全体設計 | 処理設計書: 全体シーケンス図（W1〜W9 展開）/ 入出力定義（Scheduler イベント・台帳 JSON・自動差分検査（モード1、旧称 M1）の payload）/ 環境変数一覧 / エラー・リトライ方針（18 §18.5.2 の実装割付）/ ログ設計（相関 ID・マスク）| — | 6 | 0.75 |
+| C0-d | 機能実装 | 対象検索 Lambda 全体設計 | 処理設計書: 全体シーケンス図（W1〜W9 展開）/ 入出力定義（Scheduler イベント・台帳 JSON・自動差分検査（モード1、旧称 M1）の payload）/ 環境変数一覧 / エラー・リトライ方針（18 §18.5.2 の実装割付）/ ログ設計（相関 ID・マスク）| — | 6 | 0.75 |
 | C1-d | 機能実装 | アカウント列挙 設計 | 委任ポリシー経由 ListAccounts の呼出仕様・対象 OU フィルタ・ページング。【補足】アカウント列挙＝巡回の対象となる App アカウントの一覧を AWS Organizations から毎回取得する処理。手作業のリスト管理をなくし、アカウント追加に自動追随する | C0-d | 1 | 0.15 |
 | C1-i | 機能実装 | アカウント列挙 実装 | 上記の実装 | C1-d, W1-3 | 2 | 0.25 |
 | C1-t | テスト | アカウント列挙 単体テスト | OU フィルタ・ページング・権限エラー時の挙動 | C1-i | 1 | 0.15 |
@@ -116,7 +116,7 @@ SigV4 Positive / Cookie Positive・cleanup / heartbeat 型検査（旧 M2、廃�
 | C7-d | 機能実装 | spec 配置 設計 | openapi.yaml GetObject → openapi/ Put のキー導出・上書き仕様。【補足】spec＝API 仕様書（openapi.yaml。どんな endpoint があるかの一覧）。検査 Lambda が「どこを叩くか」を知るための情報源で、資材バケットから取得して中央の S3 にコピーしておく | C5-d | 0.5 | 0.1 |
 | C7-i | 機能実装 | 同 実装 | 上記の実装 | C7-d | 2 | 0.25 |
 | C7-t | テスト | 同 単体テスト | 配置キーの正当性・spec 未指定時の挙動 | C7-i | 0.5 | 0.1 |
-| C8-d | 機能実装 | 自動差分検査(モード1) 起動 設計 | 非同期 Event invoke（payload 仕様・fan-out・DLQ は A5）。【補足】自動差分検査（モード1）＝1 時間毎の巡回で「変更のあったアプリだけ」を自動検査する実行モード（全量検査（モード2、旧称 M3）＝日次定期 + 随時手動で全アプリ全量を検査するモードと対をなす）。自動差分検査（モード1）の起動＝発見 Lambda が変更を見つけたアプリを対象に、検査 Lambda を呼び出すこと | C0-d | 0.5 | 0.1 |
+| C8-d | 機能実装 | 自動差分検査(モード1) 起動 設計 | 非同期 Event invoke（payload 仕様・fan-out・DLQ は A5）。【補足】自動差分検査（モード1）＝1 時間毎の巡回で「変更のあったアプリだけ」を自動検査する実行モード（全量検査（モード2、旧称 M3）＝日次定期 + 随時手動で全アプリ全量を検査するモードと対をなす）。自動差分検査（モード1）の起動＝対象検索 Lambda が変更を見つけたアプリを対象に、検査 Lambda を呼び出すこと | C0-d | 0.5 | 0.1 |
 | C8-i | 機能実装 | 同 実装 | 上記の実装 | C8-d | 2 | 0.25 |
 | C8-t | テスト | 同 単体テスト | invoke payload・複数アプリ変更時の多重起動 | C8-i | 0.5 | 0.1 |
 | C9-d | 機能実装 | 消滅検知・staleness 検知 設計 | 資材（monitoring.yaml）消滅 → enabled=false + 棚卸しアラート（SNS P2）の判定・通知文面。**staleness 検知**（資材の最終更新が閾値超 → 棚卸しアラート。アップロード忘れの補助検知、17 §17.2.2）。【補足】消滅検知＝前回まで存在した資材が無くなった（＝アプリ廃止の可能性）ことを検出し、監視を自動停止したうえで「本当に廃止か」の確認を人に促す仕組み | C3-d | 0.5 | 0.1 |
@@ -128,7 +128,7 @@ SigV4 Positive / Cookie Positive・cleanup / heartbeat 型検査（旧 M2、廃�
 | C11-d | 機能実装 | 部分失敗分離 設計 | アカウント単位 try-catch 継続・AccountErrors 集計・ログ出力。【補足】部分失敗分離＝一部のアカウントで読み取りに失敗しても巡回全体を止めず、残りのアカウントは処理を続けること（失敗はメトリクスで通知し、次の巡回で自然に再試行される）| C0-d | 0.5 | 0.1 |
 | C11-i | 機能実装 | 同 実装 | 上記の実装（B1-i の emit と連動）| C11-d | 2 | 0.25 |
 | C11-t | テスト | 同 単体テスト | 1 アカウント失敗時に他アカウントが完走・メトリクス値 | C11-i | 1 | 0.15 |
-| **小計（発見）** | | | | | **51** | **6.4** |
+| **小計（対象検索）** | | | | | **51** | **6.4** |
 
 ### K 系: 検査 Lambda（13 行）
 
@@ -175,7 +175,7 @@ SigV4 Positive / Cookie Positive・cleanup / heartbeat 型検査（旧 M2、廃�
 | REV | 機能実装 | コードレビュー・CI 通し | 全実装分のレビュー・静的解析（04 章 CI: cfn-guard/Semgrep）修正 | 各-i | 12 | 1.5 |
 | **小計（R/T/D/S/P）** | | | | | **85.5** | **10.7** |
 
-**W2 合計: 205 人時 = 25.6 人日**（A 31 + B 13 + 発見 46 + 検査 24.5 + 周辺 90.5）
+**W2 合計: 205 人時 = 25.6 人日**（A 31 + B 13 + 対象検索 46 + 検査 24.5 + 周辺 90.5）
 
 ## 7. W3 テスト（結合〜受入。9 行。結合はケース単位に具体化）
 
@@ -224,7 +224,7 @@ SigV4 Positive / Cookie Positive・cleanup / heartbeat 型検査（旧 M2、廃�
 | **合計（126 行）** | **487** | **60.9** | **45–93** |
 
 - 1 名専任で実働 **約 3 か月**（外部リードタイム除く）。W2 と W3-2 を 2 名並行なら **約 2 か月**
-- **クリティカルパス**: W2-A → C0〜C11（発見）/ K 系・R 系（検査） → W3-2 → T-A/T-B →（W4-1 → W5-4）。**外部律速は W1-7（ベンダー CI 改修）** — 告知資料の早期確定が前提 |
+- **クリティカルパス**: W2-A → C0〜C11（対象検索）/ K 系・R 系（検査） → W3-2 → T-A/T-B →（W4-1 → W5-4）。**外部律速は W1-7（ベンダー CI 改修）** — 告知資料の早期確定が前提 |
 - **W1 は初日に発注**（W1-1/2 同梱。W1-3/4/6 は個別に並行）
 
 ## 10. 【別表】定型監視の工数（区分=`監視(定型)` の横断集計）

@@ -34,7 +34,7 @@
 ## 3. 現行仕様の要点（転記の前提。数値はこれに合わせる）
 
 - 方式: **pull 型中央巡回 × S3 監視資材の VersionId 比較**（1 時間毎。各 App アカウントの資材バケット `auth-monitoring-artifacts-{accountId}` をデプロイパイプラインが更新し、中央はそれだけを読む「資材オンリー原則」）。アプリ側に登録処理なし、モノリスも自動発見
-- **Lambda は 3 本**（発見 / 認証実装チェック / Alert Router）、**全部 VPC 外**（NW-2 の明示的例外、承認は M-Q-10-3）
+- **Lambda は 3 本**（対象検索 ※旧称: 発見 / 認証実装チェック / アラート検知 ※旧称: Alert Router）、**全部 VPC 外**（NW-2 の明示的例外、承認は M-Q-10-3）
 - ストアは **S3 ×1 バケット**（Monitoring Registry: `registry/` 台帳 + `openapi/` spec コピー）。**DynamoDB は不使用**
 - アカウント: 共通基盤（中央・自社管理）/ ネットワーク監査（境界 CloudFront+WAF・他組織可能性）/ 各 App / 認証基盤 Broker。**probe は In 境界を実 UX と同じ向きで通過、Out 境界は非経由（例外）**
 - アプリの作業 3 点のみ: 製品 launch（タグ）/ **デプロイ成功後に監視資材（monitoring.yaml + openapi.yaml）を資材バケットへアップロード**（ArtifactUploadRole-{appId}）/ OpenAPI に公開印（MON-1）
@@ -45,9 +45,9 @@
 
 1. **旧設計の語が出てきたら現行仕様ではない**。以下は転記禁止（見つけたら旧記述の残骸か「旧」「参考」注記付き）:
    `Central Canary` / `Synthetics`（将来オプション扱いのみ可）/ `CodeCommit`（現行構成として）/ `コミット差分` / `lastCheckedCommitId` / `deploymentId 比較` / `deploymentId 併読` / `apiGatewayId` / `apigateway:GET`（巡回用途）/ `モノレポ`・`pathPrefix`（資材はアプリ単位のため不要）/ `Custom Resource 登録`・`push 型` / `ネットワーク監査アカウントに中央リソース配置`
-2. **用語は 10 §10.0.4 と本プロンプト §3 に統一**: 認証実装確認処理（機構）/ 認証実装チェック Lambda / 発見 Lambda / probe＝「実際に HTTP リクエストを送り認証の効き具合を確かめる検査」（Negative=未認証検査 / Positive=正規検査）
-3. **実装状態を混同しない**: probe lib（27 テスト PASS）と Alert Router（19 PASS）は実装済み。**発見 Lambda は未実装**（M-Q-17-4）。`lib/registry.js` は旧 DynamoDB 実装のままで S3 改修待ち（M-Q-12-3）。`app-registry-lambda` / `openapi-export-lambda` は**旧 push 型の参考実装**（構成要素に入れない）
-4. **決定と未決を混ぜない**: D-M-* / D-G-*（設計判断）と M-Q-* / BD-Q-*（未決）は別シート。特に M-Q-10-3（NW-2 例外承認）/ M-Q-17-4（発見 Lambda 実装）/ M-Q-11-4（Positive スコープ B）/ M-Q-17-7（責任分界の顧客・ベンダー合意）/ M-Q-17-8（資材バケット命名・暗号化・ライフサイクル）は未決として明記
+2. **用語は 10 §10.0.4 と本プロンプト §3 に統一**: 認証実装確認処理（機構）/ 認証実装チェック Lambda / 対象検索 Lambda / probe＝「実際に HTTP リクエストを送り認証の効き具合を確かめる検査」（Negative=未認証検査 / Positive=正規検査）
+3. **実装状態を混同しない**: probe lib（27 テスト PASS）とアラート検知 Lambda（19 PASS）は実装済み。**対象検索 Lambda は未実装**（M-Q-17-4）。`lib/registry.js` は旧 DynamoDB 実装のままで S3 改修待ち（M-Q-12-3）。`app-registry-lambda` / `openapi-export-lambda` は**旧 push 型の参考実装**（構成要素に入れない）
+4. **決定と未決を混ぜない**: D-M-* / D-G-*（設計判断）と M-Q-* / BD-Q-*（未決）は別シート。特に M-Q-10-3（NW-2 例外承認）/ M-Q-17-4（対象検索 Lambda 実装）/ M-Q-11-4（Positive スコープ B）/ M-Q-17-7（責任分界の顧客・ベンダー合意）/ M-Q-17-8（資材バケット命名・暗号化・ライフサイクル）は未決として明記
 5. **経緯を書かない**: 「なぜ push をやめたか」等は ADR-061 参照とだけ書く。Excel は現行の断定形のみ
 6. **数値・enum を目視転記しない**: authPattern enum（6 値）/ 4×4 真偽値表 / Metrics 名 / monitoring.yaml 項目は `code-samples/README.md §2` と 17 §17.3 からコピーする
 7. **各行に出典（章・節番号）列を付ける**（例: `10 §10.1.5`）。md 更新時の突合を可能にするため
@@ -82,4 +82,4 @@
 - [ ] MON-1（公開明示必須・default-deny）が明記されている
 - [ ] アカウント分離（境界=ネットワーク監査 / 中央=共通基盤）と 2 経路（巡回=境界非経由 / probe=In 経由）が図と表で一致
 - [ ] 未決（M-Q/BD-Q）が決定事項と分離され、全行に出典列がある
-- [ ] 発見 Lambda が「未実装」、registry.js が「S3 改修待ち」と正しく記されている
+- [ ] 対象検索 Lambda が「未実装」、registry.js が「S3 改修待ち」と正しく記されている

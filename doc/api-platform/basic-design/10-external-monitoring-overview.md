@@ -23,7 +23,7 @@
 | 認証実装チェック（Lambda / 検査ロジック probe lib）| ✅ 11 / 14 章 |
 | App Registry（S3 台帳）| ✅ 12 章 |
 | OpenAPI Registry（S3・台帳と同一バケット）| ✅ 13 章 |
-| Alert Router（4×4 → SNS）| ✅ 15 章 |
+| アラート検知 Lambda（旧称: Alert Router。4×4 → SNS）| ✅ 15 章 |
 | クロスアカウント IAM / 配布 | ✅ 16 章 |
 | 静的解析 / Config Rules | ❌ 04 章・§FR-API-7（別領域）|
 
@@ -46,17 +46,17 @@
 
 ### §10.1.1 Pattern β とは
 
-probe を**各アプリに配らず、共通基盤アカウントの認証実装確認処理が全アプリを横断監視**する（[ADR-059](../../adr/059-central-auth-check-canary-architecture.md)）。機構を構成する **Lambda は 3 本だけ**（① 発見 ② 認証実装チェック ③ Alert Router。§10.1.5 の一覧参照）。検査（モード1/モード2）は ② の 1 本が payload 切替で兼ね、簡略図では ③ を省略することがある。
+probe を**各アプリに配らず、共通基盤アカウントの認証実装確認処理が全アプリを横断監視**する（[ADR-059](../../adr/059-central-auth-check-canary-architecture.md)）。機構を構成する **Lambda は 3 本だけ**（① 対象検索 ※旧称: 発見 Lambda ② 認証実装チェック ③ アラート検知。§10.1.5 の一覧参照）。検査（モード1/モード2）は ② の 1 本が payload 切替で兼ね、簡略図では ③ を省略することがある。
 
-> **アカウント配置の分離**: 認証実装確認処理のリソース群（App Registry / OpenAPI Registry / 認証実装チェック Lambda / Alert Router / Secrets）は **共通基盤アカウント（自社管理）** に置く。インターネット境界（CloudFront + WAF、[ADR-039](../../adr/039-centralized-network-account-edge-layer.md)）は **ネットワーク監査アカウント**（他組織管理の可能性あり）のままで、probe はその境界越しに実ユーザーと同じ経路で検査する（16 章 §16.5）。
+> **アカウント配置の分離**: 認証実装確認処理のリソース群（App Registry / OpenAPI Registry / 認証実装チェック Lambda / アラート検知 Lambda / Secrets）は **共通基盤アカウント（自社管理）** に置く。インターネット境界（CloudFront + WAF、[ADR-039](../../adr/039-centralized-network-account-edge-layer.md)）は **ネットワーク監査アカウント**（他組織管理の可能性あり）のままで、probe はその境界越しに実ユーザーと同じ経路で検査する（16 章 §16.5）。
 
 ```mermaid
 flowchart TB
     subgraph Central["共通基盤アカウント（中央運用・自社管理）"]
-        DISC[発見 Lambda<br/>1 時間毎巡回 ※17 章]
+        DISC[対象検索 Lambda<br/>1 時間毎巡回 ※17 章]
         Reg[Monitoring Registry S3<br/>台帳 registry/ + spec openapi/]
         CC["認証実装確認処理<br/>Lambda（probe lib 共通）<br/>自動差分検査（モード1）/全量検査（モード2） ※18 章"]
-        AR[Alert Router<br/>Lambda]
+        AR[アラート検知 Lambda]
         SNS[SNS<br/>P1 Security / P2 Platform / P3 App]
     end
 
@@ -96,7 +96,7 @@ flowchart TB
 ```
 
 - **境界（CloudFront + WAF）はネットワーク監査アカウント**にあり、probe はそこを実ユーザーと同じ経路で通る（§冒頭の配置分離のとおり）
-- **巡回の読み取り（発見 Lambda → 資材バケット）は境界を通らない**（AWS API〔S3〕を読み取りロールで直接呼ぶ、16 章）。変更検知は**資材の VersionId 比較**（[ADR-061 追記 2026-08-21](../../adr/061-deploy-detection-pull-model.md)）。資材に現れないコンソール直変更は L2 Config Rules + 全量検査（モード2、日次定期・最大 24h）が補完（17 章 §17.2.2）
+- **巡回の読み取り（対象検索 Lambda → 資材バケット）は境界を通らない**（AWS API〔S3〕を読み取りロールで直接呼ぶ、16 章）。変更検知は**資材の VersionId 比較**（[ADR-061 追記 2026-08-21](../../adr/061-deploy-detection-pull-model.md)）。資材に現れないコンソール直変更は L2 Config Rules + 全量検査（モード2、日次定期・最大 24h）が補完（17 章 §17.2.2）
 
 > **実行モデル（[18 章](18-scan-modes-and-scheduling.md) が SSOT）**: 実行基盤は **Lambda**、モードは **自動差分検査（モード1、1 時間毎の巡回で変化アプリのみ）+ 全量検査（モード2、日次定期＋随時手動）** の 2 つ。CloudWatch Synthetics は不使用（heartbeat 型〔旧 M2、廃止〕を将来復活させる場合のオプション）。経緯は [ADR-059](../../adr/059-central-auth-check-canary-architecture.md)（Lambda 一本化）/ [ADR-061](../../adr/061-deploy-detection-pull-model.md)（pull 巡回統一）。
 
@@ -123,11 +123,11 @@ flowchart TB
 
     subgraph Central["共通基盤アカウント（中央運用・自社管理）"]
         SCH["EventBridge Scheduler<br/>1 時間毎"]
-        DISC["発見 Lambda<br/>発見・差分検知・OpenAPI 取得"]
+        DISC["対象検索 Lambda<br/>発見・差分検知・OpenAPI 取得"]
         REG["Monitoring Registry S3<br/>registry/（台帳+スナップショット）<br/>openapi/（spec コピー）"]
         PROBE["認証実装チェック Lambda<br/>probe / classify lib 共通"]
         CWM["CloudWatch Metrics/Alarm<br/>AuthCheckCritical＞0"]
-        ALR["Alert Router Lambda"]
+        ALR["アラート検知 Lambda"]
         SNS["SNS<br/>P1 Security / P2 Platform / P3 App"]
     end
 
@@ -176,7 +176,7 @@ flowchart LR
     T --> P["④ probe<br/>Negative + Positive<br/>（11 章）"]
     P --> C{"⑤ classify<br/>4×4 真偽値表<br/>（11 章）"}
     C -->|OK| OK["✅ Metrics 記録のみ"]
-    C -->|CRITICAL/WARN/INFO| A["⑥ Alert Router<br/>（15 章）"]
+    C -->|CRITICAL/WARN/INFO| A["⑥ アラート検知 Lambda<br/>（15 章）"]
     A --> N["⑦ 通知<br/>P1 Security / P2 Platform / P3 App"]
     N --> FIX["⑧ 是正<br/>SLA 内（05 章 §5.3.6）"]
     style C fill:#fff9c4
@@ -196,12 +196,12 @@ flowchart LR
 
 | リソース | AWS サービス | 役割（ひとことで） | 詳細章 |
 |---|---|---|:---:|
-| **EventBridge Scheduler** | EventBridge | **定期起動の起点（2 本）**。① 1 時間毎に発見 Lambda を起動（巡回）② 日次に認証実装チェック Lambda を `mode=full` で起動（全量検査（モード2）の定期実行、18 §18.3）| 17 / 18 |
-| **発見 Lambda** | Lambda | **変更検知と登録の実行体（pull）**。各 App アカウントの **資材バケットを読み取り巡回**し、資材（`{appId}/monitoring.yaml`）の発見・**資材 VersionId 比較（lastArtifactVersions）**・台帳登録・spec 取得を行い、変更のあったアプリの検査を起動する | 17 |
-| **Monitoring Registry** | **S3（Versioning）×1 バケット** | **台帳 + spec コピーの一体ストア**（DynamoDB は不使用、ADR-061 追記）。`registry/{appId}/{env}.json` = 監視対象の台帳＋巡回スナップショット（baseUrl / authPattern / 通知先 / **前回確認資材 VersionId（lastArtifactVersions）**。設定値は monitoring.yaml 由来、書き手は発見 Lambda）。`openapi/…` = 資材バケットのデプロイ版 openapi.yaml（正本はベンダー git）のさらにコピーで、endpoint 一覧と公開印（MON-1）の情報源 | 12 / 13 |
+| **EventBridge Scheduler** | EventBridge | **定期起動の起点（2 本）**。① 1 時間毎に対象検索 Lambda を起動（巡回）② 日次に認証実装チェック Lambda を `mode=full` で起動（全量検査（モード2）の定期実行、18 §18.3）| 17 / 18 |
+| **対象検索 Lambda** | Lambda | **変更検知と登録の実行体（pull）**。各 App アカウントの **資材バケットを読み取り巡回**し、資材（`{appId}/monitoring.yaml`）の発見・**資材 VersionId 比較（lastArtifactVersions）**・台帳登録・spec 取得を行い、変更のあったアプリの検査を起動する | 17 |
+| **Monitoring Registry** | **S3（Versioning）×1 バケット** | **台帳 + spec コピーの一体ストア**（DynamoDB は不使用、ADR-061 追記）。`registry/{appId}/{env}.json` = 監視対象の台帳＋巡回スナップショット（baseUrl / authPattern / 通知先 / **前回確認資材 VersionId（lastArtifactVersions）**。設定値は monitoring.yaml 由来、書き手は対象検索 Lambda）。`openapi/…` = 資材バケットのデプロイ版 openapi.yaml（正本はベンダー git）のさらにコピーで、endpoint 一覧と公開印（MON-1）の情報源 | 12 / 13 |
 | **認証実装チェック Lambda（認証実装確認処理）** | Lambda | **検査の実行体**。台帳と仕様を読み、各 endpoint に未認証/正規の 2 種リクエストを送って認証の効き具合を確かめる | 11 / 14 |
 | **CloudWatch Metrics / アラーム** | CloudWatch | **検査結果の記録と発報**。`AuthCheckCritical > 0` で認証漏れアラーム | 11 / 18 |
-| **Alert Router Lambda** | Lambda | **通知の振り分け役**。検知結果を 4×4 分類に従い P1/P2/P3 の宛先へ振り分ける（「全部 Security 行き」を防ぐ）| 15 |
+| **アラート検知 Lambda** | Lambda | **通知の振り分け役**。検知結果を 4×4 分類に従い P1/P2/P3 の宛先へ振り分ける（「全部 Security 行き」を防ぐ）| 15 |
 | **SNS（P1 / P2 / P3）** | SNS | **通知の出口**。P1=Security 即時 / P2=Platform 24h / P3=アプリチーム | 15 |
 | **Secrets Manager** | Secrets Manager | **正規検査用の資格情報**（canary-central-readonly）。実行ごとに短命トークンを発行（漏洩耐性は §11.3.1）| 11 |
 
@@ -211,7 +211,7 @@ flowchart LR
 |---|---|---|:---:|
 | **Service Catalog 製品** | Service Catalog | **正規デプロイの型**。認証必須・Origin Protection・タグ付与を全部込みで提供（アプリはパラメータを選ぶだけ。登録処理は含まない＝中央が発見する）| 17 §17.1 |
 | **資材バケット** | S3（`auth-monitoring-artifacts-{accountId}`、StackSets 配布・Versioning）| **変更検知とメタデータの源**。デプロイパイプライン最終段で monitoring.yaml（監視宣言）+ openapi.yaml（デプロイ版 spec の写し）+ 任意 deploy-info.json をアップロード。資材の VersionId 変化が自動差分検査（モード1）のトリガー | 17 §17.2-3 |
-| **DiscoveryReadRole** | IAM ロール（StackSets 配布）| **中央からの読み取り窓口**。発見 Lambda だけが AssumeRole でき、資材バケットの s3 read のみ | 16 §16.2 |
+| **DiscoveryReadRole** | IAM ロール（StackSets 配布）| **中央からの読み取り窓口**。対象検索 Lambda だけが AssumeRole でき、資材バケットの s3 read のみ | 16 §16.2 |
 | **ArtifactUploadRole-{appId}** | IAM ロール（StackSets 配布）| **ベンダー CI からの資材アップロード窓口**。`{appId}/*` 限定の s3:PutObject のみ（デプロイロールと分離）| 16 §16.2.2 / 17 §17.3 |
 | **API GW / ALB** | — | **検査の対象**（アプリの認証実装そのもの）。probe が実際に叩く | 11 |
 
@@ -221,7 +221,7 @@ flowchart LR
 |---|---|---|:---:|
 | **アプリごとの CloudFront + WAF** | CloudFront / WAF | **インターネット境界（Origin Protection）**。probe は実ユーザーと同じくここを経由して検査する（境界を破らない）| [ADR-039](../../adr/039-centralized-network-account-edge-layer.md) / 12 §12.1.1 |
 
-> **1 行まとめ**: アプリが**デプロイ時に監視資材（monitoring.yaml + openapi.yaml）を資材バケットへアップロード**すると、**中央の発見 Lambda が 1 時間毎の巡回（資材 VersionId 比較）で見つけて台帳・仕様を自動登録**し、変更のあったアプリ（自動差分検査（モード1））と日次・監査時の全量（全量検査（モード2））に**認証実装チェック Lambda が実際にリクエストを投げて認証漏れを検査**、問題があれば **4×4 分類で適切なチームに通知**される。アプリ側に登録処理はない（モノリスも同じ）。
+> **1 行まとめ**: アプリが**デプロイ時に監視資材（monitoring.yaml + openapi.yaml）を資材バケットへアップロード**すると、**中央の対象検索 Lambda が 1 時間毎の巡回（資材 VersionId 比較）で見つけて台帳・仕様を自動登録**し、変更のあったアプリ（自動差分検査（モード1））と日次・監査時の全量（全量検査（モード2））に**認証実装チェック Lambda が実際にリクエストを投げて認証漏れを検査**、問題があれば **4×4 分類で適切なチームに通知**される。アプリ側に登録処理はない（モノリスも同じ）。
 
 ---
 
@@ -235,12 +235,12 @@ flowchart LR
 flowchart TB
     subgraph Central["共通基盤アカウント（自社管理）— VPC なし"]
         SCH["EventBridge Scheduler<br/>rate(1 hour)"]
-        DISC["発見 Lambda<br/>（VPC 外）"]
+        DISC["対象検索 Lambda<br/>（VPC 外）"]
         PROBE["認証実装チェック Lambda<br/>（VPC 外）"]
         S3R[("Monitoring Registry S3<br/>registry/ 台帳 + openapi/ spec")]
         SM["Secrets Manager<br/>canary-central-readonly"]
         CW["CloudWatch<br/>Metrics / Alarm"]
-        ALR["Alert Router Lambda<br/>（VPC 外）"]
+        ALR["アラート検知 Lambda<br/>（VPC 外）"]
         SNS["SNS P1/P2/P3"]
     end
 
@@ -293,7 +293,7 @@ flowchart TB
 |---|---|---|---|---|
 | A | **probe → アプリ**（Negative/Positive）| HTTPS 443（実 UX と同一）| Lambda マネージド egress → インターネット → **CloudFront+WAF（In）** → API GW。**Out（NWFW）は非経由（例外）** | なし（宛先は台帳の baseUrl のみ、下記代償統制）|
 | B | **probe → 認証基盤 /token**（Positive 用短命トークン）| HTTPS 443 | 同上（Out 非経由）| 同上（宛先は認証基盤ドメイン固定）|
-| C | **巡回読み取り**（発見 Lambda → App アカウントの資材バケット S3）| AWS API（STS AssumeRole → s3 `ListObjectsV2`/`ListObjectVersions`/`GetObject`）| **境界非経由**（AWS 網）| DiscoveryReadRole（16 章）|
+| C | **巡回読み取り**（対象検索 Lambda → App アカウントの資材バケット S3）| AWS API（STS AssumeRole → s3 `ListObjectsV2`/`ListObjectVersions`/`GetObject`）| **境界非経由**（AWS 網）| DiscoveryReadRole（16 章）|
 | D | 中央内部（台帳/仕様/Secrets/Metrics/通知）| S3（Monitoring Registry）/ Secrets / CloudWatch / SNS / Lambda Invoke | **境界非経由**（AWS 網。VPC Endpoint 不要）| IAM のみ |
 
 **VPC 外配置の判断（NW-2 例外の明示受容と代償統制）**:
@@ -309,7 +309,7 @@ flowchart TB
 - 経路 A は**インバウンド境界（CloudFront+WAF）を実ユーザーと同じ向きで通過**する（Origin Protection を破らない検査、12 §12.1.1）。**In 側はバイパスしない**
 - 経路 C/D は AWS API・AWS 網内であり、インターネット境界（In/Out とも）は**無関係**
 
-> ⚠ **Phase 2（Private API の probe、14 章 §14.4）では認証実装チェック Lambda のみ VPC 化が必要**になる（VPC + TGW で Internal ALB へ到達）。その時点で経路 A の Out 統制接続も再検討する。発見 Lambda と Alert Router は Phase 2 でも VPC 外のまま。
+> ⚠ **Phase 2（Private API の probe、14 章 §14.4）では認証実装チェック Lambda のみ VPC 化が必要**になる（VPC + TGW で Internal ALB へ到達）。その時点で経路 A の Out 統制接続も再検討する。対象検索 Lambda とアラート検知 Lambda は Phase 2 でも VPC 外のまま。
 
 ---
 
@@ -324,7 +324,7 @@ sequenceDiagram
     participant DEV as ベンダー CI（デプロイパイプライン）
     participant ART as 資材バケット S3（App アカウント）
     participant SCH as Scheduler（共通基盤）
-    participant DISC as 発見 Lambda（共通基盤・VPC 外）
+    participant DISC as 対象検索 Lambda（共通基盤・VPC 外）
     participant STS as STS
     participant S3 as Monitoring Registry S3（共通基盤）
     participant PROBE as 認証実装チェック Lambda（共通基盤）
@@ -346,14 +346,14 @@ sequenceDiagram
 | # | 通信 | 発信元（アカウント / リソース）| 宛先（アカウント / リソース）| 経由・エンドポイント | プロトコル・認証 |
 |---|---|---|---|---|---|
 | W1 | 資材アップロード | App / ベンダー CI（`ArtifactUploadRole-{appId}` を Assume、デプロイ成功後）| App / 資材バケット S3（`{appId}/` プレフィックス）| `s3.ap-northeast-1.amazonaws.com` | 443、`s3:PutObject`（`{appId}/*` 限定、16 §16.2.2）|
-| W2 | 定期起動 | 共通基盤 / EventBridge Scheduler | 共通基盤 / 発見 Lambda | AWS サービス間（Scheduler → `lambda.ap-northeast-1.amazonaws.com`）| Scheduler 実行ロールで Invoke |
-| W3 | 対象アカウント列挙 | 共通基盤 / 発見 Lambda | 方式未確定（**M-Q-17-2**）| ⚠ `organizations:ListAccounts` は既定では管理アカウント限定 → **案 c（推奨）: Organizations 委任ポリシーで共通基盤に ListAccounts を委任し直接呼ぶ**（`organizations.us-east-1.amazonaws.com`、グローバル）/ 案 a: 管理アカウントの列挙用ロールへ AssumeRole / 案 b: 静的リスト（SSM）| 443、IAM |
-| W4 | AssumeRole | 共通基盤 / 発見 Lambda（DiscoveryLambdaRole）| App / **DiscoveryReadRole** | `sts.ap-northeast-1.amazonaws.com`（リージョナル STS）| 443、sts:AssumeRole + ExternalId（16 §16.2）|
-| W5 | 資材列挙・VersionId 取得 | 共通基盤 / 発見 Lambda（DiscoveryReadRole の一時クレデンシャル）| App / 資材バケット S3（`{appId}/` プレフィックス）| `s3.ap-northeast-1.amazonaws.com` | 443、`ListObjectsV2` / `ListObjectVersions` |
-| W6 | 台帳読取 | 共通基盤 / 発見 Lambda | 共通基盤 / Monitoring Registry S3 `registry/` | `s3.ap-northeast-1.amazonaws.com` | 443、`GetObject`（同一アカウント IAM。`lastArtifactVersions` 比較）|
-| W7 | 資材取得 | 共通基盤 / 発見 Lambda | App / 資材バケット S3 | `s3.ap-northeast-1.amazonaws.com` | 443、`GetObject`（monitoring.yaml・openapi.yaml）|
-| W8 | 台帳更新 + spec 配置 | 共通基盤 / 発見 Lambda | 共通基盤 / Monitoring Registry S3（`registry/` + `openapi/`）| `s3.ap-northeast-1.amazonaws.com` | 443、`PutObject` |
-| W9 | 自動差分検査（モード1）起動 | 共通基盤 / 発見 Lambda | 共通基盤 / 認証実装チェック Lambda | `lambda.ap-northeast-1.amazonaws.com` | 443、`lambda:InvokeFunction` |
+| W2 | 定期起動 | 共通基盤 / EventBridge Scheduler | 共通基盤 / 対象検索 Lambda | AWS サービス間（Scheduler → `lambda.ap-northeast-1.amazonaws.com`）| Scheduler 実行ロールで Invoke |
+| W3 | 対象アカウント列挙 | 共通基盤 / 対象検索 Lambda | 方式未確定（**M-Q-17-2**）| ⚠ `organizations:ListAccounts` は既定では管理アカウント限定 → **案 c（推奨）: Organizations 委任ポリシーで共通基盤に ListAccounts を委任し直接呼ぶ**（`organizations.us-east-1.amazonaws.com`、グローバル）/ 案 a: 管理アカウントの列挙用ロールへ AssumeRole / 案 b: 静的リスト（SSM）| 443、IAM |
+| W4 | AssumeRole | 共通基盤 / 対象検索 Lambda（DiscoveryLambdaRole）| App / **DiscoveryReadRole** | `sts.ap-northeast-1.amazonaws.com`（リージョナル STS）| 443、sts:AssumeRole + ExternalId（16 §16.2）|
+| W5 | 資材列挙・VersionId 取得 | 共通基盤 / 対象検索 Lambda（DiscoveryReadRole の一時クレデンシャル）| App / 資材バケット S3（`{appId}/` プレフィックス）| `s3.ap-northeast-1.amazonaws.com` | 443、`ListObjectsV2` / `ListObjectVersions` |
+| W6 | 台帳読取 | 共通基盤 / 対象検索 Lambda | 共通基盤 / Monitoring Registry S3 `registry/` | `s3.ap-northeast-1.amazonaws.com` | 443、`GetObject`（同一アカウント IAM。`lastArtifactVersions` 比較）|
+| W7 | 資材取得 | 共通基盤 / 対象検索 Lambda | App / 資材バケット S3 | `s3.ap-northeast-1.amazonaws.com` | 443、`GetObject`（monitoring.yaml・openapi.yaml）|
+| W8 | 台帳更新 + spec 配置 | 共通基盤 / 対象検索 Lambda | 共通基盤 / Monitoring Registry S3（`registry/` + `openapi/`）| `s3.ap-northeast-1.amazonaws.com` | 443、`PutObject` |
+| W9 | 自動差分検査（モード1）起動 | 共通基盤 / 対象検索 Lambda | 共通基盤 / 認証実装チェック Lambda | `lambda.ap-northeast-1.amazonaws.com` | 443、`lambda:InvokeFunction` |
 
 > **構成図のポイント**: W1 は App アカウントの資材バケットへの書き込みで完結（ベンダー CI → 自アプリ prefix のみ）。W4/W5/W7 だけが**アカウント跨ぎ（共通基盤 → App）**で、すべて AWS API（境界 In/Out とも非経由）。
 
@@ -366,7 +366,7 @@ sequenceDiagram
 | P3 | 短命トークン取得（Positive 用）| 同上 | **Broker（認証基盤）/ Keycloak 公開 `/token`** | Lambda マネージド egress → **インターネット** → 認証基盤の公開エンドポイント（認証基盤側の境界・経路はそちらの設計に従う）| 443、OAuth client_credentials（11 §11.3.1）|
 | P4 | **Negative / Positive probe** | 同上 | **App / API GW・ALB**（ただし直接ではない）| Lambda マネージド egress → **インターネット** → **ネットワーク監査 / アプリごとの CloudFront + WAF** → Origin Protection（`X-Origin-Verify` + prefix list）→ App / API GW（`execute-api` リージョナル）or ALB | 443。Negative=認証ヘッダなし / Positive=Bearer（P3 のトークン）|
 | P5 | メトリクス発行 | 同上 | 共通基盤 / CloudWatch Metrics（`APIPlatform/AuthCheck`）| `monitoring.ap-northeast-1.amazonaws.com` | 443、`PutMetricData` |
-| P6 | 検知イベント送付（severity≠OK 時）| 同上 | 共通基盤 / Alert Router Lambda | `lambda.ap-northeast-1.amazonaws.com` | 443、`lambda:InvokeFunction` |
+| P6 | 検知イベント送付（severity≠OK 時）| 同上 | 共通基盤 / アラート検知 Lambda | `lambda.ap-northeast-1.amazonaws.com` | 443、`lambda:InvokeFunction` |
 
 > **構成図のポイント**: probe（P4）だけが**インバウンド境界（ネットワーク監査アカウントの CloudFront+WAF）を通る**。P4 の最終宛先は App アカウントだが、**矢印は必ず CloudFront を経由**させて描く（直接 App へ引かない）。P3/P4 はアウトバウンド境界（NWFW）を通らない（明示的例外、§10.1.6）。
 
@@ -374,7 +374,7 @@ sequenceDiagram
 
 ```mermaid
 flowchart LR
-    PROBE["認証実装チェック Lambda<br/>（共通基盤）"] -->|"N1 classify 済みイベント Invoke"| ALR["Alert Router Lambda<br/>（共通基盤）"]
+    PROBE["認証実装チェック Lambda<br/>（共通基盤）"] -->|"N1 classify 済みイベント Invoke"| ALR["アラート検知 Lambda<br/>（共通基盤）"]
     ALR -->|"N2 alertRouting 解決<br/>（S3 registry/ Get）"| S3[("Monitoring Registry S3")]
     ALR -->|"N3 Publish"| SNS["SNS P1/P2/P3<br/>（共通基盤）"]
     SNS -->|"N4 配信"| DST["Security オンコール / Platform / アプリチーム<br/>（メール・Chatbot→Slack 等）"]
@@ -384,14 +384,14 @@ flowchart LR
 
 | # | 通信 | 発信元 | 宛先 | 経由・エンドポイント | 備考 |
 |---|---|---|---|---|---|
-| N1 | 検知イベント（即時系）| 共通基盤 / 認証実装チェック Lambda | 共通基盤 / Alert Router | `lambda.ap-northeast-1.amazonaws.com` | 4×4 分類済み（README §2.6 形式）|
-| N2 | 通知先解決 | 共通基盤 / Alert Router | 共通基盤 / S3 `registry/{appId}/{env}.json` | `s3.ap-northeast-1.amazonaws.com` | `alertRouting` → 無ければ環境変数デフォルト（15 §15.2）|
-| N3 | 通知発行 | 共通基盤 / Alert Router | 共通基盤 / SNS トピック P1/P2/P3 | `sns.ap-northeast-1.amazonaws.com` | severity で振り分け（P1=Security 即時 / P2=Platform 24h / P3=App）|
+| N1 | 検知イベント（即時系）| 共通基盤 / 認証実装チェック Lambda | 共通基盤 / アラート検知 Lambda | `lambda.ap-northeast-1.amazonaws.com` | 4×4 分類済み（README §2.6 形式）|
+| N2 | 通知先解決 | 共通基盤 / アラート検知 Lambda | 共通基盤 / S3 `registry/{appId}/{env}.json` | `s3.ap-northeast-1.amazonaws.com` | `alertRouting` → 無ければ環境変数デフォルト（15 §15.2）|
+| N3 | 通知発行 | 共通基盤 / アラート検知 Lambda | 共通基盤 / SNS トピック P1/P2/P3 | `sns.ap-northeast-1.amazonaws.com` | severity で振り分け（P1=Security 即時 / P2=Platform 24h / P3=App）|
 | N4 | 配信 | 共通基盤 / SNS | 各チーム（メール / Amazon Q Developer〔旧 AWS Chatbot、2025-02 改名〕→ Slack 等）| SNS サブスクリプション | 接続方式は M-Q-15-1 |
 | N5 | メトリクス（保険系）| 共通基盤 / 認証実装チェック Lambda | 共通基盤 / CloudWatch | `monitoring.ap-northeast-1.amazonaws.com` | P5 と同一 |
 | N6 | アラーム発報 | 共通基盤 / CloudWatch アラーム（`AuthCheckCritical > 0`）| 共通基盤 / SNS（P1）| CloudWatch → SNS（サービス間）| **即時系（N1〜N4）が落ちても検知を失わない保険**（11 §11.6 / 18 §18.4）|
 
-> **構成図のポイント**: 発報は**即時系（N1〜N4: Alert Router 経由・アプリ別の宛先解決あり）**と**保険系（N5〜N6: メトリクス→アラーム・宛先固定）**の 2 系統を両方描く。すべて共通基盤アカウント内で完結し、境界・App アカウントは関与しない。
+> **構成図のポイント**: 発報は**即時系（N1〜N4: アラート検知 Lambda 経由・アプリ別の宛先解決あり）**と**保険系（N5〜N6: メトリクス→アラーム・宛先固定）**の 2 系統を両方描く。すべて共通基盤アカウント内で完結し、境界・App アカウントは関与しない。
 
 ---
 
@@ -403,8 +403,8 @@ flowchart LR
 | 12 | App Registry | [app-registry-lambda/](code-samples/app-registry-lambda/) |
 | 13 | OpenAPI Registry | [openapi-export-lambda/](code-samples/openapi-export-lambda/) |
 | 14 | 実装ガイド（probe lib / モノリス・Private 対応）| [central-probe-lib/](code-samples/central-probe-lib/) |
-| 15 | Alert Router | [alert-router-lambda/](code-samples/alert-router-lambda/) |
-| 17 | 巡回発見（発見 Lambda）| **未実装（M-Q-17-4）**。[app-registry-lambda/](code-samples/app-registry-lambda/) / [openapi-export-lambda/](code-samples/openapi-export-lambda/)（旧 push 型参考実装）のロジックを流用予定 |
+| 15 | アラート検知 Lambda | [alert-router-lambda/](code-samples/alert-router-lambda/) |
+| 17 | 巡回発見（対象検索 Lambda）| **未実装（M-Q-17-4）**。[app-registry-lambda/](code-samples/app-registry-lambda/) / [openapi-export-lambda/](code-samples/openapi-export-lambda/)（旧 push 型参考実装）のロジックを流用予定 |
 | 18 | 実行モード（自動差分検査（モード1）/全量検査（モード2））| probe Lambda（central-probe-lib を Lambda handler に転用、README §4）|
 | 全 | データ契約 SSOT | [code-samples/README.md](code-samples/README.md) |
 
@@ -436,7 +436,7 @@ flowchart LR
     DEP --> MODE["18 実行モード<br/>自動差分検査（モード1）/全量検査（モード2） ※SSOT"]
     A --> R[12 App Registry<br/>13 OpenAPI Registry<br/>データ源]
     A --> I[14 実装ガイド<br/>probe の作り]
-    I --> AL[15 Alert Router<br/>通知]
+    I --> AL[15 アラート検知 Lambda<br/>通知]
     DEP --> X[16 クロスアカウント<br/>読み取りロール配布]
     style O fill:#fff9c4
     style MODE fill:#ffcdd2

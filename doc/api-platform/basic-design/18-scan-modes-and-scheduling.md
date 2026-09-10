@@ -23,14 +23,14 @@
 
 | モード | トリガ | 範囲 | 頻度 | 状態 |
 |---|---|---|---|:---:|
-| **自動差分検査（モード1）** | **中央巡回**（発見 Lambda が 1 時間毎に**各 App アカウントの S3 監視資材の VersionId 変化**を確認、[17 章 §17.2](17-deployment-integration-and-registration.md) / [ADR-061 追記 2026-08-21](../../adr/061-deploy-detection-pull-model.md)）| **変更のあったアプリの全 endpoint** | 1 時間毎（検知遅延 最大 1h）| ✅ Phase 1 |
+| **自動差分検査（モード1）** | **中央巡回**（対象検索 Lambda ※旧称: 発見 Lambda が 1 時間毎に**各 App アカウントの S3 監視資材の VersionId 変化**を確認、[17 章 §17.2](17-deployment-integration-and-registration.md) / [ADR-061 追記 2026-08-21](../../adr/061-deploy-detection-pull-model.md)）| **変更のあったアプリの全 endpoint** | 1 時間毎（検知遅延 最大 1h）| ✅ Phase 1 |
 | **全量検査（モード2）** | **定期自動（日次、EventBridge Scheduler）+ 手動（随時）** の 2 系統（実装は同一 `mode=full`）| 全アプリ全 endpoint | 日次 + オンデマンド | ✅ Phase 1 |
 
 > **旧 heartbeat 型（旧 M2「重要 endpoint への 5-15 分 probe」）は廃止**（2026-08-20、理由は §18.1.1）。旧 M3「手動全量検査（モード3）」は本モード2 に統合（手動トリガとして存続）。
 
 ```mermaid
 flowchart LR
-    SCH["EventBridge Scheduler<br/>1 時間毎"] --> DISC["発見 Lambda<br/>資材バケット巡回・VersionId 比較<br/>（17 章）"]
+    SCH["EventBridge Scheduler<br/>1 時間毎"] --> DISC["対象検索 Lambda<br/>資材バケット巡回・VersionId 比較<br/>（17 章）"]
     DISC -->|変化あり| MODE1["自動差分検査（モード1）<br/>変更アプリの全 endpoint"]
     SCHF["EventBridge Scheduler<br/>日次"] --> MODE2["全量検査（モード2）<br/>全アプリ全 endpoint"]
     Manual["運用者 手動（随時）"] -->|invoke| MODE2
@@ -68,11 +68,11 @@ flowchart LR
 
 ### §18.2.2 トリガ：中央巡回（pull、17 章が SSOT）
 
-変更検知は **発見 Lambda の 1 時間毎巡回**が行う。シグナルは **S3 監視資材の VersionId 比較（`lastArtifactVersions`）**（[17 章 §17.2](17-deployment-integration-and-registration.md)）で、資材が更新された（= 新しい版がデプロイされた）アプリだけ自動差分検査（モード1）を起動する。アプリ側イベントには依存しない（[ADR-061 追記 2026-08-21](../../adr/061-deploy-detection-pull-model.md)）。
+変更検知は **対象検索 Lambda の 1 時間毎巡回**が行う。シグナルは **S3 監視資材の VersionId 比較（`lastArtifactVersions`）**（[17 章 §17.2](17-deployment-integration-and-registration.md)）で、資材が更新された（= 新しい版がデプロイされた）アプリだけ自動差分検査（モード1）を起動する。アプリ側イベントには依存しない（[ADR-061 追記 2026-08-21](../../adr/061-deploy-detection-pull-model.md)）。
 
 ```mermaid
 flowchart LR
-    SCH[Scheduler 1h] --> DISC[発見 Lambda<br/>資材列挙 + VersionId 比較]
+    SCH[Scheduler 1h] --> DISC[対象検索 Lambda<br/>資材列挙 + VersionId 比較]
     DISC -->|変更あり| L[認証実装チェック Lambda<br/>mode=delta, appId]
     DISC -->|新規発見| REG[(App Registry 自動登録)]
     L --> P[そのアプリの全 endpoint probe]
@@ -80,12 +80,12 @@ flowchart LR
 
 > ⚠ **検知の穴と補完**（[17 章 §17.2.2](17-deployment-integration-and-registration.md)、2026-08-21 更新）: コンソール直変更は **Config Rules 実体化** + ガイド明記 + **全量検査（モード2、日次）の挙動検知（最大 24h）**で補完。**資材のアップロード忘れ・誤りは原則アプリ責任**（顧客合意 M-Q-17-7。中央は staleness 検知 + 棚卸しで補助）。
 
-### §18.2.3 実行基盤：Lambda（発見 → probe の 2 段）
+### §18.2.3 実行基盤：Lambda（対象検索 → probe の 2 段）
 
 | 項目 | 内容 |
 |---|---|
-| 発見 Lambda | EventBridge Scheduler（1h）起動。Organizations 列挙 + 読み取り AssumeRole + 差分判定（17 章）|
-| 認証実装チェック Lambda | 発見 Lambda から invoke（変化アプリのみ）。payload `{ mode:'delta', appId, env }` |
+| 対象検索 Lambda | EventBridge Scheduler（1h）起動。Organizations 列挙 + 読み取り AssumeRole + 差分判定（17 章）|
+| 認証実装チェック Lambda | 対象検索 Lambda から invoke（変化アプリのみ）。payload `{ mode:'delta', appId, env }` |
 | probe ロジック | **`lib/probe.js` / `classify.js` / `emit.js` を共通流用**。synthetics 抽象を素の https 実装で注入（[probe-integration.test.js で実証済みの手法](research/phase4-local-verification-results.md)）|
 
 → **probe/classify/alert の資産は全て再利用**。Synthetics 固有の `executeHttpStep` を https 実装に差し替えるだけ。
@@ -116,7 +116,7 @@ aws lambda invoke --function-name central-auth-probe \
 
 ## §18.4 実行基盤：Lambda（Synthetics 不採用の理由）
 
-自動差分検査（モード1）も全量検査（モード2）も**イベント / 低頻度スケジュール起点の単発 probe 実行**で、Synthetics canary の「endpoint への高頻度定期 probe」メリットが効かない（スケジュールは軽量な発見 Lambda / 日次 Scheduler 側にあり、probe は必要時のみ）。よって実行基盤は **認証実装チェック Lambda に一本化**し、CloudWatch Synthetics は採用しない（将来オプション、§18.4.1）。
+自動差分検査（モード1）も全量検査（モード2）も**イベント / 低頻度スケジュール起点の単発 probe 実行**で、Synthetics canary の「endpoint への高頻度定期 probe」メリットが効かない（スケジュールは軽量な対象検索 Lambda / 日次 Scheduler 側にあり、probe は必要時のみ）。よって実行基盤は **認証実装チェック Lambda に一本化**し、CloudWatch Synthetics は採用しない（将来オプション、§18.4.1）。
 
 | 要素 | Synthetics canary（不採用）| **Lambda（採用）** |
 |---|---|---|
@@ -142,11 +142,11 @@ aws lambda invoke --function-name central-auth-probe \
 
 | # | 検知対象 | 手段 | アラーム条件（初期値）|
 |---|---|---|---|
-| MM-1 | **巡回の停止**（最重要）| 発見 Lambda が巡回成功時に `DiscoveryLastSuccess` メトリクス（Count=1）を emit | **2 時間欠損**（= 巡回 2 回分未実行）で発報 |
-| MM-2 | 発見 Lambda の失敗 | Lambda 標準 `Errors` / Scheduler の起動失敗 | Errors ≥ 1 |
+| MM-1 | **巡回の停止**（最重要）| 対象検索 Lambda が巡回成功時に `DiscoveryLastSuccess` メトリクス（Count=1）を emit | **2 時間欠損**（= 巡回 2 回分未実行）で発報 |
+| MM-2 | 対象検索 Lambda の失敗 | Lambda 標準 `Errors` / Scheduler の起動失敗 | Errors ≥ 1 |
 | MM-3 | 一部アカウントの巡回失敗 | `DiscoveryAccountErrors` メトリクス（失敗アカウント数）| ≥ 1（§18.5.2 の部分失敗と連動）|
 | MM-4 | 検査 Lambda の失敗 | Lambda 標準 `Errors` + 非同期 invoke の **DLQ（SQS）** | Errors ≥ 1 or DLQ 滞留 ≥ 1 |
-| MM-5 | Alert Router の失敗 | 既存の throw → リトライ / DLQ（15 §15.4）| DLQ 滞留 ≥ 1 |
+| MM-5 | アラート検知 Lambda（旧称: Alert Router）の失敗 | 既存の throw → リトライ / DLQ（15 §15.4）| DLQ 滞留 ≥ 1 |
 
 - 保険系アラーム（`AuthCheckCritical > 0`、§18.4）は「**検知した結果**の発報」、本節は「**検知できていない状態**の発報」で役割が異なる。両方そろって初めて検知網が閉じる
 - 各 Lambda のログは [06 章 OBS-1〜4](06-logging-monitoring.md) に準拠（実行 ID を相関 ID として出力、トークン・コミット内容はマスク、保持期間明示）
@@ -155,12 +155,12 @@ aws lambda invoke --function-name central-auth-probe \
 
 | 箇所 | 方針 |
 |---|---|
-| 発見 Lambda の巡回 | **アカウント単位で try-catch し、1 アカウントの失敗（AssumeRole 不可・スロットリング等）で全体を止めない**。失敗数を `DiscoveryAccountErrors` で emit（MM-3）し、次回巡回で自然リトライ |
+| 対象検索 Lambda の巡回 | **アカウント単位で try-catch し、1 アカウントの失敗（AssumeRole 不可・スロットリング等）で全体を止めない**。失敗数を `DiscoveryAccountErrors` で emit（MM-3）し、次回巡回で自然リトライ |
 | `lastArtifactVersions` の更新タイミング | **自動差分検査（モード1）の起動が成功した後にのみ更新**（17 §17.2.1 ⑦）。途中失敗時は据え置かれ、次回巡回が同じ差分を再検知する（**at-least-once**）。probe は読み取り検査で冪等のため重複実行は無害 |
-| 発見 → 検査の invoke | **非同期（Event invoke）**。Lambda 標準の自動リトライ（2 回）+ **DLQ（SQS）** を設定（MM-4）。同期にしないのは、1 アプリの検査失敗で巡回全体を巻き込まないため |
+| 対象検索 → 検査の invoke | **非同期（Event invoke）**。Lambda 標準の自動リトライ（2 回）+ **DLQ（SQS）** を設定（MM-4）。同期にしないのは、1 アプリの検査失敗で巡回全体を巻き込まないため |
 | 検査 Lambda 内の endpoint 失敗 | endpoint 単位で継続（1 endpoint のタイムアウトで残りを打ち切らない）。接続不能は 4×4 の WARN（構成）系に分類 |
-| Alert Router | 既存設計のとおり（1 件でも失敗したら throw → リトライ / DLQ、15 §15.4）|
-| S3 API スロットリング | 資材バケットの List/Get はプレフィックス単位で十分な RPS があるが、SDK 標準リトライ（指数バックオフ）+ 発見 Lambda の直列処理で吸収。並列化する場合の制御は M-Q-16-2 |
+| アラート検知 Lambda | 既存設計のとおり（1 件でも失敗したら throw → リトライ / DLQ、15 §15.4）|
+| S3 API スロットリング | 資材バケットの List/Get はプレフィックス単位で十分な RPS があるが、SDK 標準リトライ（指数バックオフ）+ 対象検索 Lambda の直列処理で吸収。並列化する場合の制御は M-Q-16-2 |
 
 ### §18.5.3 スケール上限（Lambda 15 分制限）と fan-out 方針
 
@@ -168,7 +168,7 @@ Lambda の最大実行時間は **15 分**。1 実行に詰め込まない構造
 
 | 実行 | 1 実行の範囲 | 15 分制限への設計 |
 |---|---|---|
-| 発見 Lambda（巡回）| 全アカウント走査（現行）| 処理はアカウント単位の読み取り（数 API 呼び出し / repo）で軽く、**Phase 1 の前提規模（対象約 3 アカウント）では 1 実行に十分収まる**。収まらない規模に達したら**親（列挙のみ）/ 子（1 アカウント処理）の fan-out に分割**する（構造は全量検査（モード2）と同型。閾値監視は Lambda `Duration` アラームで前倒し検知）|
+| 対象検索 Lambda（巡回）| 全アカウント走査（現行）| 処理はアカウント単位の読み取り（数 API 呼び出し / repo）で軽く、**Phase 1 の前提規模（対象約 3 アカウント）では 1 実行に十分収まる**。収まらない規模に達したら**親（列挙のみ）/ 子（1 アカウント処理）の fan-out に分割**する（構造は全量検査（モード2）と同型。閾値監視は Lambda `Duration` アラームで前倒し検知）|
 | 検査 Lambda（自動差分検査(モード1)）| **1 アプリ**の全 endpoint | 20 endpoint × 2 probe × 数秒でも数分オーダー。1 アプリ = 1 実行なので endpoint 数が極端でない限り収まる |
 | 検査 Lambda（全量検査(モード2)）| 台帳 List → **アプリ単位に fan-out**（§18.3）| 全量を 1 実行で回さないため上限に当たらない（定期・手動とも同じ）|
 
@@ -181,7 +181,7 @@ Lambda の最大実行時間は **15 分**。1 実行に詰め込まない構造
 | D-M-18-1 | 「5 分全量」を廃し、自動差分検査（モード1、1h 巡回）+ 全量検査（モード2、日次+手動）の **2 モード**に | 変更検知と網羅確認を分離、常時負荷を桁で削減 |
 | D-M-18-7 | 自動差分検査（モード1）のトリガは**中央巡回（pull、1 時間毎）**。アプリ側イベントに依存しない | 登録漏れ構造ゼロ・トリガー中央統一（[ADR-061](../../adr/061-deploy-detection-pull-model.md) / 17 章）|
 | D-M-18-8 | **メタ監視を被監視系と別系統で設計**（巡回鮮度 `DiscoveryLastSuccess` 2h 欠損アラーム + Lambda Errors + DLQ 滞留。通知は P2）| 監視の空白 = 検知の空白。保険系（AuthCheckCritical）は「検知結果」、メタ監視は「検知不能状態」の発報で役割が異なる（§18.5.1）|
-| D-M-18-9 | **at-least-once + 冪等**（lastArtifactVersions は自動差分検査（モード1）の起動成功後のみ更新、発見→検査は非同期 invoke + DLQ、アカウント単位の部分失敗分離）。全量検査（モード2）と大規模巡回は**アプリ / アカウント単位の fan-out** | Lambda 15 分制限に構造で当たらない。probe は読み取り検査で重複無害（§18.5.2-3）|
+| D-M-18-9 | **at-least-once + 冪等**（lastArtifactVersions は自動差分検査（モード1）の起動成功後のみ更新、対象検索→検査は非同期 invoke + DLQ、アカウント単位の部分失敗分離）。全量検査（モード2）と大規模巡回は**アプリ / アカウント単位の fan-out** | Lambda 15 分制限に構造で当たらない。probe は読み取り検査で重複無害（§18.5.2-3）|
 | D-M-18-2 | 自動差分検査（モード1）の差分粒度は **アプリ単位**（変更アプリの全 endpoint）| OpenAPI 不変の認証コード変更（middleware 削除等）を見逃さない（§18.2.1）|
 | D-M-18-3 | heartbeat 型の常時定期検査（旧 M2）は**廃止**（2026-08-20。従来の「当面なし・将来枠」から確定）| 重要 endpoint の選定・維持コストが検知価値に見合わない。シグナルなし変化は全量検査（モード2）の日次定期実行が最大 24h で受け、設定レベルの即時性は Config Rules が受け持つ（§18.1.1）|
 | D-M-18-4 | 全量検査（モード2）のトリガは**定期自動（日次）+ 手動**の 2 系統（2026-08-20 に「手動のみ」から更新）| 日次自動でシグナルなし変化を機械的に捕捉し、網羅確認を人の記憶に依存させない。頻度は日次を初期値とし運用で調整。コストは 3 アプリで 180 probe/日と誤差（§18.1.1 / §18.3）|

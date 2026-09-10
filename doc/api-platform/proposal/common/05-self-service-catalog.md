@@ -174,7 +174,7 @@ flowchart LR
 
   - **テスト用 token の運用**（ネットワーク監査 Acct 集約）：Central Canary は `canary-central-readonly` / `canary-central-write` を最小権限で共有認証基盤に発行、ネットワーク監査 Acct 内 Secrets Manager に保管 + 30 日自動ローテ。アプリチームは OpenAPI に token 名を書くだけ。
 
-  - **アプリチームの作業量はゼロ近い**：OpenAPI 書く + S3 アップ + Service Catalog 起動のみ。canary 実装 / Central Canary 側の Registry / Alert Router / Token 管理は Network 監査チーム集約。
+  - **アプリチームの作業量はゼロ近い**：OpenAPI 書く + S3 アップ + Service Catalog 起動のみ。canary 実装 / 中央側の Registry / アラート検知 Lambda（旧称: Alert Router）/ Token 管理は中央チーム集約。
 
   - **新規 endpoint 追加時も自動追従**：OpenAPI Export が新版を Registry に上書き → Central Canary が次回 probe から新 endpoint を対象化。**Central Canary の変更不要**。
 

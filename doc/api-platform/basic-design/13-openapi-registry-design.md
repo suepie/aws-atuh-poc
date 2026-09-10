@@ -1,7 +1,7 @@
 # 13. OpenAPI Registry 設計（S3）
 
 前提: [00-basic-design-plan.md](00-basic-design-plan.md) / [10-external-monitoring-overview.md](10-external-monitoring-overview.md)
-実装: 発見 Lambda が App アカウントの資材バケットから pull 取得（M-Q-17-4）/ データ契約: [code-samples/README.md §2.2/§2.3](code-samples/README.md)
+実装: 対象検索 Lambda（旧称: 発見 Lambda）が App アカウントの資材バケットから pull 取得（M-Q-17-4）/ データ契約: [code-samples/README.md §2.2/§2.3](code-samples/README.md)
 
 ---
 
@@ -32,11 +32,11 @@
 
 ## §13.2 取得フロー（中央が資材バケットから pull）
 
-**App アカウント資材バケットの `{appId}/openapi.yaml`（デプロイ版の写し。正本はベンダー git、[17 章 §17.3](17-deployment-integration-and-registration.md)）** を、発見 Lambda の巡回（[ADR-061 追記 2026-08-21](../../adr/061-deploy-detection-pull-model.md)）が資材 VersionId の変化を検知した際に `GetObject` で取得して中央 S3 へ置く。アプリ側の Export 処理・登録処理は存在しない。
+**App アカウント資材バケットの `{appId}/openapi.yaml`（デプロイ版の写し。正本はベンダー git、[17 章 §17.3](17-deployment-integration-and-registration.md)）** を、対象検索 Lambda の巡回（[ADR-061 追記 2026-08-21](../../adr/061-deploy-detection-pull-model.md)）が資材 VersionId の変化を検知した際に `GetObject` で取得して中央 S3 へ置く。アプリ側の Export 処理・登録処理は存在しない。
 
 ```mermaid
 sequenceDiagram
-    participant DISC as 発見 Lambda / 共通基盤アカウント
+    participant DISC as 対象検索 Lambda / 共通基盤アカウント
     participant ART as 資材バケット S3 / App アカウント（読み取り AssumeRole）
     participant S3 as OpenAPI Registry / 共通基盤アカウント
 
@@ -102,14 +102,14 @@ paths:
 ## §13.4 新規 endpoint の自動追随
 
 1. アプリチームが endpoint を追加（openapi.yaml 更新）→ デプロイ（パイプライン最終段で資材バケットへ新版をアップロード）
-2. **次回巡回（最大 1h）で発見 Lambda が資材 VersionId の変化を検知し、新版を GetObject → 中央 S3 に上書き**（§13.2）
+2. **次回巡回（最大 1h）で対象検索 Lambda が資材 VersionId の変化を検知し、新版を GetObject → 中央 S3 に上書き**（§13.2）
 3. 同じ巡回で自動差分検査（モード1、旧称 M1）の probe が起動し、新 endpoint も対象化
 
 → **probe のコード変更は不要**。デプロイ資材の OpenAPI を取り込むことで「監視対象の維持」が自動化される。
 
 ## §13.5 自動差分検査（モード1）との関係と S3 Versioning
 
-**自動差分検査（モード1）のトリガは発見 Lambda の巡回差分（資材 VersionId 比較、[17 章 §17.2](17-deployment-integration-and-registration.md)）であり、S3 イベントではない**（[ADR-061](../../adr/061-deploy-detection-pull-model.md)）。OpenAPI Registry は「probe が読むデプロイ版のコピー」+「Versioning による履歴」を担う。
+**自動差分検査（モード1）のトリガは対象検索 Lambda の巡回差分（資材 VersionId 比較、[17 章 §17.2](17-deployment-integration-and-registration.md)）であり、S3 イベントではない**（[ADR-061](../../adr/061-deploy-detection-pull-model.md)）。OpenAPI Registry は「probe が読むデプロイ版のコピー」+「Versioning による履歴」を担う。
 
 - ⚠ **差分粒度はアプリ単位**（18 章 §18.2.1）: 巡回は資材の VersionId 変化で「変更があった」ことだけ判定し、**endpoint 単位に絞らず「そのアプリの全 endpoint」を probe** する。理由は、認証コードだけ変えて OpenAPI が不変なケース（middleware 削除等）を見逃さないため（資材の差分からも endpoint への影響は判定できない）。
 - 任意の `deploy-info.json`（commitId 等、17 §17.3）は「何が変わったか」の**参考情報**（アラート本文への付記）に使えるが、probe 範囲の絞り込みには使わない。

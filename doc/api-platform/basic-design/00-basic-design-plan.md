@@ -54,7 +54,7 @@ API プラットフォーム標準の要件定義（`proposal/` 配下: §FR-API
 | 12 | `12-app-registry-design.md` | App Registry（S3 台帳）スキーマ・巡回同期 | ADR-059 | 後続 |
 | 13 | `13-openapi-registry-design.md` | OpenAPI Registry（S3 コピー置き場。正本はベンダー git、資材バケットのデプロイ版写しを取得）| ADR-059、§C-API-5 | 後続 |
 | 14 | `14-probe-implementation-guide.md` | probe lib 実装ガイド + モノリス / Private 対応（Synthetics は将来オプション）| ADR-059 §D/§E | 後続 |
-| 15 | `15-alert-routing-design.md` | 4×4 真偽値表 Alert Router 設計（P1/P2/P3 分岐）| §C-6.6.8 | 後続 |
+| 15 | `15-alert-routing-design.md` | 4×4 真偽値表アラート検知 Lambda（旧称: Alert Router）設計（P1/P2/P3 分岐）| §C-6.6.8 | 後続 |
 | 16 | `16-cross-account-iam-design.md` | クロスアカウント IAM（読み取りロール / StackSets 配布）| ADR-039/059/061 | 後続 |
 | 17 | `17-deployment-integration-and-registration.md` | デプロイ検知と登録（中央巡回 pull 型・S3 監視資材 VersionId 比較・1h。モノリスも自動発見）| §C-API-5 / ADR-061 | 後続（質問対応で追加）|
 | 18 | `18-scan-modes-and-scheduling.md` | スキャン実行モード（自動差分検査（モード1、旧称 M1）/自動 1h + 全量検査（モード2、旧称 M3「手動全量検査」）/日次定期+手動、Lambda 基盤一本化）— 実行モデル SSOT | ADR-059/061 | 後続（実行モデル見直しで追加）|
@@ -67,9 +67,9 @@ API プラットフォーム標準の要件定義（`proposal/` 配下: §FR-API
 |---|---|:---:|
 | `code-samples/central-probe-lib/` | 認証実装確認処理（probe lib）完全実装 + 単体テスト + README | 後続 |
 | `code-samples/multi-checks-blueprint/` | Multi Checks JSON テンプレ + synthetics.json | 後続 |
-| `code-samples/app-registry-lambda/` | App Registry CRUD（旧 push 型参考、発見 Lambda に流用）| 後続 |
-| `code-samples/openapi-export-lambda/` | OpenAPI get-export → S3（旧 push 型参考、発見 Lambda に流用）| 後続 |
-| 発見 Lambda（discovery）| 巡回発見・差分検知・自動登録（ADR-061、**未実装 M-Q-17-4**）| 後続 |
+| `code-samples/app-registry-lambda/` | App Registry CRUD（旧 push 型参考、対象検索 Lambda ※旧称: 発見 Lambda に流用）| 後続 |
+| `code-samples/openapi-export-lambda/` | OpenAPI get-export → S3（旧 push 型参考、対象検索 Lambda に流用）| 後続 |
+| 対象検索 Lambda（discovery）| 巡回発見・差分検知・自動登録（ADR-061、**未実装 M-Q-17-4**）| 後続 |
 | `code-samples/alert-router-lambda/` | 4×4 分類 + SNS routing Lambda | 後続 |
 | `code-samples/iac-guard-rules/` | cfn-guard / cdk-nag ルールセット | ガイドライン章と並行 |
 | `code-samples/semgrep-rules/` | Semgrep ルール（言語別）| ガイドライン章と並行 |

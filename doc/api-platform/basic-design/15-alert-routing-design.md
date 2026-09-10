@@ -1,4 +1,6 @@
-# 15. Alert Router 設計
+# 15. アラート検知 Lambda 設計
+
+※ ファイル名の alert-routing は変更していない（リンク維持のため）。本章の「アラート検知 Lambda」は旧称 Alert Router（IaC 上のロール名 `alert-router-lambda-role` / 実装ディレクトリ `code-samples/alert-router-lambda/` も識別子のため据え置き）。
 
 前提: [00-basic-design-plan.md](00-basic-design-plan.md) / [11-central-probe-architecture.md](11-central-probe-architecture.md)
 実装: [code-samples/alert-router-lambda/](code-samples/alert-router-lambda/) / データ契約: [code-samples/README.md §2.5/§2.6](code-samples/README.md)
@@ -25,7 +27,7 @@
 
 ```mermaid
 flowchart LR
-    CC[認証実装確認処理<br/>classify 済み] -->|Alert イベント| AR[Alert Router]
+    CC[認証実装確認処理<br/>classify 済み] -->|Alert イベント| AR[アラート検知 Lambda]
     AR --> D{severity}
     D -->|CRITICAL| P1[🔥 SNS P1<br/>Security 即時]
     D -->|WARN| P2[🟡 SNS P2<br/>Platform 24h]
@@ -42,7 +44,7 @@ flowchart LR
 
 ## §15.2 通知先 ARN の解決
 
-Alert イベント（[README §2.6](code-samples/README.md)）**自体には SNS ARN が含まれない**。Alert Router が解決する:
+Alert イベント（[README §2.6](code-samples/README.md)）**自体には SNS ARN が含まれない**。アラート検知 Lambda が解決する:
 
 ```mermaid
 flowchart TD

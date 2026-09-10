@@ -11,7 +11,7 @@
 
 ```
 [共通基盤アカウント]                              [各 App アカウント]
-  発見 Lambda（1 時間毎巡回 ※17 章 / ADR-061 追記 2026-08-21）
+  対象検索 Lambda（旧称: 発見 Lambda。1 時間毎巡回 ※17 章 / ADR-061 追記 2026-08-21）
     │ 読み取り AssumeRole（DiscoveryReadRole）────► 資材バケット S3: List（{appId}/）/
     │                                              VersionId 比較 / GetObject
     ├─ monitoring.yaml 付き資材プレフィックスを App Registry へ自動登録
@@ -24,8 +24,8 @@
     ├─ OpenAPI Registry から各アプリの openapi.yaml 取得
     ├─ 各 endpoint を Negative + Positive で probe（CloudFront 経由）──► 各アプリ CloudFront
     ├─ 4×4 真偽値表で分類 → CloudWatch Metrics (per-app)
-    └─ 分類結果を Alert Router Lambda へ
-  Alert Router Lambda → SNS (P1 Security / P2 Platform / P3 App)
+    └─ 分類結果をアラート検知 Lambda（旧称: Alert Router）へ
+  アラート検知 Lambda → SNS (P1 Security / P2 Platform / P3 App)
 ```
 
 ## 1. コンポーネント一覧
@@ -34,9 +34,9 @@
 |---|---|---|
 | [central-probe-lib/](central-probe-lib/) | 認証実装確認処理 本体（共通 probe lib：OpenAPI 動的発見、Hybrid 検証、4×4 分類）| Lambda（Node.js 22 / SDK v3）|
 | [multi-checks-blueprint/](multi-checks-blueprint/) | **将来オプション**（Synthetics）: 小規模 Multi Checks JSON（≤10 checks、OAuth ネイティブ）| `syn-nodejs-5.1` |
-| [app-registry-lambda/](app-registry-lambda/) | **旧 push 型の参考実装**（App Registry CRUD。PutItem/正規化ロジックは発見 Lambda に流用、[ADR-061](../../../adr/061-deploy-detection-pull-model.md)）| Node.js 22 / SDK v3 |
-| [openapi-export-lambda/](openapi-export-lambda/) | **旧 push 型の参考実装**（get-export → S3 Put。ロジックは発見 Lambda に流用）| Node.js 22 / SDK v3 |
-| 発見 Lambda（discovery）| **未実装（M-Q-17-4、Phase 3/4）**: 巡回・差分検知・自動登録・OpenAPI pull 取得（17 章）| Node.js 22 / SDK v3 |
+| [app-registry-lambda/](app-registry-lambda/) | **旧 push 型の参考実装**（App Registry CRUD。PutItem/正規化ロジックは対象検索 Lambda に流用、[ADR-061](../../../adr/061-deploy-detection-pull-model.md)）| Node.js 22 / SDK v3 |
+| [openapi-export-lambda/](openapi-export-lambda/) | **旧 push 型の参考実装**（get-export → S3 Put。ロジックは対象検索 Lambda に流用）| Node.js 22 / SDK v3 |
+| 対象検索 Lambda（discovery）| **未実装（M-Q-17-4、Phase 3/4）**: 巡回・差分検知・自動登録・OpenAPI pull 取得（17 章）| Node.js 22 / SDK v3 |
 | [alert-router-lambda/](alert-router-lambda/) | 4×4 分類 → SNS routing | Node.js 22 / SDK v3 |
 | [iac-guard-rules/](iac-guard-rules/) | cfn-guard / cdk-nag ルールセット（04 章）| — |
 | [semgrep-rules/](semgrep-rules/) | Semgrep ルール（言語別、04 章）| — |
@@ -47,7 +47,7 @@
 
 ### 2.1 App Registry（S3 台帳）スキーマ
 
-**発見 Lambda が巡回（資材バケットの `{appId}/monitoring.yaml`）から自動登録・同期**する。認証実装確認処理が `registry/` を List → Get する。
+**対象検索 Lambda が巡回（資材バケットの `{appId}/monitoring.yaml`）から自動登録・同期**する。認証実装確認処理が `registry/` を List → Get する。
 
 - 置き場: Monitoring Registry バケットの **`registry/{appId}/{env}.json`**（1 アプリ×環境 = 1 JSON オブジェクト。DynamoDB は不使用、[ADR-061 追記](../../../adr/061-deploy-detection-pull-model.md) / 12 章）
 
@@ -86,7 +86,7 @@
 
 - バケット: `<common-platform-acct>-monitoring-registry`（Versioning 有効。**台帳 `registry/{appId}/{env}.json` と同居**、§2.1 / 12-13 章）
 - spec キー: `openapi/{accountId}/{appId}/openapi.yaml`
-- 発見 Lambda がリポジトリ内 openapi.yaml（正本）を GetFile で取得して Put（13 章）
+- 対象検索 Lambda がリポジトリ内 openapi.yaml（正本）を GetFile で取得して Put（13 章）
 
 ### 2.3 OpenAPI アノテーション（アプリチームが付与、認証実装確認処理が解釈）
 
@@ -166,7 +166,7 @@
 
 1. `alert-router-lambda` + SNS トピック（P1/P2/P3）を共通基盤アカウントにデプロイ
 2. `central-probe-lib` の probe lib を **認証実装チェック Lambda** としてデプロイ（全量検査（モード2）＝日次定期 EventBridge Scheduler + 手動 invoke、18 章）
-3. **発見 Lambda**（M-Q-17-4。app-registry / openapi-export の参考実装からロジック流用）+ EventBridge Scheduler（1h）をデプロイ
+3. **対象検索 Lambda**（M-Q-17-4。app-registry / openapi-export の参考実装からロジック流用）+ EventBridge Scheduler（1h）をデプロイ
 4. 各 App アカウントへ **`DiscoveryReadRole`（読み取り専用）を StackSets 配布**（16 章 §16.2）
 5. Phase 4 PoC: 1 App アカウント相当で end-to-end 検証（巡回発見 → 自動登録 → 自動差分検査（モード1）の probe）
 

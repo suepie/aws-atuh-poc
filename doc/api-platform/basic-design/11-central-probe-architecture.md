@@ -24,7 +24,7 @@ sequenceDiagram
     participant Reg as App Registry（S3 台帳）
     participant OAR as OpenAPI Registry S3
     participant CF as アプリ CloudFront
-    participant AR as Alert Router
+    participant AR as アラート検知 Lambda
     participant CW as CloudWatch
 
     CC->>Reg: ① scanEnabledApps（enabled=true）
@@ -74,7 +74,7 @@ Negative（未認証 → 401/403 期待）だけでは、「**認証が無いか
 | 404 | any | WARN | P2 | probe 構成ミス |
 | null(skip) | — | OK | — | public endpoint |
 
-→ **「Negative=401/403 かつ Positive=200」のペアが揃って初めて OK**。分類結果（severity/priority）は Alert Router（15 章）と同一ロジックを SSOT 共有。
+→ **「Negative=401/403 かつ Positive=200」のペアが揃って初めて OK**。分類結果（severity/priority）はアラート検知 Lambda（旧称: Alert Router、15 章）と同一ロジックを SSOT 共有。
 ⚠ 表の 401/403 は「**アプリの認証レイヤーが返した**もの」が前提。**WAF が probe をブロックした 403 は別扱い**（WARN「境界でブロック」、§11.2.4）。
 
 ### §11.2.3 Smoke test

@@ -75,8 +75,8 @@ proposal（§FR-API-* / §NFR-API-* / §C-API-*）は参照物として維持。
 | [code-samples/README.md](code-samples/README.md) | **データ契約**（App Registry schema / OpenAPI アノテーション / CloudWatch Metrics / 4×4 真偽値表 / Runtime バージョン）| ✅ |
 | [code-samples/central-probe-lib/](code-samples/central-probe-lib/) | 認証実装確認処理 本体（index + lib 6 + test + README）、Lambda（Node.js 22 / SDK v3）| ✅ |
 | [code-samples/multi-checks-blueprint/](code-samples/multi-checks-blueprint/) | Multi Checks Blueprint（`steps` オブジェクト schema 検証済 + OAuth + `${AWS_SECRET}`）| ✅ |
-| [code-samples/app-registry-lambda/](code-samples/app-registry-lambda/) | App Registry CRUD（**旧 push 型参考実装**、発見 Lambda に流用。ADR-061）| ✅（参考）|
-| [code-samples/openapi-export-lambda/](code-samples/openapi-export-lambda/) | OpenAPI get-export → S3（**旧 push 型参考実装**、発見 Lambda に流用）| ✅（参考）|
+| [code-samples/app-registry-lambda/](code-samples/app-registry-lambda/) | App Registry CRUD（**旧 push 型参考実装**、対象検索 Lambda（旧称: 発見 Lambda）に流用。ADR-061）| ✅（参考）|
+| [code-samples/openapi-export-lambda/](code-samples/openapi-export-lambda/) | OpenAPI get-export → S3（**旧 push 型参考実装**、対象検索 Lambda に流用）| ✅（参考）|
 | [code-samples/alert-router-lambda/](code-samples/alert-router-lambda/) | 4×4 分類 → SNS routing（test 19 PASS）| ✅ |
 | [code-samples/iac-guard-rules/](code-samples/iac-guard-rules/) | cfn-guard 3 ルール（認証 / Origin Protection / タグ）| ✅ |
 | [code-samples/semgrep-rules/](code-samples/semgrep-rules/) | Semgrep 言語別ルール（Python/Node/Java、P3/P5/P6）| ✅ |
@@ -104,7 +104,7 @@ proposal（§FR-API-* / §NFR-API-* / §C-API-*）は参照物として維持。
 - P4-2 SDK 実挙動: **LocalStack 3.8.1** で app-registry PutItem / alert-router SNS Publish（App Registry DDB 経由の本番ルーティング）を end-to-end 実証。⚠ LocalStack `latest`(2026.7.0) は auth token 必須 → community は `3.8.1` ピン留め必須
 - P4-3 probe lib logic: **27 PASS**（classify 16 + probe統合 4 + extractEndpoints 7）。full orchestration は registry Scan が LocalStack で成立、S3 は LocalStack の virtual-host addressing（`forcePathStyle` 要、実 AWS 無関係）で境界
 
-> **要 PoC 検証（P4-3 full / P4-4 / P4-5、実 AWS or SAM が必要）**: 認証実装チェック Lambda E2E（SAM local）/ Positive probe（Bearer・SigV4）/ Cookie モノリス Positive / **発見 Lambda（資材バケット List・VersionId 比較・GetObject + S3 台帳）E2E** / CloudWatch metrics 着地 / マルチアカウント E2E。手順は [research/phase4-environment-setup-guide.md](research/phase4-environment-setup-guide.md)（旧 get-export 検証は push 型時代の記録）。
+> **要 PoC 検証（P4-3 full / P4-4 / P4-5、実 AWS or SAM が必要）**: 認証実装チェック Lambda E2E（SAM local）/ Positive probe（Bearer・SigV4）/ Cookie モノリス Positive / **対象検索 Lambda（資材バケット List・VersionId 比較・GetObject + S3 台帳）E2E** / CloudWatch metrics 着地 / マルチアカウント E2E。手順は [research/phase4-environment-setup-guide.md](research/phase4-environment-setup-guide.md)（旧 get-export 検証は push 型時代の記録）。
 
 ## 参照する主要 proposal / ADR
 

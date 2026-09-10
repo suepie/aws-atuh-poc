@@ -15,7 +15,7 @@
 
 現行設計（[ADR-061](../../adr/061-deploy-detection-pull-model.md) / 17 章）は「**各 App アカウントの CodeCommit を中央がクロスアカウント read で巡回する**」ことが土台にある。しかし**コードリポジトリが開発ベンダーごとに外部（GitHub / GitLab / ベンダー自社ホスト等）にある**場合、この土台が成立しない:
 
-- 中央の発見 Lambda から外部 git へは AssumeRole が使えない（AWS IAM の外）。ベンダーごとに認証方式・API・ネットワーク到達性が異なり、トークン管理・IP 許可・監査が N 社分発生する
+- 中央の対象検索 Lambda（旧称: 発見 Lambda）から外部 git へは AssumeRole が使えない（AWS IAM の外）。ベンダーごとに認証方式・API・ネットワーク到達性が異なり、トークン管理・IP 許可・監査が N 社分発生する
 - そもそもベンダーのリポジトリを当方が読む契約・セキュリティ合意が要る（ソース全体の閲覧権は過剰要求になりやすい）
 
 → **「git そのものを読みに行く」のをやめ、監視に必要な資材だけを S3 に置いてもらう**方式に切り替える。置き場所の 2 案を比較する。
@@ -49,12 +49,12 @@
 
 - 各 App アカウントに **監視資材バケットを StackSets で配布**（DiscoveryReadRole と同じ配布網に同梱）
 - デプロイパイプラインが最終段で `monitoring.yaml` / `openapi.yaml`（+ 任意 `deploy-info.json`）を**自アカウントのバケットに Put**
-- 中央の発見 Lambda は従来どおり **1 時間毎に AssumeRole → List/Get で巡回**し、**VersionId/ETag の変化**で M1（自動差分検査）を起動
+- 中央の対象検索 Lambda は従来どおり **1 時間毎に AssumeRole → List/Get で巡回**し、**VersionId/ETag の変化**で M1（自動差分検査）を起動
 
 ### 案 B: 共通基盤アカウントの 1 バケットに集約（各ベンダーが中央へ push）
 
 - 中央に集約バケット（例: `uploads/{appId}/…`）を置き、各アプリのデプロイパイプラインが**クロスアカウント Put**
-- 発見 Lambda の巡回は自アカウント内の List だけになり、クロスアカウント read が deploymentId 併読（apigateway:GET）だけに縮小
+- 対象検索 Lambda の巡回は自アカウント内の List だけになり、クロスアカウント read が deploymentId 併読（apigateway:GET）だけに縮小
 
 ### 比較表
 
@@ -89,7 +89,7 @@ s3://auth-monitoring-artifacts-{accountId}/        ← StackSets 配布（App �
 
 - **「{appId}/monitoring.yaml が置かれている = 監視対象」**（現行の「リポジトリに monitoring.yaml がある = 監視対象」と同型）
 - アップロードは**デプロイパイプラインの最終ステップ**（デプロイ成功後に Put）。IaC/パイプラインテンプレに組み込み、ベンダー告知資料に手順を明記（→ ユーザー要望の「アナウンス」対象）
-- 変更検知: 発見 Lambda が **オブジェクトの VersionId を台帳の前回値と比較**（ETag はマルチパートで MD5 と一致しない場合があるため VersionId 主・ETag 副）
+- 変更検知: 対象検索 Lambda が **オブジェクトの VersionId を台帳の前回値と比較**（ETag はマルチパートで MD5 と一致しない場合があるため VersionId 主・ETag 副）
 
 ### 2.2 巡回フロー（17 §17.2.1 の差し替えイメージ）
 
@@ -127,7 +127,7 @@ apigateway:GET（現行どおり）
 
 ### 2.5 変わらないもの（影響なしの確認）
 
-probe/classify/4×4（11 章）、Alert Router / SNS（15 章）、Monitoring Registry（中央 S3、12/13 章の**中央側**構造）、MON-1 公開印、Positive トークン管理、WAF 干渉対策、Config Rules（②）、全量検査（モード2）の日次+手動、メタ監視 MM-1〜5、Lambda 3 本・VPC 外、NW-2 例外。**Lambda の本数・配置は不変**。
+probe/classify/4×4（11 章）、アラート検知 Lambda（旧称: Alert Router）/ SNS（15 章）、Monitoring Registry（中央 S3、12/13 章の**中央側**構造）、MON-1 公開印、Positive トークン管理、WAF 干渉対策、Config Rules（②）、全量検査（モード2）の日次+手動、メタ監視 MM-1〜5、Lambda 3 本・VPC 外、NW-2 例外。**Lambda の本数・配置は不変**。
 
 ---
 

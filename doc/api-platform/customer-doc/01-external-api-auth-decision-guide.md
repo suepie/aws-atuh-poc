@@ -165,7 +165,7 @@ flowchart LR
 | 主体 | やること | 工数 |
 |---|---|---|
 | **アプリチーム** | API 開発の通常業務として **OpenAPI を書く** + `x-synthetics-skip-auth-check` / `x-canary-positive-test` 等のアノテーション + S3 アップ + Service Catalog 起動 | 数分 |
-| **Network 監査チーム（初回のみ）** | Central Canary 実装 + App Registry + OpenAPI Registry + Alert Router 配備 | 1-2 週間 |
+| **Network 監査チーム（初回のみ）** | 認証実装確認処理の実装 + App Registry + OpenAPI Registry + アラート検知 Lambda（旧称: Alert Router）配備 | 1-2 週間 |
 | **Network 監査チーム（運用）** | Central Canary コード更新（アプリ数増加時も 1 実装で追随）| 必要時のみ |
 
 → **canary の作り込み・Alarm・Registry 運用は Network 監査チームに集約**。アプリチームは OpenAPI を書くだけ、canary の存在すら意識しない。
@@ -185,7 +185,7 @@ flowchart LR
         Registry[App Registry<br/>DynamoDB]
         OpenAPIReg[OpenAPI Registry<br/>S3]
         CC[Central Canary<br/>Puppeteer 16.1]
-        Router[Alert Router<br/>4×4 分類 SNS]
+        Router["アラート検知 Lambda<br/>4×4 分類 SNS"]
     end
 
     subgraph Auto["自動追随"]

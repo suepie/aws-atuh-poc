@@ -17,7 +17,7 @@ flowchart LR
     A["11 章<br/>アーキ設計"] --> THIS["14 章 実装ガイド<br/>lib 構成 / 検証方式"]
     R["12/13 章<br/>Registry データ源"] --> THIS
     THIS --> IMPL["code-samples/<br/>central-probe-lib"]
-    THIS --> AL["15 章<br/>Alert Router"]
+    THIS --> AL["15 章<br/>アラート検知 Lambda"]
     style THIS fill:#fff9c4
 ```
 
@@ -35,9 +35,9 @@ flowchart LR
 | `lib/token.js` | test token 取得 + OAuth Bearer 取得 + cache | — |
 | `lib/probe.js` | 1 endpoint の Negative + Positive probe | ✅ 4 test |
 | `lib/classify.js` | 4×4 真偽値表分類（alert-router と SSOT 共有）| ✅ 16 test |
-| `lib/emit.js` | CloudWatch PutMetricData + Alert Router Invoke | — |
+| `lib/emit.js` | CloudWatch PutMetricData + アラート検知 Lambda（旧称: Alert Router）Invoke | — |
 
-分割理由: `classify.js` を Alert Router と共有し**分類ずれを防ぐ**、`probe.js` の authPattern 分岐を独立テスト可能にする。
+分割理由: `classify.js` をアラート検知 Lambda と共有し**分類ずれを防ぐ**、`probe.js` の authPattern 分岐を独立テスト可能にする。
 
 > 実行は **Lambda**（18 章）。probe lib は共通で、synthetics 抽象は素の https 実装で注入する。Synthetics を将来使う場合の runtime は §14.2 / [README §3](code-samples/README.md)。
 

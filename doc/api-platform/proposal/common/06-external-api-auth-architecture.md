@@ -1189,7 +1189,7 @@ ORDER BY distinct_ips DESC;
     ↓ 5min interval
   各アプリの CloudFront URL に probe
     ↓ failure
-  Alert Router Lambda（4×4 分類）
+  アラート検知 Lambda（旧称: Alert Router。4×4 分類）
     ↓ 通知先自動振り分け
   Security オンコール / Platform / App team
     ↓ 月次

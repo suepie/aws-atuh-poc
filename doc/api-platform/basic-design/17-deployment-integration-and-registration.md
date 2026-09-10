@@ -11,7 +11,7 @@
 
 **前提（2026-08-21 更新）**: 各アプリのコードリポジトリは**開発ベンダーごとに外部（GitHub 等）にあり、中央からは読めない**。そこで git を読む代わりに、**デプロイパイプラインの最終段で「監視資材」（monitoring.yaml / openapi.yaml）を各 App アカウントの資材バケットへアップロード**してもらい、中央はそれだけを読む。
 
-**方式**: **中央巡回（pull 型）× 資材 VersionId 比較**。共通基盤アカウントの**発見 Lambda が 1 時間毎に各 App アカウントの資材バケットを読み取り巡回**し、「**前回確認した資材バージョンからの変化**」を検知する。登録・spec 取得・自動差分検査（モード1、旧称 M1）の起動はすべて中央側で行い、**アプリ側のイベント・登録処理には依存しない**（トリガーは中央が引く）。
+**方式**: **中央巡回（pull 型）× 資材 VersionId 比較**。共通基盤アカウントの**対象検索 Lambda（旧称: 発見 Lambda）が 1 時間毎に各 App アカウントの資材バケットを読み取り巡回**し、「**前回確認した資材バージョンからの変化**」を検知する。登録・spec 取得・自動差分検査（モード1、旧称 M1）の起動はすべて中央側で行い、**アプリ側のイベント・登録処理には依存しない**（トリガーは中央が引く）。
 
 **資材オンリー原則（2026-08-21 確定）**: 中央が App アカウントで読むのは**アップロードされた監視資材だけ**。git・API GW 構成（deploymentId 含む）・その他の AWS リソースは読まない。クロスアカウントの線を「S3 読み取り 1 本」に絞り、権限説明と通信経路を最小化する（deploymentId 併読は 2026-08-19 に導入、**2026-08-21 に廃止**。経緯は ADR-061）。
 
@@ -32,7 +32,7 @@
   └─ 必須タグ（app-id / env / cost-center / owner）← 03 章 BL-1（課金按分用）
 ```
 
-- 製品は「**正しく守られた API を作る**」ことに専念し、「**見つけて登録する**」のは中央の発見 Lambda が担う（§17.2）。
+- 製品は「**正しく守られた API を作る**」ことに専念し、「**見つけて登録する**」のは中央の対象検索 Lambda が担う（§17.2）。
 - アプリチーム（ベンダー）がやることは 3 つだけ:
 
 | 手順 | 内容 |
@@ -49,11 +49,11 @@
 
 ### §17.2.1 巡回フロー
 
-**EventBridge Scheduler（1 時間毎）→ 発見 Lambda（共通基盤アカウント）**:
+**EventBridge Scheduler（1 時間毎）→ 対象検索 Lambda（共通基盤アカウント）**:
 
 ```mermaid
 flowchart TB
-    SCH["EventBridge Scheduler<br/>rate(1 hour)"] --> DISC["発見 Lambda<br/>（共通基盤アカウント）"]
+    SCH["EventBridge Scheduler<br/>rate(1 hour)"] --> DISC["対象検索 Lambda<br/>（共通基盤アカウント）"]
     DISC -->|"① ListAccounts"| ORG["AWS Organizations"]
     DISC -->|"② AssumeRole（s3 read-only）"| ART["各 App アカウントの資材バケット<br/>③ List {appId}/ プレフィックス<br/>④ 資材 VersionId 取得<br/>⑥ GetObject"]
     DISC -->|"⑤ lastArtifactVersions と比較<br/>⑥ 台帳更新 + spec Put"| REG[("Monitoring Registry S3<br/>registry/ 台帳 + openapi/ spec")]
@@ -81,7 +81,7 @@ flowchart TB
 
 | # | 原則 | 理由 |
 |---|---|---|
-| 1 | **比較するのは発見 Lambda**（App アカウントの資材 VersionId ↔ 中央台帳の `lastArtifactVersions`）。認証実装チェック Lambda は差分を一切知らない | 責務分離。チェック Lambda はモード1/モード2 とも「渡された appId を検査するだけ」で同一実装になる。台帳更新のタイミング（起動成功後のみ = at-least-once、§17.2.1 ⑦）も 1 箇所に閉じる |
+| 1 | **比較するのは対象検索 Lambda**（App アカウントの資材 VersionId ↔ 中央台帳の `lastArtifactVersions`）。認証実装チェック Lambda は差分を一切知らない | 責務分離。チェック Lambda はモード1/モード2 とも「渡された appId を検査するだけ」で同一実装になる。台帳更新のタイミング（起動成功後のみ = at-least-once、§17.2.1 ⑦）も 1 箇所に閉じる |
 | 2 | **比較対象はメタデータ（VersionId）であり、ファイルの内容ではない**。内容ハッシュ比較にしてはならない | **アップロードされた＝デプロイされた、を検知したい**ため。資材の中身が前回と同一でも、コードの変更で認証 middleware が外れている可能性がある（この見逃しこそ本監視が防ぎたい事象）。内容比較にすると「spec 不変のデプロイ」を丸ごと取りこぼす。副次的に、変化がないアプリは `GetObject` すら不要でクロスアカウント転送がゼロになる |
 | 3 | **差分は「起動のトリガー」であって「検査範囲の絞り込み」ではない** | 変更のあったアプリは**全 endpoint** を検査する（18 §18.2.1）。どの endpoint が変わったかを資材差分から求める必要はない |
 
@@ -193,9 +193,9 @@ SCP: apigateway:POST /restapis / apigateway:PATCH 等を Deny
 | ID | 内容 |
 |---|---|
 | M-Q-17-1 | SCP 強制（製品外の API GW 作成・変更禁止）の採否 — コンソール直変更を入口で塞ぐ鍵（deploymentId 併読廃止により重要度上昇）|
-| M-Q-17-2 | **対象アカウントの列挙方式**。⚠ `organizations:ListAccounts` は既定では管理アカウント限定。**案 c（推奨・2026-08 調査で判明）: Organizations の委任ポリシー（resource-based delegation policy）で共通基盤アカウントに `organizations:ListAccounts` を委任** → 発見 Lambda から直接呼べる（管理アカウントでの一度のポリシー設定のみ・AssumeRole 不要）/ 案 a: 管理アカウントに列挙用読み取りロールを置き AssumeRole / 案 b: 静的リスト（SSM Parameter 等）。範囲（全体 / OU / 明示リスト）とあわせて確定（10 §10.1.7 W3）|
+| M-Q-17-2 | **対象アカウントの列挙方式**。⚠ `organizations:ListAccounts` は既定では管理アカウント限定。**案 c（推奨・2026-08 調査で判明）: Organizations の委任ポリシー（resource-based delegation policy）で共通基盤アカウントに `organizations:ListAccounts` を委任** → 対象検索 Lambda から直接呼べる（管理アカウントでの一度のポリシー設定のみ・AssumeRole 不要）/ 案 a: 管理アカウントに列挙用読み取りロールを置き AssumeRole / 案 b: 静的リスト（SSM Parameter 等）。範囲（全体 / OU / 明示リスト）とあわせて確定（10 §10.1.7 W3）|
 | M-Q-17-3 | 「資材が上がってくるはずなのに無い」の突合方法（API 提供契約リスト / タグ / Service Catalog launch 実績のどれと突合するか）と staleness 閾値（仮 90 日）|
-| M-Q-17-4 | 発見 Lambda の実装 + PoC（Phase 3/4。S3 List/GetObject のページング・VersionId 比較・アカウント横断のレート制御）|
+| M-Q-17-4 | 対象検索 Lambda の実装 + PoC（Phase 3/4。S3 List/GetObject のページング・VersionId 比較・アカウント横断のレート制御）|
 | M-Q-17-5 | 消滅検知（enabled=false 化）とアプリ廃止手続きの運用整合 |
 | M-Q-17-6 | 資材 openapi.yaml と本番デプロイの drift 検出（全量検査（モード2、日次）の実測 404 で顕在化はするが、能動検出の要否）|
 | M-Q-17-7 | **責任分界の顧客・ベンダー合意**: 資材アップロード漏れ・内容誤りは原則アプリ責任（中央は補助検知のみ）とする条項。告知資料・契約への反映 |

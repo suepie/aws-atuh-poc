@@ -1,7 +1,7 @@
 # 12. App Registry 設計（S3 台帳）
 
 前提: [00-basic-design-plan.md](00-basic-design-plan.md) / [10-external-monitoring-overview.md](10-external-monitoring-overview.md)
-実装: 発見 Lambda（M-Q-17-4）/ データ契約: [code-samples/README.md §2.1](code-samples/README.md)
+実装: 対象検索 Lambda（旧称: 発見 Lambda。M-Q-17-4）/ データ契約: [code-samples/README.md §2.1](code-samples/README.md)
 根拠: [ADR-061 追記 2026-08-13（台帳ストア DynamoDB → S3 統合）](../../adr/061-deploy-detection-pull-model.md)
 
 ---
@@ -9,9 +9,9 @@
 ## §12.0 前提と背景
 
 **この章で定めること**: 「どのアプリを監視するか」の台帳（App Registry）のデータ構造と、そこへ載る仕組み。
-**なぜ要るか**: Pattern β で「Deploy 漏れ = ゼロ」を成立させる中核。**書き手は中央の発見 Lambda**（[17 章 §17.2](17-deployment-integration-and-registration.md) / [ADR-061 追記 2026-08-21](../../adr/061-deploy-detection-pull-model.md)）で、1 時間毎の巡回が **各 App アカウントの資材バケット（`{appId}/monitoring.yaml`）** からアプリを発見・登録し、認証実装確認処理が自動的に監視する。アプリ側に登録処理はない（デプロイ時の資材アップロードのみ、17 §17.3）。台帳の設定値の多くは monitoring.yaml 由来（**資材が宣言の正、台帳は巡回が写した実行用ビュー + 中央管理項目**）。
+**なぜ要るか**: Pattern β で「Deploy 漏れ = ゼロ」を成立させる中核。**書き手は中央の対象検索 Lambda**（[17 章 §17.2](17-deployment-integration-and-registration.md) / [ADR-061 追記 2026-08-21](../../adr/061-deploy-detection-pull-model.md)）で、1 時間毎の巡回が **各 App アカウントの資材バケット（`{appId}/monitoring.yaml`）** からアプリを発見・登録し、認証実装確認処理が自動的に監視する。アプリ側に登録処理はない（デプロイ時の資材アップロードのみ、17 §17.3）。台帳の設定値の多くは monitoring.yaml 由来（**資材が宣言の正、台帳は巡回が写した実行用ビュー + 中央管理項目**）。
 
-**ストアは S3**（DynamoDB は不使用）。台帳で本当に消せない情報は **① lastArtifactVersions（巡回状態）② alertRouting ③ enabled（中央管理項目）の 3 つだけ**で、書き手は発見 Lambda 1 本（1h 毎・直列）・データ量は MB 未満のため、DB の性能・整合性を要する要素がない。[Monitoring Registry バケット（13 章と同居）](13-openapi-registry-design.md)に JSON で置く（ADR-061 追記）。
+**ストアは S3**（DynamoDB は不使用）。台帳で本当に消せない情報は **① lastArtifactVersions（巡回状態）② alertRouting ③ enabled（中央管理項目）の 3 つだけ**で、書き手は対象検索 Lambda 1 本（1h 毎・直列）・データ量は MB 未満のため、DB の性能・整合性を要する要素がない。[Monitoring Registry バケット（13 章と同居）](13-openapi-registry-design.md)に JSON で置く（ADR-061 追記）。
 
 ---
 
@@ -65,7 +65,7 @@
 
 ### §12.1.2 整合性（現行は単純で足りる）
 
-- 書き手は**発見 Lambda 1 本（1h 毎・直列）+ 共通基盤チームの手動更新**のみ → 競合は実質発生しない
+- 書き手は**対象検索 Lambda 1 本（1h 毎・直列）+ 共通基盤チームの手動更新**のみ → 競合は実質発生しない
 - 手動更新と巡回の稀な競合に備えるなら **ETag 条件付き PUT（`If-Match`）** で楽観ロック可能（S3 の条件付き書き込みは 2024-11 に GA。AWS 公式機能）
 - 将来巡回を並列化する場合は排他制御の作り込みが要る（M-Q-12-3。それが常態化するなら DynamoDB 復帰を再検討）
 
@@ -73,12 +73,12 @@
 
 ## §12.2 登録フロー（中央巡回による自動発見）
 
-**書き手は中央の発見 Lambda のみ**（[17 章 §17.2](17-deployment-integration-and-registration.md)）。アプリ deploy → 次回巡回（最大 1 時間後）で発見・登録される。
+**書き手は中央の対象検索 Lambda のみ**（[17 章 §17.2](17-deployment-integration-and-registration.md)）。アプリ deploy → 次回巡回（最大 1 時間後）で発見・登録される。
 
 ```mermaid
 sequenceDiagram
     participant SCH as Scheduler（1h）
-    participant DISC as 発見 Lambda / 共通基盤アカウント
+    participant DISC as 対象検索 Lambda / 共通基盤アカウント
     participant ART as 資材バケット S3 / App アカウント（読み取り）
     participant S3 as Monitoring Registry S3 / 共通基盤アカウント
 
@@ -105,11 +105,11 @@ sequenceDiagram
 
 ## §12.3 書き込み権限（中央のみ）
 
-pull 型（ADR-061）により、**App Registry への書き込みは共通基盤アカウント内の発見 Lambda（+ 運用者の手動更新）に限定**される。App アカウント側からの書き込み経路は存在しない。
+pull 型（ADR-061）により、**App Registry への書き込みは共通基盤アカウント内の対象検索 Lambda（+ 運用者の手動更新）に限定**される。App アカウント側からの書き込み経路は存在しない。
 
 | 書き手 | 経路 | 権限 |
 |---|---|---|
-| 発見 Lambda | 同一アカウント内 PutObject | `s3:PutObject`（`registry/*` / `openapi/*` プレフィックス限定）|
+| 対象検索 Lambda | 同一アカウント内 PutObject | `s3:PutObject`（`registry/*` / `openapi/*` プレフィックス限定）|
 | 共通基盤チーム（手動）| コンソール / CLI で JSON 更新 | 同上（alertRouting 設定・enabled 切替）|
 | ~~App アカウントの Custom Resource~~ | ~~クロスアカウント Put~~ | **廃止**（ADR-061）|
 
@@ -136,7 +136,7 @@ pull 型（ADR-061）により、**App Registry への書き込みは共通基�
 |---|---|---|
 | D-M-12-1 | **台帳ストアは S3**（`registry/{appId}/{env}.json`、Monitoring Registry バケットに 13 章と同居）。DynamoDB は不使用 | 消せない情報は 3 つ・書き手 1 本・MB 未満で DB が過剰。ストアを S3 1 つに集約（[ADR-061 追記 2026-08-13](../../adr/061-deploy-detection-pull-model.md)、2026-08-07 の DDB 維持決定を更新）|
 | D-M-12-2 | probe 先は CloudFront URL（API GW 直でない）| Origin Protection を破らず実 UX 同一条件で検証（§12.1.1）|
-| D-M-12-3 | 登録は**中央巡回の自動発見**（書き手は発見 Lambda のみ、旧 Custom Resource 廃止）| 登録漏れ構造ゼロ + 書き込みクロスアカウント権限の排除（ADR-061）|
+| D-M-12-3 | 登録は**中央巡回の自動発見**（書き手は対象検索 Lambda のみ、旧 Custom Resource 廃止）| 登録漏れ構造ゼロ + 書き込みクロスアカウント権限の排除（ADR-061）|
 | D-M-12-4 | 台帳に巡回スナップショット（lastArtifactVersions / lastSeenAt / 資材系属性）を同居 | 差分判定・消滅検知・発見元の監査を 1 箇所で完結 |
 | D-M-12-5 | enabled で監視の有効/無効を切替（中央管理）| メンテ時などに削除せず一時停止できる。アプリが自分で監視を止められない |
 
@@ -174,4 +174,4 @@ pull 型（ADR-061）により、**App Registry への書き込みは共通基�
 |---|---|
 | M-Q-12-1 | alertRouting を全アプリ個別指定か、env 既定 + 上書きか |
 | M-Q-12-2 | バケットのバックアップ方針（Versioning は有効。加えてレプリケーション要否）|
-| M-Q-12-3 | **probe lib `lib/registry.js` と alert-router の通知先解決の S3 対応改修**（DynamoDB Scan / GetItem → S3 List/Get。M-Q-17-4 発見 Lambda 実装と同時に）+ 手動更新との競合対策（ETag 条件付き PUT）|
+| M-Q-12-3 | **probe lib `lib/registry.js` と alert-router の通知先解決の S3 対応改修**（DynamoDB Scan / GetItem → S3 List/Get。M-Q-17-4 対象検索 Lambda 実装と同時に）+ 手動更新との競合対策（ETag 条件付き PUT）|
