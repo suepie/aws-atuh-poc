@@ -86,7 +86,7 @@
 
 - バケット: `<common-platform-acct>-monitoring-registry`（Versioning 有効。**台帳 `registry/{appId}/{env}.json` と同居**、§2.1 / 12-13 章）
 - spec キー: `openapi/{accountId}/{appId}/openapi.yaml`
-- 対象検索 Lambda がリポジトリ内 openapi.yaml（正本）を GetFile で取得して Put（13 章）
+- 対象検索 Lambda が認証構成情報連携バケットの openapi.yaml（デプロイ版の写し。正本はベンダー git）を `GetObject` で取得して Put（13 章）
 
 ### 2.3 OpenAPI アノテーション（アプリチームが付与、認証実装確認処理が解釈）
 

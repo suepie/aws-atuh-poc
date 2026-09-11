@@ -78,20 +78,34 @@ def kv(ws, row, label, value, todo=False, span=5):
     return row + 1
 
 
-def table(ws, row, headers, blank_rows=3):
+def table(ws, row, headers, blank_rows=3, rows=None):
+    """rows を与えると白セルで記入済みとして描画し、そのあとに blank_rows 行の黄色枠を置く。"""
     for i, h in enumerate(headers, start=1):
         c = ws.cell(row=row, column=i, value=h)
         c.font, c.fill, c.border, c.alignment = HDR, HDR_FILL, BOX, WRAP
-    for r in range(row + 1, row + 1 + blank_rows):
+    r = row + 1
+    for data in (rows or []):
         for i in range(1, len(headers) + 1):
-            c = ws.cell(row=r, column=i)
+            v = data[i - 1] if i - 1 < len(data) else None
+            c = ws.cell(row=r, column=i, value=v)
+            c.font, c.border, c.alignment = BASE, BOX, WRAP
+        r += 1
+    for rr in range(r, r + blank_rows):
+        for i in range(1, len(headers) + 1):
+            c = ws.cell(row=rr, column=i)
             c.border, c.fill, c.alignment = BOX, TODO_FILL, WRAP
-    return row + 1 + blank_rows
+    return r + blank_rows
 
 
 def build_process_sheet(wb, p):
     pid, short, name = p["id"], p["sheet"], p["name"]
     summary, perm, seq, hint = p["summary"], p["perm"], p["seq"], p["hint"]
+    # 詳細（process_catalog.py の d=... 。未記入の処理では空 dict）
+    d = p.get("d") or {}
+
+    def dv(key, default=""):
+        v = d.get(key, default)
+        return "\n".join(v) if isinstance(v, (list, tuple)) else v
     ws = wb.create_sheet(f"{pid}_{short}"[:31])
     ws.sheet_properties.tabColor = GROUPS[p["group"]][1]
     for col, w in zip("ABCDE", (22, 26, 20, 30, 46)):
@@ -104,32 +118,41 @@ def build_process_sheet(wb, p):
     r = section(ws, r, "1. 基本情報")
     r = kv(ws, r, "系統", f"{p['group']}（{GROUPS[p['group']][0]}）")
     r = kv(ws, r, "実行契機", p["trigger"])
-    r = kv(ws, r, "フロー内の位置", "", todo=True)
+    r = kv(ws, r, "フロー内の位置", dv("position"), todo=not d.get("position"))
     r = kv(ws, r, "起動元", p["src"])
     r = kv(ws, r, "起動先", p["dst"])
     r = kv(ws, r, "呼び出し方式", p["mode"])
     r = kv(ws, r, "実行主体", p["actor"])
     r = kv(ws, r, "頻度・タイミング", p["freq"])
-    r = kv(ws, r, "前提条件・事前状態", "", todo=True)
+    r = kv(ws, r, "前提条件・事前状態", dv("pre"), todo=not d.get("pre"))
     r += 1
-    for title, headers in list(SEC_TABLES.items())[:2]:
-        r = section(ws, r, title)
-        r = table(ws, r, headers)
-        r += 1
+    r = section(ws, r, "2. 入力（I）")
+    r = table(ws, r, SEC_TABLES["2. 入力（I）"], blank_rows=1 if d.get("inputs") else 3,
+              rows=d.get("inputs"))
+    r += 1
+    r = section(ws, r, "3. 出力（O）")
+    r = table(ws, r, SEC_TABLES["3. 出力（O）"], blank_rows=1 if d.get("outputs") else 3,
+              rows=d.get("outputs"))
+    r += 1
     r = section(ws, r, "4. 処理手順")
-    r = table(ws, r, SEC_TABLES["4. 処理手順"], blank_rows=0)
-    c = ws.cell(row=r, column=1, value=1)
-    c.border, c.fill, c.alignment = BOX, TODO_FILL, WRAP
-    c2 = ws.cell(row=r, column=2, value="")
-    c2.border, c2.fill, c2.alignment = BOX, TODO_FILL, WRAP
-    c3 = ws.cell(row=r, column=3, value=f"【設計時の要記載】{hint}")
-    c3.border, c3.fill, c3.alignment = BOX, TODO_FILL, WRAP
-    r += 1
-    for extra in range(3):
-        for i in range(1, 4):
-            cc = ws.cell(row=r + extra, column=i)
-            cc.border, cc.fill, cc.alignment = BOX, TODO_FILL, WRAP
-    r += 3
+    if d.get("steps"):
+        numbered = [[i, s[0], s[1] if len(s) > 1 else ""]
+                    for i, s in enumerate(d["steps"], start=1)]
+        r = table(ws, r, SEC_TABLES["4. 処理手順"], blank_rows=1, rows=numbered)
+    else:
+        r = table(ws, r, SEC_TABLES["4. 処理手順"], blank_rows=0)
+        c = ws.cell(row=r, column=1, value=1)
+        c.border, c.fill, c.alignment = BOX, TODO_FILL, WRAP
+        c2 = ws.cell(row=r, column=2, value="")
+        c2.border, c2.fill, c2.alignment = BOX, TODO_FILL, WRAP
+        c3 = ws.cell(row=r, column=3, value=f"【設計時の要記載】{hint}")
+        c3.border, c3.fill, c3.alignment = BOX, TODO_FILL, WRAP
+        r += 1
+        for extra in range(3):
+            for i in range(1, 4):
+                cc = ws.cell(row=r + extra, column=i)
+                cc.border, cc.fill, cc.alignment = BOX, TODO_FILL, WRAP
+        r += 3
     r += 1
     r = section(ws, r, "5. シーケンス（矢印記法。必要に応じて図を貼付）")
     ws.merge_cells(start_row=r, start_column=1, end_row=r + 4, end_column=5)
@@ -137,25 +160,30 @@ def build_process_sheet(wb, p):
     sc.font, sc.border, sc.alignment = BASE, BOX, WRAP
     r += 6
     r = section(ws, r, "6. 例外・異常系")
-    r = table(ws, r, SEC_TABLES["6. 例外・異常系"])
+    r = table(ws, r, SEC_TABLES["6. 例外・異常系"],
+              blank_rows=1 if d.get("exceptions") else 3, rows=d.get("exceptions"))
     r += 1
+    idem = d.get("idem") or ("", "")
     r = section(ws, r, "7. 冪等性・リトライ")
-    r = kv(ws, r, "再実行時の振る舞い", "", todo=True)
-    r = kv(ws, r, "状態更新のタイミング", "", todo=True)
+    r = kv(ws, r, "再実行時の振る舞い", idem[0], todo=not idem[0])
+    r = kv(ws, r, "状態更新のタイミング", idem[1], todo=not idem[1])
     r += 1
     r = section(ws, r, "8. 権限・エンドポイント")
     r = kv(ws, r, "権限 / エンドポイント", perm)
-    r = kv(ws, r, "認証方式・補足", "", todo=True)
+    r = kv(ws, r, "認証方式・補足", dv("authnote"), todo=not d.get("authnote"))
     r += 1
     r = section(ws, r, "9. ログ・メトリクス")
-    r = table(ws, r, SEC_TABLES["9. ログ・メトリクス"], blank_rows=2)
+    r = table(ws, r, SEC_TABLES["9. ログ・メトリクス"],
+              blank_rows=1 if d.get("logs") else 2, rows=d.get("logs"))
     r += 1
+    perf = d.get("perf") or ("", "")
     r = section(ws, r, "10. 性能・上限")
-    r = kv(ws, r, "想定件数 / 所要時間", "", todo=True)
-    r = kv(ws, r, "上限・制約", "", todo=True)
+    r = kv(ws, r, "想定件数 / 所要時間", perf[0], todo=not perf[0])
+    r = kv(ws, r, "上限・制約", perf[1], todo=not perf[1])
     r += 1
     r = section(ws, r, "11. 未決事項")
-    table(ws, r, SEC_TABLES["11. 未決事項"], blank_rows=2)
+    table(ws, r, SEC_TABLES["11. 未決事項"],
+          blank_rows=1 if d.get("opens") else 2, rows=d.get("opens"))
     return ws.title
 
 
@@ -163,18 +191,20 @@ def build_index_sheet(wb, titles):
     """18_処理一覧（本セクションのハブ）"""
     ws = wb.create_sheet("18_処理一覧")
     ws.sheet_properties.tabColor = "2F5597"
-    for col, w in zip("ABCDEFGHI", (10, 30, 22, 20, 30, 30, 10, 44, 20)):
+    for col, w in zip("ABCDEFGHIJ", (10, 30, 22, 20, 30, 30, 10, 44, 20, 12)):
         ws.column_dimensions[col].width = w
-    style_title(ws, "処理一覧（処理設計セクションのハブ）", span=9)
-    ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=9)
+    style_title(ws, "処理一覧（処理設計セクションのハブ）", span=10)
+    ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=10)
     note = ws.cell(row=2, column=1, value=(
         "本シート以降は「処理設計」セクション（シート 18〜）。1 処理 = 1 シートで I/O・シーケンス・例外を定義する。"
         "構成図は 03、リソース一覧は 04、データ定義は 07、IAM は 08、コストは 16/17 を参照（重複記載しない）。"
-        "設計の正は md（doc/api-platform/basic-design/ 10〜18 章）。"))
+        "設計の正は md（doc/api-platform/basic-design/ 10〜18 章）。"
+        "⚠ 本セクションは tools/add_process_sheets_to_apipf.py の生成物。"
+        "記入は Excel でなく tools/process_catalog.py の d=dict(...) に書くこと（再生成で消えるため）。"))
     note.font, note.alignment = BASE, WRAP
-    ws.row_dimensions[2].height = 32
+    ws.row_dimensions[2].height = 40
     r = 4
-    headers = ["処理ID", "処理名", "系統", "実行契機", "起動元", "起動先", "方式", "概要", "シート"]
+    headers = ["処理ID", "処理名", "系統", "実行契機", "起動元", "起動先", "方式", "概要", "シート", "記入状態"]
     for i, h in enumerate(headers, start=1):
         c = ws.cell(row=r, column=i, value=h)
         c.font, c.fill, c.border, c.alignment = HDR, HDR_FILL, BOX, WRAP
@@ -190,7 +220,12 @@ def build_index_sheet(wb, titles):
         c = ws.cell(row=rr, column=9, value=t)
         c.hyperlink = f"#'{t}'!A1"
         c.font, c.border, c.alignment = LINK, BOX, WRAP
-    ws.auto_filter.ref = f"A{r}:I{r + len(PROCESSES)}"
+        done = bool(p.get("d"))
+        c = ws.cell(row=rr, column=10, value="✅ 記入済" if done else "記入待ち")
+        c.font, c.border, c.alignment = BASE, BOX, WRAP
+        if not done:
+            c.fill = TODO_FILL
+    ws.auto_filter.ref = f"A{r}:J{r + len(PROCESSES)}"
 
 
 def build_common_spec_sheet(wb):

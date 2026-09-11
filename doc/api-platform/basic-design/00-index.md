@@ -81,9 +81,9 @@ proposal（§FR-API-* / §NFR-API-* / §C-API-*）は参照物として維持。
 | [code-samples/iac-guard-rules/](code-samples/iac-guard-rules/) | cfn-guard 3 ルール（認証 / Origin Protection / タグ）| ✅ |
 | [code-samples/semgrep-rules/](code-samples/semgrep-rules/) | Semgrep 言語別ルール（Python/Node/Java、P3/P5/P6）| ✅ |
 | [research/phase4-local-verification-results.md](research/phase4-local-verification-results.md) | **Phase 4 ローカル検証結果（P4-1〜P4-3、実バグ 2 件修正）** | ✅ |
-| [research/process-design-template.md](research/process-design-template.md) | **処理設計書の雛形 + 処理分解カタログの SSOT**（33 処理・系統別 ID）。Excel 実体 = `doc/excel/apipf-process-design.xlsx`（生成: `tools/build_process_design_template.py`）| ✅ 雛形 |
-| [research/excel-conversion-prompt.md](research/excel-conversion-prompt.md) | 基本設計 Excel（`doc/excel/apipf.xlsx`）化の**総則**（シート構成・禁止語・呼称対応表・検収リスト）| ✅ |
-| [research/excel-update-order-2026-09-11.md](research/excel-update-order-2026-09-11.md) | 上記 Excel への**差分反映指示**（S3 認証構成情報方式 / モード統合 / Lambda 呼称 / 用語改定の 4 件）| 反映待ち |
+| [research/process-design-template.md](research/process-design-template.md) | **処理設計書の雛形 + 処理分解カタログの SSOT**（33 処理・系統別 ID）。Excel 実体 = `doc/excel/apipf.xlsx` の**シート 18〜52**（生成: `tools/add_process_sheets_to_apipf.py` + `tools/process_catalog.py`。**再生成すると 18 以降の記入内容は消える**）| ✅ 雛形 |
+| [research/excel-conversion-prompt.md](research/excel-conversion-prompt.md) | 基本設計 Excel（`doc/excel/apipf.xlsx` シート 01〜17）化の**総則**（シート構成・禁止語・呼称対応表・検収リスト）| ✅ |
+| [research/excel-update-order-2026-09-11.md](research/excel-update-order-2026-09-11.md) | 上記 Excel への**差分反映指示**（S3 認証構成情報方式 / モード統合 / Lambda 呼称 / 用語改定の 4 件）+ §8 処理設計セクション統合の申し送り | 反映待ち |
 | [research/](research/) | AWS 仕様確認等の一次記録 | 随時 |
 
 > **Phase 3 の検証成果**: Synthetics runtime/namespace/SDK v3 を公式確認、Multi Checks は `steps` オブジェクト schema（`checks` 配列ではない）を確認、`${AWS_SECRET:name:key}` 構文確認、Custom Resource 応答形式（4096 bytes 上限 / 必ず SUCCESS/FAILED 送信）確認、get-export の body は Uint8Array を確認。全 JS 構文 OK / 全 JSON valid / classify 16 + routing 19 テスト PASS。

@@ -23,10 +23,29 @@ GROUPS = {
 }
 
 
-def P(pid, sheet, name, trigger, src, dst, mode, actor, freq, summary, perm, seq, hint):
+def P(pid, sheet, name, trigger, src, dst, mode, actor, freq, summary, perm, seq, hint, d=None):
+    """1 処理の定義。
+
+    d（詳細）は設計が固まった処理にだけ与える。与えると Excel の該当欄が
+    「記入済み（白セル）」で生成され、未指定の欄だけ黄色の記入待ちで残る。
+    **Excel に直接書かず必ずここへ書く**（再生成で消えるため）。
+
+    d のキー（すべて任意）:
+      position   str        フロー内の位置
+      pre        str/list   前提条件・事前状態
+      inputs     [[項目, 型, 必須, 取得元, 説明・例], ...]
+      outputs    [[項目, 型, 出力先, 説明・例], ...]
+      steps      [[処理内容, 補足・参照], ...]        # 番号は自動付番
+      exceptions [[ケース, 検知方法, 動作, 通知, 参照], ...]
+      idem       (再実行時の振る舞い, 状態更新のタイミング)
+      authnote   str/list   認証方式・補足
+      logs       [[種別, 名称・項目, 内容, 備考], ...]
+      perf       (想定件数 / 所要時間, 上限・制約)
+      opens      [[ID, 内容, 確認先, 期限], ...]
+    """
     return dict(id=pid, sheet=sheet, name=name, group=pid.split("-")[0], trigger=trigger,
                 src=src, dst=dst, mode=mode, actor=actor, freq=freq, summary=summary,
-                perm=perm, seq=seq, hint=hint)
+                perm=perm, seq=seq, hint=hint, d=d)
 
 
 PROCESSES = [
@@ -165,8 +184,114 @@ PROCESSES = [
       "認証実装チェック Lambda", "CloudFront → WAF → API GW / ALB", "同期", "認証実装チェック Lambda", "endpoint ごとに 1 回",
       "認証情報なしでリクエストし、正しく拒否されるか（401/403、Cookie 系は 302）を確認する。2xx なら認証実装漏れ。",
       "認証不要（Public 経路）/ HTTPS 443 / X-Auth-Probe ヘッダ付与（WAF 誤検知回避）",
-      "認証実装チェック Lambda -> CloudFront : GET（認証ヘッダなし, X-Auth-Probe）\nCloudFront -> API GW : Origin Protection 付与\nAPI GW --> 認証実装チェック Lambda : ステータスコード",
-      "公開明示（x-synthetics-skip-auth-check）付き endpoint の扱い、タイムアウト値、endpoint 単位の継続（1 件失敗で打ち切らない）を明記する"),
+      "認証実装チェック Lambda -> CloudFront : リクエスト（認証ヘッダなし, X-Auth-Probe）\nCloudFront -> API GW / ALB : Origin Protection 付与\nAPI GW / ALB --> 認証実装チェック Lambda : ステータスコード（本文は読み捨て）",
+      "公開明示（x-synthetics-skip-auth-check）付き endpoint の扱い、タイムアウト値、endpoint 単位の継続（1 件失敗で打ち切らない）を明記する",
+      d=dict(
+        position="確認-02 で得た endpoint リストのループ内。本処理（未認証）→ 確認-05（正常系）→ 確認-06（判定）の順で 1 endpoint を処理する（11 §11.1 ④）。"
+                 "本処理は「認証が効いているか」を直接確かめる本機構の中核で、2xx が返れば認証実装漏れとして P1 になる。",
+        pre=[
+          "確認-01 で台帳から baseUrl / authPattern を取得済み",
+          "確認-02 で endpoint 記述子（method / path / rawPath / skipAuthCheck）を取得済み。MON-1 の公開印は解釈済み",
+          "識別ヘッダ X-Auth-Probe の値を Secrets Manager から取得済み",
+          "対象アプリの WAF に識別ヘッダの許可ルールが入っていること（M-Q-11-5）。未設定だと WAF ブロックによる WARN が多発する（11 §11.2.4）",
+        ],
+        inputs=[
+          ["baseUrl", "string", "✅", "台帳 registry/{appId}/{env}.json（確認-01）",
+           "検査先の CloudFront URL。例 https://expense.example.com（API GW の直 URL ではない。12 章）"],
+          ["authPattern", "enum（6 値）", "✅", "同上",
+           "期待ステータスの分岐に使う。api-gw-jwt / alb-code-jwt / alb-cookie-monolith / bff-cookie-session / api-gw-iam / lambda-url-iam"],
+          ["ep.method", "string", "✅", "確認-02（extractEndpoints）", "HTTP メソッド。例 GET"],
+          ["ep.path", "string", "✅", "確認-02",
+           "path parameter を dummy 値（x-canary-path-params）で解決済みのパス。例 /api/users/1"],
+          ["ep.rawPath", "string", "✅", "確認-02",
+           "テンプレートのままのパス。ログ・アラートの識別子に使う。例 /api/users/{id}"],
+          ["ep.skipAuthCheck", "boolean", "—", "確認-02（x-synthetics-skip-auth-check）",
+           "true = public と明示された endpoint。本処理をスキップする。未記載は false（= 認証必須、MON-1 の default-deny）"],
+          ["X-Auth-Probe 識別値", "string（secret）", "✅", "Secrets Manager（共通基盤アカウント）",
+           "WAF 許可ルールの照合キー。ログ・アラート本文に出さない（OBS-3）"],
+        ],
+        outputs=[
+          ["negStatus", "number / null", "確認-06（メモリ内で受け渡し）",
+           "観測した HTTP ステータス。公開印によるスキップ時は null（＝ 判定対象外で OK）"],
+          ["wafBlocked", "boolean", "確認-06（同上）",
+           "WAF による遮断と判別できた場合に true。403 を「認証が効いている」と誤認させないための区別（11 §11.2.4）"],
+          ["観測不能フラグ", "boolean", "確認-06（同上）", "接続不能・タイムアウト等でステータスを得られなかった場合に true"],
+          ["probe 実行ログ", "JSON 1 行", "CloudWatch Logs",
+           "appId / env / method / rawPath / negStatus / 所要 ms / 相関 ID。§9 参照"],
+        ],
+        steps=[
+          ["ep.skipAuthCheck が true なら本処理をスキップし negStatus = null を返す",
+           "MON-1（13 §13.3.0）。未記載は認証必須として probe する（default-deny）。公開印の妥当性レビューは中央の月次棚卸しの役割"],
+          ["リクエストを組み立てる。Authorization・Cookie を一切付けず、X-Auth-Probe 識別ヘッダのみを付与する",
+           "「認証情報を付けない」ことが検査の本体。識別ヘッダは WAF 誤爆回避のため（11 §11.2.4 主対策）"],
+          ["宛先は baseUrl（CloudFront）。Origin Protection ヘッダは付けない",
+           "実ユーザーと同じ経路（CloudFront → WAF → Origin Protection → API GW / ALB）を通すため。X-Origin-Verify は CloudFront が付与する（10 §10.1.6）"],
+          ["リダイレクトを自動追従しない設定で送信する",
+           "alb-cookie-monolith / bff-cookie-session は 302 そのものが期待値のため、追従すると観測できない（11 §11.3）"],
+          ["応答ステータスを回収する。応答ボディは読み捨てる（drain）",
+           "メモリ確保を避け、機微データを保持しないため。probe lib lib/probe.js の実装方針に準拠"],
+          ["応答が WAF による遮断と判別できる場合（CloudFront / WAF 由来のエラー応答）は wafBlocked = true を付けて返す",
+           "認証レイヤー由来の 403 と区別する。区別できないと偽陰性（認証漏れを OK と判定）が起きる（11 §11.2.4）"],
+          ["接続不能・タイムアウト等の例外は throw せず、観測不能として記録し次の endpoint へ進む",
+           "1 endpoint の失敗で残りの endpoint を打ち切らない（18 §18.5.2）"],
+          ["negStatus / wafBlocked / 観測不能フラグを確認-06 へ渡す",
+           "期待値との突き合わせ（authPattern 別の 401/403 or 302）と 4×4 判定は確認-06 の責務。本処理は観測に徹する"],
+        ],
+        exceptions=[
+          ["公開印（x-synthetics-skip-auth-check: true）付き endpoint", "確認-02 の記述子",
+           "probe せず negStatus = null", "通知なし（OK 判定）", "13 §13.3.0 / README §2.3"],
+          ["WAF が probe を遮断（403）", "応答の形が CloudFront / WAF 由来",
+           "wafBlocked = true として返す", "確認-06 で WARN「境界でブロック」→ P2 Platform", "11 §11.2.4"],
+          ["接続不能 / DNS 解決失敗 / TLS 証明書エラー", "例外捕捉",
+           "観測不能として記録し次の endpoint へ継続", "確認-06 で WARN（構成）→ P2 Platform", "18 §18.5.2"],
+          ["タイムアウト（接続 3 秒 / 応答 10 秒 超過）", "同上", "同上", "同上", "§10 上限・制約"],
+          ["5xx が返る", "ステータス", "そのまま観測値として返す（本処理では異常扱いしない）",
+           "確認-06 の判定に委ねる", "11 §11.2.2"],
+          ["2xx が返る", "ステータス", "そのまま観測値として返す",
+           "確認-06 で CRITICAL（認証実装漏れ）→ P1 Security 即時", "11 §11.2.2 / README §2.5"],
+        ],
+        idem=(
+          "参照系の読み取り検査であり状態を持たないため、何度実行しても結果は変わらず安全（冪等）。"
+          "対象検索 → 検査の invoke は at-least-once（18 §18.5.2）で重複起動しうるが、重複しても無害。"
+          "※ 更新系メソッドを probe する場合の副作用は M-Q-11-6（§11 未決）を参照",
+          "本処理は台帳・S3・メトリクスのいずれも更新しない。観測値はメモリ上で確認-06 へ渡すのみで、"
+          "メトリクス送信は確認-07、通知は確認-08 以降に集約する",
+        ),
+        authnote=[
+          "認証情報は付与しない（付与しないことが検査の本体）。Authorization / Cookie とも送らない",
+          "X-Auth-Probe の識別値は Secrets Manager 管理。ログ・アラート本文・例外メッセージに出さない（OBS-3 機微情報のマスク）",
+          "Origin Protection（X-Origin-Verify）は CloudFront が付与するため probe 側では付与しない",
+          "AWS API の呼び出しは伴わない（Secrets の取得は確認-03 / 起動時に済ませる）。本処理の通信はインターネット向け HTTPS 443 のみ",
+        ],
+        logs=[
+          ["ログ", "probe 実行ログ",
+           "appId / env / authPattern / method / rawPath / negStatus / wafBlocked / 所要 ms / 相関 ID（実行 ID）",
+           "1 endpoint 1 行。識別ヘッダ値・トークンはマスク（06 章 OBS-2 相関 ID / OBS-3 マスク）"],
+          ["ログ", "スキップログ", "公開印により probe しなかった endpoint（appId / rawPath）",
+           "公開印の濫用レビュー（月次棚卸し）の入力になる"],
+          ["メトリクス", "（本処理では送信しない）", "EndpointsProbed ほかの集計送信は確認-07 に集約",
+           "endpoint ごとに PutMetricData すると呼び出し回数と費用が endpoint 数に比例するため"],
+        ],
+        perf=(
+          "1 アプリ 30 endpoint 想定（費用見積 P-3）で Negative 30 回。1 回あたり 0.1〜1 秒、"
+          "1 アプリ分で 30 秒以内が目安。閾値の本決めは W3-5（性能実測）",
+          "Lambda 15 分（1 実行 = 1 アプリ、18 §18.5.3）/ タイムアウト 接続 3 秒・応答 10 秒（暫定、W3-5 で確定）/ "
+          "endpoint は直列実行を前提（並列化は WAF レートルール誤爆と表裏。並列化する場合は M-Q-11-5 の許可ルールと併せて判断）",
+        ),
+        opens=[
+          ["M-Q-11-5", "probe 識別ヘッダ（X-Auth-Probe）の WAF 許可ルール。未設定だと WAF ブロックによる WARN が多発し、偽陰性のリスクも残る",
+           "境界管理チーム（ネットワーク監査アカウント）", "調整中"],
+          ["M-Q-11-6", "【新規】更新系メソッド（POST / PUT / PATCH / DELETE）に対する未認証確認の可否。"
+           "現行 11 §11.5 は Positive のみ本番 POST をスキップと定めており、Negative は全メソッドが対象。"
+           "認証が正しく効いていれば 401/403 で副作用はないが、"
+           "まさに検知したい『認証漏れ』のときだけ本番データを更新してしまう。"
+           "案: ① 本番の Negative も GET 限定（更新系の認証漏れを検知できない穴が残る）"
+           "② 更新系は空ボディ・不正 Content-Type で送り、401/403 以外はすべて認証漏れ疑いとする（副作用を最小化しつつ検知は維持。推奨）"
+           "③ 更新系は stg のみで検査（本番との構成差の分だけ保証が落ちる）",
+           "共通基盤チーム + アプリ（顧客合意）", "未定"],
+          ["—", "タイムアウト値（接続 3 秒 / 応答 10 秒）と直列 / 並列の本決め", "W3-5 性能実測で確定", "Phase 3"],
+        ],
+      )),
     P("確認-05", "正常系アクセス確認", "正常系アクセス確認", "共通（巡回・全量とも）",
       "認証実装チェック Lambda", "CloudFront → WAF → API GW / ALB", "同期", "認証実装チェック Lambda", "endpoint ごとに 1 回",
       "有効なトークン付きでリクエストし、200 が返ることで API 稼働と確認処理自体の健全性を確かめる。",
