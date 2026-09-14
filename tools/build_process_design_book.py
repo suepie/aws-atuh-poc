@@ -1,16 +1,20 @@
 #!/usr/bin/env python3
-"""認証実装確認処理 — 処理設計セクションを apipf.xlsx へ追記するジェネレータ
+"""認証実装確認処理 — 処理設計書（別ブック）ジェネレータ
 
 SSOT: doc/api-platform/basic-design/research/process-design-template.md
-対象: doc/excel/apipf.xlsx（基本設計書。**既存 17 シートは触らない**）
+      + tools/process_catalog.py（処理カタログと各処理の詳細 d=...）
+出力: doc/excel/apipf-process-design.xlsx（**毎回まるごと作り直す**）
 
-追記するもの:
-  18_処理一覧 / 19_処理共通仕様 / 処理シート 33 枚
+構成:
+  00_表紙・位置づけ / 01_処理一覧 / 02_処理共通仕様 / 処理シート 33 枚
   （対象検索-*, 全量-*, 認証実装チェック-*, 通知-*, 運用-*, 連携-*）
 
-⚠ 再実行すると**追記分のシートのみ**作り直す（記入済みの処理シートは失われる）。
-   既存 17 シート（01〜17）には一切手を触れない。
-   実行前に Excel を閉じること。バックアップ: apipf.backup-*.xlsx
+上位は doc/excel/apipf.xlsx（基本設計書）。構成図・リソース一覧・データ定義・
+IAM・コスト・設計判断・未決は**そちらに一本化**し、本書には重複記載しない。
+
+⚠ 記入内容は Excel に直接書かず、必ず tools/process_catalog.py の d=... に書く
+   （本スクリプトは毎回ブックを作り直すため、Excel 側の手入力は失われる）。
+   実行前に Excel を閉じること。
 """
 from __future__ import annotations
 
@@ -21,8 +25,8 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.worksheet.hyperlink import Hyperlink
 from openpyxl.utils import get_column_letter
 
-OUT = pathlib.Path(__file__).resolve().parents[1] / "doc" / "excel" / "apipf.xlsx"
-KEEP = 17  # 既存の基本設計シート数（01〜17）。これらは変更しない
+OUT = pathlib.Path(__file__).resolve().parents[1] / "doc" / "excel" / "apipf-process-design.xlsx"
+UPSTREAM = "apipf.xlsx"  # 上位の基本設計書（重複記載しないもの＝そちらが正）
 
 # ---------------------------------------------------------------- styles
 TITLE = Font(bold=True, size=14, color="FFFFFF")
@@ -191,16 +195,16 @@ def build_process_sheet(wb, p):
 
 def build_index_sheet(wb, titles):
     """18_処理一覧（本セクションのハブ）"""
-    ws = wb.create_sheet("18_処理一覧")
+    ws = wb.create_sheet("01_処理一覧")
     ws.sheet_properties.tabColor = "2F5597"
     for col, w in zip("ABCDEFGHIJ", (10, 30, 22, 20, 30, 30, 10, 44, 20, 12)):
         ws.column_dimensions[col].width = w
     style_title(ws, "処理一覧（処理設計セクションのハブ）", span=10)
     ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=10)
     note = ws.cell(row=2, column=1, value=(
-        "本シート以降は「処理設計」セクション（シート 18〜）。1 処理 = 1 シートで I/O・シーケンス・例外を定義する。"
-        "構成図は 03、リソース一覧は 04、データ定義は 07、IAM は 08、コストは 16/17 を参照（重複記載しない）。"
-        "設計の正は md（doc/api-platform/basic-design/ 10〜18 章）。"
+        "1 処理 = 1 シートで I/O・シーケンス・例外を定義する。"
+        f"構成図・リソース一覧・データ定義・IAM・コスト・設計判断・未決は上位の {UPSTREAM}（基本設計書）を参照（本書に重複記載しない）。"
+        "設計の正は md（doc/api-platform/basic-design/ 10〜18 章）と tools/process_catalog.py。"
         "⚠ 本セクションは tools/add_process_sheets_to_apipf.py の生成物。"
         "記入は Excel でなく tools/process_catalog.py の d=dict(...) に書くこと（再生成で消えるため）。"))
     note.font, note.alignment = BASE, WRAP
@@ -233,7 +237,7 @@ def build_index_sheet(wb, titles):
 
 def build_common_spec_sheet(wb):
     """19_処理共通仕様（全処理に共通する規約・性能・監視）"""
-    ws = wb.create_sheet("19_処理共通仕様")
+    ws = wb.create_sheet("02_処理共通仕様")
     ws.sheet_properties.tabColor = "2F5597"
     for col, w in zip("ABCDE", (24, 60, 30, 20, 20)):
         ws.column_dimensions[col].width = w
@@ -267,36 +271,79 @@ def build_common_spec_sheet(wb):
     r = table(ws, r, ["ID", "検知対象", "手段", "閾値", "通知先"], blank_rows=6)
     r += 1
     r = section(ws, r, "4. 参照（重複記載しないもの）")
-    for label, ref in (("構成図 / リソース一覧", "シート 03・04"), ("データ定義（台帳・認証構成情報）", "シート 07"),
-                       ("IAM・権限", "シート 08"), ("コスト", "シート 16・17"),
-                       ("設計判断 / 未決事項", "シート 10・11")):
+    for label, ref in ((f"構成図 / リソース一覧", f"{UPSTREAM} シート 03・04"),
+                       ("データ定義（台帳・認証構成情報）", f"{UPSTREAM} シート 07"),
+                       ("IAM・権限", f"{UPSTREAM} シート 08"),
+                       ("コスト", f"{UPSTREAM} シート 16・17"),
+                       ("設計判断 / 未決事項", f"{UPSTREAM} シート 10・11")):
         r = kv(ws, r, label, ref)
 
 
+def build_cover_sheet(wb):
+    """00_表紙・位置づけ"""
+    ws = wb.create_sheet("00_表紙・位置づけ")
+    ws.sheet_properties.tabColor = "2F5597"
+    for col, w in zip("ABCDE", (22, 62, 26, 24, 24)):
+        ws.column_dimensions[col].width = w
+    style_title(ws, "API 認証実装確認処理　処理設計書")
+    r = 3
+    r = kv(ws, r, "システム名", "API プラットフォーム / 認証実装確認処理")
+    r = kv(ws, r, "文書名", "処理設計書（処理単位の I/O・シーケンス・例外）")
+    r = kv(ws, r, "版", "", todo=True)
+    r = kv(ws, r, "作成日 / 作成者", "", todo=True)
+    r = kv(ws, r, "承認者", "", todo=True)
+    r += 1
+    r = section(ws, r, "1. 本書の位置づけ")
+    r = kv(ws, r, "上位文書", f"{UPSTREAM}（基本設計書・シート 01〜17）。**矛盾した場合は上位が優先**")
+    r = kv(ws, r, "設計の正（SSOT）",
+           "doc/api-platform/basic-design/ 10〜18 章（md）。Excel はその写し")
+    r = kv(ws, r, "本書の範囲",
+           "10〜18 章を処理単位（33 処理）に分解し、実装・単体テスト・運用手順の起点とする")
+    r = kv(ws, r, "読者", "実装担当 / テスト担当 / 運用担当 / レビュア")
+    r += 1
+    r = section(ws, r, "2. 上位文書を参照するもの（本書に重複記載しない）")
+    r = table(ws, r, ["内容", "参照先", "", "", ""], blank_rows=0, rows=[
+        ["構成図 / リソース一覧", f"{UPSTREAM} シート 03・04"],
+        ["データ定義（台帳・認証構成情報・イベント payload）", f"{UPSTREAM} シート 07"],
+        ["IAM・権限", f"{UPSTREAM} シート 08"],
+        ["コスト（ランニング費用・運用工数）", f"{UPSTREAM} シート 16・17"],
+        ["設計判断一覧 / 未決事項", f"{UPSTREAM} シート 10・11"],
+        ["WBS", f"{UPSTREAM} シート 14・15"],
+    ])
+    r += 1
+    r = section(ws, r, "3. 記入のしかた（重要）")
+    for label, val in (
+        ("記入先", "**Excel に直接書かない**。記入内容は tools/process_catalog.py の d=... に書く"),
+        ("理由", "本ブックは毎回まるごと再生成されるため、Excel 側の手入力は失われる"),
+        ("再生成", "python3 tools/add_process_sheets_to_apipf.py（実行前に Excel を閉じる）"),
+        ("記入の基準", "認証実装チェック-04（未認証アクセス確認）の粒度に揃える"),
+        ("色の意味", "黄色 = 未記入（設計待ち） / 白 = 記入済み"),
+    ):
+        r = kv(ws, r, label, val)
+    r += 1
+    r = section(ws, r, "4. 改訂履歴")
+    table(ws, r, ["版", "日付", "改訂内容", "作成者", "承認者"], blank_rows=0, rows=[
+        ["0.1", "2026-09-14", f"新規作成（{UPSTREAM} のシート 18 以降を本書へ分離）", "", ""],
+    ])
+
+
 def main():
-    from openpyxl import load_workbook
-    if not OUT.exists():
-        raise SystemExit(f"{OUT} が見つかりません")
-    # Excel で開いたままだと、書き込み自体は成功しても Excel 側の古い内容で
-    # 上書きされてしまう（実際に 2026-09-14 に発生）。ロックファイルがあれば中断する。
     lock = OUT.with_name("~$" + OUT.name)
     if lock.exists():
         raise SystemExit(
             f"⚠ {OUT.name} が Excel で開かれています（{lock.name} を検出）。\n"
             "   Excel を閉じてから実行してください。開いたままだと、閉じる際に\n"
             "   Excel 側の内容で上書きされ、生成結果が失われます。")
-    wb = load_workbook(OUT)
-    base = wb.sheetnames[:KEEP]
-    # 追記分のみ作り直す（既存 17 シートには触れない）
-    for name in wb.sheetnames[KEEP:]:
-        del wb[name]
+    wb = Workbook()
+    wb.remove(wb.active)
     titles = [build_process_sheet(wb, p) for p in PROCESSES]
+    build_cover_sheet(wb)
     build_index_sheet(wb, titles)
     build_common_spec_sheet(wb)
-    wb._sheets = [wb[t] for t in base + ["18_処理一覧", "19_処理共通仕様"] + titles]
+    wb._sheets = [wb[t] for t in ["00_表紙・位置づけ", "01_処理一覧", "02_処理共通仕様"] + titles]
+    OUT.parent.mkdir(parents=True, exist_ok=True)
     wb.save(OUT)
-    print(f"updated {OUT}: 既存 {len(base)} + 追記 {len(wb.sheetnames) - len(base)} = {len(wb.sheetnames)} sheets")
-
-
+    done = sum(1 for p in PROCESSES if p.get("d"))
+    print(f"wrote {OUT} ({len(wb.sheetnames)} sheets / 詳細記入済み {done}/{len(PROCESSES)} 処理)")
 if __name__ == "__main__":
     main()
