@@ -63,3 +63,9 @@ backup/
 
 # officeの一時ファイル
 ~$*
+# Python
+__pycache__/
+*.pyc
+
+# Excel 一時ファイル
+~$*.xlsx

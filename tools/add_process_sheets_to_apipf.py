@@ -5,7 +5,8 @@ SSOT: doc/api-platform/basic-design/research/process-design-template.md
 対象: doc/excel/apipf.xlsx（基本設計書。**既存 17 シートは触らない**）
 
 追記するもの:
-  18_処理一覧 / 19_処理共通仕様 / 処理シート 33 枚（巡回-*, 全量-*, 確認-*, 通知-*, 運用-*, 連携-*）
+  18_処理一覧 / 19_処理共通仕様 / 処理シート 33 枚
+  （対象検索-*, 全量-*, 認証実装チェック-*, 通知-*, 運用-*, 連携-*）
 
 ⚠ 再実行すると**追記分のシートのみ**作り直す（記入済みの処理シートは失われる）。
    既存 17 シート（01〜17）には一切手を触れない。
@@ -17,6 +18,7 @@ import pathlib
 
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+from openpyxl.worksheet.hyperlink import Hyperlink
 from openpyxl.utils import get_column_letter
 
 OUT = pathlib.Path(__file__).resolve().parents[1] / "doc" / "excel" / "apipf.xlsx"
@@ -218,7 +220,8 @@ def build_index_sheet(wb, titles):
             c.font, c.border, c.alignment = BASE, BOX, WRAP
         t = titles[i]
         c = ws.cell(row=rr, column=9, value=t)
-        c.hyperlink = f"#'{t}'!A1"
+        # 内部リンクは location で持つ（target="#..." だと外部リンク扱いになり環境差が出る）
+        c.hyperlink = Hyperlink(ref=c.coordinate, location=f"'{t}'!A1")
         c.font, c.border, c.alignment = LINK, BOX, WRAP
         done = bool(p.get("d"))
         c = ws.cell(row=rr, column=10, value="✅ 記入済" if done else "記入待ち")
@@ -274,6 +277,14 @@ def main():
     from openpyxl import load_workbook
     if not OUT.exists():
         raise SystemExit(f"{OUT} が見つかりません")
+    # Excel で開いたままだと、書き込み自体は成功しても Excel 側の古い内容で
+    # 上書きされてしまう（実際に 2026-09-14 に発生）。ロックファイルがあれば中断する。
+    lock = OUT.with_name("~$" + OUT.name)
+    if lock.exists():
+        raise SystemExit(
+            f"⚠ {OUT.name} が Excel で開かれています（{lock.name} を検出）。\n"
+            "   Excel を閉じてから実行してください。開いたままだと、閉じる際に\n"
+            "   Excel 側の内容で上書きされ、生成結果が失われます。")
     wb = load_workbook(OUT)
     base = wb.sheetnames[:KEEP]
     # 追記分のみ作り直す（既存 17 シートには触れない）
