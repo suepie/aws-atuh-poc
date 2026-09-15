@@ -386,7 +386,7 @@ flowchart LR
 
 | # | 通信 | 発信元 | 宛先 | 経由・エンドポイント | 備考 |
 |---|---|---|---|---|---|
-| N1 | 検知イベント（即時系）| 共通基盤 / 認証実装チェック Lambda | 共通基盤 / アラート検知 Lambda | `lambda.ap-northeast-1.amazonaws.com` | 4×4 分類済み（README §2.6 形式）|
+| N1 | 検知イベント（即時系）| 共通基盤 / 認証実装チェック Lambda | 共通基盤 / アラート検知 Lambda | `lambda.ap-northeast-1.amazonaws.com` | 4×4 分類済み（README §2.7 形式）|
 | N2 | 通知先解決 | 共通基盤 / アラート検知 Lambda | 共通基盤 / S3 `registry/{appId}/{env}.json` | `s3.ap-northeast-1.amazonaws.com` | `alertRouting` → 無ければ環境変数デフォルト（15 §15.2）|
 | N3 | 通知発行 | 共通基盤 / アラート検知 Lambda | 共通基盤 / SNS トピック P1/P2/P3 | `sns.ap-northeast-1.amazonaws.com` | severity で振り分け（P1=Security 即時 / P2=Platform 24h / P3=App）|
 | N4 | 配信 | 共通基盤 / SNS | 各チーム（メール / Amazon Q Developer〔旧 AWS Chatbot、2025-02 改名〕→ Slack 等）| SNS サブスクリプション | 接続方式は M-Q-15-1 |
