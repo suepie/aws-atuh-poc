@@ -3,7 +3,7 @@
 前提: [ADR-059 Central Auth Check Canary Architecture (Pattern β)](../../../adr/059-central-auth-check-canary-architecture.md) / [§C-API-6 §C-6.6.8](../../proposal/common/06-external-api-auth-architecture.md)
 位置付け: 認証外形監視（Pattern β = 共通基盤アカウント集約）の**動く実装サンプル**。本ディレクトリは API プラットフォーム専用（認証基盤 `keycloak/` とは分離）。
 
-> ⚠ **これは参照実装 / サンプルです**。本番採用時は Region / アカウント ID / ドメイン等を環境に合わせて置換し、PoC 検証（Phase 4）を経てください。
+> 【注意】**これは参照実装 / サンプルです**。本番採用時は Region / アカウント ID / ドメイン等を環境に合わせて置換し、PoC 検証（Phase 4）を経てください。
 
 ---
 
@@ -66,9 +66,13 @@
 | `artifactPrefix` | S | 認証構成情報の `{appId}/` プレフィックス | `expense-api/` |
 | `lastArtifactVersions` | M | 前回確認した認証構成情報の S3 VersionId（**自動差分検査（モード1）の差分判定基準**）| `{"monitoring.yaml":"3z9K…","openapi.yaml":"8aQ2…"}` |
 | `deployInfo` | M | deploy-info.json（任意）由来の追跡用参考値（検知には使わない。staleness 補助）| `{"commitId":"a1b2c3d…","deployedAt":"…"}` |
+| `lastRejectedVersions` | M | **取り込みを拒否した**認証構成情報の VersionId（不備検知時のみ。同じ版での再通知抑制に使う、17 §17.2.1）| `{"monitoring.yaml":"9xY1…"}` |
+| `rejectedReason` | S | 拒否理由（不備種別）。`lastRejectedVersions` とセット | `appId とプレフィックスが不一致` |
 | `lastSeenAt` | S | 巡回で最後に観測した日時 | `2026-08-21T00:00:00Z` |
 
-> `baseUrl`/`authPattern`/`testTokenSecret` は **monitoring.yaml 由来**（巡回同期）、`alertRouting`/`enabled` は**台帳のみで中央管理**（12/17 章）。旧 repo 系属性（`repositoryName`/`branch`/`pathPrefix`/`lastCheckedCommitId`/`apiGatewayId`/`stage`/`deploymentId`）は **2026-08-21 の S3 認証構成情報化で廃止**（ADR-061 追記）。
+> `baseUrl`/`authPattern`/`testTokenSecret` は **monitoring.yaml 由来**（巡回同期）、`alertRouting`/`enabled` は**台帳のみで中央管理**（12/17 章）。
+> `lastArtifactVersions` は **アプリ×環境の各レコードに同じ値を複写**する（認証構成情報はアプリ単位だが、env ごとに独立して at-least-once を成立させるため。2026-09-14 確定）。
+> 不備で取り込みを拒否した場合は `enabled=false` + `lastRejectedVersions` + `rejectedReason` の**拒否レコード**を残す（同じ版での再通知を抑制し、未監視アプリを可視化する）。旧 repo 系属性（`repositoryName`/`branch`/`pathPrefix`/`lastCheckedCommitId`/`apiGatewayId`/`stage`/`deploymentId`）は **2026-08-21 の S3 認証構成情報化で廃止**（ADR-061 追記）。
 
 **`authPattern` enum**（認証実装確認処理が assertion 方式を切替）:
 | 値 | 意味 | Negative 期待 | Positive |
@@ -110,8 +114,8 @@
   | 名前 | 単位 | 意味 |
   |---|---|---|
   | `AuthCheckPassed` | Count | 正常（Neg=401/403 + Pos=200）|
-  | `AuthCheckCritical` | Count | 🔥 認証漏れ（Neg=200）|
-  | `AuthCheckWarn` | Count | ⚠ テスト構成 / token 失効 |
+  | `AuthCheckCritical` | Count | 認証漏れ（Neg=200）|
+  | `AuthCheckWarn` | Count | 【注意】テスト構成 / token 失効 |
   | `AuthCheckInfo` | Count | Backend バグ（Pos=500）|
   | `EndpointsProbed` | Count | probe した endpoint 総数 |
 
@@ -128,7 +132,7 @@
 | 404 | any | WARN（構成ミス）| P2 | Platform |
 | null(skip) | 200 | OK（public + health）| — | 通知なし |
 
-> ⚠ 表の 401/403 は「アプリの認証レイヤーが返したもの」が前提。**WAF が probe をブロックした 403 は WARN（境界でブロック＝テスト構成問題）として別分類**する（11 §11.2.4。偽陰性・誤 CRITICAL の防止）。
+> 【注意】表の 401/403 は「アプリの認証レイヤーが返したもの」が前提。**WAF が probe をブロックした 403 は WARN（境界でブロック＝テスト構成問題）として別分類**する（11 §11.2.4。偽陰性・誤 CRITICAL の防止）。
 
 ### 2.6 Alert イベント形式（probe → alert-router）
 

@@ -29,9 +29,9 @@
 flowchart LR
     CC[認証実装確認処理<br/>classify 済み] -->|Alert イベント| AR[アラート検知 Lambda]
     AR --> D{severity}
-    D -->|CRITICAL| P1[🔥 SNS P1<br/>Security 即時]
-    D -->|WARN| P2[🟡 SNS P2<br/>Platform 24h]
-    D -->|INFO| P3[🟢 SNS P3<br/>App team]
+    D -->|CRITICAL| P1[SNS P1<br/>Security 即時]
+    D -->|WARN| P2[SNS P2<br/>Platform 24h]
+    D -->|INFO| P3[SNS P3<br/>App team]
     D -->|OK| SKIP[skip]
     style P1 fill:#ffcdd2
     style P2 fill:#fff9c4

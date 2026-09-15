@@ -23,8 +23,8 @@
 
 | モード | トリガ | 範囲 | 頻度 | 状態 |
 |---|---|---|---|:---:|
-| **自動差分検査（モード1）** | **中央巡回**（対象検索 Lambda ※旧称: 発見 Lambda が 1 時間毎に**各 App アカウントの 認証構成情報（S3）の VersionId 変化**を確認、[17 章 §17.2](17-deployment-integration-and-registration.md) / [ADR-061 追記 2026-08-21](../../adr/061-deploy-detection-pull-model.md)）| **変更のあったアプリの全 endpoint** | 1 時間毎（検知遅延 最大 1h）| ✅ Phase 1 |
-| **全量検査（モード2）** | **定期自動（日次、EventBridge Scheduler）+ 手動（随時）** の 2 系統（実装は同一 `mode=full`）| 全アプリ全 endpoint | 日次 + オンデマンド | ✅ Phase 1 |
+| **自動差分検査（モード1）** | **中央巡回**（対象検索 Lambda ※旧称: 発見 Lambda が 1 時間毎に**各 App アカウントの 認証構成情報（S3）の VersionId 変化**を確認、[17 章 §17.2](17-deployment-integration-and-registration.md) / [ADR-061 追記 2026-08-21](../../adr/061-deploy-detection-pull-model.md)）| **変更のあったアプリの全 endpoint** | 1 時間毎（検知遅延 最大 1h）| ○ Phase 1 |
+| **全量検査（モード2）** | **定期自動（日次、EventBridge Scheduler）+ 手動（随時）** の 2 系統（実装は同一 `mode=full`）| 全アプリ全 endpoint | 日次 + オンデマンド | ○ Phase 1 |
 
 > **旧 heartbeat 型（旧 M2「重要 endpoint への 5-15 分 probe」）は廃止**（2026-08-20、理由は §18.1.1）。旧 M3「手動全量検査（モード3）」は本モード2 に統合（手動トリガとして存続）。
 
@@ -57,12 +57,12 @@ flowchart LR
 
 ### §18.2.1 差分の粒度は「アプリ単位」
 
-⚠ **重要な設計判断**: 自動差分検査（モード1）の範囲は「**デプロイされたアプリの全 endpoint**」であり、OpenAPI 差分のあった endpoint だけではない。
+【注意】**重要な設計判断**: 自動差分検査（モード1）の範囲は「**デプロイされたアプリの全 endpoint**」であり、OpenAPI 差分のあった endpoint だけではない。
 
 | 粒度 | 見逃すケース | 採否 |
 |---|---|:---:|
 | endpoint 単位（OpenAPI diff）| **コードで認証 middleware を外したが OpenAPI は不変** → 差分に出ず見逃す | ✗ |
-| **アプリ単位（変更アプリの全 endpoint）** | — | ✅ 採用 |
+| **アプリ単位（変更アプリの全 endpoint）** | — | ○ 採用 |
 
 → 認証漏れの典型（`AuthorizationType=NONE` / middleware 削除）は **OpenAPI に現れないことが多い**。だから「変更されたアプリは全 endpoint を probe」する。全アプリ全量よりは軽く（変更アプリのみ）、endpoint 差分より安全。
 
@@ -78,7 +78,7 @@ flowchart LR
     L --> P[そのアプリの全 endpoint probe]
 ```
 
-> ⚠ **検知の穴と補完**（[17 章 §17.2.2](17-deployment-integration-and-registration.md)、2026-08-21 更新）: コンソール直変更は **Config Rules 実体化** + ガイド明記 + **全量検査（モード2、日次）の挙動検知（最大 24h）**で補完。**認証構成情報のアップロード忘れ・誤りは原則アプリ責任**（顧客合意 M-Q-17-7。中央は staleness 検知 + 棚卸しで補助）。
+> 【注意】**検知の穴と補完**（[17 章 §17.2.2](17-deployment-integration-and-registration.md)、2026-08-21 更新）: コンソール直変更は **Config Rules 実体化** + ガイド明記 + **全量検査（モード2、日次）の挙動検知（最大 24h）**で補完。**認証構成情報のアップロード忘れ・誤りは原則アプリ責任**（顧客合意 M-Q-17-7。中央は staleness 検知 + 棚卸しで補助）。
 
 ### §18.2.3 実行基盤：Lambda（対象検索 → probe の 2 段）
 
@@ -142,11 +142,11 @@ aws lambda invoke --function-name central-auth-probe \
 
 | # | 検知対象 | 手段 | アラーム条件（初期値）|
 |---|---|---|---|
-| MM-1 | **巡回の停止**（最重要）| 対象検索 Lambda が巡回成功時に `DiscoveryLastSuccess` メトリクス（Count=1）を emit | **2 時間欠損**（= 巡回 2 回分未実行）で発報 |
+| MM-1 | **巡回の停止**（最重要）| 対象検索 Lambda が巡回成功時に `DiscoveryLastSuccess` メトリクス（Count=1）を emit | **6 時間欠損で発報**（`TreatMissingData=breaching`）。2026-09-14 に 2 時間から緩和 — AWS 公式が「CloudWatch メトリクスは best-effort 配信で欠落しうる」「メトリクス停止後もアラームが直近データ点を再評価し続ける」と警告しており、短い閾値は誤発報を招くため。**検知の遅れは許容**（本番と開発が同一構成なら本番リリース前に開発側で拾えるため）|
 | MM-2 | 対象検索 Lambda の失敗 | Lambda 標準 `Errors` / Scheduler の起動失敗 | Errors ≥ 1 |
 | MM-3 | 一部アカウントの巡回失敗 | `DiscoveryAccountErrors` メトリクス（失敗アカウント数）| ≥ 1（§18.5.2 の部分失敗と連動）|
-| MM-4 | 検査 Lambda の失敗 | Lambda 標準 `Errors` + 非同期 invoke の **DLQ（SQS）** | Errors ≥ 1 or DLQ 滞留 ≥ 1 |
-| MM-5 | アラート検知 Lambda（旧称: Alert Router）の失敗 | 既存の throw → リトライ / DLQ（15 §15.4）| DLQ 滞留 ≥ 1 |
+| MM-4 | 検査 Lambda の失敗 | Lambda 標準 `Errors` + 非同期 invoke の **On-failure Destination（送信先 SQS）** | Errors ≥ 1 or Destination 滞留 ≥ 1 |
+| MM-5 | アラート検知 Lambda（旧称: Alert Router）の失敗 | 既存の throw → リトライ / On-failure Destination（15 §15.4）| Destination 滞留 ≥ 1 |
 
 - 保険系アラーム（`AuthCheckCritical > 0`、§18.4）は「**検知した結果**の発報」、本節は「**検知できていない状態**の発報」で役割が異なる。両方そろって初めて検知網が閉じる
 - 各 Lambda のログは [06 章 OBS-1〜4](06-logging-monitoring.md) に準拠（実行 ID を相関 ID として出力、トークン・コミット内容はマスク、保持期間明示）
@@ -157,9 +157,9 @@ aws lambda invoke --function-name central-auth-probe \
 |---|---|
 | 対象検索 Lambda の巡回 | **アカウント単位で try-catch し、1 アカウントの失敗（AssumeRole 不可・スロットリング等）で全体を止めない**。失敗数を `DiscoveryAccountErrors` で emit（MM-3）し、次回巡回で自然リトライ |
 | `lastArtifactVersions` の更新タイミング | **自動差分検査（モード1）の起動が成功した後にのみ更新**（17 §17.2.1 ⑦）。途中失敗時は据え置かれ、次回巡回が同じ差分を再検知する（**at-least-once**）。probe は読み取り検査で冪等のため重複実行は無害 |
-| 対象検索 → 検査の invoke | **非同期（Event invoke）**。Lambda 標準の自動リトライ（2 回）+ **DLQ（SQS）** を設定（MM-4）。同期にしないのは、1 アプリの検査失敗で巡回全体を巻き込まないため |
+| 対象検索 → 検査の invoke | **非同期（Event invoke）**。Lambda 標準の自動リトライ（関数エラーは 2 回＝1 分後・2 分後 / スロットル・5xx は最大 6 時間の指数バックオフ）+ **On-failure Destination（送信先 SQS）** を設定（MM-4）。同期にしないのは、1 アプリの検査失敗で巡回全体を巻き込まないため。**Destination を選んだ理由**: DLQ はイベント本文とエラーメッセージ先頭 1KB しか残らないのに対し、Destination は呼び出し記録（試行回数・リクエスト・レスポンス）を JSON で残せて障害調査が容易（2026-09-14 確定）|
 | 検査 Lambda 内の endpoint 失敗 | endpoint 単位で継続（1 endpoint のタイムアウトで残りを打ち切らない）。接続不能は 4×4 の WARN（構成）系に分類 |
-| アラート検知 Lambda | 既存設計のとおり（1 件でも失敗したら throw → リトライ / DLQ、15 §15.4）|
+| アラート検知 Lambda | 既存設計のとおり（1 件でも失敗したら throw → リトライ / On-failure Destination、15 §15.4）|
 | S3 API スロットリング | 認証構成情報連携バケットの List/Get はプレフィックス単位で十分な RPS があるが、SDK 標準リトライ（指数バックオフ）+ 対象検索 Lambda の直列処理で吸収。並列化する場合の制御は M-Q-16-2 |
 
 ### §18.5.3 スケール上限（Lambda 15 分制限）と fan-out 方針

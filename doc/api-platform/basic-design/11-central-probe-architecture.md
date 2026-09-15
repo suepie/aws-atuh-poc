@@ -75,13 +75,13 @@ Negative（未認証 → 401/403 期待）だけでは、「**認証が無いか
 | null(skip) | — | OK | — | public endpoint |
 
 → **「Negative=401/403 かつ Positive=200」のペアが揃って初めて OK**。分類結果（severity/priority）はアラート検知 Lambda（旧称: Alert Router、15 章）と同一ロジックを SSOT 共有。
-⚠ 表の 401/403 は「**アプリの認証レイヤーが返した**もの」が前提。**WAF が probe をブロックした 403 は別扱い**（WARN「境界でブロック」、§11.2.4）。
+【注意】表の 401/403 は「**アプリの認証レイヤーが返した**もの」が前提。**WAF が probe をブロックした 403 は別扱い**（WARN「境界でブロック」、§11.2.4）。
 
 ### §11.2.3 Smoke test
 
 canary 冒頭で**既知の挙動**を確認し、テスト基盤自体の健全性を担保する（token 失効・endpoint 構成変更を「認証漏れ」と誤認しないため）。Smoke 失敗時は「認証漏れ」ではなく「テスト基盤問題」として分離アラート。
 
-### §11.2.4 WAF 干渉と誤判定の防止 ⚠
+### §11.2.4 WAF 干渉と誤判定の防止 【注意】
 
 probe はインバウンド境界の **WAF を通過する**（12 §12.1.1）。WAF のルール（レートベース / Bot Control / ジオ制限等）が probe 自体をブロックすると、**応答コードが同じ 403 でも意味がまったく違う**ため、放置すると 2 種類の誤判定が起きる：
 
@@ -105,12 +105,12 @@ probe はインバウンド境界の **WAF を通過する**（12 §12.1.1）。
 
 | authPattern | Negative 期待 | Positive 手段 | 状態 |
 |---|---|---|:---:|
-| `api-gw-jwt` | 401/403 | Bearer（OAuth Client Credentials）| ✅ 検証済 |
-| `alb-code-jwt` | 401/403 | Bearer | ✅ |
+| `api-gw-jwt` | 401/403 | Bearer（OAuth Client Credentials）| ○ 検証済 |
+| `alb-code-jwt` | 401/403 | Bearer | ○ |
 | `alb-cookie-monolith` | **302 → /login** | Puppeteer ログインフロー | ◐ Negative 済 / Positive 要 PoC |
 | `bff-cookie-session` | **401 or 302**（BFF 実装依存）| Puppeteer ログイン → Cookie | ◐ Negative 済 / Positive 要 PoC |
-| `api-gw-iam` | 403 | SigV4 署名 | ⏳ Phase 2 |
-| `lambda-url-iam` | 403 | SigV4 署名 | ⏳ Phase 2 |
+| `api-gw-iam` | 403 | SigV4 署名 | Phase 2 予定 |
+| `lambda-url-iam` | 403 | SigV4 署名 | Phase 2 予定 |
 
 → **モノリス（Cookie セッション）も監視対象**（302 リダイレクトを認証拒否とみなす）。これが「API GW を使わないアプリも監査できる」根拠（14 章 §14.3）。
 
@@ -151,8 +151,8 @@ Positive probe（valid token → 200 期待）に使う認証情報は、**静�
 
 | レベル | canary スコープ | 漏洩時の影響 | 採否 |
 |---|---|---|:---:|
-| **A** | 全 API 横断の**読み取り専用** | canary として read-only GET が可能（中程度）| ✅ **Phase 1 採用** |
-| **B** ⭐ | **canary 専用テナント / 合成データのみ**読める | 実データに一切届かない（最小）| 🎯 **目標**（認証基盤 Keycloak のロール設計へ引き渡し）|
+| **A** | 全 API 横断の**読み取り専用** | canary として read-only GET が可能（中程度）| ○ **Phase 1 採用** |
+| **B** ★ | **canary 専用テナント / 合成データのみ**読める | 実データに一切届かない（最小）| **目標**（認証基盤 Keycloak のロール設計へ引き渡し）|
 
 > **方針**: Phase 1 は A（共通 1 クライアント + 短 TTL + 自動ローテ）で開始し、**B（canary 専用スコープ = 漏洩しても実データに届かない）を目標**とする。B は認証基盤側で「canary 専用テナント/スコープ」を用意する必要があり、[認証基盤 Keycloak ロール設計への引き渡し事項](../../adr/059-central-auth-check-canary-architecture.md)（M-Q-11-4）。機微データを扱う API から順に B へ移行する。
 
@@ -165,9 +165,9 @@ Positive probe（valid token → 200 期待）に使う認証情報は、**静�
 | 能力 | 現行（Lambda + 共通 probe lib）|
 |---|---|
 | endpoint 数 | 無制限（OpenAPI 動的発見）|
-| OpenAPI 追従 | ✅ 自動 |
+| OpenAPI 追従 | ○ 自動 |
 | OAuth / Secrets | `lib/token.js`（短命トークン、§11.3.1）|
-| Cookie モノリス Positive | ✅（Puppeteer 相当ロジック）|
+| Cookie モノリス Positive | ○（Puppeteer 相当ロジック）|
 
 > **heartbeat 型検査（旧 M2、廃止 2026-08-20）**: heartbeat 型の定期検査は日次の全量検査（モード2）に置換して廃止した（[18 章 §18.4.1](18-scan-modes-and-scheduling.md)）。将来 heartbeat や HAR・スクショ・Multilocation・実行履歴 UI が要る場合のみ、CloudWatch Synthetics（Puppeteer runtime）や Multi Checks Blueprint（≤10 endpoint を JSON で記述、OAuth ネイティブ）を実行環境として復活できる。**その場合も probe lib は共通**（14 章 §14.2）。
 
@@ -177,14 +177,14 @@ Positive probe（valid token → 200 期待）に使う認証情報は、**静�
 
 | 環境 | Negative | Positive (GET) | Positive (POST 等) | Smoke |
 |---|:---:|:---:|:---:|:---:|
-| Production | 対象 endpoint | 対象 GET | ❌ skip（副作用回避）| ✅ |
-| Staging / Dev | 対象 endpoint | 対象 GET | ✅（cleanup 付き）| ✅ |
+| Production | 対象 endpoint | 対象 GET | skip（対象外）（副作用回避）| ○ |
+| Staging / Dev | 対象 endpoint | 対象 GET | ○（cleanup 付き）| ○ |
 
 「対象 endpoint」= 自動差分検査（モード1）なら変更アプリの全 endpoint、全量検査（モード2）なら全 endpoint（[18 章](18-scan-modes-and-scheduling.md)）。制御は OpenAPI アノテーション `x-canary-positive-test: pre-prod-only`（13 章 §13.3）。POST の副作用回避は本番の鉄則。
 
-### §11.5.1 Negative 側の更新系メソッド ⚠ 未決（M-Q-11-6）
+### §11.5.1 Negative 側の更新系メソッド 【注意】未決（M-Q-11-6）
 
-上表の「POST 等 ❌ skip」は **Positive にのみ**かかる規則で、**Negative は本番でも全メソッドが対象**になっている。ここに副作用の穴がある:
+上表の「POST 等 skip（対象外）」は **Positive にのみ**かかる規則で、**Negative は本番でも全メソッドが対象**になっている。ここに副作用の穴がある:
 
 | 認証の状態 | 未認証の POST を投げると | 副作用 |
 |---|---|---|
@@ -249,7 +249,7 @@ paths:
 | classify | `classify(401,200)`→OK、`classify(null,undefined)`→OK |
 | 結果 | CloudWatch `AuthCheckPassed=2`、アラートなし、canary PASS |
 
-### §11.8.2 ケース 2：認証漏れを検知（CRITICAL/P1）🔥
+### §11.8.2 ケース 2：認証漏れを検知（CRITICAL/P1）
 
 アプリチームが誤って `/api/orders` を `AuthorizationType=NONE` でデプロイ（アノテーションなし = 認証必須のはず）。
 
@@ -264,7 +264,7 @@ paths:
 |---|---|
 | probe | Negative（認証なし）→ API GW に Authorizer なし → **200 が返る** |
 | classify | `classify(200, undefined)` → Negative が 2xx = **CRITICAL/P1**（Auth missing or bypassed）|
-| alert-router | App Registry `alertRouting.p1`（Security SNS）へ Publish → 🔥「expense-api/prod GET /api/orders が未認証で 200」|
+| alert-router | App Registry `alertRouting.p1`（Security SNS）へ Publish → P1「expense-api/prod GET /api/orders が未認証で 200」|
 | アラーム | `AuthCheckCritical > 0` の CloudWatch アラーム発火（18 章 §18.4）|
 
 → **静的解析をすり抜けた認証漏れを実トラフィックで捕捉**。本機構の存在意義。
@@ -277,7 +277,7 @@ paths:
 |---|---|
 | probe | Negative→401（認証は正常に動作）/ Positive（失効 Bearer）→401 |
 | classify | `classify(401,401)` → 両方拒否 = **WARN/P2**（Test token expired）|
-| alert-router | P2 Platform チームへ（Security ではない）→ 🟡「canary の token を確認」|
+| alert-router | P2 Platform チームへ（Security ではない）→ P2「canary の token を確認」|
 
 → Negative だけなら「401 で OK」と誤判定していた。**Positive 併用で「認証 OK だがテストが壊れている」を分離**（§11.2.1 の核心）。
 
@@ -306,10 +306,10 @@ paths:
 | ケース | Neg | Pos | classify | アラート |
 |---|:---:|:---:|---|---|
 | 1 正常 JWT | 401 | 200 | OK | なし |
-| 2 認証漏れ | **200** | — | **CRITICAL/P1** | 🔥 Security 即時 |
-| 3 token 失効 | 401 | 401 | WARN/P2 | 🟡 Platform |
+| 2 認証漏れ | **200** | — | **CRITICAL/P1** | Security 即時 |
+| 3 token 失効 | 401 | 401 | WARN/P2 | Platform |
 | 4 モノリス正常 | 302 | — | OK | なし |
-| 4' モノリス漏れ | 200 | — | CRITICAL/P1 | 🔥 Security |
+| 4' モノリス漏れ | 200 | — | CRITICAL/P1 | Security |
 
 ---
 

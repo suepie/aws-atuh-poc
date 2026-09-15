@@ -214,9 +214,9 @@ CI で **Unit test + IaC lint + 静的解析**（[04 章](04-static-analysis-gui
 
 | 分類 | 通知先 | SLA |
 |---|---|:---:|
-| CRITICAL（認証漏れ、Neg=200）| Security オンコール | 🔥 P1 即時 |
-| WARN（token 失効 / 構成）| Platform | 🟡 P2 24h |
-| INFO（Backend バグ）| App team | 🟢 P3 通常 |
+| CRITICAL（認証漏れ、Neg=200）| Security オンコール | P1 即時 |
+| WARN（token 失効 / 構成）| Platform | P2 24h |
+| INFO（Backend バグ）| App team | P3 通常 |
 
 インシデント: 検知 → 4×4 分類 → 通知 → 修正（SLA 内）→ 事後レビュー → ルール/テスト更新。P1 は即時 deny / rollback を検討。
 

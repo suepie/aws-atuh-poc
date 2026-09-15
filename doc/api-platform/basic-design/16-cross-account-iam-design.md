@@ -96,7 +96,7 @@
 
 | ロール | 使い手 | 権限 |
 |---|---|---|
-| `DiscoveryLambdaRole` | 対象検索 Lambda | アカウント列挙（⚠ `organizations:ListAccounts` は管理アカウント限定のため、方式は M-Q-17-2 で確定: 案 a なら管理アカウントの列挙用ロールへの `sts:AssumeRole` / 案 b なら `ssm:GetParameter`）/ `sts:AssumeRole`（各 App の DiscoveryReadRole）/ `s3:PutObject・GetObject・ListBucket`（認証構成情報配置バケット の `registry/*` + `openapi/*`）/ `lambda:InvokeFunction`（認証実装チェック Lambda）|
+| `DiscoveryLambdaRole` | 対象検索 Lambda | アカウント列挙（【注意】`organizations:ListAccounts` は管理アカウント限定のため、方式は M-Q-17-2 で確定: 案 a なら管理アカウントの列挙用ロールへの `sts:AssumeRole` / 案 b なら `ssm:GetParameter`）/ `sts:AssumeRole`（各 App の DiscoveryReadRole）/ `s3:PutObject・GetObject・ListBucket`（認証構成情報配置バケット の `registry/*` + `openapi/*`）/ `lambda:InvokeFunction`（認証実装チェック Lambda）|
 | `CentralProbeRole` | 認証実装チェック Lambda | `s3:GetObject・ListBucket`（認証構成情報配置バケット：台帳 + spec）/ `secretsmanager:GetSecretValue` / `cloudwatch:PutMetricData` / `lambda:InvokeFunction`（アラート検知 Lambda ※旧称: Alert Router）|
 | `alert-router-lambda-role` | アラート検知 Lambda | `s3:GetObject`（`registry/*`、alertRouting 解決）/ `sns:Publish` |
 
@@ -122,7 +122,7 @@
 
 ---
 
-## §16.5 ⚠ ROSA 側前提との責任分界（BD-Q-01）
+## §16.5 【注意】ROSA 側前提との責任分界（BD-Q-01）
 
 アカウント配置は **2 つに分離**している：**インターネット境界（CloudFront/WAF、ADR-039）＝ネットワーク監査アカウント**（ROSA 側 P-18 で他組織管理になる可能性）と、**認証実装確認処理のリソース群（App Registry / OpenAPI Registry / 認証実装チェック Lambda / アラート検知 Lambda / Secrets）＝共通基盤アカウント（自社管理）**。
 

@@ -20,12 +20,12 @@
 
 | 対象 | 本章群で扱う |
 |---|---|
-| 認証実装チェック（Lambda / 検査ロジック probe lib）| ✅ 11 / 14 章 |
-| App Registry（S3 台帳）| ✅ 12 章 |
-| OpenAPI Registry（S3・台帳と同一バケット）| ✅ 13 章 |
-| アラート検知 Lambda（旧称: Alert Router。4×4 → SNS）| ✅ 15 章 |
-| クロスアカウント IAM / 配布 | ✅ 16 章 |
-| 静的解析 / Config Rules | ❌ 04 章・§FR-API-7（別領域）|
+| 認証実装チェック（Lambda / 検査ロジック probe lib）| ○ 11 / 14 章 |
+| App Registry（S3 台帳）| ○ 12 章 |
+| OpenAPI Registry（S3・台帳と同一バケット）| ○ 13 章 |
+| アラート検知 Lambda（旧称: Alert Router。4×4 → SNS）| ○ 15 章 |
+| クロスアカウント IAM / 配布 | ○ 16 章 |
+| 静的解析 / Config Rules | × 04 章・§FR-API-7（別領域）|
 
 ### §10.0.4 用語（英語のまま使う語の意味）
 
@@ -106,12 +106,12 @@ flowchart TB
 
 | 観点 | α: 各アプリ配置 | **β: 中央集約（採用）** |
 |---|:---:|:---:|
-| Deploy 漏れ | ⚠ 個別 deploy 必要、漏れリスク | ✅ **中央巡回が発見する側なので原理的にゼロ**（[ADR-061](../../adr/061-deploy-detection-pull-model.md)）|
-| 統一実装保証 | ⚠ アプリごとにばらつく | ✅ 認証実装確認処理 1 実装 |
+| Deploy 漏れ | 【注意】個別 deploy 必要、漏れリスク | ○ **中央巡回が発見する側なので原理的にゼロ**（[ADR-061](../../adr/061-deploy-detection-pull-model.md)）|
+| 統一実装保証 | 【注意】アプリごとにばらつく | ○ 認証実装確認処理 1 実装 |
 | 運用主体 | 各アプリチーム | 共通基盤チーム集約 |
-| メトリクス集約 | ⚠ クロスアカウント集約が別途必要 | ✅ 標準で 1 箇所 |
-| 「中央でチェック」思想 | ✗ | ✅ **一致** |
-| Blast radius | ✅ アプリ単位 | ⚠ Central 障害で全断（Multilocation で緩和）|
+| メトリクス集約 | 【注意】クロスアカウント集約が別途必要 | ○ 標準で 1 箇所 |
+| 「中央でチェック」思想 | ✗ | ○ **一致** |
+| Blast radius | ○ アプリ単位 | 【注意】Central 障害で全断（Multilocation で緩和）|
 
 → **「各アプリ実装を中央でチェックする」という要件目的に対し β が構造的に正解**。α の Deploy 漏れ防止に必要な SCP / Config / Dashboard の 3 段防御（[ADR-059 §F](../../adr/059-central-auth-check-canary-architecture.md)）が β では不要になる。
 
@@ -177,7 +177,7 @@ flowchart LR
     R --> T["③ 自動差分検査（モード1）起動<br/>/ 全量検査（モード2、日次+手動）<br/>（18 章）"]
     T --> P["④ probe<br/>Negative + Positive<br/>（11 章）"]
     P --> C{"⑤ classify<br/>4×4 真偽値表<br/>（11 章）"}
-    C -->|OK| OK["✅ Metrics 記録のみ"]
+    C -->|OK| OK["○ Metrics 記録のみ"]
     C -->|CRITICAL/WARN/INFO| A["⑥ アラート検知 Lambda<br/>（15 章）"]
     A --> N["⑦ 通知<br/>P1 Security / P2 Platform / P3 App"]
     N --> FIX["⑧ 是正<br/>SLA 内（05 章 §5.3.6）"]
@@ -311,7 +311,7 @@ flowchart TB
 - 経路 A は**インバウンド境界（CloudFront+WAF）を実ユーザーと同じ向きで通過**する（Origin Protection を破らない検査、12 §12.1.1）。**In 側はバイパスしない**
 - 経路 C/D は AWS API・AWS 網内であり、インターネット境界（In/Out とも）は**無関係**
 
-> ⚠ **Phase 2（Private API の probe、14 章 §14.4）では認証実装チェック Lambda のみ VPC 化が必要**になる（VPC + TGW で Internal ALB へ到達）。その時点で経路 A の Out 統制接続も再検討する。対象検索 Lambda とアラート検知 Lambda は Phase 2 でも VPC 外のまま。
+> 【注意】**Phase 2（Private API の probe、14 章 §14.4）では認証実装チェック Lambda のみ VPC 化が必要**になる（VPC + TGW で Internal ALB へ到達）。その時点で経路 A の Out 統制接続も再検討する。対象検索 Lambda とアラート検知 Lambda は Phase 2 でも VPC 外のまま。
 
 ---
 
@@ -349,7 +349,7 @@ sequenceDiagram
 |---|---|---|---|---|---|
 | W1 | 認証構成情報アップロード | App / ベンダー CI（`ArtifactUploadRole-{appId}` を Assume、デプロイ成功後）| App / 認証構成情報連携バケット S3（`{appId}/` プレフィックス）| `s3.ap-northeast-1.amazonaws.com` | 443、`s3:PutObject`（`{appId}/*` 限定、16 §16.2.2）|
 | W2 | 定期起動 | 共通基盤 / EventBridge Scheduler | 共通基盤 / 対象検索 Lambda | AWS サービス間（Scheduler → `lambda.ap-northeast-1.amazonaws.com`）| Scheduler 実行ロールで Invoke |
-| W3 | 対象アカウント列挙 | 共通基盤 / 対象検索 Lambda | 方式未確定（**M-Q-17-2**）| ⚠ `organizations:ListAccounts` は既定では管理アカウント限定 → **案 c（推奨）: Organizations 委任ポリシーで共通基盤に ListAccounts を委任し直接呼ぶ**（`organizations.us-east-1.amazonaws.com`、グローバル）/ 案 a: 管理アカウントの列挙用ロールへ AssumeRole / 案 b: 静的リスト（SSM）| 443、IAM |
+| W3 | 対象アカウント列挙 | 共通基盤 / 対象検索 Lambda | 方式未確定（**M-Q-17-2**）| 【注意】`organizations:ListAccounts` は既定では管理アカウント限定 → **案 c（推奨）: Organizations 委任ポリシーで共通基盤に ListAccounts を委任し直接呼ぶ**（`organizations.us-east-1.amazonaws.com`、グローバル）/ 案 a: 管理アカウントの列挙用ロールへ AssumeRole / 案 b: 静的リスト（SSM）| 443、IAM |
 | W4 | AssumeRole | 共通基盤 / 対象検索 Lambda（DiscoveryLambdaRole）| App / **DiscoveryReadRole** | `sts.ap-northeast-1.amazonaws.com`（リージョナル STS）| 443、sts:AssumeRole + ExternalId（16 §16.2）|
 | W5 | 認証構成情報列挙・VersionId 取得 | 共通基盤 / 対象検索 Lambda（DiscoveryReadRole の一時クレデンシャル）| App / 認証構成情報連携バケット S3（`{appId}/` プレフィックス）| `s3.ap-northeast-1.amazonaws.com` | 443、`ListObjectsV2` / `ListObjectVersions` |
 | W6 | 台帳読取 | 共通基盤 / 対象検索 Lambda | 共通基盤 / 認証構成情報配置バケット S3 `registry/` | `s3.ap-northeast-1.amazonaws.com` | 443、`GetObject`（同一アカウント IAM。`lastArtifactVersions` 比較）|
@@ -420,10 +420,10 @@ flowchart LR
 
 | 検証 | 状態 |
 |---|:---:|
-| 静的解析ルール（cfn-guard 3 + Semgrep 3）| ✅ フィクスチャ検証（**実バグ 2 件修正**）|
-| Lambda SDK 実挙動（app-registry PutItem / alert-router SNS Publish）| ✅ LocalStack 3.8.1 |
-| probe lib logic（classify / probe / extractEndpoints）| ✅ 27 テスト PASS |
-| full orchestration（認証実装チェック Lambda E2E / Positive probe / metrics 着地）| ⏳ SAM local or 実 AWS 要 |
+| 静的解析ルール（cfn-guard 3 + Semgrep 3）| ○ フィクスチャ検証（**実バグ 2 件修正**）|
+| Lambda SDK 実挙動（app-registry PutItem / alert-router SNS Publish）| ○ LocalStack 3.8.1 |
+| probe lib logic（classify / probe / extractEndpoints）| ○ 27 テスト PASS |
+| full orchestration（認証実装チェック Lambda E2E / Positive probe / metrics 着地）| 未実施 SAM local or 実 AWS 要 |
 
 → **ロジックは検証済み、残るは AWS 環境依存の full-run**（14 章 §14.5 に要 PoC 項目を明記）。
 

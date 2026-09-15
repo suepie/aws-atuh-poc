@@ -12,7 +12,7 @@ SSOT: doc/api-platform/basic-design/research/process-design-template.md
 上位は doc/excel/apipf.xlsx（基本設計書）。構成図・リソース一覧・データ定義・
 IAM・コスト・設計判断・未決は**そちらに一本化**し、本書には重複記載しない。
 
-⚠ 記入内容は Excel に直接書かず、必ず tools/process_catalog.py の d=... に書く
+【注意】記入内容は Excel に直接書かず、必ず tools/process_catalog.py の d=... に書く
    （本スクリプトは毎回ブックを作り直すため、Excel 側の手入力は失われる）。
    実行前に Excel を閉じること。
 """
@@ -205,7 +205,7 @@ def build_index_sheet(wb, titles):
         "1 処理 = 1 シートで I/O・シーケンス・例外を定義する。"
         f"構成図・リソース一覧・データ定義・IAM・コスト・設計判断・未決は上位の {UPSTREAM}（基本設計書）を参照（本書に重複記載しない）。"
         "設計の正は md（doc/api-platform/basic-design/ 10〜18 章）と tools/process_catalog.py。"
-        "⚠ 本セクションは tools/add_process_sheets_to_apipf.py の生成物。"
+        "【注意】本セクションは tools/add_process_sheets_to_apipf.py の生成物。"
         "記入は Excel でなく tools/process_catalog.py の d=dict(...) に書くこと（再生成で消えるため）。"))
     note.font, note.alignment = BASE, WRAP
     ws.row_dimensions[2].height = 40
@@ -228,7 +228,7 @@ def build_index_sheet(wb, titles):
         c.hyperlink = Hyperlink(ref=c.coordinate, location=f"'{t}'!A1")
         c.font, c.border, c.alignment = LINK, BOX, WRAP
         done = bool(p.get("d"))
-        c = ws.cell(row=rr, column=10, value="✅ 記入済" if done else "記入待ち")
+        c = ws.cell(row=rr, column=10, value="○ 記入済" if done else "記入待ち")
         c.font, c.border, c.alignment = BASE, BOX, WRAP
         if not done:
             c.fill = TODO_FILL
@@ -331,7 +331,7 @@ def main():
     lock = OUT.with_name("~$" + OUT.name)
     if lock.exists():
         raise SystemExit(
-            f"⚠ {OUT.name} が Excel で開かれています（{lock.name} を検出）。\n"
+            f"【注意】{OUT.name} が Excel で開かれています（{lock.name} を検出）。\n"
             "   Excel を閉じてから実行してください。開いたままだと、閉じる際に\n"
             "   Excel 側の内容で上書きされ、生成結果が失われます。")
     wb = Workbook()

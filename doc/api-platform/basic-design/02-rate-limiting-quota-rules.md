@@ -5,7 +5,7 @@
 位置付け: 総論 [01](01-cloud-guidelines-overview.md) §1.1.1 の死守事項 **RL-1〜4** を実装手順に詳細化する
 要件定義 SSOT: [../proposal/fr/03-throttling-quota.md](../proposal/fr/03-throttling-quota.md)（§FR-API-3）
 
-> ⚠ **本章の全数値は AWS 公式ドキュメントで裏取り済み（2026-07 時点）**。確認 URL は末尾「検証済み事実（一次資料）」節に列挙する。標準値（"暫定"表記）は本基盤のガイドライン提案値であり、AWS の仕様上限とは区別する。
+> 【注意】**本章の全数値は AWS 公式ドキュメントで裏取り済み（2026-07 時点）**。確認 URL は末尾「検証済み事実（一次資料）」節に列挙する。標準値（"暫定"表記）は本基盤のガイドライン提案値であり、AWS の仕様上限とは区別する。
 
 ---
 
@@ -148,13 +148,13 @@ Partner B2B 向け。**REST API のみ**で利用可能（HTTP / WebSocket API �
 
 ### §2.3.2 Partner 区分の表現（Tier 廃止 → P-1〜P-7 準拠）
 
-⚠ **Bronze / Silver / Gold の Tier 表現は廃止済み**（BD-P-04 / [§C-API-6 §C-6.2.5](../proposal/common/06-external-api-auth-architecture.md)）。Partner 区分は認証パターン **P-1〜P-7** で表現する。Usage Plan（API Key）が主役となるのは **P-5（API Key + Usage Plan）**。
+【注意】**Bronze / Silver / Gold の Tier 表現は廃止済み**（BD-P-04 / [§C-API-6 §C-6.2.5](../proposal/common/06-external-api-auth-architecture.md)）。Partner 区分は認証パターン **P-1〜P-7** で表現する。Usage Plan（API Key）が主役となるのは **P-5（API Key + Usage Plan）**。
 
 | Partner 認証パターン | 流量制御の主役 | Usage Plan の関与 |
 |---|---|---|
 | **P-1** OAuth Client Credentials | JWT（共有認証基盤）+ WAF | △ 併用可（API Key で識別・請求）|
 | **P-4** mTLS | 証明書 + WAF | △ 併用可 |
-| **P-5** API Key + Usage Plan | **Usage Plan（API Key）** | ⭐ 主役 |
+| **P-5** API Key + Usage Plan | **Usage Plan（API Key）** | ★ 主役 |
 | **P-6** HMAC Webhook | 署名検証 + WAF | – |
 | **P-7** AWS IAM SigV4 | IAM + WAF | – |
 
@@ -171,7 +171,7 @@ Partner 契約プラン別の throttle / quota 標準テンプレ。Service Cata
 | 標準商用 | 100 RPS | 200 | 1,000,000 / MONTH | 標準 B2B |
 | 大規模 | 個別 | 個別 | 個別 | 専用契約（アカウント上限との整合確認）|
 
-> ⚠ これらは AWS の仕様値ではなく **本基盤のガイドライン提案値**。トラフィック実績に基づく再設定は §2.10 BD-Q-02 へ引き渡す。長期 quota が要件にない Partner は Usage Plan quota を省き WAF throttle のみでも可。
+> 【注意】これらは AWS の仕様値ではなく **本基盤のガイドライン提案値**。トラフィック実績に基づく再設定は §2.10 BD-Q-02 へ引き渡す。長期 quota が要件にない Partner は Usage Plan quota を省き WAF throttle のみでも可。
 
 ### §2.3.4 WAF + Usage Plan 併用の標準構成（Partner REST API）
 
@@ -285,7 +285,7 @@ throttle / quota / WAF いずれの超過でも、クライアントが正しく
 | AWS WAF | **`BlockedRequests`** / `CountedRequests` / `AllowedRequests` | rate-based の遮断・観測量（§2.2.3 の段階投入判定に使用）|
 | CloudFront | `Requests`, `4xxErrorRate`, cache hit rate | Edge 負荷・cache 効果 |
 
-> ⚠ 429 は API Gateway の標準メトリクスで単独カウントされず `4XXError` に含まれる。**access log / CloudWatch Logs Insights で status=429 を抽出**して分離集計する（§FR-API-3 §3.3.1 と整合）。
+> 【注意】429 は API Gateway の標準メトリクスで単独カウントされず `4XXError` に含まれる。**access log / CloudWatch Logs Insights で status=429 を抽出**して分離集計する（§FR-API-3 §3.3.1 と整合）。
 
 ### §2.7.2 標準ダッシュボード / アラート
 

@@ -44,7 +44,7 @@
 | §3.5 Outbound SaaS 監視 | [§C-API-6 §C-6.2.6.4](../proposal/common/06-external-api-auth-architecture.md) Outbound ガバナンス「コスト按分」 |
 | §3.6 ダッシュボード | §NFR-API-8 §8.1 コストベースライン |
 
-> ⚠ 要件 SSOT との差分は §3.9 に列挙。本章では**タグキーの命名を要件定義の記載から実装向けに一部正規化**しており、その根拠も §3.9 に記載する。
+> 【注意】要件 SSOT との差分は §3.9 に列挙。本章では**タグキーの命名を要件定義の記載から実装向けに一部正規化**しており、その根拠も §3.9 に記載する。
 
 ---
 
@@ -141,10 +141,10 @@ flowchart TB
 
 | タグキー | 必須 | 値の規約 | 用途 |
 |---|:---:|---|---|
-| `app-id` | ✅ | `app-` 前缀 + 小文字英数ハイフン（例 `app-checkout`）。App Registry の app_id と一致必須 | アプリ単位のコスト按分の主キー。認証実装確認処理の App Registry（[ADR-059](../../adr/059-central-auth-check-canary-architecture.md)）と突合 |
-| `env` | ✅ | `prod` / `stg` / `dev` のいずれか（列挙値のみ） | 環境別コスト追跡・Budgets 分割 |
-| `cost-center` | ✅ | `cc-` 前缀 + 組織の部門コード（例 `cc-ec`）。組織側標準名は BD-Q-03 で確定 | 内部部門への按分・請求 |
-| `owner` | ✅ | 責任チームの連絡先（メール DL 推奨、例 `team-checkout@example.com`） | コスト異常時のエスカレーション先 |
+| `app-id` | ○ | `app-` 前缀 + 小文字英数ハイフン（例 `app-checkout`）。App Registry の app_id と一致必須 | アプリ単位のコスト按分の主キー。認証実装確認処理の App Registry（[ADR-059](../../adr/059-central-auth-check-canary-architecture.md)）と突合 |
+| `env` | ○ | `prod` / `stg` / `dev` のいずれか（列挙値のみ） | 環境別コスト追跡・Budgets 分割 |
+| `cost-center` | ○ | `cc-` 前缀 + 組織の部門コード（例 `cc-ec`）。組織側標準名は BD-Q-03 で確定 | 内部部門への按分・請求 |
+| `owner` | ○ | 責任チームの連絡先（メール DL 推奨、例 `team-checkout@example.com`） | コスト異常時のエスカレーション先 |
 | `exposure` | 推奨 | `public` / `internal` / `partner` / `private` | [02 流量制御](02-rate-limiting-quota-rules.md) / FMS 配信キーと共用 |
 | `tenant` | 条件付 | `tenant-` 前缀（マルチテナント運用時のみ） | テナント別按分（粒度が必要な場合） |
 
@@ -186,7 +186,7 @@ flowchart TB
 
 | 種類 | 用途 | 本章での採否 |
 |---|---|---|
-| **Cost budgets** | 支出上限の設定・超過アラート | ✅ 必須（app/env 単位） |
+| **Cost budgets** | 支出上限の設定・超過アラート | ○ 必須（app/env 単位） |
 | **Usage budgets** | サービス使用量（例 リクエスト数）の上限監視 | ○ 高コスト API で任意採用 |
 | **RI utilization / coverage budgets** | Reserved Instances の利用率・カバレッジ監視 | 全社側（本章対象外） |
 | **Savings Plans utilization / coverage budgets** | Savings Plans の利用率・カバレッジ監視 | 全社側（[§NFR-API-8 §8.3](../proposal/nfr/08-cost.md)） |
@@ -212,8 +212,8 @@ Budget Actions（AWS 公式で確認、2026-07 時点）は、閾値超過時に
 
 | 採れるアクション（AWS 公式） | 本章の採否 |
 |---|---|
-| IAM ポリシー適用（例: Deny で新規リソース作成を制限） | ⚠ Phase 1 では **マニュアル承認モードのみ**採用検討 |
-| SCP（Service Control Policy）適用（管理アカウントから他アカウントへ可） | ⚠ 同上、影響大のため慎重運用 |
+| IAM ポリシー適用（例: Deny で新規リソース作成を制限） | 【注意】Phase 1 では **マニュアル承認モードのみ**採用検討 |
+| SCP（Service Control Policy）適用（管理アカウントから他アカウントへ可） | 【注意】同上、影響大のため慎重運用 |
 | 対象 EC2 / RDS インスタンスの停止 | ✕ 本プラットフォームは Lambda/Fargate 主体のため非該当。**他アカウントの EC2/RDS は対象不可** |
 
 > **設計判断（D-G-032）**: **Phase 1 では Budget Actions の自動実行は既定 OFF**。理由は、prod の課金超過で IAM/SCP を自動適用すると**正規リクエストまで巻き込んで停止**し可用性を損なうため。まず通知（§3.3.2）で運用が回ることを確認し、**マニュアル承認付き Action** から段階導入する。自動アクションは dev/stg の暴走抑止など限定用途に留める。
@@ -232,7 +232,7 @@ Partner（法人テナント）の識別は **API Gateway Usage Plan + API Key**
 |---|---|
 | Usage Plan の役割 | どの API ステージ・メソッドに、どの API Key でアクセスできるかを規定し、スロットリング/クォータを設定 |
 | API Key の識別性 | Usage Plan は **API Key で API クライアントを識別**。API Key ↔ Partner（法人テナント）を対応づける（[§FR-API-4 §4.1.1](../proposal/fr/04-metering-billing.md)） |
-| **⚠ API Key は認証手段ではない** | AWS 公式明記: **同一 Usage Plan 内の複数 API を 1 つの有効な API Key で横断アクセスできてしまう**。アクセス制御は Lambda Authorizer / IAM / Cognito で別途行う。API Key は**あくまで「識別・計測」用途**（BD-P-04 の認証パターンと役割分離） |
+| **【注意】API Key は認証手段ではない** | AWS 公式明記: **同一 Usage Plan 内の複数 API を 1 つの有効な API Key で横断アクセスできてしまう**。アクセス制御は Lambda Authorizer / IAM / Cognito で別途行う。API Key は**あくまで「識別・計測」用途**（BD-P-04 の認証パターンと役割分離） |
 
 ### §3.4.2 利用量計測（GetUsage）
 
@@ -243,7 +243,7 @@ Partner（法人テナント）の識別は **API Gateway Usage Plan + API Key**
 | **Usage Plan の GetUsage API** | AWS 公式確認: 指定期間の **API Key ごとの日次ログ `[used quota, remaining quota]`**（使用済み/残クォータ） | Usage Plan の**クォータ消費量**が取れる。1 リクエストあたり最大 500 件・ページング |
 | **API Gateway access log**（マスク済 apiKey フィールド） | requestId / method / path / status / latency / responseLength 等（[§FR-API-4 §4.2.1](../proposal/fr/04-metering-billing.md)） | リクエスト**詳細**が取れる。EMF で `tenant_id` 次元のメトリクス化も可 |
 
-> ⚠ **Usage Plan のクォータ/スロットルは「ベストエフォート・非ハードリミット」**（AWS 公式明記）。クライアントは設定値を一時的に超え得るため、**課金・アクセス制御を Usage Plan だけに依存しない**。コスト管理は AWS Budgets、流量制御は WAF（02 章）を併用する。
+> 【注意】**Usage Plan のクォータ/スロットルは「ベストエフォート・非ハードリミット」**（AWS 公式明記）。クライアントは設定値を一時的に超え得るため、**課金・アクセス制御を Usage Plan だけに依存しない**。コスト管理は AWS Budgets、流量制御は WAF（02 章）を併用する。
 
 ### §3.4.3 按分の集計フロー（CUR + Athena）
 

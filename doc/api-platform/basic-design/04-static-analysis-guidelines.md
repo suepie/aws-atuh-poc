@@ -18,7 +18,7 @@
 
 **主な判断軸**: 検知 5 レイヤー（[§C-API-6 §C-6.6](../proposal/common/06-external-api-auth-architecture.md)）のうち **L1（IaC Pre-Deploy）と L3（Static Code）** を実装対象化。①②で「何を検査するか」、③で「いつ・どう止めるか」を定める。誤検知を抑えつつ死守事項を強制する。
 
-> ⚠ **ファクト検証注記（2026-07 時点）**: 本章の cdk-nag ルール ID は公式 [cdk-nag RULES.md](https://github.com/cdklabs/cdk-nag/blob/main/RULES.md) で実在確認済み。§C-API-6 §C-6.6.4 の旧サンプルに存在しないルール ID（`LMB5` / `ELB7`）があったため、本章では**正しい ID のみ**を記載する（§4.2.4 / 検証済み事実）。
+> 【注意】**ファクト検証注記（2026-07 時点）**: 本章の cdk-nag ルール ID は公式 [cdk-nag RULES.md](https://github.com/cdklabs/cdk-nag/blob/main/RULES.md) で実在確認済み。§C-API-6 §C-6.6.4 の旧サンプルに存在しないルール ID（`LMB5` / `ELB7`）があったため、本章では**正しい ID のみ**を記載する（§4.2.4 / 検証済み事実）。
 
 ### §4.0.1 全体像（3 本柱と流れ）
 
@@ -165,14 +165,14 @@ Aspects.of(stack).add(new AwsSolutionsChecks({ verbose: true }));
 
 ### §4.2.4 cdk-nag 関連の実在ルール ID（公式 RULES.md 確認済み）
 
-**⚠ 以下は cdk-nag 公式 RULES.md で実在確認した ID のみ**（2026-07 時点）:
+**【注意】以下は cdk-nag 公式 RULES.md で実在確認した ID のみ**（2026-07 時点）:
 
 | ルール ID | 検査内容 | 本標準での意味 |
 |---|---|---|
 | **AwsSolutions-APIG1** | API に access logging が有効か | 監査ログ |
 | **AwsSolutions-APIG2** | REST API に request validation が有効か | 入力検証 |
 | **AwsSolutions-APIG3** | REST API stage が WAFv2 web ACL に関連付いているか | Origin/WAF（RL-1）|
-| **AwsSolutions-APIG4** ⭐ | API が authorization を実装しているか（IAM / Cognito / カスタム Authorizer）| **認証必須（SA-1 の中核）**|
+| **AwsSolutions-APIG4** ★ | API が authorization を実装しているか（IAM / Cognito / カスタム Authorizer）| **認証必須（SA-1 の中核）**|
 | **AwsSolutions-APIG6** | REST API Stage が全 method で CloudWatch logging 有効か | 実行ログ |
 | **AwsSolutions-L1** | 非コンテナ Lambda が最新ランタイムか | ランタイム鮮度 |
 | **AwsSolutions-ELB2** | ELB に access logs が有効か | ALB 監査ログ |
@@ -180,7 +180,7 @@ Aspects.of(stack).add(new AwsSolutionsChecks({ verbose: true }));
 | **AwsSolutions-CFR2** | CloudFront が WAF 統合を要するか | Origin/WAF |
 | **AwsSolutions-CFR3** | CloudFront に access logging が有効か | CDN ログ |
 
-> **⚠ 存在しないルール ID に注意**: cdk-nag に **`LMB` prefix は存在しない**（Lambda は `L1`）。ALB access logging は `ELB2`（`ELB7` は存在しない）。§C-6.6.4 旧サンプルの `LMB5` / `ELB7` は誤りであり使用禁止。**Lambda Function URL の AuthType を検査する cdk-nag ルールは存在しない**ため、これは cfn-guard（§4.2.2）で担保する。
+> **【注意】存在しないルール ID に注意**: cdk-nag に **`LMB` prefix は存在しない**（Lambda は `L1`）。ALB access logging は `ELB2`（`ELB7` は存在しない）。§C-6.6.4 旧サンプルの `LMB5` / `ELB7` は誤りであり使用禁止。**Lambda Function URL の AuthType を検査する cdk-nag ルールは存在しない**ため、これは cfn-guard（§4.2.2）で担保する。
 
 ### §4.2.5 suppress の作法
 - 例外は `NagSuppressions.addResourceSuppressions()` で個別に、理由を必須記載
@@ -247,7 +247,7 @@ rules:
 
 > Semgrep ルール構文: `rules[]` に `id` / `pattern`（`pattern-either` / `pattern-not` / `patterns`）/ `message` / `severity`（ERROR/WARNING/INFO）/ `languages`。自作ルールは `code-samples/semgrep-rules/` で管理。
 >
-> ⚠ **P4-1 で発見した実バグ**: `fastapi-missing-auth-middleware` は素朴に書くと健全コードで誤検知した。`patterns:` リスト形式 + `pattern-not-inside` 末尾 `...` で修正済み（[research/phase4-local-verification-results.md](research/phase4-local-verification-results.md)）。ルールは「走らせて誤検知ゼロ」を確認してから配布する。
+> 【注意】**P4-1 で発見した実バグ**: `fastapi-missing-auth-middleware` は素朴に書くと健全コードで誤検知した。`patterns:` リスト形式 + `pattern-not-inside` 末尾 `...` で修正済み（[research/phase4-local-verification-results.md](research/phase4-local-verification-results.md)）。ルールは「走らせて誤検知ゼロ」を確認してから配布する。
 
 ### §4.3.3 シークレット走査
 

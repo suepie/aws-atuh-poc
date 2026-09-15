@@ -51,7 +51,7 @@ canary/Lambda が読む App Registry(DynamoDB) / OpenAPI Registry(S3) / SNS / Se
 4. `awslocal`（or `aws --endpoint-url=http://localhost:4566`）で **App Registry テーブル / OpenAPI バケット / SNS トピック / Secret を作成するスクリプト**を用意・実行
 5. Lambda handler（app-registry / openapi-export / alert-router）を LocalStack エンドポイント向けに実行し、DynamoDB Put / Custom Resource 応答 / SNS Publish の実挙動を検証
 
-> ⚠ **LocalStack は CloudWatch Synthetics 非対応**。canary 本体は Step 1（SAM local）で動かし、その probe 先・データ源として LocalStack を併用する構成になります。
+> 【注意】**LocalStack は CloudWatch Synthetics 非対応**。canary 本体は Step 1（SAM local）で動かし、その probe 先・データ源として LocalStack を併用する構成になります。
 
 ---
 

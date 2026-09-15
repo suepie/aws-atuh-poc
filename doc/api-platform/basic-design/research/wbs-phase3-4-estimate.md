@@ -53,8 +53,8 @@ SigV4 Positive / Cookie Positive・cleanup / heartbeat 型検査（旧 M2、廃�
 | A3-i | 基盤IaC | S3 Lifecycle 実装 | Lifecycle ルール適用・確認 | A3-d | 1 | 0.15 |
 | A4-d | 基盤IaC | SNS 設計 | P1/P2/P3 のトピック名・サブスクリプション（W1-5 の DL）・アクセスポリシー | W1-5 | 0.5 | 0.1 |
 | A4-i | 基盤IaC | SNS 実装 | 3 トピック + メールサブスクリプション作成・確認メール承認 | A4-d | 2 | 0.25 |
-| A5-d | 基盤IaC | SQS DLQ 設計 | 検査 Lambda 用 / アラート検知 Lambda（旧称: Alert Router）用の 2 本。保持期間・再処理手順の方針。【補足】DLQ（デッドレターキュー）＝処理に失敗したメッセージの退避先。失敗を握り潰さず、後から中身を見て再処理・原因調査するための受け皿 | — | 0.5 | 0.1 |
-| A5-i | 基盤IaC | SQS DLQ 実装 | 2 キュー作成・Lambda 非同期設定への紐付け | A5-d | 2 | 0.25 |
+| A5-d | 基盤IaC | 失敗記録キュー（On-failure Destination）設計 | 検査 Lambda 用 / アラート検知 Lambda（旧称: Alert Router）用の 2 本。保持期間・再処理手順の方針。【補足】非同期呼び出しがリトライ後も失敗したときの退避先。**2026-09-14 に DLQ から On-failure Destination へ変更**（DLQ はイベント本文とエラーメッセージ先頭 1KB しか残らないのに対し、Destination は試行回数・リクエスト・レスポンスを JSON で残せて障害調査が容易）。送信先は SQS。※ EventBridge Scheduler 側は Destination 非対応のため従来どおり DLQ | — | 0.5 | 0.1 |
+| A5-i | 基盤IaC | 失敗記録キュー 実装 | 2 キュー作成・Lambda の On-failure Destination 設定への紐付け（Scheduler 用 DLQ を含む）| A5-d | 2 | 0.25 |
 | A6-d | 基盤IaC | Scheduler 設計 | rate(1 hour)・リトライポリシー（回数/間隔）・Scheduler 側 DLQ・実行ロール | — | 1 | 0.15 |
 | A6-i | 基盤IaC | Scheduler 実装 | EventBridge Scheduler 作成・対象検索 Lambda（旧称: 発見 Lambda）への紐付け・空振り起動確認 | A6-d | 2 | 0.25 |
 | A7-d | 基盤IaC | IAM: DiscoveryLambdaRole 設計 | ポリシー明細（ListAccounts 委任呼出 / sts:AssumeRole / S3 registry・openapi / lambda:Invoke）と信頼ポリシー | — | 1 | 0.15 |

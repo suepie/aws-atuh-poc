@@ -112,7 +112,7 @@ API プラットフォーム標準（`proposal/` 配下）は **要件・設計�
 | A. SPA + API | API GW + CloudFront | IaC + フロント / API コード | ブラウザが Bearer 保持 |
 | B. SSR + API | API GW + CloudFront | IaC + SSR / API コード | Session cookie + サーバ側 JWT |
 | C. SSR モノリス | ALB + CloudFront | IaC + モノリスコード | ALB Cognito or アプリ内 session |
-| **D. BFF** ⭐ | **BFF（CloudFront）+ 背後 API** | IaC + BFF / API コード | **ブラウザ↔BFF=Cookie / BFF↔API=Bearer（2 層）** |
+| **D. BFF** ★ | **BFF（CloudFront）+ 背後 API** | IaC + BFF / API コード | **ブラウザ↔BFF=Cookie / BFF↔API=Bearer（2 層）** |
 
 → D（BFF）は外形監視で authPattern `bff-cookie-session`（[18 章](18-scan-modes-and-scheduling.md) / 11 章 §11.3）、CSRF は [ADR-057](../../adr/057-csrf-protection-responsibility-boundary.md) 準拠。
 

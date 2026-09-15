@@ -26,7 +26,7 @@
 
 認証実装確認処理は台帳の `openApiS3Key` でこのキーを引き、`lib/openapi.js` の `fetchSpec` で取得・parse する。
 
-> ⚠ **実装注意（Phase 4 検証で判明）**: LocalStack でのローカルテストは S3 の **virtual-host addressing** で失敗する（`forcePathStyle` 要）。これは LocalStack 固有で**実 AWS では発生しない**。full-run は SAM local か実 AWS で（[research](research/phase4-local-verification-results.md)）。
+> 【注意】**実装注意（Phase 4 検証で判明）**: LocalStack でのローカルテストは S3 の **virtual-host addressing** で失敗する（`forcePathStyle` 要）。これは LocalStack 固有で**実 AWS では発生しない**。full-run は SAM local か実 AWS で（[research](research/phase4-local-verification-results.md)）。
 
 ---
 
@@ -46,7 +46,7 @@ sequenceDiagram
     DISC->>S3: PutObject（同一アカウント、openapi/{accountId}/{appId}/openapi.yaml）
 ```
 
-> **⚠ 認証構成情報の性質（drift 注意）**: 認証構成情報の spec は「**デプロイパイプラインがアップロードしたデプロイ版の写し**」であり、アップロード忘れ・誤りがあれば本番と乖離（drift）し得る（**原則アプリ責任**、17 §17.2.2 / M-Q-17-7）。乖離は probe の実測で顕在化する（spec にあるが本番に無い → 404/WARN、公開印漏れ → P1）が、能動検出の要否は M-Q-17-6。旧方式（〜2026-08-21: CodeCommit `GetFile` によるリポジトリ内 spec 正本 / さらに旧の API GW GetExport）との比較・変更経緯は ADR-061。
+> **【注意】認証構成情報の性質（drift 注意）**: 認証構成情報の spec は「**デプロイパイプラインがアップロードしたデプロイ版の写し**」であり、アップロード忘れ・誤りがあれば本番と乖離（drift）し得る（**原則アプリ責任**、17 §17.2.2 / M-Q-17-7）。乖離は probe の実測で顕在化する（spec にあるが本番に無い → 404/WARN、公開印漏れ → P1）が、能動検出の要否は M-Q-17-6。旧方式（〜2026-08-21: CodeCommit `GetFile` によるリポジトリ内 spec 正本 / さらに旧の API GW GetExport）との比較・変更経緯は ADR-061。
 > 旧 GetExport 実装（[`openapi-export-lambda/`](code-samples/openapi-export-lambda/)、body=Uint8Array 等の公式確認済み）は参考保管。
 
 ---
@@ -55,7 +55,7 @@ sequenceDiagram
 
 probe 挙動を OpenAPI 上で制御する。アプリチームは通常の API 設計に加えてこれらを書くだけ。
 
-### §13.3.0 公開明示は必須（default-deny）⭐
+### §13.3.0 公開明示は必須（default-deny）★
 
 > **死守事項 MON-1**: すべての endpoint は **デフォルトで「認証必須」** とみなす。**認証不要（public）な endpoint は `x-synthetics-skip-auth-check: true` を必ず明示する**。明示のない endpoint は認証必須として Negative probe で検査し、未認証で 2xx が返れば CRITICAL/P1（認証漏れ）とする。
 
@@ -111,7 +111,7 @@ paths:
 
 **自動差分検査（モード1）のトリガは対象検索 Lambda の巡回差分（認証構成情報 VersionId 比較、[17 章 §17.2](17-deployment-integration-and-registration.md)）であり、S3 イベントではない**（[ADR-061](../../adr/061-deploy-detection-pull-model.md)）。OpenAPI Registry は「probe が読むデプロイ版のコピー」+「Versioning による履歴」を担う。
 
-- ⚠ **差分粒度はアプリ単位**（18 章 §18.2.1）: 巡回は認証構成情報の VersionId 変化で「変更があった」ことだけ判定し、**endpoint 単位に絞らず「そのアプリの全 endpoint」を probe** する。理由は、認証コードだけ変えて OpenAPI が不変なケース（middleware 削除等）を見逃さないため（認証構成情報の差分からも endpoint への影響は判定できない）。
+- 【注意】**差分粒度はアプリ単位**（18 章 §18.2.1）: 巡回は認証構成情報の VersionId 変化で「変更があった」ことだけ判定し、**endpoint 単位に絞らず「そのアプリの全 endpoint」を probe** する。理由は、認証コードだけ変えて OpenAPI が不変なケース（middleware 削除等）を見逃さないため（認証構成情報の差分からも endpoint への影響は判定できない）。
 - 任意の `deploy-info.json`（commitId 等、17 §17.3）は「何が変わったか」の**参考情報**（アラート本文への付記）に使えるが、probe 範囲の絞り込みには使わない。
 
 > **なぜ endpoint 単位に絞らないか**は 18 章 §18.2.1 の設計判断 D-M-18-2 参照。

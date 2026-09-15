@@ -25,10 +25,10 @@
 
 | 対象 | 期待 | 実測（修正前）| 実測（修正後）|
 |---|---|---|---|
-| vulnerable.py | 全ルール検知 | **5 検知**（P6×1 / P5×3 / P3×1）✅ | 5 検知 ✅ |
-| clean.py | 検知ゼロ | **1 検知（FP）** ⚠ | **0 検知** ✅ |
+| vulnerable.py | 全ルール検知 | **5 検知**（P6×1 / P5×3 / P3×1）○ | 5 検知 ○ |
+| clean.py | 検知ゼロ | **1 検知（FP）** 【注意】| **0 検知** ○ |
 
-**🐛 実バグ発見・修正**: `fastapi-missing-auth-middleware` が middleware のある健全コードでも誤発火（false positive）していた。
+**不具合 実バグ発見・修正**: `fastapi-missing-auth-middleware` が middleware のある健全コードでも誤発火（false positive）していた。
 - **原因**: (1) `pattern:` / `pattern-not-inside:` のトップレベル併記形式では期待通り動かず、(2) `pattern-not-inside` の末尾に `...` が無いとモジュールトップレベルの `FastAPI()` 代入が範囲「内側」と判定されない。
 - **修正**: `patterns:` リスト形式に変更 + `pattern-not-inside` 末尾に `...` を追加（`python-auth.yaml` に反映済み、コメントで理由明記）。
 - **教訓**: Semgrep の `pattern-not-inside` はマッチ対象が範囲の先頭ノードだと「内側」と見なされない。トレーリング `...` で範囲を延ばす必要がある。**実行しないと分からない類の不具合**。
@@ -39,10 +39,10 @@
 
 | 対象 | 期待 | 実測（修正前）| 実測（修正後）|
 |---|---|---|---|
-| noncompliant.yaml | 3 ルール FAIL | Status=FAIL、3/3 FAIL ✅ | 3/3 FAIL ✅ |
-| compliant.yaml | 全 PASS | **Status=FAIL（1 ルール誤 FAIL）** ⚠ | **Status=PASS、3/3 PASS** ✅ |
+| noncompliant.yaml | 3 ルール FAIL | Status=FAIL、3/3 FAIL ○ | 3/3 FAIL ○ |
+| compliant.yaml | 全 PASS | **Status=FAIL（1 ルール誤 FAIL）** 【注意】| **Status=PASS、3/3 PASS** ○ |
 
-**🐛 実バグ発見・修正**: `alb_must_have_auth_action` が「**全** DefaultAction が認証型」を要求し、標準的な `[authenticate-oidc, forward]` の 2 段構成（認証 → 転送）で `forward` に対し誤 FAIL していた。
+**不具合 実バグ発見・修正**: `alb_must_have_auth_action` が「**全** DefaultAction が認証型」を要求し、標準的な `[authenticate-oidc, forward]` の 2 段構成（認証 → 転送）で `forward` に対し誤 FAIL していた。
 - **原因**: `%...DefaultActions[*] { Type IN [...] }` は全要素に条件を課す（ALL 意味論）。
 - **修正**: `some %...DefaultActions[*].Type IN [...]` に変更し「**少なくとも 1 つ**が認証 action」の意味論に（`api-gw-authorizer-required.guard` に反映済み、コメントで理由明記）。
 - **教訓**: cfn-guard の配列アクセス `[*]` は ALL 意味論。「いずれか」は `some` 演算子が必要。**実行しないと分からない**。
@@ -58,18 +58,18 @@
 
 | コンポーネント | 検証 | 結果 |
 |---|---|---|
-| **alert-router-lambda** | `test/routing.test.js`（4×4 分類 → SNS 振り分け）| **19/19 PASS** ✅ |
+| **alert-router-lambda** | `test/routing.test.js`（4×4 分類 → SNS 振り分け）| **19/19 PASS** ○ |
 
 ### 2.2 SDK 実挙動（LocalStack、2026-07-25 追加実施）
 
 ユーザーが Docker Desktop を起動 → **LocalStack 3.8.1（community、auth 不要）** をコンテナ起動し、実 AWS サービスエミュレーションで handler を実行。SDK v3 は `AWS_ENDPOINT_URL=http://localhost:4566` で LocalStack へルーティング。
 
-> ⚠ LocalStack の `latest`(2026.7.0) は auth token 必須に変わっていたため、**community は `3.8.1` にピン留め**が必要（本検証で判明）。
+> 【注意】LocalStack の `latest`(2026.7.0) は auth token 必須に変わっていたため、**community は `3.8.1` にピン留め**が必要（本検証で判明）。
 
 | コンポーネント | 検証内容 | 結果 |
 |---|---|---|
-| **app-registry-lambda** | Custom Resource Create イベントで実行 → LocalStack DynamoDB に PutItem | ✅ scan で item 確認（`enabled:"true"`→Boolean `true` 正規化も動作、cfn-response の mock URL 失敗も graceful に resolve = stuck しない）|
-| **alert-router-lambda** | 本番フロー: canary イベント(ARN なし) → App Registry(DDB) GetItem で alertRouting 解決 → SNS Publish | ✅ **P1 topic に publish、実 MessageId 取得**（`published:true, priority:P1`）|
+| **app-registry-lambda** | Custom Resource Create イベントで実行 → LocalStack DynamoDB に PutItem | ○ scan で item 確認（`enabled:"true"`→Boolean `true` 正規化も動作、cfn-response の mock URL 失敗も graceful に resolve = stuck しない）|
+| **alert-router-lambda** | 本番フロー: canary イベント(ARN なし) → App Registry(DDB) GetItem で alertRouting 解決 → SNS Publish | ○ **P1 topic に publish、実 MessageId 取得**（`published:true, priority:P1`）|
 
 **実証できたこと**:
 - SDK v3 の DynamoDB DocumentClient PutCommand / GetItemCommand、SNS PublishCommand が実際に動く
@@ -85,10 +85,10 @@
 
 | ケース | probe 実測 | classify 実測 | 結果 |
 |---|---|---|---|
-| api-gw-jwt 認証あり endpoint | Neg=401 | OK | ✅ |
-| api-gw-jwt 認証漏れ endpoint | Neg=200 | **CRITICAL/P1** | ✅ |
-| alb-cookie-monolith 未認証 | Neg=302 | OK | ✅ |
-| skipAuthCheck=true（public）| Neg=null | OK | ✅ |
+| api-gw-jwt 認証あり endpoint | Neg=401 | OK | ○ |
+| api-gw-jwt 認証漏れ endpoint | Neg=200 | **CRITICAL/P1** | ○ |
+| alb-cookie-monolith 未認証 | Neg=302 | OK | ○ |
+| skipAuthCheck=true（public）| Neg=null | OK | ○ |
 
 **4/4 PASS**。canary の中核（authPattern 別 Negative probe + 4×4 分類）が **実 HTTP ラウンドトリップ**で正しく動くことを実証。特に「認証漏れ endpoint（常時 200）→ CRITICAL/P1」を実際に検知できた。
 
@@ -100,9 +100,9 @@
 ### 3.2 full オーケストレーション（LocalStack、部分成立）
 
 synthetics スタブ（`@aws/synthetics-*` を node_modules に配置）+ LocalStack + モック probe 先で `index.handler` を実行:
-- ✅ **registry.js の `scanEnabledApps` が LocalStack DynamoDB からアプリを取得**（Scan 実挙動 OK）
-- ⚠ **openapi.js の S3 取得が LocalStack の virtual-host addressing で失敗**（"bucket does not exist"）。これは **canary のバグではなく LocalStack 固有**（S3 は `forcePathStyle: true` が必要。実 AWS では発生しない）。テストハーネスで path-style を強制するか、SAM local / 実 AWS で実行すれば解消。
-- ⚠ CloudWatch `ListMetrics` は LocalStack community で 500（サポート限定）。
+- ○ **registry.js の `scanEnabledApps` が LocalStack DynamoDB からアプリを取得**（Scan 実挙動 OK）
+- 【注意】**openapi.js の S3 取得が LocalStack の virtual-host addressing で失敗**（"bucket does not exist"）。これは **canary のバグではなく LocalStack 固有**（S3 は `forcePathStyle: true` が必要。実 AWS では発生しない）。テストハーネスで path-style を強制するか、SAM local / 実 AWS で実行すれば解消。
+- 【注意】CloudWatch `ListMetrics` は LocalStack community で 500（サポート限定）。
 
 → **full オーケストレーションの完全実行は SAM local か実 AWS が必要**（LocalStack だけでは S3 addressing / CloudWatch / Lambda deploy の壁がある）。canary の**ロジック自体は構成テスト（probe/classify/extractEndpoints/registry Scan）で網羅的に検証済み**。
 
@@ -143,14 +143,14 @@ localstack start            # DynamoDB/S3/SNS/SecretsManager/API GW をエミュ
 
 | Phase | 実行 | 結果 |
 |---|:---:|---|
-| P4-1 静的解析（guard 3 + semgrep 3）| ✅ 実行 | 全フィクスチャ検証 + **実バグ 2 件修正**（Semgrep FP / cfn-guard ALB）|
-| P4-2 Lambda ユニット | ✅ 実行 | alert-router 19 PASS |
-| P4-2 Lambda SDK 実挙動 | ✅ 実行（LocalStack 3.8.1）| **app-registry PutItem / alert-router SNS Publish（DDB 経由）end-to-end** |
-| P4-3 canary logic | ✅ 実行 | **27 PASS**（classify 16 + probe統合 4 + extractEndpoints 7、実 HTTP で漏れ検知）|
+| P4-1 静的解析（guard 3 + semgrep 3）| ○ 実行 | 全フィクスチャ検証 + **実バグ 2 件修正**（Semgrep FP / cfn-guard ALB）|
+| P4-2 Lambda ユニット | ○ 実行 | alert-router 19 PASS |
+| P4-2 Lambda SDK 実挙動 | ○ 実行（LocalStack 3.8.1）| **app-registry PutItem / alert-router SNS Publish（DDB 経由）end-to-end** |
+| P4-3 canary logic | ○ 実行 | **27 PASS**（classify 16 + probe統合 4 + extractEndpoints 7、実 HTTP で漏れ検知）|
 | P4-3 full orchestration | ◐ 部分 | registry Scan は LocalStack で成立、S3 は LocalStack addressing の壁 → SAM/実 AWS 要 |
-| P4-3 canary full（SAM）| ⏳ | SAM CLI + Docker 要（synthetics ランタイム再現）|
-| P4-4 openapi-export get-export | ⏳ | API GW（LocalStack 限定 or 実 AWS）要 |
-| P4-5 E2E | ⏳ | 実マルチアカウント要 |
+| P4-3 canary full（SAM）| 未実施 | SAM CLI + Docker 要（synthetics ランタイム再現）|
+| P4-4 openapi-export get-export | 未実施 | API GW（LocalStack 限定 or 実 AWS）要 |
+| P4-5 E2E | 未実施 | 実マルチアカウント要 |
 
 **課金ゼロで検証できる範囲はすべて実行。静的解析で実バグ 2 件を発見・修正し、Lambda の SDK 実挙動（DynamoDB/SNS）を LocalStack で end-to-end 実証した。**
 

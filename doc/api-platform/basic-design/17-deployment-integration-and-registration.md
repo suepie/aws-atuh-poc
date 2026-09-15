@@ -58,14 +58,71 @@ flowchart TB
     DISC -->|"② AssumeRole（s3 read-only）"| ART["各 App アカウントの認証構成情報連携バケット<br/>③ List {appId}/ プレフィックス<br/>④ 認証構成情報 VersionId 取得<br/>⑥ GetObject"]
     DISC -->|"⑤ lastArtifactVersions と比較<br/>⑥ 台帳更新 + spec Put"| REG[("認証構成情報配置バケット S3<br/>registry/ 台帳 + openapi/ spec")]
     DISC -->|"⑦ 変化のあったアプリを検査起動"| PROBE["認証実装チェック Lambda<br/>（自動差分検査（モード1）、18 章）"]
-    DISC -.->|"monitoring.yaml 不備 / 認証構成情報 staleness"| ALERT["🟡 メタ不足アラート"]
+    DISC -.->|"monitoring.yaml 不備 / 認証構成情報 staleness"| ALERT["メタ不足アラート（P2）"]
     style DISC fill:#fff9c4
     style REG fill:#e3f2fd
 ```
 
+#### 巡回シーケンス図（対象検索-01〜14）
+
+処理設計（`doc/excel/apipf-process-design.xlsx`）の処理 ID と対応する。各処理の I/O・例外はそちらのシートが正。
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant SCH as EventBridge Scheduler
+    participant DISC as 対象検索 Lambda
+    participant ORG as Organizations
+    participant STS as STS
+    participant ART as 連携バケット / App アカウント
+    participant REG as 配置バケット / 共通基盤
+    participant CHK as 認証実装チェック Lambda
+    participant OBS as SNS / CloudWatch
+
+    SCH->>DISC: 対象検索-01 巡回起動 rate 1 hour
+    DISC->>ORG: 対象検索-02 ListAccounts ページング
+    ORG-->>DISC: State=ACTIVE のアカウント一覧
+
+    loop アカウントごと
+        DISC->>STS: 対象検索-03 AssumeRole DiscoveryReadRole + ExternalId
+        STS-->>DISC: 一時クレデンシャル
+        DISC->>ART: 対象検索-04 ListObjectVersions
+        ART-->>DISC: 現行版キー + VersionId + delete marker
+
+        loop アプリごと
+            DISC->>REG: 対象検索-05 台帳取得 registry の appId 配下
+            REG-->>DISC: 前回版数 lastArtifactVersions + ETag
+            DISC->>DISC: 対象検索-06 版数比較 メタデータのみ
+
+            alt 新規 または 変更あり
+                DISC->>ART: 対象検索-07 GetObject versionId 指定
+                ART-->>DISC: monitoring.yaml / openapi.yaml
+                DISC->>DISC: 対象検索-08 スキーマ検証と env 確定
+
+                alt 検証 OK
+                    DISC->>REG: 対象検索-09 台帳同期 If-Match
+                    DISC->>REG: 対象検索-10 API 仕様を複写
+                    DISC->>CHK: 対象検索-11 検査依頼 mode=delta 非同期
+                    DISC->>REG: 対象検索-11 版数を確定更新 If-Match
+                else 検証 NG
+                    DISC->>REG: 対象検索-09 拒否レコード enabled=false
+                    DISC->>OBS: 対象検索-12 不備通知 P2 同一版なら抑制
+                end
+            else 変更なし
+                Note over DISC: 本文を取得せず次のアプリへ
+            end
+        end
+    end
+
+    DISC->>REG: 対象検索-13 消滅と鮮度低下の突合
+    Note over DISC,REG: 巡回に失敗したアカウントは対象から除外する
+    DISC->>OBS: 対象検索-13 棚卸しアラート P2
+    DISC->>OBS: 対象検索-14 DiscoveryLastSuccess / DiscoveryAccountErrors
+```
+
 | ステップ | 内容 |
 |---|---|
-| ① 列挙 | 対象 App アカウントを列挙（⚠ `organizations:ListAccounts` は管理アカウント限定のため列挙方式は **M-Q-17-2** で確定。10 §10.1.7 W3）|
+| ① 列挙 | 対象 App アカウントを列挙（【注意】`organizations:ListAccounts` は管理アカウント限定のため列挙方式は **M-Q-17-2** で確定。10 §10.1.7 W3）|
 | ② AssumeRole | 各アカウントに **StackSets 配布済みの読み取り専用ロール**（認証構成情報連携バケットの s3 read のみ、16 章）で入る |
 | ③ 認証構成情報列挙 | 認証構成情報連携バケットの `{appId}/` プレフィックスを List。**`{appId}/monitoring.yaml` が置かれている = 監視対象**（§17.3）|
 | ④ バージョン取得 | monitoring.yaml / openapi.yaml の **VersionId**（と ETag）を取得 |
@@ -193,7 +250,7 @@ SCP: apigateway:POST /restapis / apigateway:PATCH 等を Deny
 | ID | 内容 |
 |---|---|
 | M-Q-17-1 | SCP 強制（製品外の API GW 作成・変更禁止）の採否 — コンソール直変更を入口で塞ぐ鍵（deploymentId 併読廃止により重要度上昇）|
-| M-Q-17-2 | **対象アカウントの列挙方式**。⚠ `organizations:ListAccounts` は既定では管理アカウント限定。**案 c（推奨・2026-08 調査で判明）: Organizations の委任ポリシー（resource-based delegation policy）で共通基盤アカウントに `organizations:ListAccounts` を委任** → 対象検索 Lambda から直接呼べる（管理アカウントでの一度のポリシー設定のみ・AssumeRole 不要）/ 案 a: 管理アカウントに列挙用読み取りロールを置き AssumeRole / 案 b: 静的リスト（SSM Parameter 等）。範囲（全体 / OU / 明示リスト）とあわせて確定（10 §10.1.7 W3）|
+| M-Q-17-2 | **対象アカウントの列挙方式**。【注意】`organizations:ListAccounts` は既定では管理アカウント限定。**案 c（推奨・2026-08 調査で判明）: Organizations の委任ポリシー（resource-based delegation policy）で共通基盤アカウントに `organizations:ListAccounts` を委任** → 対象検索 Lambda から直接呼べる（管理アカウントでの一度のポリシー設定のみ・AssumeRole 不要）/ 案 a: 管理アカウントに列挙用読み取りロールを置き AssumeRole / 案 b: 静的リスト（SSM Parameter 等）。範囲（全体 / OU / 明示リスト）とあわせて確定（10 §10.1.7 W3）|
 | M-Q-17-3 | 「認証構成情報が上がってくるはずなのに無い」の突合方法（API 提供契約リスト / タグ / Service Catalog launch 実績のどれと突合するか）と staleness 閾値（仮 90 日）|
 | M-Q-17-4 | 対象検索 Lambda の実装 + PoC（Phase 3/4。S3 List/GetObject のページング・VersionId 比較・アカウント横断のレート制御）|
 | M-Q-17-5 | 消滅検知（enabled=false 化）とアプリ廃止手続きの運用整合 |

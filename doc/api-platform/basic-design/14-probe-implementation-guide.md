@@ -30,11 +30,11 @@ flowchart LR
 | ファイル | 役割 | 検証 |
 |---|---|:---:|
 | `index.js` | handler。全アプリ横断のオーケストレーション | — |
-| `lib/registry.js` | App Registry 読み取り（**現実装は DynamoDB Scan。S3 台帳化に伴い List/Get へ改修要** M-Q-12-3）| ✅ LocalStack（旧 DDB 実装として）|
-| `lib/openapi.js` | OpenAPI(S3) 取得 + アノテーション解釈 | ✅ 7 test |
+| `lib/registry.js` | App Registry 読み取り（**現実装は DynamoDB Scan。S3 台帳化に伴い List/Get へ改修要** M-Q-12-3）| ○ LocalStack（旧 DDB 実装として）|
+| `lib/openapi.js` | OpenAPI(S3) 取得 + アノテーション解釈 | ○ 7 test |
 | `lib/token.js` | test token 取得 + OAuth Bearer 取得 + cache | — |
-| `lib/probe.js` | 1 endpoint の Negative + Positive probe | ✅ 4 test |
-| `lib/classify.js` | 4×4 真偽値表分類（alert-router と SSOT 共有）| ✅ 16 test |
+| `lib/probe.js` | 1 endpoint の Negative + Positive probe | ○ 4 test |
+| `lib/classify.js` | 4×4 真偽値表分類（alert-router と SSOT 共有）| ○ 16 test |
 | `lib/emit.js` | CloudWatch PutMetricData + アラート検知 Lambda（旧称: Alert Router）Invoke | — |
 
 分割理由: `classify.js` をアラート検知 Lambda と共有し**分類ずれを防ぐ**、`probe.js` の authPattern 分岐を独立テスト可能にする。
@@ -52,7 +52,7 @@ flowchart LR
 - スキーマ: トップレベル `steps` **オブジェクト**（キー "1"-"10"）、各 step は `stepName`/`checkerType`/`url`/`httpMethod`/`authentication`/`assertions`
 - Secret 参照: `${AWS_SECRET:name}` / `${AWS_SECRET:name:key}`
 
-> ⚠ **公式スキーマ確認（Phase 3）**: `checks` 配列ではなく `steps` オブジェクト。認証は `authentication.type` = `OAUTH_CLIENT_CREDENTIALS` / `API_KEY` / `BASIC` / `SIGV4`。
+> 【注意】**公式スキーマ確認（Phase 3）**: `checks` 配列ではなく `steps` オブジェクト。認証は `authentication.type` = `OAUTH_CLIENT_CREDENTIALS` / `API_KEY` / `BASIC` / `SIGV4`。
 
 **使い分け**: 全アプリ横断・動的発見は Puppeteer（§14.1）、特定アプリの少数 endpoint を手軽に監視したい場合は Multi Checks。
 
@@ -78,7 +78,7 @@ BFF は認証が 2 層（ブラウザ↔BFF=Cookie / BFF↔API=Bearer）。**外
 
 | 層 | 認証 | 外形監視 |
 |---|---|---|
-| ブラウザ → BFF | Cookie セッション | ✅ `bff-cookie-session` で probe（Negative: Cookie なし → 401/302）|
+| ブラウザ → BFF | Cookie セッション | ○ `bff-cookie-session` で probe（Negative: Cookie なし → 401/302）|
 | BFF → API | Bearer（BFF が付与）| 内部通信で外部から見えない。API を独立監視するなら別レコードで `api-gw-jwt` 登録 |
 
 → **BFF 入口が正しく未認証を弾けば、背後 API は BFF 経由（+ Origin Protection / Private）でしか叩けない設計が前提**。API を公開している場合は API も別途登録する。

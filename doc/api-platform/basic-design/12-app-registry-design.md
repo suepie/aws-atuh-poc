@@ -53,6 +53,7 @@
 | `artifactBucket` / `artifactPrefix` | 巡回が記録 | 発見元の認証構成情報連携バケットと `{appId}/` プレフィックス（17 §17.3）|
 | `lastArtifactVersions` | **巡回状態** | 前回確認した認証構成情報（monitoring.yaml / openapi.yaml）の S3 VersionId（**差分判定の基準**、17 §17.2）|
 | `deployInfo` | deploy-info.json（任意）| ベンダー CI が申告した commitId / deployedAt 等の**追跡用参考値**（検知には使わない。staleness 検知の補助）|
+| `lastRejectedVersions` / `rejectedReason` | **巡回状態** | **取り込み拒否**した認証構成情報の VersionId と理由。同じ版での再通知を抑制し、不備で監視に入れていないアプリを可視化する（17 §17.2.1）|
 | `lastSeenAt` | 巡回状態 | 最後に観測した日時（消滅検知用）|
 
 > 旧スキーマ（`repositoryName` / `branch` / `pathPrefix` / `lastCheckedCommitId` / `apiGatewayId` / `stage` / `deploymentId`）は CodeCommit 前提のもので **2026-08-21 廃止**（[ADR-061 追記](../../adr/061-deploy-detection-pull-model.md)）。
