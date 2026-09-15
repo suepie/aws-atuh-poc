@@ -138,7 +138,7 @@ aws lambda invoke --function-name central-auth-probe \
 
 ### §18.5.1 メタ監視 —「巡回が止まっていること」を検知する
 
-**監視の空白 = 認証漏れの検知空白**。監視系自身の停止・失敗を、被監視系（AuthCheck 系メトリクス）とは別系統で検知する。通知先はいずれも **P2（Platform）**（監視系の障害はアプリの障害ではないため）。
+**監視の空白 = 認証漏れの検知空白**。監視系自身の停止・失敗を、被監視系（AuthCheck 系メトリクス）とは別系統で検知する。巡回（MM-1）と全量確認（MM-6）の**両方にハートビートを持たせる**ことで、どちらが止まっても気づける。通知先はいずれも **P2（Platform）**（監視系の障害はアプリの障害ではないため）。
 
 | # | 検知対象 | 手段 | アラーム条件（初期値）|
 |---|---|---|---|
@@ -147,6 +147,7 @@ aws lambda invoke --function-name central-auth-probe \
 | MM-3 | 一部アカウントの巡回失敗 | `DiscoveryAccountErrors` メトリクス（失敗アカウント数）| ≥ 1（§18.5.2 の部分失敗と連動）|
 | MM-4 | 検査 Lambda の失敗 | Lambda 標準 `Errors` + 非同期 invoke の **On-failure Destination（送信先 SQS）** | Errors ≥ 1 or Destination 滞留 ≥ 1 |
 | MM-5 | アラート検知 Lambda（旧称: Alert Router）の失敗 | 既存の throw → リトライ / On-failure Destination（15 §15.4）| Destination 滞留 ≥ 1 |
+| MM-6 | **全量検査の停止** | 認証実装チェック Lambda が全量確認の fan-out 完了時に `FullScanLastSuccess` メトリクス（Count=1）を emit | **48 時間欠損で発報**（`TreatMissingData=breaching`）。日次実行に対して 2 回分の余裕を取る。MM-1 と同じく**検知の遅れは許容**する（2026-09-15 確定）|
 
 - 保険系アラーム（`AuthCheckCritical > 0`、§18.4）は「**検知した結果**の発報」、本節は「**検知できていない状態**の発報」で役割が異なる。両方そろって初めて検知網が閉じる
 - 各 Lambda のログは [06 章 OBS-1〜4](06-logging-monitoring.md) に準拠（実行 ID を相関 ID として出力、トークン・コミット内容はマスク、保持期間明示）
