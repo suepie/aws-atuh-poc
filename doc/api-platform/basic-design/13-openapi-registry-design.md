@@ -76,6 +76,22 @@ probe 挙動を OpenAPI 上で制御する。アプリチームは通常の API 
 
 解釈は `lib/openapi.js` の `extractEndpoints`（[検証済み: openapi test 7 PASS](research/phase4-local-verification-results.md)）。
 
+### §13.3.0.1 endpoint 抽出規則（2026-09-16 確定）
+
+`extractEndpoints` が API 仕様から検査対象を取り出すときの規則。**抽出漏れはそのまま検査漏れになる**ため明文化する（処理設計 認証実装チェック-02）。
+
+| # | 規則 | 理由 |
+|---|---|---|
+| 1 | **HTTP メソッドは許可リスト方式で抽出**する（`get` / `put` / `post` / `delete` / `options` / `head` / `patch` / `trace` の 8 つのみ）| `paths` 配下には `parameters` / `summary` / `description` / `servers` / `$ref` / `x-*` など**メソッドではないキーが同居しうる**。これらをメソッドと誤認すると存在しない endpoint を検査してしまう |
+| 2 | **Path Item レベルの `parameters` を Operation にマージ**する | OpenAPI 仕様上、Path Item の `parameters` は配下の全 Operation に適用される（Operation 側で上書きは可能だが削除は不可）。マージしないと path parameter を取りこぼす |
+| 3 | **`webhooks` は抽出しない**（OpenAPI 3.1）| 3.1 で追加された `webhooks` は Path Item Object を値に持つが URL パスではない。`paths` と同じ構造のため取り違えやすい |
+| 4 | **`paths` が無い文書を許容する**（OpenAPI 3.1）| 3.1 では `paths` は必須でなく、`components` / `webhooks` だけの文書がありうる。検査対象なしとして記録する |
+| 5 | **外部 `$ref` はスキップして記録**する | 参照先ファイルは中央に複写されていないため解決できない。アプリ側で単一ファイルに bundle してからアップロードする規約とする（M-Q-PD-21）|
+| 6 | **検査先のホストは台帳の `baseUrl` に固定**し、仕様側 `servers` のホストは使わない | `servers` には開発用 URL や API GW の直 URL が書かれていることがあり、従うと CloudFront を経由しない検査になる（実 UX と条件がずれ、Origin Protection も破る）。宛先を台帳に固定することが**宛先 allowlist の担保**にもなる（10 §10.1.6）|
+| 7 | 公開明示（`x-synthetics-skip-auth-check`）の**未記載は「認証必須」**として扱う | MON-1 の default-deny（§13.3.0）。ここを「未記載＝スキップ」にすると、うっかり公開した endpoint を永久に検知できなくなる |
+
+> 【注意・未決 M-Q-PD-28】`servers` は**相対参照が可能**で、`/v1` のような**パスプレフィックスだけ**が書かれていることがある。これを取りこぼすと**全 endpoint が 404 になり、WARN が全件出るだけで認証漏れを検知できない**。暫定は `baseUrl` のみを使い、全件 404 になる場合は `servers` のパス欠落を疑う運用とする（恒久対処はアプリ側に「`baseUrl` はプレフィックスまで含めて書く」ことを規約化する案）。
+
 ### §13.3.1 記述例
 
 ```yaml

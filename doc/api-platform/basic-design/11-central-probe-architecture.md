@@ -35,14 +35,16 @@ sequenceDiagram
             CC->>CF: ④ Negative probe（認証ヘッダなし）
             CC->>CF: ⑤ Positive probe（Bearer 等、対象時のみ）
             CC->>CC: ⑥ classify（4×4 真偽値表）
-            alt severity != OK
-                CC->>AR: ⑦ invokeAlertRouter
-            end
+        end
+        alt severity != OK が 1 件以上
+            CC->>AR: ⑦ invokeAlertRouter（同一アプリの検知を配列で 1 回）
         end
         CC->>CW: ⑧ putMetrics（per-app 集計）
     end
     CC->>CC: ⑨ CRITICAL があれば AuthCheckCritical 発火（→ アラーム、18 章 §18.4）
 ```
+
+> 【重要】**⑦ は endpoint ループの外**にある。**1 endpoint = 1 invoke ではなく、同一アプリの検知（severity ≠ OK）をまとめて配列 1 回で送る**（処理設計 認証実装チェック-08）。endpoint ごとに invoke すると、1 アプリで大量の認証漏れがあったときに通知が溢れるため。ペイロードが非同期上限 1 MB を超える場合のみ分割して複数回送る（**1 件も落とさない**）。⑧ も同様に **1 アプリ 1 回**の集計送信（§11.6）。
 
 実装対応: [`index.js`](code-samples/central-probe-lib/index.js)（handler）+ `lib/registry.js`（①）+ `lib/openapi.js`（②③）+ `lib/probe.js`（④⑤）+ `lib/classify.js`（⑥）+ `lib/emit.js`（⑦⑧）。
 
@@ -73,8 +75,10 @@ Negative（未認証 → 401/403 期待）だけでは、「**認証が無いか
 | 401/403 | 5xx | INFO | P3 | Backend バグ（認証 OK）|
 | 404 | any | WARN | P2 | probe 構成ミス |
 | null(skip) | — | OK | — | public endpoint |
+| **観測不能**（接続不能・タイムアウト）| any | **WARN** | P2 | **構成**（認証が効いているとは言えないので OK にしない / 認証漏れでもないので CRITICAL にもしない）|
+| **上記に無い組合せ** | — | **WARN** | P2 | **未分類**（判定不能を OK にしない。頻出するものは表に追加していく。処理設計 M-Q-PD-24）|
 
-→ **「Negative=401/403 かつ Positive=200」のペアが揃って初めて OK**。分類結果（severity/priority）はアラート検知 Lambda（旧称: Alert Router、15 章）と同一ロジックを SSOT 共有。
+→ **「Negative=401/403 かつ Positive=200」のペアが揃って初めて OK**。**「判定できなかった」を OK に倒さない**のが本表の設計原則（処理設計 認証実装チェック-06、[README §2.5](code-samples/README.md) と対）。分類結果（severity/priority）はアラート検知 Lambda（旧称: Alert Router、15 章）と同一ロジックを SSOT 共有。
 【注意】表の 401/403 は「**アプリの認証レイヤーが返した**もの」が前提。**WAF が probe をブロックした 403 は別扱い**（WARN「境界でブロック」、§11.2.4）。
 
 ### §11.2.3 Smoke test
@@ -116,19 +120,29 @@ probe はインバウンド境界の **WAF を通過する**（12 §12.1.1）。
 
 ### §11.3.1 Positive トークンの管理（共通クライアント資格情報 + 短命トークン）
 
-Positive probe（valid token → 200 期待）に使う認証情報は、**静的な長寿命トークンを持たない**。**共通の OAuth クライアント資格情報を 1 つ**だけ持ち、**実行ごとに短命トークンを発行**する。
+Positive probe（valid token → 200 期待）に使う認証情報は、**静的な長寿命トークンを持たない**。**共通の OAuth クライアント資格情報を 1 つ**だけ持ち、**必要になった時点で短命トークンを発行**する。
 
 ```
 認証基盤(Keycloak) に canary 専用サービスアカウント "api-canary-probe" を 1 つ
   └ client_id/secret → Secrets Manager（共通基盤アカウント）に保管
      └ GetSecretValue できるのは 認証実装チェック Lambda の IAM ロールのみ
 
-【1 回の probe 実行ごと】
-  認証実装チェック Lambda → Keycloak /token（client_credentials grant）
-              → 短命アクセストークン（5〜15 分）取得 → Positive probe に使用 → 破棄
+【Positive probe が必要になった時点で（遅延取得）】
+  キャッシュに有効期限まで 30 秒以上あるトークンがあれば → それを再利用（発行しない）
+  無ければ 認証実装チェック Lambda → Keycloak /token（client_credentials grant）
+              → 短命アクセストークン取得 → Positive probe に使用 → 期限まで再利用
 ```
 
-- **「ずっと使える 1 つ」の実体はクライアント資格情報**（全 API 共通・定期ローテ）で、**実際のトークンは毎回使い捨て**。`lib/token.js` が取得・キャッシュ（TTL 内）する。
+**発行と再利用の規則**（処理設計 認証実装チェック-03 で確定）:
+
+| # | 規則 | 根拠 |
+|---|---|---|
+| ① | **遅延取得**: 正常系確認（Positive）の対象 endpoint が 1 つも無いアプリでは**トークンを発行しない** | `x-canary-positive-test` は既定 false のため対象ゼロのアプリは珍しくない。不要な発行を避け、資格情報の露出機会と認証基盤への負荷を減らす |
+| ② | **有効期限の 30 秒前まではキャッシュを再利用**する。キャッシュは**ハンドラ外**に置き、**Lambda 実行環境をまたいで**使い回す | Lambda 実行環境は再利用されるため（AWS のベストプラクティス）。30 秒という値は Keycloak 公式アダプタの `minValidity` の例に倣う（RFC 6749 に期限前再取得の規範的記述は無い）|
+| ③ | **`client_credentials` では refresh token が返らない**（RFC 6749 が SHOULD NOT、Keycloak も明記）。したがって**期限管理は呼び出し側の責務**で、失効したら再取得するしかない | Keycloak の **Access Token Lifespan の既定は 5 分**。検査 1 回は数分のため、実行内での再取得は通常発生しない |
+
+- **「ずっと使える 1 つ」の実体はクライアント資格情報**（全 API 共通・定期ローテ）で、**トークン自体は短命**。`lib/token.js` が取得・キャッシュ（上記②）する。
+- トークン取得に失敗しても **Negative（未認証確認）は継続**する。本機構の主目的は「認証が効いているか」であり、トークン取得の失敗で検査全体を諦めない（posStatus は null、WARN/P2）。
 - 実装対応: `x-canary-test-token-secret` は既定で共通 Secret（`canary-central-readonly` 相当のクライアント資格情報）を指す（13 章 §13.3 / README §2.1-2.3）。
 
 **漏洩しにくく**:
@@ -205,10 +219,13 @@ Positive probe（valid token → 200 期待）に使う認証情報は、**静�
 
 ## §11.6 CloudWatch Metrics とアラーム条件
 
-- Namespace `APIPlatform/AuthCheck`、Dimensions `AppId` / `Env` / `AuthPattern`
+- Namespace `APIPlatform/AuthCheck`、**Dimensions は `AppId` / `Env` に限定**する
 - Metrics: `AuthCheckPassed` / `AuthCheckCritical` / `AuthCheckWarn` / `AuthCheckInfo` / `EndpointsProbed`
+- 送信は **1 アプリ 1 回**（全 endpoint の判定を severity 別に集計）。**CRITICAL が 0 件でも 0 を送る**（送らないと「検査していない」と「異常なし」が区別できない。アラームは `> 0` 発報のため動作に影響しない）
 - **アラーム条件 = `AuthCheckCritical > 0`**（Lambda 実行のため canary FAIL 依存でなく metric ベース、[18 章 §18.4](18-scan-modes-and-scheduling.md)）
 - CRITICAL 検知時は alert-router へ即時 invoke（15 章）も併走
+
+> 【注意】**ディメンションを増やさない**（2026-09-15 確定、処理設計 認証実装チェック-07）。**CloudWatch のカスタムメトリクスはディメンションの組合せごとに課金され、RC-7 が費用の最大費目**であるため。とくに `AuthPattern` は appId で一意に決まり情報が増えないので**付けない**（従来記載から削除）。endpoint 単位のディメンションは endpoint 数 × アプリ数で急増するため論外で、**endpoint 単位の情報は判定ログ（CloudWatch Logs Insights）で追う**。なお `PutMetricData` は 1 リクエスト 1 MB / 1,000 メトリクス / 30 ディメンションが上限。
 
 ---
 

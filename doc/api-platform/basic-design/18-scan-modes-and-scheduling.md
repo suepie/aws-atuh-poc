@@ -85,7 +85,7 @@ flowchart LR
 | 項目 | 内容 |
 |---|---|
 | 対象検索 Lambda | EventBridge Scheduler（1h）起動。Organizations 列挙 + 読み取り AssumeRole + 差分判定（17 章）|
-| 認証実装チェック Lambda | 対象検索 Lambda から invoke（変化アプリのみ）。payload `{ mode:'delta', appId, env }` |
+| 認証実装チェック Lambda | 対象検索 Lambda から invoke（変化アプリのみ）。payload `{ mode:'delta', appId, env, origin }`。**`origin` は起点の記録**（巡回起点 = `'delta'` / 全量起点 = `'full'`）で、**検査側は判定に使わずログにのみ出す**（付けたり付けなかったりすると「無い＝巡回起点」という暗黙規則になるため、**巡回起点でも必ず付ける**。処理設計 対象検索-11 / 全量-04、README §2.6、2026-09-16 確定）|
 | probe ロジック | **`lib/probe.js` / `classify.js` / `emit.js` を共通流用**。synthetics 抽象を素の https 実装で注入（[probe-integration.test.js で実証済みの手法](research/phase4-local-verification-results.md)）|
 
 → **probe/classify/alert の資産は全て再利用**。Synthetics 固有の `executeHttpStep` を https 実装に差し替えるだけ。
@@ -100,8 +100,10 @@ flowchart LR
 | 範囲 | 全アプリ全 endpoint（台帳 registry/ を List）|
 | 手動起動の用途 | 初回の全量確認 / 大きな変更後 / 監査前 / インシデント後の確認（人が判断した契機）|
 | 実行基盤 | **自動差分検査（モード1）と同じ 認証実装チェック Lambda**（`mode=full`）。実装 1 つを payload で切替。定期と手動で実装差はなく、**トリガが Scheduler か人かだけの違い** |
-| 実行方式 | `mode=full` は台帳を List した後、**アプリ単位に自分自身を `mode=delta` 相当で fan-out invoke** する（1 Lambda 実行 = 1 アプリ）。全量を 1 実行で回さないため、アプリ数が増えても Lambda 15 分制限に当たらない（§18.5.3）|
-| 定期実行の頻度 | **日次を初期値**とし、運用実績で調整（D-M-18-4）。実行時刻は業務影響の少ない時間帯（例: 早朝）|
+| 実行方式 | `mode=full` は台帳を List した後、**アプリ単位に自分自身を `mode=delta` 相当で fan-out invoke** する（1 Lambda 実行 = 1 アプリ、payload に `origin:'full'` を付与）。全量を 1 実行で回さないため、アプリ数が増えても Lambda 15 分制限に当たらない（§18.5.3）|
+| fan-out の同時実行 | **同時実行は 10 件を上限**とし、**10 件ずつのバッチで invoke** する（2026-09-15 確定、処理設計 全量-04）。既定の同時実行数 1,000 に対して十分小さく、**全量確認が同時実行枠を一気に消費して巡回起点の検査（自動差分検査（モード1））を圧迫するのを防ぐ**ため |
+| Scheduler 設定 | **FlexibleTimeWindow = OFF**（**Mode は指定必須**、2026-09-15 確定、処理設計 全量-01）。FLEXIBLE の効果は起動の分散によるスロットリング回避だが、本設計はスケジュールが 2 本（巡回・全量）しかなく集中しないため効果がなく、実行時刻が読めなくなる不利益の方が大きい。起動精度は 60 秒 |
+| 定期実行の頻度 | **日次を初期値**とし、運用実績で調整（D-M-18-4）。実行時刻は業務影響の少ない時間帯（例: 早朝）で、**巡回（毎正時付近）と重ならない時刻帯**を選ぶ |
 
 手動起動例:
 ```bash
@@ -143,11 +145,13 @@ aws lambda invoke --function-name central-auth-probe \
 | # | 検知対象 | 手段 | アラーム条件（初期値）|
 |---|---|---|---|
 | MM-1 | **巡回の停止**（最重要）| 対象検索 Lambda が巡回成功時に `DiscoveryLastSuccess` メトリクス（Count=1）を emit | **6 時間欠損で発報**（`TreatMissingData=breaching`）。2026-09-14 に 2 時間から緩和 — AWS 公式が「CloudWatch メトリクスは best-effort 配信で欠落しうる」「メトリクス停止後もアラームが直近データ点を再評価し続ける」と警告しており、短い閾値は誤発報を招くため。**検知の遅れは許容**（本番と開発が同一構成なら本番リリース前に開発側で拾えるため）|
-| MM-2 | 対象検索 Lambda の失敗 | Lambda 標準 `Errors` / Scheduler の起動失敗 | Errors ≥ 1 |
+| MM-2 | 対象検索 Lambda の失敗 | Lambda 標準 `Errors` / Scheduler の起動失敗（**Scheduler 側は DLQ**、下記【例外】）| Errors ≥ 1 or DLQ 滞留 ≥ 1 |
 | MM-3 | 一部アカウントの巡回失敗 | `DiscoveryAccountErrors` メトリクス（失敗アカウント数）| ≥ 1（§18.5.2 の部分失敗と連動）|
 | MM-4 | 検査 Lambda の失敗 | Lambda 標準 `Errors` + 非同期 invoke の **On-failure Destination（送信先 SQS）** | Errors ≥ 1 or Destination 滞留 ≥ 1 |
 | MM-5 | アラート検知 Lambda（旧称: Alert Router）の失敗 | 既存の throw → リトライ / On-failure Destination（15 §15.4）| Destination 滞留 ≥ 1 |
 | MM-6 | **全量検査の停止** | 認証実装チェック Lambda が全量確認の fan-out 完了時に `FullScanLastSuccess` メトリクス（Count=1）を emit | **48 時間欠損で発報**（`TreatMissingData=breaching`）。日次実行に対して 2 回分の余裕を取る。MM-1 と同じく**検知の遅れは許容**する（2026-09-15 確定）|
+
+> 【例外】**EventBridge Scheduler は On-failure Destination に非対応**のため、**Scheduler → Lambda の起動失敗だけは DLQ（SQS 標準キュー。FIFO は Scheduler の DLQ に使用不可）のまま**とする。Destination に統一するのは **Lambda の非同期 invoke 側のみ**（MM-4 / MM-5）。処理設計 対象検索-01 / 全量-01 で確定済み。DLQ メッセージには `ERROR_CODE` / `ERROR_MESSAGE` / `EXECUTION_ID` / `SCHEDULE_ARN` / `RETRY_ATTEMPTS` 等の属性が付く。
 
 - 保険系アラーム（`AuthCheckCritical > 0`、§18.4）は「**検知した結果**の発報」、本節は「**検知できていない状態**の発報」で役割が異なる。両方そろって初めて検知網が閉じる
 - 各 Lambda のログは [06 章 OBS-1〜4](06-logging-monitoring.md) に準拠（実行 ID を相関 ID として出力、トークン・コミット内容はマスク、保持期間明示）
@@ -156,6 +160,7 @@ aws lambda invoke --function-name central-auth-probe \
 
 | 箇所 | 方針 |
 |---|---|
+| Scheduler → Lambda の起動（巡回・全量とも）| `RetryPolicy` に従い**指数バックオフ**で再試行（`MaximumRetryAttempts` と `MaximumEventAgeInSeconds` の**早い方**で打ち切り）→ 枯渇したら **DLQ（SQS 標準キュー）へ配信**。【例外】**EventBridge Scheduler は On-failure Destination に非対応**のため、ここだけ Destination ではなく **DLQ のまま**とする（処理設計 対象検索-01 / 全量-01）。DLQ 滞留は MM-2 で検知 |
 | 対象検索 Lambda の巡回 | **アカウント単位で try-catch し、1 アカウントの失敗（AssumeRole 不可・スロットリング等）で全体を止めない**。失敗数を `DiscoveryAccountErrors` で emit（MM-3）し、次回巡回で自然リトライ |
 | `lastArtifactVersions` の更新タイミング | **自動差分検査（モード1）の起動が成功した後にのみ更新**（17 §17.2.1 ⑦）。途中失敗時は据え置かれ、次回巡回が同じ差分を再検知する（**at-least-once**）。probe は読み取り検査で冪等のため重複実行は無害 |
 | 対象検索 → 検査の invoke | **非同期（Event invoke）**。Lambda 標準の自動リトライ（関数エラーは 2 回＝1 分後・2 分後 / スロットル・5xx は最大 6 時間の指数バックオフ）+ **On-failure Destination（送信先 SQS）** を設定（MM-4）。同期にしないのは、1 アプリの検査失敗で巡回全体を巻き込まないため。**Destination を選んだ理由**: DLQ はイベント本文とエラーメッセージ先頭 1KB しか残らないのに対し、Destination は呼び出し記録（試行回数・リクエスト・レスポンス）を JSON で残せて障害調査が容易（2026-09-14 確定）|
@@ -169,9 +174,9 @@ Lambda の最大実行時間は **15 分**。1 実行に詰め込まない構造
 
 | 実行 | 1 実行の範囲 | 15 分制限への設計 |
 |---|---|---|
-| 対象検索 Lambda（巡回）| 全アカウント走査（現行）| 処理はアカウント単位の読み取り（数 API 呼び出し / repo）で軽く、**Phase 1 の前提規模（対象約 3 アカウント）では 1 実行に十分収まる**。収まらない規模に達したら**親（列挙のみ）/ 子（1 アカウント処理）の fan-out に分割**する（構造は全量検査（モード2）と同型。閾値監視は Lambda `Duration` アラームで前倒し検知）|
+| 対象検索 Lambda（巡回）| 全アカウント走査（現行）| 処理はアカウント単位の読み取り（数 API 呼び出し / アカウント）で軽く、**Phase 1 の前提規模（対象約 3 アカウント）では 1 実行に十分収まる**。収まらない規模に達したら**親（列挙のみ）/ 子（1 アカウント処理）の fan-out に分割**する（構造は全量検査（モード2）と同型。閾値監視は Lambda `Duration` アラームで前倒し検知）|
 | 検査 Lambda（自動差分検査(モード1)）| **1 アプリ**の全 endpoint | 20 endpoint × 2 probe × 数秒でも数分オーダー。1 アプリ = 1 実行なので endpoint 数が極端でない限り収まる |
-| 検査 Lambda（全量検査(モード2)）| 台帳 List → **アプリ単位に fan-out**（§18.3）| 全量を 1 実行で回さないため上限に当たらない（定期・手動とも同じ）|
+| 検査 Lambda（全量検査(モード2)）| 台帳 List → **アプリ単位に fan-out**（§18.3）| 全量を 1 実行で回さないため上限に当たらない（定期・手動とも同じ）。**fan-out は同時実行 10 件を上限に、10 件ずつのバッチで invoke** する（2026-09-15 確定、処理設計 全量-04）。既定の同時実行数 1,000 に対して十分小さく、**巡回起点の検査を圧迫しない**ため。上限に当たった場合（429）も非同期 invoke はキューに戻り最大 6 時間・指数バックオフで再試行される |
 
 ---
 
@@ -181,8 +186,8 @@ Lambda の最大実行時間は **15 分**。1 実行に詰め込まない構造
 |---|---|---|
 | D-M-18-1 | 「5 分全量」を廃し、自動差分検査（モード1、1h 巡回）+ 全量検査（モード2、日次+手動）の **2 モード**に | 変更検知と網羅確認を分離、常時負荷を桁で削減 |
 | D-M-18-7 | 自動差分検査（モード1）のトリガは**中央巡回（pull、1 時間毎）**。アプリ側イベントに依存しない | 登録漏れ構造ゼロ・トリガー中央統一（[ADR-061](../../adr/061-deploy-detection-pull-model.md) / 17 章）|
-| D-M-18-8 | **メタ監視を被監視系と別系統で設計**（巡回鮮度 `DiscoveryLastSuccess` 2h 欠損アラーム + Lambda Errors + DLQ 滞留。通知は P2）| 監視の空白 = 検知の空白。保険系（AuthCheckCritical）は「検知結果」、メタ監視は「検知不能状態」の発報で役割が異なる（§18.5.1）|
-| D-M-18-9 | **at-least-once + 冪等**（lastArtifactVersions は自動差分検査（モード1）の起動成功後のみ更新、対象検索→検査は非同期 invoke + DLQ、アカウント単位の部分失敗分離）。全量検査（モード2）と大規模巡回は**アプリ / アカウント単位の fan-out** | Lambda 15 分制限に構造で当たらない。probe は読み取り検査で重複無害（§18.5.2-3）|
+| D-M-18-8 | **メタ監視を被監視系と別系統で設計**（巡回鮮度 `DiscoveryLastSuccess` **6 時間欠損**アラーム + 全量鮮度 `FullScanLastSuccess` **48 時間欠損**アラーム（MM-6）+ Lambda Errors + **On-failure Destination（送信先 SQS）滞留**。通知はいずれも P2）| 監視の空白 = 検知の空白。保険系（AuthCheckCritical）は「検知結果」、メタ監視は「検知不能状態」の発報で役割が異なる。閾値を 2h → 6h に緩和したのは CloudWatch メトリクスが best-effort 配信で欠落しうるため（2026-09-14）、Destination を選んだのは呼び出し記録を JSON で残せて障害調査が容易なため。**Scheduler 起動の失敗だけは Destination 非対応で DLQ のまま**（§18.5.1-2）|
+| D-M-18-9 | **at-least-once + 冪等**（lastArtifactVersions は自動差分検査（モード1）の起動成功後のみ更新、対象検索→検査は非同期 invoke + **On-failure Destination（送信先 SQS）**、アカウント単位の部分失敗分離）。全量検査（モード2）と大規模巡回は**アプリ / アカウント単位の fan-out**（全量は**同時実行 10 件上限**）| Lambda 15 分制限に構造で当たらない。probe は読み取り検査で重複無害。DLQ ではイベント本文とエラー先頭 1KB しか残らないのに対し Destination は試行回数・リクエスト・レスポンスを残せる（§18.5.2-3）|
 | D-M-18-2 | 自動差分検査（モード1）の差分粒度は **アプリ単位**（変更アプリの全 endpoint）| OpenAPI 不変の認証コード変更（middleware 削除等）を見逃さない（§18.2.1）|
 | D-M-18-3 | heartbeat 型の常時定期検査（旧 M2）は**廃止**（2026-08-20。従来の「当面なし・将来枠」から確定）| 重要 endpoint の選定・維持コストが検知価値に見合わない。シグナルなし変化は全量検査（モード2）の日次定期実行が最大 24h で受け、設定レベルの即時性は Config Rules が受け持つ（§18.1.1）|
 | D-M-18-4 | 全量検査（モード2）のトリガは**定期自動（日次）+ 手動**の 2 系統（2026-08-20 に「手動のみ」から更新）| 日次自動でシグナルなし変化を機械的に捕捉し、網羅確認を人の記憶に依存させない。頻度は日次を初期値とし運用で調整。コストは 3 アプリで 180 probe/日と誤差（§18.1.1 / §18.3）|

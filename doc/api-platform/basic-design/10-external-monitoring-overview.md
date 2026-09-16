@@ -293,10 +293,12 @@ flowchart TB
 
 | # | 経路 | 中身 | 通る境界 | 必要な許可 |
 |---|---|---|---|---|
-| A | **probe → アプリ**（Negative/Positive）| HTTPS 443（実 UX と同一）| Lambda マネージド egress → インターネット → **CloudFront+WAF（In）** → API GW。**Out（NWFW）は非経由（例外）** | なし（宛先は台帳の baseUrl のみ、下記代償統制）|
+| A | **probe → アプリ**（Negative/Positive）| HTTPS 443（実 UX と同一）| Lambda マネージド egress → インターネット → **CloudFront+WAF（In）** → API GW。**Out（NWFW）は非経由（例外）** | なし（宛先は台帳の baseUrl のみ。**その baseUrl 自体は取り込み時に 2 段検証済み**、下記代償統制）|
 | B | **probe → 認証基盤 /token**（Positive 用短命トークン）| HTTPS 443 | 同上（Out 非経由）| 同上（宛先は認証基盤ドメイン固定）|
-| C | **巡回読み取り**（対象検索 Lambda → App アカウントの認証構成情報連携バケット S3）| AWS API（STS AssumeRole → s3 `ListObjectsV2`/`ListObjectVersions`/`GetObject`）| **境界非経由**（AWS 網）| DiscoveryReadRole（16 章）|
+| C | **巡回読み取り**（対象検索 Lambda → App アカウントの認証構成情報連携バケット S3）| AWS API（STS AssumeRole → s3 **`ListObjectVersions`** / `GetObject`）| **境界非経由**（AWS 網）| DiscoveryReadRole（**`s3:ListBucketVersions`** + `s3:GetObject・GetObjectVersion`、16 章）|
 | D | 中央内部（台帳/仕様/Secrets/Metrics/通知）| S3（認証構成情報配置バケット）/ Secrets / CloudWatch / SNS / Lambda Invoke | **境界非経由**（AWS 網。VPC Endpoint 不要）| IAM のみ |
+
+> 【注意】経路 C で **`ListObjectsV2` は使わない**（対象検索-04）。① **VersionId を返さない**ため、本方式の検知シグナルである版数比較ができない ② **delete marker が現行版のキーはそもそも返らない**ため消滅を判別できない。したがって **`ListObjectVersions` 単独**で走査し、`IsLatest=true` の要素だけを残す。必要権限は `s3:ListBucket` ではなく **`s3:ListBucketVersions`**（**権限名が別**で、`ListBucket` だけ付与して忘れるのが典型的な設定漏れ、16 §16.2）。
 
 **VPC 外配置の判断（NW-2 例外の明示受容と代償統制）**:
 
@@ -305,8 +307,21 @@ flowchart TB
 | 得られる簡素化 | VPC / サブネット / ENI 管理・**Interface VPC Endpoint 群**・**TGW Attachment**・NAT 依存・NWFW への許可ドメイン申請（アプリ追加のたび）が**すべて不要** |
 | 例外の内容 | [05 章 NW-2](05-security.md)「Outbound は NWFW ドメインフィルタ経由」の例外となる（監視系の外向き HTTPS が組織の Egress 統制を通らない）|
 | 例外が許容できる理由 | ① 宛先が**固定 3 種のみ**（台帳の baseUrl = 自組織の CloudFront／認証基盤 /token／AWS API）で、**任意の外部 SaaS を呼ぶコードパスが存在しない** ② コードは共通基盤チーム管理・CI 静的解析（04 章）対象で、アプリ任意コードが乗らない ③ 漏洩リスク側は §11.3.1（短命トークン）で別途統制済み |
-| 代償統制 | **宛先 allowlist をコードで強制**（probe の接続先は App Registry の `baseUrl` と設定済み token URL のみ。任意 URL を受け取る口を作らない）+ IAM 最小権限 + CloudTrail / Lambda ログで監査 |
+| 代償統制 | **宛先 allowlist をコードで強制**（probe の接続先は App Registry の `baseUrl` と設定済み token URL のみ。任意 URL を受け取る口を作らない）+ **その `baseUrl` 自体を取り込み時に 2 段検証**（下記）+ IAM 最小権限 + CloudTrail / Lambda ログで監査 |
 | 承認 | NW-2 の例外として**セキュリティ / 他組織（境界管理側）への明示的な承認を得る**（M-Q-10-3）|
+
+**【重要】`baseUrl` の 2 段検証（代償統制の実体、2026-09-14 確定）**
+
+「宛先は台帳の `baseUrl` に限る」だけでは不十分。**その `baseUrl` は、外部ベンダーが管理する monitoring.yaml 由来**の値だからである。任意ドメインを書けてしまうと、**監視基盤を踏み台にして外部へ HTTPS リクエストを出せる**（Out 境界を通らないため NWFW でも止まらない）。したがって**取り込み時（対象検索-08）に検証し、違反は取り込み拒否**する。
+
+| 段 | 検証内容 | 違反時 |
+|---|---|---|
+| ① | `baseUrl` のホストが**組織の許可ドメインサフィックス配下**であること（許可サフィックス一覧は中央管理・SSM 想定）。`*.cloudfront.net` のような**共有ドメインはサフィックスとして許可しない**（他社も使うため）| **取り込み拒否**（既定値での継続はしない）。重大度を上げて P2 通知（対象検索-12）|
+| ② | そのホストが**当該アプリのドメイン**であること（**1 アプリ = 1 ホスト**。他アプリのドメインを指定させない）| 同上（監視基盤を別アプリへ向けようとする操作の可能性）|
+
+- 検証は**中央（対象検索 Lambda）で行う**。アプリ側の事前検証だけに頼らない（ベンダーが管理する値のため）
+- 拒否したレコードは台帳に `enabled=false` + `lastRejectedVersions` + `rejectedReason` として残し、**同じ版での再通知を抑制**しつつ「不備で監視に入っていないアプリ」を可視化する（12 章 / 対象検索-09）
+- 残る未決は実装値のみ: 許可ドメインサフィックス一覧の確定と置き場（SSM 推奨）/ appId とホストの対応の持ち方（命名規約で導出 or 台帳の中央管理項目）— **M-Q-PD-7**
 
 - 経路 A は**インバウンド境界（CloudFront+WAF）を実ユーザーと同じ向きで通過**する（Origin Protection を破らない検査、12 §12.1.1）。**In 側はバイパスしない**
 - 経路 C/D は AWS API・AWS 網内であり、インターネット境界（In/Out とも）は**無関係**
@@ -338,11 +353,11 @@ sequenceDiagram
     DISC->>STS: W4 AssumeRole（DiscoveryReadRole + ExternalId）
     STS-->>DISC: DiscoveryReadRole の一時クレデンシャル（期限付き）
     Note over DISC,ART: 以降 W5/W7 は App アカウントの DiscoveryReadRole の<br/>権限（認証構成情報 s3 read-only）で実行
-    DISC->>ART: W5 認証構成情報 List（{appId}/ プレフィックス・VersionId 取得）
+    DISC->>ART: W5 認証構成情報 List（ListObjectVersions・VersionId 取得）
     DISC->>S3: W6 registry/{appId}/{env}.json 取得（lastArtifactVersions 比較）
     DISC->>ART: W7 変更あり → GetObject（monitoring.yaml・openapi.yaml）
     DISC->>S3: W8 台帳更新 + spec Put
-    DISC->>PROBE: W9 自動差分検査（モード1）起動（mode=delta, appId, env）
+    DISC->>PROBE: W9 自動差分検査（モード1）起動（mode=delta, appId, env, origin=delta）
 ```
 
 | # | 通信 | 発信元（アカウント / リソース）| 宛先（アカウント / リソース）| 経由・エンドポイント | プロトコル・認証 |
@@ -351,11 +366,13 @@ sequenceDiagram
 | W2 | 定期起動 | 共通基盤 / EventBridge Scheduler | 共通基盤 / 対象検索 Lambda | AWS サービス間（Scheduler → `lambda.ap-northeast-1.amazonaws.com`）| Scheduler 実行ロールで Invoke |
 | W3 | 対象アカウント列挙 | 共通基盤 / 対象検索 Lambda | 方式未確定（**M-Q-17-2**）| 【注意】`organizations:ListAccounts` は既定では管理アカウント限定 → **案 c（推奨）: Organizations 委任ポリシーで共通基盤に ListAccounts を委任し直接呼ぶ**（`organizations.us-east-1.amazonaws.com`、グローバル）/ 案 a: 管理アカウントの列挙用ロールへ AssumeRole / 案 b: 静的リスト（SSM）| 443、IAM |
 | W4 | AssumeRole | 共通基盤 / 対象検索 Lambda（DiscoveryLambdaRole）| App / **DiscoveryReadRole** | `sts.ap-northeast-1.amazonaws.com`（リージョナル STS）| 443、sts:AssumeRole + ExternalId（16 §16.2）|
-| W5 | 認証構成情報列挙・VersionId 取得 | 共通基盤 / 対象検索 Lambda（DiscoveryReadRole の一時クレデンシャル）| App / 認証構成情報連携バケット S3（`{appId}/` プレフィックス）| `s3.ap-northeast-1.amazonaws.com` | 443、`ListObjectsV2` / `ListObjectVersions` |
+| W5 | 認証構成情報列挙・VersionId 取得 | 共通基盤 / 対象検索 Lambda（DiscoveryReadRole の一時クレデンシャル）| App / 認証構成情報連携バケット S3（`{appId}/` プレフィックス）| `s3.ap-northeast-1.amazonaws.com` | 443、**`ListObjectVersions`**（`ListObjectsV2` は使わない。VersionId も delete marker も返さないため。対象検索-04）。権限は **`s3:ListBucketVersions`** |
 | W6 | 台帳読取 | 共通基盤 / 対象検索 Lambda | 共通基盤 / 認証構成情報配置バケット S3 `registry/` | `s3.ap-northeast-1.amazonaws.com` | 443、`GetObject`（同一アカウント IAM。`lastArtifactVersions` 比較）|
 | W7 | 認証構成情報取得 | 共通基盤 / 対象検索 Lambda | App / 認証構成情報連携バケット S3 | `s3.ap-northeast-1.amazonaws.com` | 443、`GetObject`（monitoring.yaml・openapi.yaml）|
 | W8 | 台帳更新 + spec 配置 | 共通基盤 / 対象検索 Lambda | 共通基盤 / 認証構成情報配置バケット S3（`registry/` + `openapi/`）| `s3.ap-northeast-1.amazonaws.com` | 443、`PutObject` |
-| W9 | 自動差分検査（モード1）起動 | 共通基盤 / 対象検索 Lambda | 共通基盤 / 認証実装チェック Lambda | `lambda.ap-northeast-1.amazonaws.com` | 443、`lambda:InvokeFunction` |
+| W9 | 自動差分検査（モード1）起動 | 共通基盤 / 対象検索 Lambda | 共通基盤 / 認証実装チェック Lambda | `lambda.ap-northeast-1.amazonaws.com` | 443、`lambda:InvokeFunction`（非同期 `InvocationType=Event`）。payload = **`{mode, appId, env, origin}`**（下記）|
+
+> **起動 payload（[README §2.6](code-samples/README.md) が SSOT）**: `{mode:'delta', appId, env, origin}`。**`origin` は起点の記録**で、巡回起点は `'delta'` / 全量検査（モード2）の fan-out 起点は `'full'`（全量-04）。**検査側は `origin` を判定に使わず、ログにのみ出力する**（モード1 / モード2 で検査ロジックを分岐させない原則、18 §18.3）。**巡回起点でも必ず付ける**（付けない経路があると「origin が無い＝巡回起点」という暗黙のルールになるため。2026-09-16 確定、M-Q-PD-19 解決）。
 
 > **構成図のポイント**: W1 は App アカウントの認証構成情報連携バケットへの書き込みで完結（ベンダー CI → 自アプリ prefix のみ）。W4/W5/W7 だけが**アカウント跨ぎ（共通基盤 → App）**で、すべて AWS API（境界 In/Out とも非経由）。
 
@@ -462,7 +479,7 @@ flowchart LR
 | D-M-10-1 | Pattern β（中央集約）を採用 | Deploy 漏れが構造的にゼロ、「中央でチェック」要件と一致（§10.1.2）|
 | D-M-10-2 | データ契約の SSOT は code-samples/README.md、設計書は意図を説明 | 実装と設計の二重管理を避ける |
 | D-M-10-3 | 設計は Phase 4 で実行検証してから確定 | 「検証済み事実」を積み上げる方針（BD 品質方針）|
-| D-M-10-4 | Lambda 3 本は **VPC 外配置**（VPC/EP/TGW/NAT 不要）。probe の外向き HTTPS は **NW-2（NWFW 経由）の明示的例外**として受容し、宛先 allowlist のコード強制 + 中央管理コード + 監査で代償 | 宛先が固定 3 種のみで任意外部 SaaS を呼ばない監視系に NWFW 経路を組むのは複雑さに見合わない（§10.1.6。例外承認は M-Q-10-3、Phase 2 Private 対応時に probe のみ VPC 化）。In 境界（CloudFront+WAF）は従来どおり実 UX と同じ向きで通過 |
+| D-M-10-4 | Lambda 3 本は **VPC 外配置**（VPC/EP/TGW/NAT 不要）。probe の外向き HTTPS は **NW-2（NWFW 経由）の明示的例外**として受容し、宛先 allowlist のコード強制 + **`baseUrl` の 2 段検証**（① 組織の許可ドメインサフィックス配下 ② そのアプリのドメイン。**取り込み時＝対象検索-08 に検証し、違反は取り込み拒否**）+ 中央管理コード + 監査で代償 | 宛先が固定 3 種のみで任意外部 SaaS を呼ばない監視系に NWFW 経路を組むのは複雑さに見合わない（§10.1.6。例外承認は M-Q-10-3、Phase 2 Private 対応時に probe のみ VPC 化）。**ただし `baseUrl` は外部ベンダー管理の monitoring.yaml 由来**であり、「台帳の baseUrl に限る」だけでは任意ドメインを書かれうる。Out 境界を通らない以上 NWFW で止められないため、**取り込み時の 2 段検証が代償統制の実体**（2026-09-14 確定）。In 境界（CloudFront+WAF）は従来どおり実 UX と同じ向きで通過 |
 
 ---
 

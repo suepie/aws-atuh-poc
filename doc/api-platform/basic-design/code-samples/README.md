@@ -89,6 +89,7 @@
 ### 2.2 OpenAPI Registry（S3）構造
 
 - バケット: `<common-platform-acct>-monitoring-registry`（Versioning 有効。**台帳 `registry/{appId}/{env}.json` と同居**、§2.1 / 12-13 章）
+  - 論理名は **認証構成情報配置バケット**（旧称 Monitoring Registry、10 §10.0.4）。**物理名は据え置き**で、改称は文書上の表記のみ
 - spec キー: `openapi/{accountId}/{appId}/openapi.yaml`
 - 対象検索 Lambda が認証構成情報連携バケットの openapi.yaml（デプロイ版の写し。正本はベンダー git）を `GetObject` で取得して Put（13 章）
 
@@ -109,7 +110,7 @@
 ### 2.4 CloudWatch Metrics（認証実装確認処理が emit）
 
 - Namespace: `APIPlatform/AuthCheck`
-- Dimensions: `AppId`, `Env`, `AuthPattern`
+- Dimensions: `AppId`, `Env`（**`AuthPattern` は付けない**。メトリクスはディメンションの組合せごとに課金され、RC-7 が費用の最大費目のため次元を増やさない。認証方式別に見たい場合はログ〔CloudWatch Logs Insights〕で追う。2026-09-16 確定）
 - Metrics:
   | 名前 | 単位 | 意味 |
   |---|---|---|
@@ -117,7 +118,20 @@
   | `AuthCheckCritical` | Count | 認証漏れ（Neg=200）|
   | `AuthCheckWarn` | Count | 【注意】テスト構成 / token 失効 |
   | `AuthCheckInfo` | Count | Backend バグ（Pos=500）|
-  | `EndpointsProbed` | Count | probe した endpoint 総数 |
+  | `EndpointsProbed` | Count | probe した endpoint 総数。**0 なら「検査したのに対象が無い」状態**で、仕様の取り込み漏れを疑える |
+
+**メタ監視メトリクス**（監視機構自身の稼働を見る。被監視系とは別系統。18 §18.5.1）:
+
+  | 名前 | 単位 | emit する処理 | 意味・用途 |
+  |---|---|---|---|
+  | `DiscoveryLastSuccess` | Count | 対象検索-14 | 巡回が完走したことを示すハートビート。**6 時間欠損で MM-1 発報** |
+  | `DiscoveryAccountErrors` | Count | 対象検索-14 | 巡回に失敗したアカウント数。**1 以上で MM-3 発報**（消滅検知の誤判定を防ぐ安全弁と対）|
+  | `FullScanLastSuccess` | Count | 全量-05 | 全量確認の fan-out が完了したことを示すハートビート。**48 時間欠損で MM-6 発報** |
+  | `FullScanTargets` | Count | 全量-05 | 全量確認の対象アプリ×環境の件数 |
+  | `FullScanInvokeErrors` | Count | 全量-05 | fan-out の invoke に失敗した件数 |
+
+> ハートビート系（`DiscoveryLastSuccess` / `FullScanLastSuccess`）は **`TreatMissingData=breaching`** で運用する。
+> 【注意】AWS 公式は「メトリクスは best-effort 配信で欠落しうる」「メトリクス停止後もアラームが直近データ点を再評価し続ける」と警告しているため、**閾値は長めに取り検知の遅れを許容する**（2026-09-14 / 09-15 確定）。
 
 ### 2.5 4×4 真偽値表（分類ロジック、probe と alert-router で共有）
 
@@ -163,15 +177,24 @@
   "appId": "expense-api",
   "env": "prod",
   "authPattern": "api-gw-jwt",
-  "path": "/api/users",
+  "rawPath": "/api/users/{id}",
   "method": "GET",
   "negStatus": 200,
   "posStatus": 200,
+  "wafBlocked": false,
   "severity": "CRITICAL",
   "reason": "Auth missing or bypassed",
   "timestamp": "2026-07-06T00:05:00Z"
 }
 ```
+
+| 項目 | 説明 |
+|---|---|
+| `rawPath` | **テンプレートのままのパス**（`/api/users/{id}`）。dummy 値で解決した実パス（`/api/users/1`）では「どの endpoint の話か」が伝わらないため、通知にはこちらを使う（認証実装チェック-02 / 08）|
+| `wafBlocked` | WAF による遮断と判別できた場合に `true`。**認証レイヤーの 403 と区別する**（11 §11.2.4）。区別しないと認証漏れを OK と誤判定する偽陰性が起きる |
+| `reason` | 判定根拠。受け手が状況を再現できる粒度で書く（例「未認証で 200 が返った（期待 401/403）」）|
+
+> **同一アプリの検知は配列でまとめて 1 回送る**（endpoint ごとに invoke すると通知が溢れるため。認証実装チェック-08 / 15 章）。
 
 ---
 

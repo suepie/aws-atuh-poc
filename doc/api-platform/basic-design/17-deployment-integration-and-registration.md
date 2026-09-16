@@ -128,7 +128,7 @@ sequenceDiagram
 | ④ バージョン取得 | monitoring.yaml / openapi.yaml の **VersionId**（と ETag）を取得 |
 | ⑤ 差分判定 | 台帳の **`lastArtifactVersions`** と比較。違えば「**前回確認から認証構成情報が更新された = 新しい版がデプロイされた**」|
 | ⑥ 内容取得 | 変化したアプリのみ `GetObject` で monitoring.yaml / openapi.yaml を取得し、台帳更新・OpenAPI Registry へ Put（13 章）|
-| ⑦ 自動差分検査（モード1）起動 | 変化のあったアプリを対象に認証実装チェック Lambda を invoke（`{mode:'delta', appId, env}`、18 章）。完了後 `lastArtifactVersions` を更新 |
+| ⑦ 自動差分検査（モード1）起動 | 変化のあったアプリを対象に認証実装チェック Lambda を invoke（`{mode:'delta', appId, env, origin:'delta'}`、18 章）。**invoke が受理（202）された時点**で `lastArtifactVersions` を更新する（検査の完了は待たない。18 §18.5.2 at-least-once）|
 | 新規発見 | 台帳に無い `{appId}/monitoring.yaml` は**自動登録**。「登録漏れ」という概念自体が消える |
 | 消滅検知 | 認証構成情報（monitoring.yaml）の削除は台帳を `enabled=false` に（棚卸しアラート）|
 
@@ -193,7 +193,7 @@ testTokenSecret: canary-central-readonly   # 省略時は共通（11 章 §11.3.
 | `{appId}/monitoring.yaml` | **必須**（これが監視対象の宣言）| API 提供契約 / タグがあるのに認証構成情報が無い場合は**棚卸しで検出**（M-Q-17-3）|
 | `appId` | プレフィックスと一致必須 | 不一致は**取り込み拒否 + メタ不足アラート** |
 | `authPattern` | enum（README §2.1）| 既定 `api-gw-jwt` で **Negative のみ検査** + メタ不足アラート |
-| `baseUrl` | CloudFront URL（12 §12.1.1）| 検査不能 → メタ不足アラート |
+| `baseUrl` | CloudFront URL（12 §12.1.1）。**ホストは ① 組織の許可ドメインサフィックス配下 ② そのアプリのドメイン（1 アプリ = 1 ホスト）の 2 段検証を通ること**（2026-09-14 確定。外向き通信の宛先がここで決まるため、実質的な宛先 allowlist の入口になる）| 欠落・形式不正は検査不能 → メタ不足アラート。**許可ドメイン外 / 他アプリのドメインは取り込み拒否（既定値で継続しない）+ 重大度を上げて通知**（対象検索-08）|
 | `openapi.yaml` | 同プレフィックスに併置 | 無い場合は endpoint リストを monitoring.yaml に列挙（モノリス等、§17.4）|
 | `deploy-info.json` | **任意**（commitId 等の追跡用参考値。中央は検知に使わない）| — |
 | 通知先（alertRouting）| **認証構成情報に書かない**（SNS ARN を外部ベンダーの手に置かない）。台帳側で共通基盤チームが管理、未設定は全社デフォルト（15 章）| — |
@@ -202,6 +202,27 @@ testTokenSecret: canary-central-readonly   # 省略時は共通（11 章 §11.3.
 **アップロード権限（16 章が正）**: 認証構成情報連携バケットには**アプリ単位の専用アップロードロール**（`{appId}/` プレフィックス限定の `s3:PutObject` のみ。デプロイロールとは分離）を StackSets で同梱配布する。ベンダー CI はこのロールを各自の接続方式で Assume する。1 ベンダー複数アプリの場合もロールは**アプリ単位**（他アプリの認証構成情報は書けない）。
 
 > 旧方式（リポジトリ直下の monitoring.yaml、`pathPrefix`/`branch`/`openapi` パス指定）は CodeCommit 前提の規約で **2026-08-21 廃止**。認証構成情報はアプリ単位でアップロードされるため、モノレポのパス突合・ブランチ指定は不要になった。リソースタグ（app-id / cost-center 等）は課金按分用として従来どおり必須（03 章 BL-1）。
+
+---
+
+### §17.3.1 不備時の取り込み拒否レコード（2026-09-14 確定）
+
+認証構成情報に不備があり取り込めない場合、**台帳に「拒否レコード」を残す**（対象検索-08 / 09 / 12）。
+
+| 項目 | 値 | 意味 |
+|---|---|---|
+| `enabled` | `false` | 監視対象に入れない（検査は起動しない）|
+| `lastRejectedVersions` | 拒否した認証構成情報の VersionId | **同じ版では再通知しない**ための判定キー |
+| `rejectedReason` | 不備種別 | 何が悪かったか（appId 不一致 / baseUrl 欠落 など）|
+
+**狙いは 2 つ**:
+
+1. **再通知の抑制** — 毎時の巡回で同じ不備を通知し続けると、1 件の不備で 1 日 24 通の P2 が飛ぶ。同じ版なら通知しない（アプリが修正して再アップロードすれば VersionId が変わり、自動的に再評価・再通知される）
+2. **未監視アプリの可視化** — 「不備のせいで監視に入っていないアプリ」が台帳上で見える。月次棚卸し（§17.2.2）の材料になる
+
+新規アプリで不備があった場合も、**最小のレコードを作って拒否状態を記録する**（記録する場所が必要なため）。正常に取り込めた時点で `lastRejectedVersions` / `rejectedReason` はクリアする。
+
+> スキーマ定義は [12 章 §12.1](12-app-registry-design.md) / [README §2.1](code-samples/README.md)。
 
 ---
 
@@ -250,6 +271,8 @@ SCP: apigateway:POST /restapis / apigateway:PATCH 等を Deny
 | ID | 内容 |
 |---|---|
 | M-Q-17-1 | SCP 強制（製品外の API GW 作成・変更禁止）の採否 — コンソール直変更を入口で塞ぐ鍵（deploymentId 併読廃止により重要度上昇）|
+> **実装上の注意（対象検索-02）**: `organizations:ListAccounts` の `MaxResults` は**最大 20**（1000 ではない）。また AWS 公式が「**結果が空でも続きがある場合がある。`NextToken` が null になるまで繰り返すこと**」と警告しており、空ページで打ち切る実装はバグになる。アカウントの状態判定は `Status`（2026-09-09 廃止）でなく **`State`** を使う。
+
 | M-Q-17-2 | **対象アカウントの列挙方式**。【注意】`organizations:ListAccounts` は既定では管理アカウント限定。**案 c（推奨・2026-08 調査で判明）: Organizations の委任ポリシー（resource-based delegation policy）で共通基盤アカウントに `organizations:ListAccounts` を委任** → 対象検索 Lambda から直接呼べる（管理アカウントでの一度のポリシー設定のみ・AssumeRole 不要）/ 案 a: 管理アカウントに列挙用読み取りロールを置き AssumeRole / 案 b: 静的リスト（SSM Parameter 等）。範囲（全体 / OU / 明示リスト）とあわせて確定（10 §10.1.7 W3）|
 | M-Q-17-3 | 「認証構成情報が上がってくるはずなのに無い」の突合方法（API 提供契約リスト / タグ / Service Catalog launch 実績のどれと突合するか）と staleness 閾値（仮 90 日）|
 | M-Q-17-4 | 対象検索 Lambda の実装 + PoC（Phase 3/4。S3 List/GetObject のページング・VersionId 比較・アカウント横断のレート制御）|

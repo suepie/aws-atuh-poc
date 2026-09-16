@@ -788,7 +788,7 @@ PROCESSES = [
           ["現行版 VersionId", "map", "○", "対象検索-04", "確定更新で lastArtifactVersions に書き込む値"],
         ],
         outputs=[
-          ["検査依頼", "非同期 Invoke", "認証実装チェック Lambda", "payload = {mode:'delta', appId, env}"],
+          ["検査依頼", "非同期 Invoke", "認証実装チェック Lambda", "payload = {mode:'delta', appId, env, origin:'delta'}"],
           ["lastArtifactVersions の確定更新", "S3 PutObject（If-Match）", "配置バケット registry/{appId}/{env}.json", "**依頼成功後のみ**"],
           ["失敗時の呼び出し記録", "SQS メッセージ（JSON）", "検査 Lambda 用 On-failure Destination",
            "リトライ枯渇時のみ。requestContext（試行回数・エラー種別）/ requestPayload / responsePayload を含む。MM-4 の入力"],
@@ -798,9 +798,11 @@ PROCESSES = [
           ["**非同期（InvocationType=Event）**で認証実装チェック Lambda を invoke する",
            "同期にすると 1 アプリの検査失敗・長時間化が巡回全体を巻き込む（18 §18.5.2）。"
            "**非同期のペイロード上限は 1 MB**（同期の 6 MB とは別）。本 payload は数十バイトで問題にならない"],
-          ["payload は {mode:'delta', appId, env} のみとする",
+          ["payload は {mode:'delta', appId, env, origin:'delta'} とする",
            "検査側は台帳と仕様を自分で読む。**対象検索側は差分の中身を渡さない**（17 §17.2.1 差分判定の原則③）。"
-           "これにより検査 Lambda はモード1/モード2 で同一実装になる"],
+           "これにより検査 Lambda はモード1/モード2 で同一実装になる。"
+           "**origin は巡回起点でも必ず付ける**（付けたり付けなかったりすると「origin が無い＝巡回起点」という"
+           "暗黙のルールになり読みにくい）。検査側は判定に使わずログにのみ出す（README §2.6）"],
           ["invoke 呼び出しが成功（202 受理）したら、**台帳の lastArtifactVersions を If-Match 付きで更新する**",
            "【注意】ここが at-least-once の要。受理＝実行成功ではないが、受理後は Lambda 側のリトライ（下記）に委ねる"],
           ["invoke が失敗したら台帳を更新せず、次回巡回で再検知させる",
@@ -848,6 +850,8 @@ PROCESSES = [
         opens=[
           ["M-Q-PD-10", "巡回の相関 ID を検査依頼の payload に含め、検査側ログまで追跡できるようにするか。"
            "含めると「どの巡回が起こした検査か」を追えるが、payload に検査側が使わない項目が増える", "設計担当", ""],
+          ["M-Q-PD-19", "【解決・2026-09-16】origin は**巡回起点・全量起点の両方で必ず付ける**"
+           "（付けない経路があると暗黙ルールになるため）。README §2.6 に定義済み", "—（解決済み）", ""],
           ["M-Q-PD-11", "【解決・2026-09-14】失敗の受け皿は **On-failure Destination（送信先は SQS）** を採用。"
            "DLQ はイベント本文とエラーメッセージ先頭 1KB しか残らないのに対し、Destination は"
            "**呼び出し記録（requestContext の試行回数・requestPayload・responsePayload）を JSON で残せる**ため障害調査が容易。"
@@ -1915,6 +1919,9 @@ PROCESSES = [
           ["AuthCheckCritical", "Count=N", "CloudWatch（共通基盤）",
            "**保険系アラーム（> 0 で P1）の入力**。即時系が壊れていても、これで検知できる（18 §18.4）"],
           ["AuthCheckWarn / AuthCheckInfo", "Count=N", "CloudWatch（共通基盤）", "傾向把握・ダッシュボード用"],
+          ["AuthCheckPassed", "Count=N", "CloudWatch（共通基盤）", "OK 判定の件数（README §2.4）"],
+          ["EndpointsProbed", "Count=N", "CloudWatch（共通基盤）",
+           "検査した endpoint 数（README §2.4）。**0 件なら「検査したのに対象が無い」状態**で、仕様の取り込み漏れを疑える"],
         ],
         steps=[
           ["endpoint ごとの判定を severity 別に集計する", "1 アプリ 1 回の送信にまとめ、endpoint 単位では送らない"],
@@ -2209,7 +2216,8 @@ PROCESSES = [
         position="被監視系（AuthCheck 系）とは**別系統**で、監視機構そのものの停止・失敗を検知する。"
                  "「検知した結果」を知らせる通知-02 / 通知-03 に対し、本処理は**「検知できていない状態」**を知らせる（18 §18.5.1）。",
         pre=["各 Lambda がメトリクスを emit していること（対象検索-14 / 全量-05 / 認証実装チェック-07）",
-             "CloudWatch アラーム 6 本が作成済み（WBS B3-i〜B8-i / B10-i）"],
+             "**メタ監視アラーム 6 本**（MM-1〜MM-6）が作成済み（WBS B3-i〜B7-i / B10-i）。"
+             "これとは別に被監視系のアラーム（AuthCheckCritical = B2-i、Duration = B8-i）がある"],
         inputs=[
           ["DiscoveryLastSuccess", "メトリクス", "要", "対象検索-14", "MM-1。**6 時間欠損**で発報（2026-09-14 緩和）"],
           ["FullScanLastSuccess", "メトリクス", "要", "全量-05", "MM-6。**48 時間欠損**で発報（2026-09-15 確定）"],
@@ -2244,7 +2252,9 @@ PROCESSES = [
         idem=("CloudWatch アラームの標準動作。状態遷移時のみ通知し、ALARM が続く間は再通知しない。", "状態を更新しない。"),
         authnote=["CloudWatch アラームアクション → SNS。Lambda を経由しない単純な経路で、監視系が壊れても動く"],
         logs=[["—", "CloudWatch アラーム履歴", "状態遷移の記録", "アラーム自体が履歴を持つ"]],
-        perf=("閾値超過時のみ", "アラーム 1 本 $0.10/月 × 9 本（RC-8）"),
+        perf=("閾値超過時のみ",
+              "本処理が扱うメタ監視アラームは 6 本（MM-1〜6）。ブック全体のアラームは 8 本（B2-i〜B8-i + B10-i）で、"
+              "費用見積 RC-8 は余裕を見て 10 本で計上している（1 本 $0.10/月）"),
         opens=[
           ["M-Q-PD-33", "MM-1 と MM-6 が同時発報した場合に、個別通知ではなく『監視機構の全面停止』として"
            "まとめて通知するか。個別に 2 通届いても対応は同じため、優先度は低い", "設計担当", ""],

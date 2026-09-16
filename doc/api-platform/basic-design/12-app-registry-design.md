@@ -64,11 +64,17 @@
 
 `baseUrl` は API GW の直 URL でなく **CloudFront の URL**。認証実装確認処理は実ユーザーと同じ経路（CloudFront → WAF → Origin Protection → API GW）を通るため、**Origin Protection（[ADR-039 §C-4](../../adr/039-centralized-network-account-edge-layer.md)）を破らず、実 UX と同一条件で検証**できる。probe は `X-Origin-Verify` secret を持たない（Lambda@Edge が付与）。
 
-### §12.1.2 整合性（現行は単純で足りる）
+### §12.1.2 整合性（条件付き書き込みによる楽観ロック・**必須**）
 
-- 書き手は**対象検索 Lambda 1 本（1h 毎・直列）+ 共通基盤チームの手動更新**のみ → 競合は実質発生しない
-- 手動更新と巡回の稀な競合に備えるなら **ETag 条件付き PUT（`If-Match`）** で楽観ロック可能（S3 の条件付き書き込みは 2024-11 に GA。AWS 公式機能）
-- 将来巡回を並列化する場合は排他制御の作り込みが要る（M-Q-12-3。それが常態化するなら DynamoDB 復帰を再検討）
+- 書き手は**対象検索 Lambda（1h 毎・直列）+ 共通基盤チームの手動更新（運用-03）**の 2 経路。頻度は低いが、**双方が同じレコードを書きうる**
+- **台帳への書き込みは ETag 条件付き PUT（`If-Match`）を必須とする**（2026-09-14 確定。対象検索-09 / 対象検索-11 / 対象検索-13 / 運用-03 の**すべての書き込み経路**で使用）。**両者が If-Match を使うことで相互に上書きしない**のが成立条件で、片方でも省略すると楽観ロックが破れる
+  - **読み取り時（対象検索-05 / 運用-03）に応答の ETag を必ず保持**し、それを `If-Match` に指定して PUT する
+  - **新規作成は `If-None-Match: *`**（レコードが存在しないことを条件にする）
+  - **412 Precondition Failed** = 楽観ロックの敗北。**再読込 → マージし直し → 上限回数まで再試行**する（リトライ回数と待ち方は M-Q-PD-9、案: 3 回・短いジッタ付き）。412 多発は MM-3 経由で顕在化
+  - **409 Conflict** は単純リトライ、**404 Not Found（If-Match 指定時）** はレコード削除とみなし `If-None-Match: *` の新規作成へ切り替える（AWS 公式）
+  - **必要な IAM は `s3:PutObject` に加えて `s3:GetObject`**（§12.3。AWS 公式。If-None-Match は `s3:PutObject` のみ）
+- S3 の条件付き書き込みは AWS 公式機能で、**`If-None-Match` は 2024-08 GA / `If-Match` は 2024-11 GA**。全リージョンで利用可
+- 将来巡回を並列化する場合は、上記に加えた排他制御の作り込みが要る（M-Q-12-3。それが常態化するなら DynamoDB 復帰を再検討）
 
 ---
 
@@ -98,7 +104,7 @@ sequenceDiagram
 ```
 
 - 台帳は**同一アカウント内**の書き込みのみ（クロスアカウント書き込みは発生しない。App アカウントへは認証構成情報連携バケットの s3 読み取り AssumeRole だけ、16 章）。
-- monitoring.yaml の規約は [17 章 §17.3](17-deployment-integration-and-registration.md)。**モノリスもリポジトリがあるため同じ仕組みで自動発見**される（17 章 §17.4）。
+- monitoring.yaml の規約は [17 章 §17.3](17-deployment-integration-and-registration.md)。**モノリスも認証構成情報連携バケットへ認証構成情報を上げるため、同じ仕組みで自動発見**される（17 章 §17.4）。
 
 > **旧実装の扱い**: 旧 push 型 Custom Resource（[`app-registry-lambda/`](code-samples/app-registry-lambda/)、DynamoDB PutItem）は参考保管。正規化ロジックは流用できるが、**ストアが S3 になったため書き込み部は S3 PutObject に差し替え**（M-Q-17-4 の実装スコープ）。probe lib の `lib/registry.js`（DynamoDB Scan 実装）も **S3 List/Get への改修が必要**（M-Q-12-3）。
 
@@ -110,9 +116,11 @@ pull 型（ADR-061）により、**App Registry への書き込みは共通基�
 
 | 書き手 | 経路 | 権限 |
 |---|---|---|
-| 対象検索 Lambda | 同一アカウント内 PutObject | `s3:PutObject`（`registry/*` / `openapi/*` プレフィックス限定）|
-| 共通基盤チーム（手動）| コンソール / CLI で JSON 更新 | 同上（alertRouting 設定・enabled 切替）|
+| 対象検索 Lambda | 同一アカウント内 PutObject（`If-Match`）| `s3:PutObject` + **`s3:GetObject`**（`registry/*` / `openapi/*` プレフィックス限定）|
+| 共通基盤チーム（手動）| コンソール / CLI で JSON 更新（`If-Match`）| 同上（alertRouting 設定・enabled 切替）|
 | ~~App アカウントの Custom Resource~~ | ~~クロスアカウント Put~~ | **廃止**（ADR-061）|
+
+> 【注意】**`If-Match` による条件付き書き込みには `s3:PutObject` に加えて `s3:GetObject` が必須**（AWS 公式。`If-None-Match` は `s3:PutObject` のみで足りる）。台帳の書き込みは全経路で `If-Match` を使う（§12.1.2）ため、**両権限をセットで付与する**。`s3:GetObject` を落とすと書き込みが `AccessDenied` になり、当該アプリの台帳同期がスキップされる（対象検索-09 の例外表）。IAM の一覧は [16 章 §16.3](16-cross-account-iam-design.md)。
 
 → 書き込み面の攻撃面・設定ミス面が縮小（台帳汚染はアカウント内経路のみ）。バケットは Versioning 有効（13 章と共通）なので誤更新は履歴から戻せる。
 
@@ -123,9 +131,9 @@ pull 型（ADR-061）により、**App Registry への書き込みは共通基�
 | 操作 | 手段 |
 |---|---|
 | アプリ追加 | **自動**（次回巡回で発見・登録。最大 1h）|
-| モノリス追加 | **自動**（リポジトリに monitoring.yaml を置けば同じ巡回で発見、17 章 §17.4）|
+| モノリス追加 | **自動**（認証構成情報連携バケットに monitoring.yaml を置けば同じ巡回で発見、17 章 §17.4）|
 | 一時停止 | `registry/{appId}/{env}.json` の `enabled=false` に更新（JSON 編集 → PUT。S3 統合の代償として DDB よりひと手間、ADR-061 追記）|
-| 削除 | リポジトリ / monitoring.yaml 削除 → 巡回の消滅検知で `enabled=false` + 棚卸しアラート → 確認後オブジェクト削除 |
+| 削除 | 認証構成情報連携バケットの `{appId}/monitoring.yaml` を削除 → 巡回の消滅検知（delete marker が現行版、対象検索-04/13）で `enabled=false` + 棚卸しアラート → 確認後オブジェクト削除 |
 | 通知先設定 | `alertRouting` を共通基盤チームが JSON 更新（未設定は全社デフォルト、15 章）|
 | 棚卸し | `registry/` を List（誰が監視対象か中央で一覧。`lastSeenAt` で鮮度確認）|
 
@@ -140,6 +148,7 @@ pull 型（ADR-061）により、**App Registry への書き込みは共通基�
 | D-M-12-3 | 登録は**中央巡回の自動発見**（書き手は対象検索 Lambda のみ、旧 Custom Resource 廃止）| 登録漏れ構造ゼロ + 書き込みクロスアカウント権限の排除（ADR-061）|
 | D-M-12-4 | 台帳に巡回スナップショット（lastArtifactVersions / lastSeenAt / 認証構成情報系属性）を同居 | 差分判定・消滅検知・発見元の監査を 1 箇所で完結 |
 | D-M-12-5 | enabled で監視の有効/無効を切替（中央管理）| メンテ時などに削除せず一時停止できる。アプリが自分で監視を止められない |
+| D-M-12-6 | 台帳への書き込みは **`If-Match` 条件付き書き込みを必須**（新規は `If-None-Match: *`、412 は再読込してリトライ）。IAM は `s3:PutObject` + `s3:GetObject` をセットで付与 | 書き手が巡回（対象検索-09/11/13）と運用者（運用-03）の 2 経路あり、**双方が使って初めて相互に上書きしない**。中央管理項目（alertRouting / enabled）の消失を防ぐ（§12.1.2、2026-09-14 確定）|
 
 ---
 
@@ -163,7 +172,7 @@ pull 型（ADR-061）により、**App Registry への書き込みは共通基�
 | **S3 台帳（採用）** | 認証構成情報配置バケットに JSON | ストア 1 種で完結。規模・書き込みパターンに対して十分（§12.1.2）|
 | DynamoDB 台帳（旧採用）| 1 テーブル PK/SK | 必須ではない（項目単位更新・運用 UI は楽だが、リソース種が 1 つ増える割に性能要件がない）→ **S3 統合で置換**（ADR-061 追記）|
 | 動的発見**だけ**（台帳レス）| 巡回列挙の結果を毎回そのまま使う | **不可**: alertRouting / enabled / lastArtifactVersions は認証構成情報側に置けず保持場所が要る |
-| リポジトリ設定だけ（monitoring.yaml のみ）| 全メタを repo に置き毎回読む | メタの大半は monitoring.yaml に**移した**（§17.3）。ただし中央管理 3 項目の置き場として台帳は残る |
+| 認証構成情報だけ（monitoring.yaml のみ）| 全メタを連携バケットに置き毎回読む | メタの大半は monitoring.yaml に**移した**（§17.3）。ただし中央管理 3 項目の置き場として台帳は残る |
 
 → 台帳は「**中央管理 3 項目 + 巡回スナップショット + 実行用ビュー**」の置き場。**発見（pull 巡回）と台帳は代替関係ではなく組合せ**（発見が書き、probe が読む）。
 
@@ -175,4 +184,4 @@ pull 型（ADR-061）により、**App Registry への書き込みは共通基�
 |---|---|
 | M-Q-12-1 | alertRouting を全アプリ個別指定か、env 既定 + 上書きか |
 | M-Q-12-2 | バケットのバックアップ方針（Versioning は有効。加えてレプリケーション要否）|
-| M-Q-12-3 | **probe lib `lib/registry.js` と alert-router の通知先解決の S3 対応改修**（DynamoDB Scan / GetItem → S3 List/Get。M-Q-17-4 対象検索 Lambda 実装と同時に）+ 手動更新との競合対策（ETag 条件付き PUT）|
+| M-Q-12-3 | **probe lib `lib/registry.js` と alert-router の通知先解決の S3 対応改修**（DynamoDB Scan / GetItem → S3 List/Get。M-Q-17-4 対象検索 Lambda 実装と同時に）。<br>※ **手動更新との競合対策は解決済み（2026-09-14）**: **`If-Match` 条件付き書き込みを必須とする**（新規は `If-None-Match: *`、412 は再読込してリトライ）。全書き込み経路（対象検索-09 / 11 / 13・運用-03）に適用し、`s3:GetObject` を併せて付与する（§12.1.2 / §12.3）。**残るのは実装値のみ**で、412 のリトライ回数と待ち方は **M-Q-PD-9**（案: 3 回・短いジッタ付き）。並列巡回を行う場合の追加の排他制御は引き続き未決 |

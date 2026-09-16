@@ -96,8 +96,8 @@
 
 | ロール | 使い手 | 権限 |
 |---|---|---|
-| `DiscoveryLambdaRole` | 対象検索 Lambda | アカウント列挙（【注意】`organizations:ListAccounts` は管理アカウント限定のため、方式は M-Q-17-2 で確定: 案 a なら管理アカウントの列挙用ロールへの `sts:AssumeRole` / 案 b なら `ssm:GetParameter`）/ `sts:AssumeRole`（各 App の DiscoveryReadRole）/ `s3:PutObject・GetObject・ListBucket`（認証構成情報配置バケット の `registry/*` + `openapi/*`）/ `lambda:InvokeFunction`（認証実装チェック Lambda）|
-| `CentralProbeRole` | 認証実装チェック Lambda | `s3:GetObject・ListBucket`（認証構成情報配置バケット：台帳 + spec）/ `secretsmanager:GetSecretValue` / `cloudwatch:PutMetricData` / `lambda:InvokeFunction`（アラート検知 Lambda ※旧称: Alert Router）|
+| `DiscoveryLambdaRole` | 対象検索 Lambda | アカウント列挙（【注意】`organizations:ListAccounts` は管理アカウント・委任管理者限定のため、方式は M-Q-17-2 で確定: **案 c（推奨）= 委任ポリシー経由で直接呼ぶ（本ロールに `organizations:ListAccounts` が必要、下記注記）** / 案 a なら管理アカウントの列挙用ロールへの `sts:AssumeRole` / 案 b なら `ssm:GetParameter`）/ `sts:AssumeRole`（各 App の DiscoveryReadRole）/ `s3:PutObject・GetObject・ListBucket`（認証構成情報配置バケット の `registry/*` + `openapi/*`。**`GetObject` は If-Match 条件付き書き込みにも必須**、12 §12.1.2）/ `lambda:InvokeFunction`（認証実装チェック Lambda）/ **`sns:Publish`（P2 Platform トピックに限定）**（対象検索-12 構成情報不備通知 / 対象検索-13 棚卸しアラート）/ **`cloudwatch:PutMetricData`**（対象検索-14 巡回結果メトリクス `DiscoveryLastSuccess` / `DiscoveryAccountErrors`）|
+| `CentralProbeRole` | 認証実装チェック Lambda | `s3:GetObject・ListBucket`（認証構成情報配置バケット：台帳 + spec）/ `secretsmanager:GetSecretValue` / `cloudwatch:PutMetricData` / `lambda:InvokeFunction`（**アラート検知 Lambda ※旧称: Alert Router + 自関数 ARN**。全量検査（モード2）の親が**自分自身をアプリ単位に fan-out invoke する**ため、自関数 ARN も Resource に含める。全量-04）|
 | `alert-router-lambda-role` | アラート検知 Lambda | `s3:GetObject`（`registry/*`、alertRouting 解決）/ `sns:Publish` |
 
 **各 App アカウント側（StackSets で配布）**
@@ -109,6 +109,12 @@
 | 認証構成情報連携バケット | —（S3。Versioning 有効 + バケットポリシーで prefix 外 Put を Deny）| — |
 
 → App アカウント側に置くのは**認証構成情報連携バケット + 読み取りロール 1 本 + アプリ単位のアップロードロール**。旧 push 型で必要だった中央への Invoke / 書き込み AssumeRole / Custom Resource 実行権限は不要のまま（中央への書き込み開放はしない）。
+
+> **【注意】Organizations 列挙で案 c（委任ポリシー）を採る場合の落とし穴**（対象検索-02）
+> `organizations:ListAccounts` を委任するには **2 つの権限が両方揃っている必要がある**（AWS 公式）。
+> ① **管理アカウント側**: `organizations:PutResourcePolicy` でリソースベースの委任ポリシーを設定し、共通基盤アカウントへ `organizations:ListAccounts` を委任する
+> ② **委任先（共通基盤）側**: **`DiscoveryLambdaRole` の IAM ポリシーにも `organizations:ListAccounts` を付与する**
+> 片方だけでは **`AccessDeniedException` で拒否される**（委任ポリシーは「呼んでよい」の許可であって、IAM 側の許可を代替しない）。①だけ設定して②を忘れるのが典型的な設定漏れで、巡回が丸ごと止まる（MM-2 → P2 Platform）。なお委任ポリシーは最大 40,000 文字、**2026-06-30 以降 `NotAction` / `NotResource` は使用不可**。
 
 ---
 
