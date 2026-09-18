@@ -17,7 +17,9 @@
 
 **責任分界（顧客合意事項）**: **認証構成情報のアップロード漏れ・内容の誤りは、原則アプリ（ベンダー）側の責任**とする。中央は検知網（§17.2.2 の staleness 検知・棚卸し・日次全量検査）で補助するが、「認証構成情報が正しく上がっていること」の保証責任は負わない。**この分界は顧客・ベンダーとの合意が必要**（M-Q-17-7）。
 
-**なぜ pull か**: 認証実装確認処理は App Registry に載っているアプリしか検査しない。**登録漏れ = 監視漏れ**。pull 型は「中央が発見する側」なので、認証構成情報さえ置かれれば登録は構造的に漏れない（認証構成情報が置かれないケースの検知は §17.2.2）。
+**なぜ pull か**: 認証実装確認処理は App Registry に載っているアプリしか検査しない。**登録漏れ = 監視漏れ**。pull 型は「中央が発見する側」なので、**巡回対象アカウントの中では**アプリの登録漏れが構造的に起きない（連携バケットに `{appId}/monitoring.yaml` が置かれた時点で自動登録される）。
+
+> 【注意・2026-09-16 変更】この「構造的にゼロ」が成り立つのは**アプリ単位**まで。連携バケットと読み取りロールを**案件側が作成する**方式にしたため、**アカウント単位は申請ベース**（中央の登録リストへの登録）になり、**登録漏れが起きうる**。登録されていないアカウントのアプリは一切監視されないため、月次棚卸し（M-Q-17-3）がアカウント単位の唯一の検出手段になる。
 
 ---
 
@@ -54,7 +56,7 @@
 ```mermaid
 flowchart TB
     SCH["EventBridge Scheduler<br/>rate(1 hour)"] --> DISC["対象検索 Lambda<br/>（共通基盤アカウント）"]
-    DISC -->|"① ListAccounts"| ORG["AWS Organizations"]
+    DISC -->|"① 登録リスト取得"| ORG["SSM Parameter Store<br/>監視対象アカウント一覧"]
     DISC -->|"② AssumeRole（s3 read-only）"| ART["各 App アカウントの認証構成情報連携バケット<br/>③ List {appId}/ プレフィックス<br/>④ 認証構成情報 VersionId 取得<br/>⑥ GetObject"]
     DISC -->|"⑤ lastArtifactVersions と比較<br/>⑥ 台帳更新 + spec Put"| REG[("認証構成情報配置バケット S3<br/>registry/ 台帳 + openapi/ spec")]
     DISC -->|"⑦ 変化のあったアプリを検査起動"| PROBE["認証実装チェック Lambda<br/>（自動差分検査（モード1）、18 章）"]
@@ -72,7 +74,7 @@ sequenceDiagram
     autonumber
     participant SCH as EventBridge Scheduler
     participant DISC as 対象検索 Lambda
-    participant ORG as Organizations
+    participant ORG as SSM Parameter Store
     participant STS as STS
     participant ART as 連携バケット / App アカウント
     participant REG as 配置バケット / 共通基盤
@@ -80,8 +82,8 @@ sequenceDiagram
     participant OBS as SNS / CloudWatch
 
     SCH->>DISC: 対象検索-01 巡回起動 rate 1 hour
-    DISC->>ORG: 対象検索-02 ListAccounts ページング
-    ORG-->>DISC: State=ACTIVE のアカウント一覧
+    DISC->>ORG: 対象検索-02 登録リスト取得 GetParameter
+    ORG-->>DISC: 監視対象アカウント ID の配列
 
     loop アカウントごと
         DISC->>STS: 対象検索-03 AssumeRole DiscoveryReadRole + ExternalId
@@ -122,14 +124,14 @@ sequenceDiagram
 
 | ステップ | 内容 |
 |---|---|
-| ① 列挙 | 対象 App アカウントを列挙（【注意】`organizations:ListAccounts` は管理アカウント限定のため列挙方式は **M-Q-17-2** で確定。10 §10.1.7 W3）|
-| ② AssumeRole | 各アカウントに **StackSets 配布済みの読み取り専用ロール**（認証構成情報連携バケットの s3 read のみ、16 章）で入る |
+| ① 登録リスト取得 | 巡回対象の App アカウントを **SSM Parameter Store の登録リスト**から取得する（`ssm:GetParameter`）。**Organizations の `ListAccounts` は使わない**（2026-09-16 確定。バケットとロールを案件側が作る方式では組織全体を列挙しても監視対象を判別できず、判別のための AssumeRole 試行が `DiscoveryAccountErrors`（MM-3）の常時発報を招くため）。リストが空なら巡回を中断 |
+| ② AssumeRole | 各アカウントの**読み取り専用ロール**（認証構成情報連携バケットの s3 read のみ）で入る。**ロールは案件側が中央提供のテンプレートで作成する**（2026-09-16 変更、16 §16.4）|
 | ③ 認証構成情報列挙 | 認証構成情報連携バケットの `{appId}/` プレフィックスを List。**`{appId}/monitoring.yaml` が置かれている = 監視対象**（§17.3）|
 | ④ バージョン取得 | monitoring.yaml / openapi.yaml の **VersionId**（と ETag）を取得 |
 | ⑤ 差分判定 | 台帳の **`lastArtifactVersions`** と比較。違えば「**前回確認から認証構成情報が更新された = 新しい版がデプロイされた**」|
 | ⑥ 内容取得 | 変化したアプリのみ `GetObject` で monitoring.yaml / openapi.yaml を取得し、台帳更新・OpenAPI Registry へ Put（13 章）|
 | ⑦ 自動差分検査（モード1）起動 | 変化のあったアプリを対象に認証実装チェック Lambda を invoke（`{mode:'delta', appId, env, origin:'delta'}`、18 章）。**invoke が受理（202）された時点**で `lastArtifactVersions` を更新する（検査の完了は待たない。18 §18.5.2 at-least-once）|
-| 新規発見 | 台帳に無い `{appId}/monitoring.yaml` は**自動登録**。「登録漏れ」という概念自体が消える |
+| 新規発見 | 台帳に無い `{appId}/monitoring.yaml` は**自動登録**。**登録済みアカウントの中では**アプリの登録漏れが起きない（アカウント単位は §17.0 の注記参照）|
 | 消滅検知 | 認証構成情報（monitoring.yaml）の削除は台帳を `enabled=false` に（棚卸しアラート）|
 
 > 変更検知の単位は**認証構成情報オブジェクト**（マルチパートアップロードでは ETag が MD5 と一致しないため、**VersionId 主・ETag 副**で比較する。認証構成情報連携バケットは Versioning 必須、16 章）。
@@ -168,7 +170,7 @@ sequenceDiagram
 監視メタデータは**各 App アカウントの認証構成情報連携バケット**に規定キーで置く。**`{appId}/monitoring.yaml` がある = 監視対象**。
 
 ```
-s3://auth-monitoring-artifacts-{accountId}/     ← StackSets 配布（Versioning 有効、16 章）
+s3://auth-monitoring-artifacts-{accountId}/     ← 案件側が作成（Versioning 有効、16 §16.4）
   {appId}/
     monitoring.yaml      # 監視宣言（下記）
     openapi.yaml         # デプロイした版の spec（正本はベンダー git、これはデプロイ版の写し）
@@ -199,7 +201,7 @@ testTokenSecret: canary-central-readonly   # 省略時は共通（11 章 §11.3.
 | 通知先（alertRouting）| **認証構成情報に書かない**（SNS ARN を外部ベンダーの手に置かない）。台帳側で共通基盤チームが管理、未設定は全社デフォルト（15 章）| — |
 | `enabled`（一時停止）| **認証構成情報に書かない**。台帳側で中央管理（アプリ側の勝手な監視停止を防ぐ）| — |
 
-**アップロード権限（16 章が正）**: 認証構成情報連携バケットには**アプリ単位の専用アップロードロール**（`{appId}/` プレフィックス限定の `s3:PutObject` のみ。デプロイロールとは分離）を StackSets で同梱配布する。ベンダー CI はこのロールを各自の接続方式で Assume する。1 ベンダー複数アプリの場合もロールは**アプリ単位**（他アプリの認証構成情報は書けない）。
+**アップロード権限（16 章が正）**: 認証構成情報連携バケットには**アプリ単位の専用アップロードロール**（`{appId}/` プレフィックス限定の `s3:PutObject` のみ。デプロイロールとは分離）を置く。**作成するのは案件側**で、中央が提供するテンプレートを使う（2026-09-16 変更、16 §16.4）。ベンダー CI はこのロールを各自の接続方式で Assume する。1 ベンダー複数アプリの場合もロールは**アプリ単位**（他アプリの認証構成情報は書けない）。
 
 > 旧方式（リポジトリ直下の monitoring.yaml、`pathPrefix`/`branch`/`openapi` パス指定）は CodeCommit 前提の規約で **2026-08-21 廃止**。認証構成情報はアプリ単位でアップロードされるため、モノレポのパス突合・ブランチ指定は不要になった。リソースタグ（app-id / cost-center 等）は課金按分用として従来どおり必須（03 章 BL-1）。
 
@@ -255,7 +257,7 @@ SCP: apigateway:POST /restapis / apigateway:PATCH 等を Deny
 
 | ID | 判断 | 根拠 |
 |---|---|---|
-| D-M-17-1 | デプロイ検知は **pull 型中央巡回に統一**（push 3 層を置換）| 登録漏れが構造的にゼロ、アプリ側フットプリント最小、トリガーが中央に統一（[ADR-061](../../adr/061-deploy-detection-pull-model.md)）|
+| D-M-17-1 | デプロイ検知は **pull 型中央巡回に統一**（push 3 層を置換）| **登録済みアカウント内のアプリ**については登録漏れが構造的にゼロ（アカウント単位は申請ベース、§17.0）、アプリ側フットプリント最小、トリガーが中央に統一（[ADR-061](../../adr/061-deploy-detection-pull-model.md)）|
 | D-M-17-2 | 巡回間隔は **1 時間** | 一次防衛は deploy 前ガード。外形監視は検知網であり 1 時間で許容 |
 | D-M-17-3 | 変更検知は **認証構成情報（S3）の VersionId 比較 単独**（2026-08-21。外部 git 前提により CodeCommit 巡回を置換、同時に deploymentId 併読を廃止）| **認証構成情報オンリー原則**: 中央が App アカウントで読むのは認証構成情報だけ（権限説明が単純・通信の線が最少）。アップロードがデプロイ後のため「認証構成情報あり = デプロイ済み」が成立。コンソール直変更は Config Rules + ガイド + 日次全量（24h）で受容（§17.2.2、ADR-061 追記 2026-08-21）|
 | D-M-17-4 | メタデータは **monitoring.yaml（config-as-code）** で宣言、通知先と enabled は台帳側 | パイプライン成果物として変更管理可。ARN・監視停止権限は外部ベンダーの手に置かない |
@@ -271,10 +273,10 @@ SCP: apigateway:POST /restapis / apigateway:PATCH 等を Deny
 | ID | 内容 |
 |---|---|
 | M-Q-17-1 | SCP 強制（製品外の API GW 作成・変更禁止）の採否 — コンソール直変更を入口で塞ぐ鍵（deploymentId 併読廃止により重要度上昇）|
-> **実装上の注意（対象検索-02）**: `organizations:ListAccounts` の `MaxResults` は**最大 20**（1000 ではない）。また AWS 公式が「**結果が空でも続きがある場合がある。`NextToken` が null になるまで繰り返すこと**」と警告しており、空ページで打ち切る実装はバグになる。アカウントの状態判定は `Status`（2026-09-09 廃止）でなく **`State`** を使う。
+> **実装上の注意（対象検索-02）**: 対象アカウントは **SSM Parameter Store の登録リスト**から取得する（`/auth-monitoring/target-accounts`、形式 `[{accountId, appOwner, registeredAt}]`）。**リストが空の場合は巡回を中断する**（0 件で正常終了すると、消滅検知〔対象検索-13〕が全アプリを消滅扱いにしかねないため）。リストは**中央管理**とし、アプリ側が書き換えられる場所に置かない。
 
-| M-Q-17-2 | **対象アカウントの列挙方式**。【注意】`organizations:ListAccounts` は既定では管理アカウント限定。**案 c（推奨・2026-08 調査で判明）: Organizations の委任ポリシー（resource-based delegation policy）で共通基盤アカウントに `organizations:ListAccounts` を委任** → 対象検索 Lambda から直接呼べる（管理アカウントでの一度のポリシー設定のみ・AssumeRole 不要）/ 案 a: 管理アカウントに列挙用読み取りロールを置き AssumeRole / 案 b: 静的リスト（SSM Parameter 等）。範囲（全体 / OU / 明示リスト）とあわせて確定（10 §10.1.7 W3）|
-| M-Q-17-3 | 「認証構成情報が上がってくるはずなのに無い」の突合方法（API 提供契約リスト / タグ / Service Catalog launch 実績のどれと突合するか）と staleness 閾値（仮 90 日）|
+| ~~M-Q-17-2~~ | ~~対象アカウントの列挙方式~~ → **解決（2026-09-16）**: **SSM Parameter Store の登録リスト（申請ベース）**で確定。連携バケットと読み取りロールを案件側が作成する方式に変更したため、Organizations での全アカウント列挙では監視対象を判別できない。**Organizations の委任ポリシー依頼（旧 W1-3）は不要になった**。代償としてアカウント単位の登録漏れが起きうる（M-Q-17-3 で補完）|
+| M-Q-17-3 | 「認証構成情報が上がってくるはずなのに無い」の突合方法（API 提供契約リスト / タグ / Service Catalog launch 実績のどれと突合するか）と staleness 閾値（仮 90 日）。**2026-09-16 以降は重要度が上がった** — アカウント単位の登録が申請ベースになったため、**登録漏れを検出する唯一の手段**が本棚卸しになる |
 | M-Q-17-4 | 対象検索 Lambda の実装 + PoC（Phase 3/4。S3 List/GetObject のページング・VersionId 比較・アカウント横断のレート制御）|
 | M-Q-17-5 | 消滅検知（enabled=false 化）とアプリ廃止手続きの運用整合 |
 | M-Q-17-6 | 認証構成情報 openapi.yaml と本番デプロイの drift 検出（全量検査（モード2、日次）の実測 404 で顕在化はするが、能動検出の要否）|
@@ -290,5 +292,5 @@ SCP: apigateway:POST /restapis / apigateway:PATCH 等を Deny
 - [18-scan-modes-and-scheduling.md](18-scan-modes-and-scheduling.md) — 自動差分検査（モード1）/ 全量検査（モード2）の実行モデル
 - [12-app-registry-design.md](12-app-registry-design.md) — 台帳スキーマ（lastArtifactVersions 等）
 - [13-openapi-registry-design.md](13-openapi-registry-design.md) — OpenAPI の認証構成情報からの取得
-- [16-cross-account-iam-design.md](16-cross-account-iam-design.md) — 読み取りロール / 認証構成情報連携バケット + アップロードロールの StackSets 配布
+- [16-cross-account-iam-design.md](16-cross-account-iam-design.md) — 読み取りロール / 認証構成情報連携バケット + アップロードロールの**案件側作成とオンボーディング**（§16.4）
 - [§C-API-5](../proposal/common/05-self-service-catalog.md) — Service Catalog 製品テンプレ
