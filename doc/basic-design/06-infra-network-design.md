@@ -400,6 +400,11 @@ Tier ごとに CPU プロファイルが 10-30 倍異なる（Broker = JWT/SAML 
 
 バックチャネルの名前解決は Split-horizon DNS（ADR-012 Follow-up / [keycloak-network-architecture.md §6.5](../common/keycloak-network-architecture.md)）: Broker Acct の Route 53 Private Hosted Zone で `idp.basis.example.com` を私設経路のエンドポイントに解決させ、`iss` の一致を保ったまま VPC 内完結させる。
 
+> **★2026-09-25 追記 — PHZ の構成規約と DR 時の挙動は [U8 §8.4.6b / §8.4.6c（D-U8-18）](08-availability-dr-design.md) が SSOT**:
+> - **同名 PHZ を東京用・大阪用の 2 つ持ち、それぞれ当該リージョンの VPC にのみ関連付ける**（1 VPC : 1 PHZ）。1 つの PHZ を両 VPC に関連付ける構成は「同一レコードしか返せない」ため不可。この方式により **DR 時のバックチャネル切替操作はゼロ**になる（大阪 VPC 作成時に PHZ-大阪を関連付けるだけ）。
+> - **PHZ のゾーン名はホスト単位で狭く切る**（`idp.basis.example.com`）。`basis.example.com` で切ると、**PHZ にレコードが無い名前は NXDOMAIN となりパブリックゾーンにフォールスルーしない**（AWS 公式明記）ため、VPC 内から `auth.basis.example.com` / `scim-*` が一切引けなくなる。
+> - ⚠ **Resolver forwarding rule は PHZ より優先される**（AWS 公式明記）。他組織 NW Acct が `basis.example.com` 系の forwarding rule を同一 VPC に関連付けていると **PHZ が無効化され、バックチャネルが公開経路へ出る**。§6.7 の要求仕様で既存ルールの有無を確認する（U8 **O-U8-14**）。
+
 ### 6.3.2 決定 D-U6-06: バックチャネル経路は PrivateLink を推奨
 
 | 観点 | ① TGW | ② VPC Peering | ③ **PrivateLink（推奨）** |

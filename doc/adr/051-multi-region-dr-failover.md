@@ -382,7 +382,12 @@ resource "aws_cloudfront_distribution" "auth" {
 }
 ```
 
-### D.2 Route 53 Health Check + Failover
+> ⚠ **2026-09-25 追記（U8 D-U8-16 が SSOT）**: 本節 §D.1 / §D.2 の「Route 53 Health Check による自動フェイルオーバー」「CloudFront を Primary / DR の 2 本持つ構成」は**現行設計では採らない**。
+> - 手動コールド DR（RTO 日オーダー）では自動切替に意味がないため、**切替方式は [U8 §8.4.6 D-U8-16 = オリジン FQDN 間接化（自社 Route 53 の 1 レコード書換）](../basic-design/08-availability-dr-design.md)** を第一候補とする。
+> - **§D.1 の図（CloudFront 2 本 + Route 53 振分）は成立しない — 2026-09-25 に AWS 公式で確認済み（U8 §8.4.6a、O-U8-12 クローズ）**。①同一の代替ドメイン名は**他ディストリビューションに存在すると追加できない**（自アカウント所有でも不可）②distribution の選択は **`Host` ヘッダ依存で DNS/IP/SNI に依存しない**③ワイルドカード重複時も **DNS の向き先に関係なく specific match が勝つ**。よって **DNS による CloudFront 間フェイルオーバーは原理的に不可能**。同じ §D.1 内の「1 ディストリビューション + Origin Group」記述とも矛盾する。**Warm/Hot（パイロットライト）復活時に本節を叩き台にする場合は U8 §8.4.6a を先に適用すること。**
+> - **スプリットホライズン DNS（`idp.basis.example.com`）の DR は、同名 PHZ を東京用/大阪用に 2 つ持ち VPC 別に関連付ける方式に確定**（U8 §8.4.6b D-U8-18）。バックチャネル側の切替操作はゼロ。
+
+### D.2 Route 53 Health Check + Failover（⚠ 旧・参考 — 上記追記を参照）
 
 ```hcl
 resource "aws_route53_health_check" "auth_primary" {

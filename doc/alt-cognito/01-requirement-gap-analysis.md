@@ -1,6 +1,6 @@
 # Amazon Cognito 適合性分析 — 現行要件を満たせるか
 
-作成: 2026-09-16 / 最終更新: 2026-09-16（v2）
+作成: 2026-09-16 / 最終更新: 2026-09-25（v4 — トークン制御の実装モデル §5.5 を追加）
 位置づけ: **別世界線の検討（調査のみ）**。本書は現行の設計判断（Keycloak 採用、[ADR-032](../adr/032-ciam-platform-cost-comparison-10m-mau.md)）を変更しない。
 評価対象: 現行の前提 **P-01〜P-20**（[01-architecture-baseline.md](../basic-design/01-architecture-baseline.md)）と主要な設計判断
 調査方法: AWS / ServiceNow の公式ドキュメントで裏取り。出典は §10
@@ -18,7 +18,7 @@
 | 判定 | 件数 | 内容 |
 |---|:-:|---|
 | 🔴 **代替不能 / 重大** | **3** | **接続 IdP 数の天井 1,000**（P-16）/ **DR 先に大阪が選べない**（P-15）/ **TOTP MFA が DR 中に使えない**（[02](02-dr-analysis.md)）|
-| 🟠 **要件かアーキの変更が必要** | 4 | ES256 / 属性スキーマ不可逆 / セッション制御 / `sub` の形式 |
+| 🟠 **要件かアーキの変更が必要** | 6 | ES256 / 属性スキーマ不可逆 / セッション制御 / `sub` の形式 / **アクセストークンの `aud` 欠落**（§5.5）/ **トークン制御が単一 Lambda に集約**（§5.5） |
 | 🟢 **解消** | 1 | SAML IdP 不可 → ServiceNow の OIDC 化で回避可（§4） |
 | 🟡 **自作で埋まる**（Keycloak でも自作する） | 4 | SCIM 受信 / HRD / JIT 制御 / 管理 API |
 | 🟢 **Cognito の方が容易** | 4 | パスワード API / ブローカー分離が不要 / 運用負荷 / 構築工数 |
@@ -44,7 +44,7 @@
 | P-07 | 全顧客ユーザーはフェデレーション、IdP-KC 収容 | 🟢 | **2 層に分ける必要が消える**（§6.2）。1 つの user pool がローカル収容とフェデレーションを兼ねる |
 | **P-08** | **識別子 3 階層（sub UUID / `<tenant>-<userid>` / IdP sub）** | 🟠 | **`sub` は RFC UUID ではない**（公式明記）。username は変更不可・削除後は再利用可 |
 | **P-09** | **AT 30 分 / RT 30 日 + Rotation / 絶対 24h / アイドル 1h / ES256** | 🟠 | **ES256 不可（RS256 固定）**。セッション cookie は **1 時間固定・非設定** |
-| P-10 | JWT クレーム最小・PII 非搭載 | 🟠 | app client の read 属性で制御可。ただし **ServiceNow OIDC 化で PII 経路の再設計が要る**（§4.3a） |
+| P-10 | JWT クレーム最小・PII 非搭載 | 🟠 | ID トークンは app client の read 属性で制御可。ただし **ServiceNow OIDC 化で PII 経路の再設計が要る**（§4.3a）。**アクセストークン側は別問題で `aud` が無く、整形は Lambda 一択** → §5.5 |
 | P-11 | SSO 信頼レベル L1 / L3 | 🟡 | L3（顧客 IdP へのログアウト連鎖）は標準に無く自作 |
 | **P-12** | **JIT + SCIM 受信、Custom Authenticator SPI 案 B** | 🟡 | SCIM 受信は自作（Keycloak でも自作）。SPI 相当は Lambda トリガーで代替 |
 | **P-13** | **ServiceNow パターン ②（L1 SCIM + L2 SAML JIT）** | **🟢** | **OIDC SSO + 自動プロビジョニングが公式機能として存在**（§4.2）。L2 を SAML → OIDC に組み替え |
@@ -291,6 +291,64 @@ P-08 は「3 階層（**sub UUID** / `<tenant>-<userid>` / IdP sub）」。開�
 
 影響は限定的だが、**アプリ標準の文言修正とベンダーへの再告知**が必要。あわせて `username` は**作成後変更不可**（規約と相性が良い）だが**削除後は再利用できてしまう**点も確認が要る。
 
+### 5.5 トークン制御の実装モデル — 宣言的マッパー vs 単一 Lambda（P-10 / ADR-030）★v4 新規
+
+Keycloak と Cognito の差は「できる / できない」ではなく、**コードに落ちる範囲と、そのコードが何本に分かれるか**にある。Cognito でも全て実装可能だが、**実装の総量が多く、かつ 1 本の関数に集約される**。
+
+#### (a) やりたいこと別の実現手段
+
+◎ = 宣言的（設定のみ）/ ▲ = コード必要 / ✕ = 不可
+
+| やりたいこと | Keycloak | Cognito |
+|---|:---:|:---:|
+| ユーザー属性をクレームに | ◎ User Attribute Mapper | ◎ ID トークンには自動搭載 |
+| クレーム名の変更・名前空間・ネスト | ◎ Token Claim Name（`a.b.c` 記法） | ▲ Lambda |
+| ロール / グループをクレームに | ◎ Realm/Client Role・Group Membership Mapper | ◎ `cognito:groups` は自動。**整形・絞り込みは** ▲ |
+| **アクセストークンへの独自クレーム** | ◎ マッパーのチェックボックス | ▲ **Pre Token Generation V2 + Essentials/Plus** |
+| **`aud`（audience）の制御** | ◎ Audience Mapper | **✕ → ▲**（下記 (b)） |
+| 要求スコープに応じた出し分け | ◎ Client Scope にマッパーを紐付け | ▲ Lambda 内で分岐 |
+| クライアント（Web/モバイル）別の出し分け | ◎ Client Scope 割当 | ▲ Lambda 内で `clientId` 分岐 |
+| 値の加工・計算・条件付き値 | ▲ Java ProtocolMapper SPI | ▲ Lambda |
+| 外部 DB / API を引いて付与 | ▲ Java SPI（Keycloak 内の同期 I/O は非推奨） | ▲ **Lambda（VPC・IAM が揃い素直）** |
+| フェデ時 IdP クレーム → ローカル属性 | ◎ Attribute Importer | ◎ 属性マッピング（**1:1 のみ・変換不可**） |
+| **IdP クレーム値に応じたロール / グループ付与** | ◎ **Advanced Claim to Role / to Group** | **✕ → ▲** Lambda + `AdminAddUserToGroup` |
+| pairwise subject（クライアント別 `sub`） | ◎ Pairwise Subject Identifier Mapper | ✕ |
+| クレームの削除・秘匿 | ◎ マッパーを外す | ▲ `claimsToSuppress` |
+
+#### (b) `aud` 欠落は Lite を選べなくする 3 本目の理由
+
+[ADR-030 §F](../adr/030-minimal-jwt-claim-design.md) が既に指摘しているとおり、**Cognito のアクセストークンには `aud` クレームが無い**（`client_id` / `scope` / `token_use` のみ）。ADR-030 §E は `aud` を **「❌ 削るな（token confused deputy 攻撃）」** と判定しており、対処 A（**Pre Token Generation V2 で注入**）を本基盤推奨としている。
+
+**V2 は Essentials / Plus ティア必須**。したがって §7「読み方 2」の Lite 棄却理由に **3 本目**として加わる。
+
+> 対処 B（API 側で `aud` 検証を捨て `client_id` 検証に置換）なら Lite でも通るが、OAuth 標準から外れ、API プラットフォーム側の検証規約（ADR-030 §E）を崩す。
+
+#### (c) トークン制御が Pre Token Generation 1 本に集約される
+
+Cognito の Lambda トリガーは **User Pool あたりトリガー種別ごとに 1 本**。結果として次がすべて同じ関数に相乗りする。
+
+| 責務 | Keycloak での置き場所 | Cognito |
+|---|---|---|
+| 停止伝播の判定 | Custom Authenticator SPI（案 B） | Pre Token Generation |
+| `aud` 注入 | Audience Mapper（**設定**） | Pre Token Generation |
+| クレーム整形・名前空間 | Protocol Mapper（**設定**） | Pre Token Generation |
+| IdP クレーム → ロール / グループ | Advanced Claim to Role/Group（**設定**） | Pre Token Generation |
+
+生じる差:
+
+- **全トークン発行（リフレッシュ含む）の同期パス上に Lambda が常駐**する。例外 = ログイン失敗、コールドスタート = 認証レイテンシ
+- 接続アプリが増えるたびに `clientId` 分岐がこの 1 関数に積まれる。**共有基盤の単一障害点かつ変更集中点**になる
+- Keycloak 側は上記 4 つのうち **3 つが宣言的マッパー**（コード 0 行・実行時障害点なし・IaC で即時反映）
+
+#### (d) 判定
+
+**🔴 にはならない。** すべて Lambda で実装可能であり、代替不能な障害ではない。効果は次の 2 点にとどまる。
+
+1. 🟠 が 2 件増える（`aud` 欠落 / 単一 Lambda への集約）
+2. §7「読み方 1」の根拠が**構築工数の差だけ**に痩せる（Lite 比較が使えないため）
+
+したがって **判断の主軸が U-6 / U-13 / U-8 であることは変わらない**。本節は、それら 3 件がクリアして「コストと 🟠 群のトレードオフ」に落ちた場合に、🟠 群の重さを測る材料として使う。
+
 ---
 
 ## 6. 🟡 自作で埋まるもの / 🟢 Cognito が有利なもの
@@ -304,7 +362,9 @@ P-08 は「3 階層（**sub UUID** / `<tenant>-<userid>` / IdP sub）」。開�
 | **JIT の制御** | Pre sign-up / Pre token generation Lambda トリガー | Custom Authenticator SPI 案 B |
 | **停止伝播・ライフサイクル** | AdminDisableUser + カスタム属性 + EventBridge | 同等の自作 |
 
-→ **この 4 つは差分にならない。**
+→ **この 4 つは「どちらも自作」という点では差分にならない。**
+
+ただし **自作の総量と分割可能性は同じではない**。トークン整形・`aud` 注入・ロール付与は Keycloak では宣言的マッパー（設定）で済むのに対し、Cognito では上記の停止伝播判定と**同じ Pre Token Generation 関数**に集約される。詳細は **§5.5 (c)**。
 
 ### 6.2 ブローカーと IdP を分ける必要が消える ★新規
 
@@ -323,6 +383,7 @@ P-08 は「3 階層（**sub UUID** / `<tenant>-<userid>` / IdP sub）」。開�
 | **パスワード変更・再設定 API** | `ChangePassword` / `ForgotPassword` / `ConfirmForgotPassword` が**標準 API として存在**。Keycloak で未決の A-1（画面誘導しかない）・§4.3（忘れた人の再設定）・M-Q-11-6（2-tier での `kc_action`）が**まるごと消える** |
 | **運用負荷** | クラスタ版上げ・証明書更新・SRE 境界（ADR-056 §L7）が消える |
 | **構築工数** | idm-api（P-20）の大半が AWS SDK 呼び出しに置き換わる。現行 WBS **545〜1,026 人日**の相当部分が削減対象 |
+| **拡張 1 件あたりの実装コスト** ★v4 | **コードを書くことになった場合の単価は Cognito の方が軽い**。Lambda は Node / Python で書け、**IdP 本体のイメージ再ビルドが不要**、要員も調達しやすい。対して Keycloak の Custom SPI は Java + カスタムイメージ CI + **Keycloak バージョン追従**（`spi-private` は破壊的変更あり）+ **Red Hat サポート対象外**という固定費を伴う。§5.5 は「コードに落ちる件数」で Keycloak 有利と述べているが、**単価はこの逆**である点を併記する |
 
 ---
 
@@ -354,7 +415,7 @@ Cognito の料金は **フェデレーション（SAML/OIDC）ユーザーが全
 **読み方:**
 
 1. **100 万 MAU では Cognito Lite ≈ Keycloak インフラ費**（$119K vs $122K）。ここに Keycloak の**構築 545〜1,026 人日**が乗るので、**初回リリース規模なら Cognito が明確に安い**
-2. ただし **Lite は Managed Login 不可・Refresh Token Rotation 不可**。実用上は Essentials → **$180K/年**
+2. ただし **Lite は ①Managed Login 不可・②Refresh Token Rotation 不可・③アクセストークンへの `aud` 注入不可**（Pre Token Generation V2 が Essentials/Plus 必須 → **§5.5 (b)**）。実用上は Essentials → **$180K/年**。**結果として 100 万 MAU の比較は「$119K ≈ $122K」ではなく「Essentials $180K vs Keycloak $122K」で確定**し、読み方 1 の根拠は**構築工数の差だけ**になる
 3. **500 万を超えると逆転**。10M では [ADR-032](../adr/032-ciam-platform-cost-comparison-10m-mau.md) の結論（14 倍差）がそのまま再現される
 4. P-02 は「**設計上限 10M / 初回 100〜500 万**」なので、**損益分岐は初回リリースと最終到達点の間にある**
 
