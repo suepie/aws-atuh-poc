@@ -341,6 +341,46 @@ P-18 により公開エッジ（CloudFront + WAF + ALB/NLB + NFW）は他組織�
 
 **成立条件 = REQ-DR-06**（他組織エッジが自社オリジンを FQDN で解決すること）。**未合意なら案 A または D にフォールバック**し、REQ-DR-02 の SLA を維持する。
 
+##### ★成立条件の実体は REQ-IN-13 の選択（2026-09-25 公式確認）
+
+[U6 REQ-IN-13](06-infra-network-design.md) は「CloudFront → エッジ LB の到達方式 = **(a) パブリック custom origin** か **(b) VPC origins プライベート LB**」を未確定としている。**この選択が案 C の成否をそのまま決める。**
+
+AWS 公式（[Restrict access with VPC origins](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/private-content-vpc-origins.html)）より:
+
+> For **Origin ARN**, select the ARN of your Application Load Balancer, Network Load Balancer, or EC2 instance.
+> For **Origin domain**, select your VPC origins resource from the dropdown list.
+
+> Select the VPC origin that you're going to update and choose **Delete**. This disassociates the VPC origin from your distribution. … **Wait for your VPC origin status to change to Deployed. This can take up to 15 minutes.** … Choose **Create origin**.
+
+**VPC origins はリソース ARN を直接指すため DNS による間接化が存在しない。** よって:
+
+| REQ-IN-13 | DR 切替方式 | 主導権 | 操作内容 |
+|---|:-:|:-:|---|
+| **(a) パブリック custom origin** | **案 C** | **自社** | `origin-*` レコード書換のみ |
+| **(b) VPC origins** | **案 A** | **他組織** | 大阪用 VPC origin を新規作成（対象 ALB が Active になってから）→ distribution から旧 origin を切離 → 付け替え（**Deployed 待ち最大 15 分**） |
+
+**⚠ [U6 §6.7.2](06-infra-network-design.md) は「P-18 の露出最小化志向だと (b) VPC origins が整合的」としている** — 現行の志向のままでは案 C は使えず、**案 A（他組織作業）が既定**になる。
+
+**(b) を採る場合の評価**: 大阪（ap-northeast-3）は VPC origins 対応リージョン（東京は `apne1-az3` のみ除外）であり、VPC origins は RAM でクロスアカウント共有も可能なため **DR は実現できる**。ただし **平時から大阪用 VPC origin を作り置きできない**（対象 ALB が Active でないと作成不可 + 大阪は平時プロビジョニングなし = D-U8-14）。**RTO 3 日なら 15 分の Deployed 待ちは誤差**のため、**(b) なら案 A で十分**であり REQ-DR-01/02（他組織の切替対応）を維持すればよい。
+
+→ **O-U8-15**（§8.9.1）として REQ-IN-13 の選択待ちとする。**どちらでも RTO は満たせるため DR 側からの制約は課さない**が、「(a) なら DR 切替が自社完結する」という利点は REQ-IN-13 の判断材料として提示する。
+
+##### 書き換える対象の具体（案 C = (a) 採用時）
+
+Public Hosted Zone `basis.example.com`（弊社アカウント）のレコードは 2 系統に分かれる。
+
+| レコード名 | 型 | 値 | DR 時 |
+|---|---|---|:-:|
+| `auth.` / `idp.` / `scim-broker.` / `scim-idp.` / `admin.` / `launchpad.` / `api.` | A/AAAA (Alias) | 他組織 CloudFront の `dxxxx.cloudfront.net` | **不変** |
+| **`origin-auth.` / `origin-idp.` / `origin-scim-*.` / `origin-admin.` …** | **CNAME** | 東京エッジ LB の DNS 名 | **★大阪へ書換（対象ドメイン数と同数・最大 7 本程度）** |
+
+**CloudFront 側の初期設定（他組織へ 1 回だけ依頼 = REQ-DR-06 の実体）**: Origin domain に LB の DNS 名や IP を直接書かず、**`origin-auth.basis.example.com` を指定してもらう**。以降 CloudFront は毎回この名前を解決するため、弊社のレコード変更で向き先が変わる。
+
+**併せて必要な 2 点（欠けると切替時に失敗する）**:
+
+1. **大阪側エッジ LB に `origin-*.basis.example.com` の証明書**。ALB 用 ACM はリージョン内リソースのため**大阪で別途発行**が必要 → **RB-DR-03 の手順に含める**。
+2. **Host ヘッダの扱い**。CloudFront は custom origin に対し既定で **Host をオリジンドメイン名（`origin-auth...`）に書き換えて**送る。したがって ①エッジ LB のホストベースルーティングが `origin-*` を受ける、または Origin Request Policy で viewer の Host を転送する、のいずれかが必要。②Keycloak 側は `hostname` 固定のため `iss` に影響はないが、`proxy-headers` / XFF 信頼チェーン（[06a §A.1.1](06a-network-flow-diagrams.md) の既知論点）と整合させる。→ **REQ-DR-06 の付帯条件として要求仕様に明記**。
+
 **実装メモ**:
 
 - オリジン用 FQDN（例 `origin-auth.basis.example.com`）を**自社の Public Hosted Zone** に置き、平時は東京側エンドポイントを指す。TTL 60 秒以下。
@@ -384,6 +424,8 @@ U6 §6.3.1 のとおり、`idp.basis.example.com` は **split-horizon DNS** で�
 | `kc-admin.broker.internal` / `kc-admin.idpkc.internal` | なし（意図的に不在） | PHZ のみ | PHZ 方式に従う |
 | `scim-broker.*` / `scim-idp.*` | エッジ CF | — | オリジン FQDN 書換 |
 
+> 📊 **図は [06a §A.1.3.8](06a-network-flow-diagrams.md)**（構成図 1 + シーケンス図 2 = 平時の同一 FQDN 2 系統解決 / DR 切替の操作順序 + 切替点一覧）。本節は決定の SSOT、06a は見取り図。
+
 **平時の解決フロー**
 
 ```
@@ -404,30 +446,46 @@ U6 §6.3.1 のとおり、`idp.basis.example.com` は **split-horizon DNS** で�
 - **split-view（split-horizon）DNS は公式サポート構成**として明記されている
 - **TGW / VPC Peering の transitive connectivity は名前解決に影響しない**。VPC-1 のインスタンスは常に自 VPC に関連付いた PHZ の答えを得る → **東京 Broker が大阪 EPS を引く「たすき掛け」は原理的に起きない**
 
+**2 面持ちの中身** — 同じゾーン名・同じレコード名・違う値を、別々の VPC にだけ見せる:
+
+```
+PHZ-TYO（関連付け: 東京 VPC-K / VPC-M / App Acct VPC）
+  idp.basis.example.com  A → vpce-0aaa….ap-northeast-1.vpce.amazonaws.com（東京 EPS）
+
+PHZ-OSA（関連付け: 大阪 VPC-K / VPC-M / App Acct VPC）
+  idp.basis.example.com  A → vpce-0bbb….ap-northeast-3.vpce.amazonaws.com（大阪 EPS）
+```
+
+**切り替わる理由は「レコードが変わる」ことではなく「聞く側が引っ越す」こと**である。平時は東京の Broker Pod が東京 VPC の PHZ-TYO を引き、DR 後は大阪の Broker Pod が大阪 VPC の PHZ-OSA を引く。**誰もレコードを書き換えていない。**
+
 | 観点 | ① 1 PHZ を両 VPC に関連付け | ② **2 PHZ（同名・VPC 別）** |
 |---|:-:|:-:|
-| 東京/大阪で別の EPS を指せるか | **不可**（同一レコードしか返せない） | **可** |
-| DR 時の操作 | レコード書換が必要 | **ゼロ** |
-| フェイルバック | 書き戻しが必要 | **ゼロ** |
-| 東西同時稼働での検証 | 不可 | **可**（たすき掛けも起きない） |
+| 東京/大阪で別の EPS を指せるか | **不可**（値を 1 つしか持てない → 大阪 Pod が東京 EPS を引いて不通） | **可** |
+| DR 時 | **東京 EPS → 大阪 EPS への書換が必要**（= 切替操作が発生） | **切替操作なし**（下記） |
+| フェイルバック | 書き戻しが必要 | 不要（東京 VPC は常に PHZ-TYO を引く） |
+| 東西同時稼働での検証 | **不可**（書き換えた瞬間に東京側も大阪を向く） | **可**（たすき掛けも起きない） |
 | 採否 | ❌ | ✅ **採用** |
 
 **DR 切替の全体像（D-U8-16 案 C と併せて）**
 
-| 対象 | 操作 |
-|---|---|
-| フロントチャネル（公開側） | **`origin-idp.*` / `origin-auth.*` を大阪へ書換**。公開名と ACM 証明書は不変 |
-| バックチャネル（PHZ 側） | **操作ゼロ**。大阪 VPC 作成時に PHZ-大阪を関連付けるだけ（RB-DR-03 の手順に含める） |
-| `hostname` / `hostname-admin`（U6 D-U6-11） | **不変** → `iss` 不変 |
+| 対象 | 操作 | 位置づけ |
+|---|---|---|
+| Public Zone の `auth.` / `idp.` / `scim-*`（Alias → CF） | **不変** | 切替を下流の `origin-*` に押し出しているため |
+| **Public Zone の `origin-*`（CNAME → エッジ LB）** | **★大阪へ書換** | **これが切替の実体 = カットオーバー点（1 回）** |
+| **PHZ（`idp.basis.example.com` → EPS）** | **切替操作なし**（下記の精密化を参照） | **2 面持ちにしているため** |
+| `hostname` / `hostname-admin`（U6 D-U6-11） | **不変** | → `iss` 不変 |
 
-→ **DR における DNS 操作は `origin-*` レコードの書換のみ**に収束する。
+> **⚠ 「操作ゼロ」の精密化（2026-09-25）**: **PHZ-OSA の `idp.basis.example.com` の値は、大阪の PrivateLink エンドポイントが生成されるまで確定しない**（EPS の DNS 名は作成後に決まる）。したがって平時に書いておくことはできず、**大阪再構築の IaC が同時に作る**。正確には「**切替という操作が存在しない**」— 東京側の PHZ-TYO は最後まで一切触らず、大阪側のレコードは再構築の一部として生成される。**カットオーバーとして意識すべき操作は `origin-*` の書換 1 回だけ**、という構造である。
+>
+> **推奨**: **大阪 VPC と PHZ-OSA のゾーン自体は平時から作成しておく**（VPC / サブネット / PHZ は実質無償）。そうすれば ①平時からドリフト検知（§8.3.2）の対象にでき ②DR 時に残る DNS 作業は「PHZ-OSA にレコードを 1 本作る」だけになる ③Game Day で関連付けの検証ができる。**§8.6.2「平時に維持する対象」への追加候補**。
 
 #### 8.4.6c 落とし穴と設計指針（公式確認に基づく）
 
 | # | 落とし穴 | 指針 |
 |:-:|---|---|
 | **1** | ★**PHZ にゾーンがマッチしてレコードが無い場合、Resolver は NXDOMAIN を返しパブリックゾーンにフォールスルーしない**（公式明記） | **PHZ のゾーン名を広く取らない。** `basis.example.com` で PHZ を作ると、VPC 内から `auth.basis.example.com` / `scim-*` が**すべて NXDOMAIN** になる。**`idp.basis.example.com` のようにホスト単位の狭いゾーンで切る**。広く取るなら公開名を全件 PHZ に複製し続ける運用（恒久的なドリフト源）になる |
-| **2** | ★**Resolver forwarding rule は PHZ より優先される**（公式明記） | 他組織 NW Acct がオンプレ連携で `basis.example.com` 系の forwarding rule を張っていると **PHZ が無効化され、バックチャネルが公開経路に出る**。→ **要確認事項（O-U8-14）** |
+| **2** | ★**Resolver forwarding rule は PHZ より優先される**（公式明記） | **本件は既に現実のリスク**: REQ-OUT-04（顧客 IdP FQDN の解決系を NFW の FQDN 評価と揃える）で **Route 53 Resolver ルールを使う前提が設計に入っている**（U6 §6.7 / DU-U6-13）。**そのルールの対象ドメインに `basis.example.com` を含めてはならない** — 含めると PHZ が無効化され、バックチャネルが公開経路へ出る（`iss` は保たれるため気づきにくい静かな劣化）。他組織側の既存ルールの有無も確認 → **O-U8-14 / 06a A6a-7** |
+| **2'** | PHZ の VPC 関連付けは 1 面ではない | §A.1.2 要件 G / REQ-OUT-04 により **App Acct VPC も `auth.basis` を私設解決**する。東京で N 面ある関連付けを**大阪でも同数再現**する必要があり、cross-account 分は RAM 認可を伴う。**RB-DR-03 に「PHZ-OSA の VPC 関連付け N 件」を明記**（→ 06a A6a-6） |
 | 3 | ROSA の CoreDNS 経路 | Pod → CoreDNS → ノード `resolv.conf` → VPC リゾルバ、が標準。**カスタム forward zone を入れると PHZ が効かない**。ROSA 標準構成のまま使うことを禁則側に確認 |
 | 4 | VPC の DNS 属性 | 大阪 VPC でも `enableDnsSupport` / `enableDnsHostnames` を有効化（zero-egress ROSA の前提）。IaC overlay に含める |
 | 5 | cross-account の VPC 関連付け | **authorization が必要でコンソール不可**（`CreateVPCAssociationAuthorization` → `AssociateVPCWithHostedZone`）。**IaC 必須**。RB-DR-03 の手順に明記 |
@@ -638,6 +696,7 @@ keycloak-dr-aurora-sync §5.5 の手順を正式化する（大阪 Primary 継�
 | O-U8-1 | **エッジ DR 切替の他組織合意** | REQ-DR-01（Origin Group 事前登録・自動切替）or REQ-DR-02（切替 SLA ≤ 10 分）。**未合意なら RTO 1h 非保証 → 顧客 SLA 文言修正が必要**（§8.4.5）。**2026-09-25: 合意すべき筆頭は REQ-DR-06（オリジンの FQDN 解決）に変更** — 成立すれば切替が自社完結し本項の依存が消える（D-U8-16） | 要求仕様書 v1 追補の回答時（Phase 1 契約前） |
 | **O-U8-11** ★2026-09-25 | **RTO = 3 日の前提反映** | ユーザーより **RTO 3 日**の前提提示。**§8.4.3 の「≈ 14 日」積み上げでは成立しない**（大阪 ROSA 再構築 = 数日 + 構成整合・検証 1〜2 日）。**O-U8-10 の案 ①②③ の選択と一体で再決定**し、成立する場合は §8.2.1 / §8.4.3 / §8.4.4 / D-U8-05 / ADR-051 / 顧客 SLA 文言を一括改訂する。**自動フェイルオーバー不要という結論は RTO 値に依存しない**（§8.4.6） | O-U8-10 と同時（Phase 1 実装前） |
 | ~~O-U8-12~~ | ~~CloudFront 代替ドメイン名の重複制約の裏取り~~ → **2026-09-25 公式確認により クローズ**。重複登録不可 + distribution 選択は `Host` ヘッダ依存 + ワイルドカード迂回も不可の 3 点を原文引用で §8.4.6a に固定。**案 B 棄却確定 / ADR-051 §D.1 の図は不成立確定** | **済** |
+| **O-U8-15** ★2026-09-25 | **REQ-IN-13 の選択（DR 切替の主導権が決まる）** | (a) パブリック custom origin なら **案 C（自社完結・`origin-*` レコード書換）**、(b) VPC origins なら **案 A（他組織が VPC origin を付け替え・Deployed 待ち最大 15 分）**。**VPC origins はリソース ARN 指定で DNS 間接化が存在しない**ことを公式確認済み（§8.4.6 ★節）。**どちらでも RTO 3 日は満たせるため DR 側から制約は課さない**が、「(a) なら DR 切替が自社完結する」ことを REQ-IN-13 の判断材料として提示する。**U6 §6.7.2 は (b) を志向しているため、現状の既定は案 A** | REQ-IN-13 確定時（U6 / 00a B-2.1 と合同） |
 | **O-U8-14** ★2026-09-25 | **Resolver forwarding rule と PHZ の競合確認** | 公式に「**Resolver rule は PHZ より優先**」と明記。他組織 NW Acct がオンプレ連携等で `basis.example.com` 系の forwarding rule を同一 VPC に関連付けていると、**PHZ が無効化されバックチャネルが公開経路に出る**（split-horizon の破綻 = `iss` は保たれるが token/JWKS がインターネット経由になる）。他組織へ**既存 Resolver rule の有無を確認**し、無いことを要求仕様に含めるか判断（§8.4.6c #2） | 要求仕様書 v1 追補の回答時（Phase 1 契約前） |
 | **O-U8-13** ★2026-09-25 | **大阪側送信元 IP の平時確定** | REQ-DR-08（顧客 IdP の Inbound 許可リストに大阪 IP を平時登録）の前提として、**大阪は平時プロビジョニングなしでも NAT EIP を先行確保**できるか。あわせて**送信元 IP 制限を行う顧客 IdP の比率**をヒアリング項目化（§8.4.7 (b)） | オンボーディング手順確定前（U9 §9.7） |
 | O-U8-2 | **G-OSAKA** | 大阪インスタンス在庫 + vCPU クォータ実確認（RTO 成立条件 2）。クォータは東京ピーク同等値で事前申請 | Phase 1 前 PoC ゲート（U1 §1.5） |
@@ -677,7 +736,7 @@ keycloak-dr-aurora-sync §5.5 の手順を正式化する（大阪 Primary 継�
 | D-U8-12 | フェイルバック = 計画 Switchover（RPO 0）+ 禁止 3 操作 | §8.7.1 |
 | D-U8-13 | DR 訓練 = Game Day 年 2 回（**H1 大阪オンデマンド再構築+リストア / H2 論理破壊 = PITR・イミュータブルスナップショット復元**、2026-07-30 D-18 反映） | §8.7.2 |
 | **D-U8-14** | **バックアップ/イミュータブルスナップショット戦略 + 大阪オンデマンド再構築**（2 障害シナリオ、Backup Vault Lock、RPO サブ決定 O-U8-10） | §8.3.1a |
-| **D-U8-16** ★2026-09-25 | **手動切替の方式 = オリジン FQDN 間接化（案 C）**。自社 Route 53 の 1 レコード書換で完結させ、エッジ設定変更（他組織依頼）を DR のクリティカルパスから外す。Route 53 で CF 2 本を振り分ける案 B は CNAME 重複制約により棄却（O-U8-12 で裏取り）。成立条件 = REQ-DR-06 | §8.4.6 |
+| **D-U8-16** ★2026-09-25 | **手動切替の方式 = オリジン FQDN 間接化（案 C）**。自社 Route 53 の `origin-*` レコード書換で完結させ、エッジ設定変更（他組織依頼）を DR のクリティカルパスから外す。Route 53 で CF 2 本を振り分ける案 B は代替ドメイン名の重複制約により棄却（公式確認済み）。**成立条件 = REQ-DR-06、その実体は REQ-IN-13 が (a) custom origin を選ぶこと**（(b) VPC origins は ARN 指定で DNS 間接化が存在せず案 A になる → **O-U8-15**）。RTO 3 日なら (a)(b) いずれでも成立 | §8.4.6 |
 | **D-U8-17** ★2026-09-25 | **フェデレーション先への影響 = 同一 FQDN 維持で `iss`/JWKS/`redirect_uri`/SAML 証明書はすべて不変**。例外は 3 点（① 顧客 IdP が見る送信元 IP の変化 = REQ-DR-08 / ② SCIM 受信 WAF の許可リスト = REQ-DR-07 / ③ エッジを 2 本にした場合の証明書・CNAME） | §8.4.7 |
 | **D-U8-18** ★2026-09-25 | **スプリットホライズン DNS の DR = 同名 PHZ の 2 面持ち（東京用 / 大阪用を VPC 別に関連付け）**。バックチャネルの切替操作はゼロ、フェイルバックも対称。1 PHZ を両 VPC に関連付ける案は「同一レコードしか返せない」ため棄却。DR の DNS 操作は `origin-*` レコード書換のみに収束（+ 落とし穴 6 点 = §8.4.6c、特に**PHZ のゾーン名を広く取ると NXDOMAIN でフォールスルーしない**） | §8.4.6b / §8.4.6c |
 
@@ -691,3 +750,5 @@ keycloak-dr-aurora-sync §5.5 の手順を正式化する（大阪 Primary 継�
 - 2026-07-26 (v1.3): 可読性向上 — mermaid 図 3 点追加（§8.3.1 復元 2 経路の分岐図 / §8.4.2 フェイルオーバータイムラインのシーケンス図 / §8.6.1 パイロットライト平時・Failover 時の状態対比図）。設計内容の変更なし。
 - 2026-09-25 (v1.4): **DR 手動切替方式とフェデレーション影響を新設** — §8.4.6 **D-U8-16（手動切替 = オリジン FQDN 間接化。Route 53 で CF 2 本を振り分ける案は CNAME 重複制約で棄却）**、§8.4.6a（CloudFront 代替ドメイン名重複制約の裏取り要 + ADR-051 §D.1 図の不整合指摘）、§8.4.7 **D-U8-17（同一 FQDN 維持で `iss`/JWKS/`redirect_uri`/SAML 証明書は不変。例外 3 点）** を追加。要求仕様に **REQ-DR-06（オリジンの FQDN 解決）/ REQ-DR-07（SCIM 受信 WAF 許可リストの大阪維持）/ REQ-DR-08（顧客 IdP Inbound 許可リストへの大阪 IP 平時登録）** を新設。未決に **O-U8-11（RTO = 3 日の前提反映 — 現行 ≈14 日では不成立、O-U8-10 と一体で再決定）/ O-U8-12 / O-U8-13** を追加。U9 へ RB-DR-02 改訂とオンボーディング手順追加を引き渡し（U9 §9.7 補足 3）。
 - 2026-09-25 (v1.5): **AWS 公式ドキュメントによる裏取り完了** — ① **O-U8-12 クローズ**: CloudFront は同一の代替ドメイン名を他ディストリビューションへ追加不可（自アカウント所有でも不可）/ distribution 選択は `Host` ヘッダ依存で DNS・IP・SNI に依存しない / ワイルドカード重複でも DNS の向き先に関係なく specific match が勝つ → **DNS による CloudFront 間フェイルオーバーは原理的に不可能**。原文引用を §8.4.6a に固定し、ADR-051 §D.1 の図の不成立を確定。② **§8.4.6b D-U8-18 新設**: スプリットホライズン DNS の DR = **同名 PHZ の 2 面持ち（1 VPC : 1 PHZ）** に確定。名前の棚卸し表 + 平時解決フロー + DR 時の操作範囲（`origin-*` 書換のみ・PHZ 側はゼロ）。③ **§8.4.6c 新設**: 落とし穴 6 点（**PHZ のゾーン名を広く取ると NXDOMAIN でパブリックへフォールスルーしない** / **Resolver forwarding rule が PHZ より優先** / CoreDNS 経路 / VPC DNS 属性 / cross-account 関連付けは IaC 必須 / EPS private DNS との競合）。④ **O-U8-14 新設**（他組織の既存 Resolver rule 確認）。U6 §6.3.1 と ADR-051 §D.2 に相互参照を追記。
+- 2026-09-25 (v1.6): **案 C の成立条件を REQ-IN-13 に接続**（公式確認: **VPC origins はリソース ARN 指定で DNS 間接化が存在しない**/ 更新は distribution からの切離 → 編集 → **Deployed 待ち最大 15 分** → 再紐付け）。§8.4.6 に ★節を追加し、**(a) custom origin = 案 C 自社完結 / (b) VPC origins = 案 A 他組織作業**の対応表と、**RTO 3 日なら双方成立**である旨を明記。**書き換える対象の具体**（不変レコード群と `origin-*` 群の 2 系統表 + CloudFront 初期設定 + 付帯条件 2 点 = 大阪側 `origin-*` 証明書 / Host ヘッダ書換）を追加。**O-U8-15 新設**（REQ-IN-13 選択待ち）。D-U8-16 の記述を更新。U6 §6.7.1 に相互参照を追記。
+- 2026-09-25 (v1.7): **§8.4.6b の「操作ゼロ」を精密化**（ユーザー指摘）。**PHZ-OSA のレコード値は大阪 EPS 生成後しか確定しない**ため「操作ゼロ」ではなく「**切替という操作が存在しない**」が正確（東京 PHZ-TYO は不触 / 大阪分は再構築 IaC が生成 / カットオーバーとして意識する操作は `origin-*` 書換 1 回のみ）。あわせて **2 面持ちの中身を具体レコードで例示**し「切り替わる理由はレコード変更ではなく**聞く側の引っ越し**」であることを明記。**「不変」が 2 種類あり理由が異なる**点（Public Zone の公開名 = 切替を `origin-*` に押し出したから / PHZ = 2 面持ちだから）を切替全体像の表に「位置づけ」列として追加。**推奨追加**: 大阪 VPC と PHZ-OSA のゾーンは平時作成（実質無償 → 平時ドリフト検知・Game Day 検証が可能、§8.6.2 への追加候補）。

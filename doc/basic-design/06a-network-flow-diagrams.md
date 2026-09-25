@@ -362,6 +362,38 @@ Broker KC Pod
 
 > **ブラウザがログイン画面を取りに行くのは公開経路、Broker がコードを交換するのは PrivateLink。**これが「フロントチャネルとバックチャネルの分離」（[U6 §6.3.1](06-infra-network-design.md)）の実体。同型の split-horizon はアプリ → Broker（B-I2、§A.1.2 の要点 E）でも使う。
 
+#### A.1.3.5a 用語: フロントチャネル / バックチャネルとは（2026-09-25 追記）
+
+OIDC のログイン 1 回は**通信経路が 2 系統**に分かれる。ここを押さえないと §A.1.3.8 の図が読めないため定義する。
+
+| | **フロントチャネル** | **バックチャネル** |
+|---|---|---|
+| 通り道 | **ブラウザ**（HTTP リダイレクト 302 で運ぶ） | **サーバー → サーバー**の直接 HTTPS |
+| 本件での主体 | 利用者ブラウザ → IdP-KC | **Broker KC → IdP-KC** |
+| 何が流れるか | 認可リクエスト / ログイン画面 / **認可コード** | **`POST /token`（コード→トークン交換）** / `GET /certs`（JWKS）/ `GET /userinfo` |
+| URL に載るか | **載る**（クエリ文字列） | **載らない**（TLS の中身） |
+| 利用者に見えるか | 見える（アドレスバーに出る） | 見えない |
+| インターネット必須か | **必須**（ブラウザは外にいる） | **不要**（サーバー同士なので閉じられる） |
+
+**2 系統に分かれている理由** = Authorization Code Flow の設計。認可コードはブラウザ経由（URL に載る）で運ぶが、**トークンは URL に載せない**。トークンはサーバー間の TLS 接続の中だけを流れるため、ブラウザ履歴 / Referer / アクセスログに漏れない。
+
+**本件の設計での帰結**:
+
+- **フロントチャネルは公開せざるを得ない**（ブラウザが外から来る）→ 他組織 CloudFront 経由（I-I1 / REQ-IN-02）
+- **バックチャネルは閉じられる**（サーバー同士）→ **PrivateLink 単方向で VPC 内に閉じる**（B-O2 / D-U6-06）
+- IdP-KC は**パスワードハッシュ保有側**（[ADR-033](../adr/033-keycloak-2tier-broker-idp-architecture.md) / P-17）なので到達経路を絞りたい。**バックチャネルだけを私設経路に落とせるのは、この 2 系統の性質があるから**である。
+
+#### A.1.3.5b なぜ「名前を分ける」ではダメなのか（split-horizon が必要な理由、2026-09-25 追記）
+
+「ブラウザ用と内部用で FQDN を分ければ split-horizon は不要では」という素朴案は、2 通りとも成立しない。**この棄却理由が未記載だったため明文化する。**
+
+| 案 | 内容 | 棄却理由 |
+|:-:|---|---|
+| **X** | 名前を 1 つにし、**公開 IP のみ**を返す（split-horizon をやめる） | Broker → IdP-KC のトークン交換が**インターネットに出て戻る**。NAT / NFW / CloudFront / WAF を経由し、**PW ハッシュを持つ IdP-KC への到達が公開面に依存**する。PrivateLink 単方向（IdP-KC 側から Broker へ構造的に到達不能）という分離が崩れる → P-17 / ADR-033 の前提破壊 |
+| **Y** | 名前を 2 つに分ける（ブラウザ用 `idp.basis.example.com` / 内部用 `idp-internal.basis.example.com`） | **`iss` が壊れる。** IdP-KC のトークンの `iss` は `https://idp.basis.example.com` 固定（KC の `hostname` 設定、U6 D-U6-11）。Broker が `idp-internal…` から discovery を取得すると**「取得元ホスト」と「discovery 内の issuer 値」が食い違い**、OIDC の issuer 検証が通らない。通すには検証を緩めるしかなく**セキュリティ劣化** |
+
+→ 残るのは「**名前は 1 つ、経路は 2 つ**」= **split-horizon**。これが U6 §6.3.1 の「`iss` の一致を保ったまま VPC 内完結させる」の中身であり、**DNS の都合ではなく OIDC の issuer 検証が要求する構造**である。
+
 ### A.1.3.6 IdP-KC → Broker に HTTP 経路は無い
 
 越境するのは **EventBridge の 2 本のみ**（[U6 §6.3.2](06-infra-network-design.md)、[ADR-063](../adr/063-brand-unit-architecture.md)）。EventBridge へも **VPC Endpoint 経由**でインターネットに出ない。
@@ -384,6 +416,218 @@ Broker KC Pod
 | ノード ⇄ Red Hat CP | PrivateLink（HCP 組込） | B-M / I-M |
 
 **IdP-KC の外向きは HIBP と SES だけ**（§A.2.2）。外部 IdP へフェデしないため意図的にここまで軽い。
+
+### A.1.3.8 DR 時の名前解決と切替点（2026-09-25 新設）
+
+**位置づけ**: §A.1.3.5 の split-horizon が **DR でどう切り替わるか**が未図示だった。決定の SSOT は **[U8 §8.4.6b / §8.4.6c（D-U8-16 / D-U8-18）](08-availability-dr-design.md)**。本節はその見取り図。
+
+#### (0) 前提の整理 — 「権威サーバ」と「リゾルバ」は別物（弊社が作るのは権威側だけ）
+
+図を読む前に、DNS の 2 つの役割を区別する。**ここを混同すると「PHZ がインターネットに公開されている」という誤解が生じる。**
+
+| 役割 | 何をするか | 実体 | **弊社が作るか** |
+|---|---|---|:---:|
+| **権威サーバ**（authoritative） | 「`auth.basis.example.com` の答え」を持つ台帳 | **Route 53 Public Hosted Zone**（公開側）/ **Private Hosted Zone**（VPC 内側） | ✅ **作る** |
+| **再帰リゾルバ**（recursive / caching） | 権威に代わりに聞きに行き、キャッシュして返す | 利用者の ISP DNS / 企業内 DNS / `8.8.8.8` / キャリア DNS | ❌ **管理外**（存在するものを使うだけ） |
+| **VPC リゾルバ** | VPC 内からの問い合わせを受け、PHZ を参照する | AWS 提供（`169.254.169.253` / VPC CIDR +2） | ❌ 作らない（AWS 提供） |
+| **CloudFront の内部リゾルバ** | オリジン名（`origin-*`）を解決する | AWS 運用（利用者側リゾルバとは**別物**） | ❌ 管理外 |
+
+**弊社の構築対象（DU-U6-13 の成果物）**:
+
+| 対象 | 内容 |
+|---|---|
+| ドメインの権威委任 | レジストラで `basis.example.com` の NS を Route 53 へ |
+| **Public Hosted Zone** + レコード | `auth.` / `idp.` / `scim-*.`（→ 他組織 CF の Alias）+ **`origin-*.`（→ 各リージョンのエッジ LB。DR 時の唯一の切替点）** |
+| **Private Hosted Zone × 2**（東京用 / 大阪用・同名） | `idp.basis.example.com` → 各リージョンの Interface Endpoint、`kc-admin.*.internal` |
+| PHZ の **VPC 関連付け** | Broker / IdP-KC / App Acct × N（cross-account は RAM 認可・コンソール不可） |
+| Route 53 Resolver **Outbound ルール** | REQ-OUT-04（NFW の FQDN 評価と解決系を揃える）。**対象は顧客 IdP のドメインに限定し、`basis.example.com` を含めない**（→ (5) #2） |
+
+#### (0') Private Hosted Zone はインターネットに公開されない
+
+**PHZ は「公開されたゾーン」ではなく「関連付けた VPC の中からしか読めない台帳」である。**
+
+- PHZ の答えを引けるのは、**関連付けた VPC の中から VPC リゾルバに問い合わせた場合だけ**。
+- PHZ は**権威サーバとしてインターネットに露出しない**。親ゾーンから NS 委任もされないため、外部の再帰リゾルバが PHZ へ到達する経路が存在しない。
+- 外部から `dig @8.8.8.8 idp.basis.example.com` すると、**必ず Public Zone の答え（他組織 CloudFront）が返る**。PHZ の答え（PrivateLink エンドポイントのプライベート IP）は出てこない。
+- この性質が `kc-admin.*.internal` の構造防御（[U6 D-U6-11](06-infra-network-design.md) の L3 =「パブリック DNS に存在させない」）を成立させている。
+- 例外: Route 53 Resolver の **Inbound Endpoint** を立てれば VPC 外（オンプレ等）から PHZ を引けるが、**本設計では作らない**。
+
+> **メンタルモデル**: **名前は 1 つ、答えを持つ台帳が 2 つ。どちらが使われるかは「どのリゾルバに聞いたか」で決まる。**
+> VPC 内から VPC リゾルバへ聞いた → **PHZ の台帳** / それ以外（インターネット経由）→ **Public Zone の台帳**。
+> 「PHZ が公開されている」のではなく、「**同じ名前について権威が 2 つ併存し、問い合わせ元の居場所で使われる権威が変わる**」のが split-horizon。
+
+#### (1) 構成図 — 名前と解決先の全体
+
+```mermaid
+flowchart TB
+  BROWSER["利用者ブラウザ<br/>(インターネット)"]
+  PUBDNS["再帰リゾルバ<br/>ISP / 企業 DNS / 8.8.8.8 等<br/>【弊社管理外・構築物ではない】"]
+  CFDNS["CloudFront の内部リゾルバ<br/>【AWS 運用・利用者側とは別物】"]
+
+  subgraph PZ["Route 53 Public Hosted Zone（弊社 Broker Acct 統制 = 権威）"]
+    PZ1["auth. / idp. / scim-*.<br/>Alias → 他組織 CloudFront<br/>【DR でも不変】"]
+    PZ2["origin-auth. / origin-idp.<br/>→ 東京エッジ LB<br/>★DR 時はここだけ大阪へ書換"]
+  end
+
+  subgraph EDGE["他組織管理エッジ（P-18）"]
+    CF["CloudFront + WAF<br/>Origin = origin-*.basis.example.com<br/>【FQDN 参照 = REQ-DR-06】<br/>DR でも設定変更なし"]
+  end
+
+  subgraph TYO["ap-northeast-1 東京（平時 Active）"]
+    subgraph PHZT["PHZ-TYO『idp.basis.example.com』(VPC 内限定の権威・非公開)"]
+      PHZT1["→ 東京 Interface Endpoint"]
+    end
+    BKT["Broker KC Pod<br/>VPC-K 東京"]
+    EPST["PrivateLink EPS 東京"]
+    IDPT["IdP-KC 東京"]
+    LBT["エッジ LB 東京"]
+  end
+
+  subgraph OSA["ap-northeast-3 大阪（平時 未構築 / DR 時 再構築）"]
+    subgraph PHZO["PHZ-OSA『idp.basis.example.com』(同名・別ゾーン・非公開)"]
+      PHZO1["→ 大阪 Interface Endpoint"]
+    end
+    BKO["Broker KC Pod<br/>VPC-K 大阪"]
+    EPSO["PrivateLink EPS 大阪"]
+    IDPO["IdP-KC 大阪"]
+    LBO["エッジ LB 大阪"]
+  end
+
+  BROWSER -->|"idp.basis.example.com を問い合わせ"| PUBDNS
+  PUBDNS -->|"権威に照会"| PZ1
+  PUBDNS -->|"CF のアドレスを返す"| BROWSER
+  BROWSER --> CF
+  CF --> CFDNS
+  CFDNS -->|"origin-* を権威に照会"| PZ2
+  PZ2 -->|"平時"| LBT
+  PZ2 -.->|"★DR 後"| LBO
+  LBT --> IDPT
+  LBO --> IDPO
+
+  BKT -->|"VPC リゾルバへ<br/>(東京 VPC に関連付いた PHZ)"| PHZT1 --> EPST --> IDPT
+  BKO -->|"VPC リゾルバへ<br/>(大阪 VPC に関連付いた PHZ)"| PHZO1 --> EPSO --> IDPO
+
+  style PUBDNS fill:#eeeeee,stroke-dasharray: 5 5
+  style CFDNS fill:#eeeeee,stroke-dasharray: 5 5
+  style PZ2 fill:#ffcdd2
+  style PHZO fill:#e3f2fd
+  style OSA fill:#e3f2fd
+  style TYO fill:#fff3e0
+  style EDGE fill:#f3e5f5
+```
+
+> **灰色の破線ノード（再帰リゾルバ 2 つ）は弊社の構築物ではない**（→ (0)）。弊社が作るのは **Public Hosted Zone（権威）と PHZ ×2（VPC 内限定の権威）**のみ。
+
+**読みどころ 3 点**:
+
+1. **公開名（`auth.` / `idp.`）と ACM 証明書は DR でも一切触らない** → `iss` 不変、顧客 IdP 側の登録値も不変（U8 §8.4.7 (a)）。
+2. **他組織エッジの設定変更もゼロ** — CloudFront のオリジンを FQDN（`origin-*`）で参照させておく（**REQ-DR-06**）ことで、切替が弊社統制の 1 レコードに閉じる。
+3. **PHZ は同名を東京用・大阪用の 2 つ持つ**（1 VPC : 1 PHZ）。大阪 Pod は大阪 VPC の PHZ を引くため、**バックチャネルには「切替」という操作が存在しない**。TGW 越しでも「東京 Pod が大阪 EPS を引く」たすき掛けは原理的に起きない。
+
+> **「不変」が 2 種類あることに注意（理由が違う）**:
+> - **Public Zone の `auth.` / `idp.` / `scim-*` が不変** = 切替を下流の `origin-*` に押し出したから（間接化の恩恵）
+> - **PHZ が操作不要** = **ゾーンを 2 面持っているから**。切り替わる理由は「レコードが変わる」ことではなく「**聞く側（Pod）が引っ越す**」こと
+>
+> ```
+> PHZ-TYO（東京 VPC に関連付け）  idp.basis.example.com → 東京 EPS
+> PHZ-OSA（大阪 VPC に関連付け）  idp.basis.example.com → 大阪 EPS
+> ```
+> 同じゾーン名・同じレコード名・違う値。**誰もレコードを書き換えない。** 1 面だと値を 1 つしか持てず、大阪 Pod が東京 EPS を引いて不通になるため DR 時に書換操作が発生し、かつ東西同時稼働での検証もできない（詳細と精密化 = [U8 §8.4.6b](08-availability-dr-design.md)）。
+
+#### (2) シーケンス図 — 平時のログイン 1 回で同じ FQDN が 2 通りに解決される
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor U as 利用者ブラウザ
+    participant PD as 再帰リゾルバ（利用者側・弊社管理外）
+    participant PZ as Route 53 Public Zone（弊社 = 権威）
+    participant CF as 他組織 CloudFront
+    participant CFD as CloudFront 内部リゾルバ（AWS 運用）
+    participant BK as Broker KC Pod
+    participant VR as VPC リゾルバ + PHZ-TYO（弊社 = 権威・非公開）
+    participant EP as PrivateLink EPS
+    participant IDP as IdP-KC
+
+    Note over U,IDP: フロントチャネル（公開経路 = I-I1）
+    U->>PD: idp.basis.example.com を問い合わせ
+    PD->>PZ: 権威へ照会（キャッシュ未ヒット時）
+    PZ-->>PD: Alias → 他組織 CloudFront
+    PD-->>U: CloudFront のアドレス
+    U->>CF: GET /realms/{r}/protocol/openid-connect/auth
+    CF->>CFD: origin-idp.basis.example.com を問い合わせ
+    CFD->>PZ: 権威へ照会
+    PZ-->>CFD: 東京エッジ LB（★DR 時はここが大阪に変わる）
+    CFD-->>CF: 東京エッジ LB
+    CF->>IDP: フォワード（TGW → Internal ALB）
+    IDP-->>U: ログイン画面
+    U->>IDP: 資格情報 → 認可コードを Broker へリダイレクト
+
+    Note over BK,IDP: バックチャネル（私設経路 = B-O2）
+    BK->>VR: idp.basis.example.com を問い合わせ
+    Note over VR: 東京 VPC に PHZ が関連付いているため<br/>Public Zone ではなく PHZ が権威になる
+    VR-->>BK: 東京 Interface Endpoint の<br/>プライベート IP（同じ FQDN・別の答え）
+    BK->>EP: POST /token（認可コード交換）
+    EP->>IDP: PrivateLink 単方向
+    IDP-->>BK: ID Token / Access Token（iss = https://idp.basis.example.com）
+    Note over BK: iss は公開名と一致 → 検証成立
+```
+
+#### (3) シーケンス図 — DR 切替の操作順序
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor SRE as SRE
+    participant IaC as IaC / Terraform
+    participant OSA as 大阪 ROSA + VPC
+    participant R53P as Route 53 PHZ-OSA
+    participant R53Z as Route 53 Public Zone
+    participant OTH as 他組織エッジ
+    participant V as 検証（U8 P4）
+
+    Note over SRE,V: 前提: RB-DR-00 判定 + 承認済み（U8 §8.4.1）
+    SRE->>IaC: RB-DR-03 大阪オンデマンド再構築
+    IaC->>OSA: VPC / ROSA / Aurora 昇格 / KC + SPI 適用
+    Note over OSA: enableDnsSupport / enableDnsHostnames を有効化
+
+    SRE->>R53P: PHZ-OSA『idp.basis.example.com』を作成
+    SRE->>R53P: 大阪 VPC 群を関連付け<br/>(Broker / IdP-KC / App Acct × N)
+    Note over R53P: cross-account は<br/>CreateVPCAssociationAuthorization →<br/>AssociateVPCWithHostedZone（コンソール不可・IaC 必須）
+    SRE->>OSA: origin-*.basis.example.com の証明書を発行
+
+    Note over SRE,OTH: ここまで無停止で準備完了（公開名は東京を向いたまま）
+
+    SRE->>R53Z: ★origin-auth. / origin-idp. を大阪へ書換<br/>（公開名と ACM 証明書は触らない）
+    Note over OTH: 他組織の作業は不要<br/>（CloudFront は FQDN でオリジンを解決）
+    SRE->>V: ログイン（フェデ / ローカル）/ JWKS・kid 一致 /<br/>token・refresh / PrivateLink 疎通 / idmap 参照
+    V-->>SRE: 合格
+    SRE->>SRE: 全面切替宣言・顧客通知
+```
+
+> **フェイルバック（RB-DR-05）は同一レコードを東京へ戻すだけ**。PHZ-TYO / PHZ-OSA は両方残したままで良く、東京 VPC は常に PHZ-TYO を引く（対称・操作ゼロ）。
+
+#### (4) 切替点の一覧
+
+| 名前 | 誰が持つ | 平時 | DR 時の操作 |
+|---|---|---|---|
+| `auth.` / `idp.` / `scim-*.`（公開名） | **弊社** Public Zone | Alias → 他組織 CF | **なし** |
+| ACM 証明書（公開名） | 他組織 CF 側 | — | **なし** |
+| **`origin-auth.` / `origin-idp.`** | **弊社** Public Zone | 東京エッジ LB | **★書換（これだけ）** |
+| CloudFront のオリジン設定 | 他組織 | FQDN 参照 | **なし**（REQ-DR-06 成立時） |
+| `idp.basis.example.com`（PHZ） | 弊社 PHZ-TYO / PHZ-OSA | 各リージョンの EPS | **なし**（大阪 VPC 関連付けのみ） |
+| `kc-admin.*.internal` | 弊社 PHZ | 内部のみ | 同上 |
+| `hostname` / `hostname-admin`（KC 設定） | 弊社 | 固定 | **なし** → `iss` 不変 |
+| 顧客 IdP の FQDN | 顧客 | 公開 | **なし**（ただし送信元 IP = **REQ-DR-08**） |
+
+#### (5) 本節から出た留意点（→ U8 / U6 へ）
+
+| # | 内容 |
+|:-:|---|
+| 1 | **PHZ の VPC 関連付けは 1 面ではない。** §A.1.2 要件 G / REQ-OUT-04 により **App Acct VPC も `auth.basis` を私設解決**する。東京で N 面ある関連付けを**大阪でも同数再現**する必要があり、cross-account 分は RAM 認可を伴う。**RB-DR-03 の手順に「PHZ-OSA の VPC 関連付け N 件」を明記**すること（DU-U6-13 の成果物と対） |
+| 2 | ⚠ **REQ-OUT-04 で Route 53 Resolver ルールを使う前提が既にある**（顧客 IdP FQDN の解決系を NFW の FQDN 評価と揃える）。公式に **Resolver ルールは PHZ より優先**されるため、**そのルールのドメイン範囲が `basis.example.com` を含むと split-horizon が破綻**し、バックチャネルが公開経路へ出る（`iss` は保たれるので気づきにくい）。→ **U8 O-U8-14**。Resolver ルールは顧客 IdP のドメインに限定し、自社ドメインを含めないこと |
+| 3 | **PHZ のゾーン名はホスト単位で狭く切る**。`basis.example.com` で切ると PHZ にレコードが無い名前が **NXDOMAIN となりパブリックへフォールスルーしない**（AWS 公式）ため、VPC 内から `auth.` / `scim-*` が引けなくなる（U8 §8.4.6c #1） |
+| 4 | **Route 53 で CloudFront を 2 本振り分ける構成は不可**（公式確認済み: 代替ドメイン名の重複不可 + distribution 選択は `Host` ヘッダ依存 + ワイルドカードでも DNS の向き先に関係なく specific match が勝つ）→ U8 §8.4.6a |
 
 ---
 
@@ -592,6 +836,9 @@ flowchart TB
 | ~~A6a-2~~ | 両クラスタの内部レンジをずらすか | ✅ **2026-08-27 承認・クローズ（C-4）= 「ずらす」で確定**。理由 3 点（①将来クラスタ間を直結する余地を残す ②ログ調査時に IP を見ただけでどちらのクラスタか分かる ③**追加コストはゼロ**〔採番するだけ〕）。実値は §A.5.4 の割当表による |
 | A6a-3 | Canary の送信元(監査 Acct)からの外形監視経路が他組織 WAF の Bot 対策(REQ-IN-01)に誤検知されない除外合意 | U9/REQ 追補 |
 | A6a-4 | drawio 清書(本書 mermaid → AWS アイコン版、doc/common/drawio の EKS 旧図の置換) | 別タスク |
+| **A6a-6** ★2026-09-25 | **PHZ-OSA の VPC 関連付け件数の確定** — §A.1.3.8 (5) #1。東京で N 面（Broker / IdP-KC / App Acct × N）ある PHZ 関連付けを大阪でも再現する必要があり、cross-account 分は RAM 認可を伴う。**RB-DR-03 の手順項目として件数を確定**する | U8 / U9（RB-DR-03）|
+| **A6a-7** ★2026-09-25 | **REQ-OUT-04 の Resolver ルールが自社ドメインを含まないことの確認** — §A.1.3.8 (5) #2。公式に Resolver ルールは PHZ より優先されるため、範囲に `basis.example.com` が入ると split-horizon が破綻しバックチャネルが公開経路へ出る（`iss` は保たれるため気づきにくい）| U6 §6.7 / U8 O-U8-14 |
+| **A6a-8** ★2026-09-25 | **drawio 清書対象に §A.1.3.8 の 3 図を追加**（構成図 + シーケンス 2 本）。A6a-4 のスコープ拡張 | 別タスク（00a G-4.1/G-4.2）|
 
 ## A.5 IP アドレス割当計画(第 1 案、2026-07-24)
 
@@ -785,6 +1032,10 @@ flowchart TB
 ## 改訂履歴
 
 - 2026-08-25: **§A.1.3 新設（Broker ⇄ IdP まわりの通信 経路まとめ）** — 情報が §A.1 図 / §A.2.2 / U6 §6.3 / 02a §2.3 に分散していたため 1 箇所へ集約。**Pod IP はオーバーレイでノード IP に変換される**前提（§A.1.3.1）→ 経路 5 系統一覧 → B-O1（唯一の重いインターネット経路・IdP 追加の律速）/ B-O2（PrivateLink 単方向）/ **split-horizon DNS で同一 FQDN が経路により別 IP に解決される**（§A.1.3.5）/ IdP-KC→Broker は EventBridge のみで HTTP 経路なし。**送信元粒度の是正**（Pod 単位は表現不可 → Worker サブネット単位）は [U6 §6.7.3](06-infra-network-design.md) へ。
+- 2026-09-25 (v2.1): **§A.1.3.5a / §A.1.3.5b 新設（用語と棄却理由の明文化）** — ユーザー質問「バックチャネルとは何か / FQDN が 2 通りとは何か」への回答を本文化。**(5a)** フロントチャネル（ブラウザ経由・URL に載る・公開必須）と バックチャネル（サーバー間直接・URL に載らない・閉じられる）の定義表 + 「2 系統に分かれる理由 = トークンを URL に載せない Authorization Code Flow の設計」+ 「**バックチャネルだけを PrivateLink に落とせるのはこの性質があるから**」という設計帰結。**(5b)** **split-horizon が必要な理由 = 名前を分ける 2 案（X: 公開 IP のみ / Y: 内部用に別 FQDN）の棄却理由**を明文化（X は PW ハッシュ保有側への到達が公開面依存になり P-17/ADR-033 の分離が崩れる / Y は **`iss` と discovery 取得元ホストが食い違い OIDC の issuer 検証が通らない**）。**split-horizon は DNS の都合ではなく OIDC の issuer 検証が要求する構造**である点を明記。
+- 2026-09-25 (v2.0): §A.1.3.8 (1) の読みどころ 3 に **「不変が 2 種類あり理由が違う」注記**を追加（ユーザー指摘）— Public Zone の公開名が不変なのは切替を `origin-*` に押し出したから / **PHZ が操作不要なのは 2 面持ちだから**。2 面の中身を具体レコードで例示し「切り替わる理由はレコード変更ではなく**聞く側（Pod）の引っ越し**」であることを明記。1 面構成だと値を 1 つしか持てず大阪 Pod が東京 EPS を引いて不通 + 東西同時検証も不可、という棄却理由も併記。
+- 2026-09-25 (v1.9): §A.1.3.8 に **(0) 権威サーバ / リゾルバの区別**と **(0') PHZ は非公開**を追記（ユーザー指摘）。**弊社の構築対象は「Public Hosted Zone（権威）+ PHZ ×2（VPC 内限定の権威）」のみで、再帰リゾルバ〔ISP/企業/8.8.8.8〕と CloudFront 内部リゾルバは管理外**であることを表で明示。PHZ が「インターネットに公開されている」という誤解の否定（NS 委任なし / 外部から dig すると必ず Public Zone の答え / Inbound Endpoint は作らない）+ メンタルモデル「名前は 1 つ・台帳が 2 つ・どちらが使われるかは問い合わせたリゾルバで決まる」。構成図とシーケンス図①のラベルを修正（リゾルバ 2 つを灰色破線の管理外ノードとして分離、権威照会のホップを明示）。
+- 2026-09-25 (v1.8): **§A.1.3.8 新設 — DR 時の名前解決と切替点**（構成図 1 + シーケンス図 2 = 平時の同一 FQDN 2 系統解決 / DR 切替の操作順序）。split-horizon（§A.1.3.5）が DR でどう切り替わるかを図示。決定 SSOT は [U8 §8.4.6b/§8.4.6c（D-U8-16 / D-U8-18）](08-availability-dr-design.md)。要点 = **公開名・ACM 証明書・他組織エッジ設定は不変、切替は弊社 Public Zone の `origin-*` 1 レコードのみ、PHZ は同名 2 面持ちでバックチャネル操作ゼロ**。留意点 4 件を (5) に整理し、未決 **A6a-6/7/8** を新設（PHZ 関連付け件数 / REQ-OUT-04 Resolver ルールの範囲確認 / drawio 清書対象追加）。
 - 2026-07-24: 初版。ユーザー提供のフロー表(B-*/I-* 系)を全量反映 + 抜け 8 系統を追加 + ROSA 内部詳細図(初出)+ OVN IP レンジ表。
 - 2026-08-07 (v1.7): **§A.6 新設 — アカウント別 詳細構成（Broker / IdP-KC ブランド）**。現行トポロジ（ADR-062 Lambda / ADR-063 ブランド主役 / A 案 outbox / REQ-IN-12 API GW 例外 / A+C credential-authz 内部分離）を全体トポロジ図 + Broker/IdP-KC アカウント別詳細表に集約（現行構成の SSOT。drawio v2 は旧 EKS 版で未反映）。
 - 2026-07-29 (v1.6): NFW ルート論点が**認証 ROSA パスにも同じく効く**(VPC origins 採用なら本命)ことを §A.1.1 に注記 + U6 REQ-IN-13(CloudFront→エッジ LB 到達方式 + NFW ingress ルート設計)/ §6.7.2 注記(In-A/In-B とは別軸)と連動。
